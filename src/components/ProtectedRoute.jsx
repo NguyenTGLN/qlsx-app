@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth, hasModuleAccess } from '../lib/AuthContext';
+import { useAuth, hasModuleAccess, canSeeModule } from '../lib/AuthContext';
+import { PERM_REGISTRY } from '../lib/permRegistry';
 
 /**
  * ProtectedRoute — Auth Guard
@@ -41,9 +42,14 @@ export default function ProtectedRoute({ children, requiredModule }) {
 
   // Kiểm tra quyền module (nếu có yêu cầu)
   if (requiredModule) {
-    // Dùng hasModuleAccess (merge quyền mặc định) để khớp với HomePage —
-    // tránh trường hợp menu hiện ra nhưng vào route lại bị chặn.
-    const hasAccess = hasModuleAccess(user, requiredModule);
+    // requiredModule là key access_* cũ. Map sang module id của registry rồi
+    // dùng canSeeModule (có ít nhất 1 tab được xem) để KHỚP với HomePage —
+    // tránh menu hiện ra nhưng vào route lại bị chặn. Fallback hasModuleAccess
+    // cho key không thuộc registry.
+    const regModule = PERM_REGISTRY.find(m => m.legacyAccess === requiredModule);
+    const hasAccess = regModule
+      ? canSeeModule(user, regModule.module)
+      : hasModuleAccess(user, requiredModule);
 
     if (!hasAccess) {
       return (
