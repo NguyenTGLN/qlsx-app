@@ -875,7 +875,7 @@ export default function KhoHangApp() {
       ) : activeTab === 'print_queue' ? (
         <PrintQueueTab />
       ) : activeTab === 'du-lieu-nhap' ? (
-        <ImportLogsTab />
+        <ImportLogsTab perms={perms} />
       ) : activeTab === 'luu-xuat' ? (
         <SaveExportTab perms={perms} />
       ) : activeTab === 'ton-kho-so-sach' ? (

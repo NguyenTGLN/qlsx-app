@@ -371,10 +371,11 @@ import { useNavigate } from 'react-router-dom';
     // ============================================================
     function UserModal({user, onSave, onClose}) {
       const isEdit = !!user
-      const currentPerms = user ? getUserPerms(user) : DEFAULT_PERMS_AGENT
       const hasTabKeys = user && user.permissions &&
         Object.keys(user.permissions).some(k => k.startsWith('tab.'));
-      const seedPerms = hasTabKeys ? { ...currentPerms } : migrateLegacyToTabPerms(currentPerms);
+      const seedPerms = !user
+        ? { ...DEFAULT_PERMS_AGENT }
+        : (hasTabKeys ? { ...user.permissions } : migrateLegacyToTabPerms(user.permissions || {}));
       const [f,setF] = useState({id:user?.id||'',name:user?.name||'',password:'',role:user?.role||ROLE.AGENT,avatar:user?.avatar||'',originalId:user?.id||'',permissions:{...seedPerms}})
       const [busy,setBusy] = useState(false)
       const set = (k,v)=>setF(p=>({...p,[k]:v}))

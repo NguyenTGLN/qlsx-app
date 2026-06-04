@@ -18,16 +18,16 @@ export const PERM_REGISTRY = [
       { id: 'du-lieu-nhap',     label: 'Dữ liệu nhập',             caps: ['view', 'edit', 'delete', 'io'] },
       { id: 'luu-xuat',         label: 'Lưu xuất',                 caps: ['view', 'create', 'edit', 'delete', 'io'] },
       { id: 'xuat',             label: 'Dữ liệu xuất',             caps: ['view', 'edit', 'delete', 'io'] },
-      { id: 'ton-kho-tong',     label: 'Tồn kho hàng hóa',         caps: ['view', 'create', 'io'] },
+      { id: 'ton-kho-tong',     label: 'Tồn kho hàng hóa',         caps: ['view', 'create'] }, // create = "Gửi đề xuất" (xuất Excel để mở, không gate)
       { id: 'ton-kho-so-sach',  label: 'Tồn kho sổ sách',          caps: ['view'] },
-      { id: 'ton-kho',          label: 'Tồn kho theo vị trí',      caps: ['view', 'io'] },
+      { id: 'ton-kho',          label: 'Tồn kho theo vị trí',      caps: ['view', 'create', 'edit', 'delete', 'io'] },
       { id: 'danh-muc',         label: 'Danh mục hàng hóa',        caps: ['view', 'create', 'edit', 'delete', 'io'] },
       { id: 'bom',              label: 'BOM Sản xuất',             caps: ['view', 'create', 'edit', 'delete', 'io'] },
       { id: 'lenh-sx',          label: 'Bốc dỡ & Xuất kho (PSX)',  caps: ['view', 'create', 'edit', 'delete', 'io'] },
       { id: 'lich-su-boc-do',   label: 'Lịch sử bốc dỡ',           caps: ['view'] },
       { id: 'dksx',             label: 'DKSX — Nhu cầu sản xuất',  caps: ['view', 'create', 'delete'] },
       { id: 'de-xuat-dat-hang', label: 'Đề xuất đặt hàng (DLK)',   caps: ['view', 'create', 'edit', 'delete'] },
-      { id: 'ton-kho-sx',       label: 'Tồn kho Sản xuất',         caps: ['view', 'create', 'edit', 'delete', 'io'] },
+      { id: 'ton-kho-sx',       label: 'Tồn kho Sản xuất',         caps: ['view', 'edit', 'delete', 'io'] }, // không có nút Thêm
       { id: 'print_queue',      label: 'Quản Lý Chứng Từ',         caps: ['view'] }, // chỉ in/in lại (workflow), không CRUD
     ],
   },
@@ -44,7 +44,7 @@ export const PERM_REGISTRY = [
     tabs: [
       { id: 'history',        label: 'Lịch Sử Phiếu', caps: ['view'] }, // nội dung chỉ-đọc (thẻ + biểu đồ)
       { id: 'batchAnalytics', label: 'Phân Tích Lỗi', caps: ['view'] }, // chỉ-đọc
-      { id: 'dataManager',    label: 'QL Dữ Liệu',    caps: ['view', 'create', 'edit', 'delete', 'io'] },
+      { id: 'dataManager',    label: 'QL Dữ Liệu',    caps: ['view', 'edit', 'delete', 'io'] }, // bản ghi vào qua import, không có nút Thêm tay
     ],
   },
   {
