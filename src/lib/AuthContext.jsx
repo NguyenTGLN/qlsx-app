@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabase';
+import { getTabPerm as _getTabPerm, canSeeTab as _canSeeTab, canSeeModule as _canSeeModule } from './permRegistry';
 
 // ============================================================
 // 🔐 RBAC — Hệ thống Phân quyền Toàn App
@@ -93,6 +94,9 @@ const DEFAULT_PERMS_AGENT = {
   // Chất Lượng SP
   quality_edit:       false,
   quality_delete:     false,
+  // Mặc định nhân viên mới: chỉ thấy & làm tab Công việc
+  'tab.tasks.tasks.view': true,
+  'tab.tasks.tasks.edit': true,
 };
 
 /**
@@ -230,6 +234,23 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within <AuthProvider>');
   return ctx;
+}
+
+export { getTabPerm, canSeeTab, canSeeModule } from './permRegistry';
+
+/** Hook: trả {view,create,edit,delete,io} cho 1 tab của user hiện tại */
+export function useTabPerm(module, tabId) {
+  const { user } = useAuth();
+  return _getTabPerm(user, module, tabId);
+}
+/** Hook tiện ích */
+export function useCanSeeTab(module, tabId) {
+  const { user } = useAuth();
+  return _canSeeTab(user, module, tabId);
+}
+export function useCanSeeModule(module) {
+  const { user } = useAuth();
+  return _canSeeModule(user, module);
 }
 
 export default AuthContext;
