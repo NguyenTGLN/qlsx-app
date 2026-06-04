@@ -28,7 +28,7 @@ export const PERM_REGISTRY = [
       { id: 'dksx',             label: 'DKSX — Nhu cầu sản xuất',  caps: ['view', 'create', 'delete'] },
       { id: 'de-xuat-dat-hang', label: 'Đề xuất đặt hàng (DLK)',   caps: ['view', 'create', 'edit', 'delete'] },
       { id: 'ton-kho-sx',       label: 'Tồn kho Sản xuất',         caps: ['view', 'create', 'edit', 'delete', 'io'] },
-      { id: 'print_queue',      label: 'Quản Lý Chứng Từ',         caps: ['view', 'create', 'delete'] },
+      { id: 'print_queue',      label: 'Quản Lý Chứng Từ',         caps: ['view'] }, // chỉ in/in lại (workflow), không CRUD
     ],
   },
   {
@@ -42,8 +42,8 @@ export const PERM_REGISTRY = [
   {
     module: 'warranty', label: 'Bảo Hành', icon: '🛡️', legacyAccess: 'access_warranty',
     tabs: [
-      { id: 'history',        label: 'Lịch Sử Phiếu', caps: ['view', 'create', 'edit', 'delete', 'io'] },
-      { id: 'batchAnalytics', label: 'Phân Tích Lỗi', caps: ['view', 'io'] },
+      { id: 'history',        label: 'Lịch Sử Phiếu', caps: ['view'] }, // nội dung chỉ-đọc (thẻ + biểu đồ)
+      { id: 'batchAnalytics', label: 'Phân Tích Lỗi', caps: ['view'] }, // chỉ-đọc
       { id: 'dataManager',    label: 'QL Dữ Liệu',    caps: ['view', 'create', 'edit', 'delete', 'io'] },
     ],
   },
@@ -52,7 +52,7 @@ export const PERM_REGISTRY = [
     tabs: [
       { id: 'dashboard',   label: 'Tổng Quan',     caps: ['view'] },
       { id: 'zalo_kpi',    label: 'KPI CSKH Zalo', caps: ['view', 'edit', 'delete', 'io'] },
-      { id: 'zalo_report', label: 'BC Trực Zalo',  caps: ['view', 'create', 'edit', 'delete'] },
+      { id: 'zalo_report', label: 'BC Trực Zalo',  caps: ['view', 'create'] }, // bảng chỉ-đọc; tạo qua nút header
     ],
   },
   {
