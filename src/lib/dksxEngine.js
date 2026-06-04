@@ -1,0 +1,263 @@
+import { supabase as db } from './supabase';
+import { todayLocal } from './dateUtils';
+
+function makeDlkDate() {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}${mm}${yy}`;
+}
+
+// Tiền tố DLK trong ngày + số seq lớn nhất đang dùng. Dùng chung cho recompute & sendRetail.
+async function nextDlkSeq() {
+  const prefix = `DLK-${makeDlkDate()}-`;
+  const { data: existing } = await db.from('purchase_proposals').select('dlk_code').ilike('dlk_code', `${prefix}%`);
+  const seq = (existing || []).reduce((m, r) => {
+    const n = parseInt((r.dlk_code || '').split('-').pop(), 10);
+    return isNaN(n) ? m : Math.max(m, n);
+  }, 0);
+  return { prefix, seq };
+}
+
+// Nổ BOM đệ quy: code → linh kiện lá, cộng dồn vào acc. Chống cycle bằng visited.
+export function explodeBom(bomMap, code, qty, acc = {}, visited = new Set()) {
+  if (visited.has(code)) return acc;
+  if (bomMap[code] && bomMap[code].length > 0) {
+    visited.add(code);
+    bomMap[code].forEach(c => explodeBom(bomMap, c.component, qty * c.qty, acc, visited));
+    visited.delete(code);
+  } else {
+    acc[code] = (acc[code] || 0) + qty;
+  }
+  return acc;
+}
+
+// Tải BOM thành map { product_code: [{component, qty}] }
+// PHẢI phân trang: bom_items > 1000 dòng, Supabase mặc định cắt ở 1000 → thiếu BOM → nổ không hết.
+export async function loadBomMap() {
+  let rows = [], p = 0;
+  while (true) {
+    const { data } = await db.from('bom_items').select('product_code, component_code, quantity').range(p * 1000, (p + 1) * 1000 - 1);
+    if (data) rows = rows.concat(data);
+    if (!data || data.length < 1000) break;
+    p++;
+  }
+  const map = {};
+  rows.forEach(b => {
+    if (!map[b.product_code]) map[b.product_code] = [];
+    map[b.product_code].push({ component: b.component_code, qty: Number(b.quantity) || 1 });
+  });
+  return map;
+}
+
+// Tồn kho linh kiện = "tồn hàng hóa" (cộng dồn theo mã, GỒM cả vị trí WIP SX9-).
+// Nhất quán với tab Tồn HH: đặt hàng/đối chiếu dùng tồn hàng hóa; chỉ luồng XUẤT mới né SX9.
+export async function loadComponentStock() {
+  let stock = [], p = 0;
+  while (true) {
+    const { data } = await db.from('inventory_stock').select('item_code, quantity, location').range(p * 1000, (p + 1) * 1000 - 1);
+    if (data) stock = stock.concat(data);
+    if (!data || data.length < 1000) break;
+    p++;
+  }
+  const map = {};
+  stock.forEach(r => {
+    map[r.item_code] = (map[r.item_code] || 0) + (Number(r.quantity) || 0);
+  });
+  return map;
+}
+
+// Tính lại bảng Đề xuất DLK theo NET = nổ BOM toàn bộ DKSX − tồn linh kiện − DLK đã cam kết.
+// Giữ nguyên DLK đã 'Đã đặt mua'/'Chờ xác nhận'/... ; chỉ thay các dòng còn 'Mới'.
+export async function recomputeProposals() {
+  const [{ data: dksx }, bomMap, stockMap] = await Promise.all([
+    db.from('production_demand').select('item_code, qty_demand').gt('qty_demand', 0),
+    loadBomMap(),
+    loadComponentStock(),
+  ]);
+
+  // Gross: nổ BOM tổng nhu cầu sản xuất
+  const gross = {};
+  (dksx || []).forEach(d => explodeBom(bomMap, d.item_code, Number(d.qty_demand) || 0, gross));
+
+  // Tất cả dòng DLK: committed (đã đặt) để trừ nhu cầu; map dòng 'Mới' theo item_code (≤1/mã sau migration)
+  const { data: dlkAll } = await db.from('purchase_proposals')
+    .select('id, item_code, actual_qty, bom_qty, retail_qty, trang_thai');
+  const committed = {};
+  const openByCode = {};
+  (dlkAll || []).forEach(r => {
+    if (r.trang_thai === 'Mới') openByCode[r.item_code] = r;
+    else if (r.trang_thai !== 'Hủy') committed[r.item_code] = (committed[r.item_code] || 0) + (Number(r.actual_qty) || 0);
+  });
+
+  // Net bom need / linh kiện lá (bỏ mã còn là thành phẩm có BOM)
+  const isParent = (c) => bomMap[c] && bomMap[c].length > 0;
+  const bomNeed = {};
+  Object.keys(gross).forEach(c => {
+    if (isParent(c)) return;
+    const need = (gross[c] || 0) - (stockMap[c] || 0) - (committed[c] || 0);
+    if (need > 0.0001) bomNeed[c] = Math.round(need * 1000) / 1000;
+  });
+
+  const today = todayLocal();
+  let { prefix, seq } = await nextDlkSeq();
+  const toCreate = [];
+
+  // 1) Linh kiện có bom_need > 0: cập nhật dòng 'Mới' (giữ retail_qty) hoặc tạo mới
+  for (const c of Object.keys(bomNeed)) {
+    const need = bomNeed[c];
+    const ex = openByCode[c];
+    if (ex) {
+      const retail = Number(ex.retail_qty) || 0;
+      const total = Math.round((need + retail) * 1000) / 1000;
+      await db.from('purchase_proposals').update({
+        bom_qty: need, calculated_qty: total, actual_qty: total,
+        source: retail > 0 ? 'both' : 'bom',
+      }).eq('id', ex.id);
+      delete openByCode[c];
+    } else {
+      toCreate.push(c);
+    }
+  }
+
+  // 2) Dòng 'Mới' còn lại (hết bom_need): giữ phần retail, hoặc xoá nếu cũng hết retail
+  const toDelete = [];
+  for (const c of Object.keys(openByCode)) {
+    const ex = openByCode[c];
+    const retail = Number(ex.retail_qty) || 0;
+    if (retail > 0) {
+      await db.from('purchase_proposals').update({
+        bom_qty: 0, calculated_qty: retail, actual_qty: retail, source: 'retail',
+      }).eq('id', ex.id);
+    } else {
+      toDelete.push(ex.id);
+    }
+  }
+  if (toDelete.length) await db.from('purchase_proposals').delete().in('id', toDelete);
+
+  // 3) Insert dòng linh kiện mới (lấy tên/đvt)
+  if (toCreate.length) {
+    const { data: items } = await db.from('inventory_items').select('item_code, item_name, unit').in('item_code', toCreate);
+    const dict = {};
+    (items || []).forEach(i => { dict[i.item_code] = i; });
+    const rows = toCreate.map(c => {
+      seq += 1;
+      const need = bomNeed[c];
+      return {
+        dlk_code: `${prefix}${String(seq).padStart(2, '0')}`,
+        item_code: c, item_name: dict[c]?.item_name || '', unit: dict[c]?.unit || '',
+        bom_qty: need, retail_qty: 0, calculated_qty: need, actual_qty: need,
+        ngay_de_xuat: today, tien_do: 'Mới', trang_thai: 'Mới', source: 'bom', note: '',
+      };
+    });
+    await db.from('purchase_proposals').insert(rows);
+  }
+  return { created: toCreate.length };
+}
+
+// Đề xuất MUA THẲNG cho mã bán lẻ (không BOM + có xuất bán): đi thẳng vào purchase_proposals,
+// KHÔNG qua DKSX/nổ BOM. Quy tắc MAX giống DKSX: chỉ nâng số đề xuất nếu SL mới > SL cũ.
+//   items = [{ item_code, item_name, unit, qty }]
+export async function sendRetailProposals(items) {
+  const valid = (items || []).filter(it => it && it.item_code && Number(it.qty) > 0);
+  if (valid.length === 0) return { created: 0, updated: 0, skippedSmaller: 0 };
+
+  const codes = [...new Set(valid.map(it => it.item_code))];
+  // Dòng 'Mới' theo item_code (mọi nguồn — giờ ≤1 dòng/mã)
+  const { data: openRows } = await db.from('purchase_proposals')
+    .select('id, item_code, bom_qty, retail_qty')
+    .eq('trang_thai', 'Mới')
+    .in('item_code', codes);
+  const openMap = {};
+  (openRows || []).forEach(r => { openMap[r.item_code] = r; });
+
+  const today = todayLocal();
+  let { prefix, seq } = await nextDlkSeq();
+  const inserts = [];
+  let updated = 0, skippedSmaller = 0;
+
+  for (const it of valid) {
+    const qty = Math.round(Number(it.qty) * 1000) / 1000;
+    const ex = openMap[it.item_code];
+    if (ex) {
+      const oldRetail = Number(ex.retail_qty) || 0;
+      if (qty > oldRetail) { // MAX trên kênh bán lẻ
+        const bom = Number(ex.bom_qty) || 0;
+        const total = Math.round((bom + qty) * 1000) / 1000;
+        await db.from('purchase_proposals').update({
+          retail_qty: qty, calculated_qty: total, actual_qty: total,
+          source: bom > 0 ? 'both' : 'retail', ngay_de_xuat: today,
+        }).eq('id', ex.id);
+        updated++;
+      } else {
+        skippedSmaller++;
+      }
+    } else {
+      seq += 1;
+      inserts.push({
+        dlk_code: `${prefix}${String(seq).padStart(2, '0')}`,
+        item_code: it.item_code, item_name: it.item_name || '', unit: it.unit || '',
+        bom_qty: 0, retail_qty: qty, calculated_qty: qty, actual_qty: qty,
+        ngay_de_xuat: today, tien_do: 'Mới', trang_thai: 'Mới', source: 'retail', note: '',
+      });
+    }
+  }
+  if (inserts.length) await db.from('purchase_proposals').insert(inserts);
+  return { created: inserts.length, updated, skippedSmaller };
+}
+
+// ── Ngày cần về kho ────────────────────────────────────────────────────────
+// needed = ngày cạn kho GẤP NHẤT (giữa bán lẻ của chính mã & thành phẩm có bán
+// chứa nó qua nổ BOM ngược) − 5 ngày đệm. Trả { [item_code]: { neededTs, daysLeft } }.
+const NEEDED_BUFFER_DAYS = 5;
+const DAY_MS = 86400000;
+
+function startOfTodayTs() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+export async function computeNeededDates() {
+  const [stockMap, bomMap, salesRes] = await Promise.all([
+    loadComponentStock(),
+    loadBomMap(),
+    db.from('sales_90d_summary').select('ma_san_pham, total_sales'),
+  ]);
+
+  // TB bán/ngày theo mã (khớp Tồn HH: tổng 90 ngày / 90)
+  const avgDaily = {};
+  (salesRes.data || []).forEach(r => {
+    if (r.ma_san_pham) avgDaily[r.ma_san_pham] = (Number(r.total_sales) || 0) / 90;
+  });
+
+  const todayTs = startOfTodayTs();
+  const runoutTs = (code) => {
+    const v = avgDaily[code];
+    if (!v || v <= 0) return null;
+    const days = Math.floor((stockMap[code] || 0) / v);
+    return todayTs + days * DAY_MS;
+  };
+
+  // Kênh sản xuất: mỗi thành phẩm (parent) CÓ bán → nổ BOM → lá; gán min runout(parent) cho lá.
+  const prodRunout = {};
+  Object.keys(bomMap).forEach(parent => {
+    const pr = runoutTs(parent);
+    if (pr === null) return;
+    const leaves = explodeBom(bomMap, parent, 1);
+    Object.keys(leaves).forEach(leaf => {
+      if (prodRunout[leaf] === undefined || pr < prodRunout[leaf]) prodRunout[leaf] = pr;
+    });
+  });
+
+  const codes = new Set([...Object.keys(prodRunout), ...Object.keys(avgDaily)]);
+  const result = {};
+  codes.forEach(code => {
+    const cands = [runoutTs(code), prodRunout[code] ?? null].filter(v => v !== null);
+    if (cands.length === 0) return;
+    const neededTs = Math.min(...cands) - NEEDED_BUFFER_DAYS * DAY_MS;
+    result[code] = { neededTs, daysLeft: Math.round((neededTs - todayTs) / DAY_MS) };
+  });
+  return result;
+}
