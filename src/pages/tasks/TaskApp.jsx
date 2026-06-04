@@ -728,7 +728,7 @@ import { useNavigate } from 'react-router-dom';
     // ============================================================
     function TaskTable({tasks,users,currentUser,assFilter,setAssFilter,onEdit,onDetail,onDelete,onBulkDelete}) {
       const [search,setSearch] = useState(''); const [stFilter,setStFilter] = useState('IN_PROGRESS'); const isAdmin = currentUser.role===ROLE.ADMIN
-      const canDelete = hasPerm(currentUser, 'delete_task');
+      const canDelete = getTabPerm(currentUser, 'tasks', 'tasks').delete;
       const filtered = tasks.filter(t=>{
         if (stFilter!=='ALL'&&t.status!==stFilter) return false; if (assFilter!=='ALL'&&t.assignee_id!==assFilter) return false
         if (search) { const q=search.toLowerCase(); if (!t.title.toLowerCase().includes(q)&&!t.id.toLowerCase().includes(q)&&!(t.assignee?.name||'').toLowerCase().includes(q)&&!(t.label||'').toLowerCase().includes(q)) return false }
@@ -784,7 +784,8 @@ import { useNavigate } from 'react-router-dom';
     function UserTaskBoard({user, tasks, onBack, onDetail, onEdit, onUpdate, onRemind, onDelete, currentUser}) {
       const [tab, setTab] = useState('ALL');
       const isAdmin = currentUser.role === ROLE.ADMIN;
-      const canDelete = hasPerm(currentUser, 'delete_task');
+      const tPerm = getTabPerm(currentUser, 'tasks', 'tasks');
+      const canDelete = tPerm.delete;
 
       const sortKanbanTasks = (taskArray) => {
         const now = new Date();
@@ -889,7 +890,7 @@ import { useNavigate } from 'react-router-dom';
               h('div', {className: 'pt-2 sm:pt-3 border-t border-gray-100 flex justify-between gap-1 w-full pl-1 sm:pl-3'},
                 hasPerm(currentUser,'remind_task') && !isCompleted && h('button', {onClick: () => onRemind(t), className: 'flex-1 px-0 bg-blue-600 text-white py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-blue-700 flex items-center justify-center gap-0.5 transition-colors shadow-sm'}, h(IconBell), 'Nhắc'),
                 h('button', {onClick: () => onDetail(t), className: 'flex-1 px-0 bg-gray-100 text-gray-700 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-gray-200 flex items-center justify-center gap-0.5 transition-colors'}, h(IconEye), 'Xem'),
-                hasPerm(currentUser,'edit_task') && (!isCompleted || isAdmin) && h('button', {onClick: () => onEdit(t), className: 'flex-1 px-0 border border-gray-200 text-gray-700 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-gray-50 flex items-center justify-center gap-0.5 transition-colors'}, h(IconEdit), 'Sửa'),
+                tPerm.edit && (!isCompleted || isAdmin) && h('button', {onClick: () => onEdit(t), className: 'flex-1 px-0 border border-gray-200 text-gray-700 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-gray-50 flex items-center justify-center gap-0.5 transition-colors'}, h(IconEdit), 'Sửa'),
                 hasPerm(currentUser,'change_status') && !isCompleted && h('button', {onClick: () => quickStatus(t, STATUS.COMPLETED), className: 'flex-1 px-0 bg-emerald-500 text-white py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-emerald-600 flex items-center justify-center gap-0.5 transition-colors shadow-sm'}, h(IconCheck), 'Xong'),
                 hasPerm(currentUser,'cancel_task') && t.status !== STATUS.CANCELLED && h('button', {onClick: () => quickStatus(t, STATUS.CANCELLED), className: 'flex-1 px-0 bg-yellow-100 text-yellow-700 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-yellow-200 flex items-center justify-center gap-0.5 transition-colors shadow-sm'}, h(IconX), 'Hủy'),
                 canDelete && h('button', {onClick: (e) => { e.stopPropagation(); onDelete(t); }, className: 'flex-1 px-0 bg-red-100 text-red-600 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-red-200 flex items-center justify-center gap-0.5 transition-colors shadow-sm'}, h(IconTrash), 'Xóa'),
@@ -939,8 +940,9 @@ import { useNavigate } from 'react-router-dom';
     // ============================================================
     function TaskDetail({task, currentUser, onUpdate, onAddUpdate, onDelete, onRemind, onClose, onOpenEdit}) {
       const [comment, setComment] = useState(''); const [busy, setBusy] = useState(false); const isAdmin  = currentUser.role === ROLE.ADMIN; 
-      const canEdit = hasPerm(currentUser,'edit_task');
-      const canDelete = hasPerm(currentUser,'delete_task');
+      const tPerm = getTabPerm(currentUser, 'tasks', 'tasks');
+      const canEdit = tPerm.edit;
+      const canDelete = tPerm.delete;
       const canStatus = hasPerm(currentUser,'change_status');
       const canUpdate = hasPerm(currentUser,'add_update');
       const canCancel = hasPerm(currentUser,'cancel_task');
