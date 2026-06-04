@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase, fetchAllRows } from '../../lib/supabase';
-import { useAuth, hasPerm } from '../../lib/AuthContext';
+import { useTabPerm } from '../../lib/AuthContext';
 import { 
   ShieldAlert, Plus, RefreshCw, AlertTriangle, X, UploadCloud, CheckCircle, Camera, Video,
   Search, Download, FileDown, ChevronRight, Package, Loader2
@@ -14,9 +14,9 @@ import * as XLSX from 'xlsx';
 const QualityApp = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
-  const canEdit = hasPerm(user, 'quality_edit');
-  const canDelete = hasPerm(user, 'quality_delete');
+  const p = useTabPerm('quality', 'main');
+  // Nút "Lưu ý CLSP" mở modal dùng chung cho cả Thêm mới & Sửa → gộp create|edit.
+  const canAddOrEdit = p.create || p.edit;
   const [loading, setLoading] = useState(true);
   const [issues, setIssues] = useState([]);
   
@@ -657,7 +657,7 @@ const QualityApp = () => {
       headerRight={
         <div style={{ display: 'flex', gap: '0.4rem' }}>
           <ActionButton onClick={() => { setShowLookupModal(true); setLookupSelectedCode(null); setLookupSearch(''); }} icon={Search} label="Tra cứu SP" color="#2563eb" />
-          {canEdit && <ActionButton onClick={() => { resetForm(); setShowModal(true); }} icon={Plus} label="Lưu ý CLSP" color="#dc2626" />}
+          {canAddOrEdit && <ActionButton onClick={() => { resetForm(); setShowModal(true); }} icon={Plus} label="Lưu ý CLSP" color="#dc2626" />}
         </div>
       }
     >
@@ -685,7 +685,7 @@ const QualityApp = () => {
                     {matchedName && <span style={{fontSize: '0.9rem', color: '#64748b', fontWeight: 500, marginLeft: '0.5rem'}}>- {matchedName}</span>}
                   </h2>
                   <span style={{ background: '#e2e8f0', padding: '0.2rem 0.6rem', borderRadius: '1rem', fontSize: '0.8rem', fontWeight: 600 }}>{codeIssues.length} vấn đề</span>
-                  <button
+                  {p.io && <button
                     onClick={(e) => { e.stopPropagation(); handleDownloadZip(productCode, codeIssues); }}
                     disabled={downloading && downloadingCode === productCode}
                     style={{ 
@@ -706,7 +706,7 @@ const QualityApp = () => {
                     ) : (
                       <><Download size={14}/> <span className="mobile-hidden">Tải báo cáo</span></>
                     )}
-                  </button>
+                  </button>}
                 </div>
                 
                 <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: '1rem' }}>
@@ -727,7 +727,7 @@ const QualityApp = () => {
                               {issue.status || 'Chưa xử lý'}
                             </span>
                           </p>
-                          {canDelete && <button onClick={(e) => handleDelete(issue.id, e)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.2rem' }}>
+                          {p.delete && <button onClick={(e) => handleDelete(issue.id, e)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.2rem' }}>
                             <X size={16} />
                           </button>}
                         </div>
@@ -1037,9 +1037,9 @@ const QualityApp = () => {
 
             <div style={{ display: 'flex', gap: '1rem', padding: '1.2rem 1.5rem', borderTop: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0 }}>
               <button type="button" onClick={() => setShowModal(false)} style={{ flex: 1, padding: '0.8rem', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}>
-                {canEdit ? 'Hủy bỏ' : 'Đóng'}
+                {canAddOrEdit ? 'Hủy bỏ' : 'Đóng'}
               </button>
-              {canEdit && <button form="quality-form" type="submit" disabled={submitting} style={{ flex: 1, padding: '0.8rem', background: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
+              {canAddOrEdit && <button form="quality-form" type="submit" disabled={submitting} style={{ flex: 1, padding: '0.8rem', background: '#dc2626', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
                 {submitting ? 'Đang lưu...' : 'Lưu Dữ Liệu'}
               </button>}
             </div>
@@ -1207,13 +1207,13 @@ const QualityApp = () => {
                       }}>
                         {lookupIssues.length} vấn đề
                       </div>
-                      <button
+                      {p.io && <button
                         onClick={handleDownloadZip}
                         disabled={downloading}
-                        style={{ 
+                        style={{
                           display: 'flex', alignItems: 'center', gap: '0.4rem',
-                          padding: '0.5rem 1rem', borderRadius: '8px', 
-                          background: downloading ? '#94a3b8' : 'linear-gradient(135deg, #059669, #10b981)', 
+                          padding: '0.5rem 1rem', borderRadius: '8px',
+                          background: downloading ? '#94a3b8' : 'linear-gradient(135deg, #059669, #10b981)',
                           color: '#fff', border: 'none', cursor: downloading ? 'wait' : 'pointer',
                           fontWeight: 700, fontSize: '0.82rem',
                           boxShadow: '0 2px 8px rgba(16,185,129,0.3)',
@@ -1225,7 +1225,7 @@ const QualityApp = () => {
                         ) : (
                           <><FileDown size={15}/> Tải ZIP</>
                         )}
-                      </button>
+                      </button>}
                     </div>
                   </div>
 
@@ -1379,10 +1379,10 @@ const QualityApp = () => {
                   <strong style={{ color: '#059669' }}> {lookupIssues.filter(i => i.status === 'Đã xử lý').length}</strong> đã xử lý · 
                   <strong style={{ color: '#ea580c' }}> {lookupIssues.filter(i => (i.status || 'Chưa xử lý') !== 'Đã xử lý').length}</strong> chưa xử lý
                 </span>
-                <button
+                {p.io && <button
                   onClick={handleDownloadZip}
                   disabled={downloading}
-                  style={{ 
+                  style={{
                     display: 'flex', alignItems: 'center', gap: '0.4rem',
                     padding: '0.5rem 1.2rem', borderRadius: '8px',
                     background: downloading ? '#94a3b8' : 'linear-gradient(135deg, #1d4ed8, #3b82f6)',
@@ -1396,7 +1396,7 @@ const QualityApp = () => {
                   ) : (
                     <><Download size={15}/> Tải toàn bộ dữ liệu</>
                   )}
-                </button>
+                </button>}
               </div>
             )}
           </div>

@@ -5,10 +5,12 @@ import { LayoutDashboard, CheckCircle, TrendingUp, Users, RefreshCw, Plus, X, Up
 import ModuleShell, { TabButton } from '../components/ModuleShell';
 import { supabase, fetchAllRows } from '../lib/supabase';
 import { dataCache } from '../lib/dataCache';
+import { useTabPerm } from '../lib/AuthContext';
 import * as XLSX from 'xlsx';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const p = useTabPerm('overview', 'main'); // view/create/edit/delete/io — gate nút Thêm/Sửa/Xóa & Tải mẫu/Nạp Excel
   const [activeTab, setActiveTab] = useState('menu'); // 'menu' | overview | capacities | orders | timeline
   
   // States
@@ -404,9 +406,9 @@ const AdminDashboard = () => {
                   <td><strong>{Number(parseFloat(log.actual_quantity).toFixed(1))}</strong></td>
                   <td><span style={styles.badge(parseInt(log.performance_rate))}>{Math.round(log.performance_rate)}%</span></td>
                   <td>
-                    <button onClick={() => deleteLog(log.id)} style={{background: 'none', border:'none', color:'var(--danger-color)', cursor:'pointer'}} title="Xóa dữ liệu này">
+                    {p.delete && <button onClick={() => deleteLog(log.id)} style={{background: 'none', border:'none', color:'var(--danger-color)', cursor:'pointer'}} title="Xóa dữ liệu này">
                       <Trash2 size={16} />
-                    </button>
+                    </button>}
                   </td>
                 </tr>
               ))}
@@ -432,13 +434,13 @@ const AdminDashboard = () => {
       <div style={styles.tableHeaderFlex}>
         <h3>Quản Lý Năng Lực SX / Mã Sản Phẩm</h3>
         <div style={{display:'flex', gap:'0.75rem'}}>
-          <button onClick={() => { setNewCapacity({product_code: '', product_name: '', standard_time: ''}); openModal(setShowCapacityModal); }} className="btn-secondary">
+          {p.create && <button onClick={() => { setNewCapacity({product_code: '', product_name: '', standard_time: ''}); openModal(setShowCapacityModal); }} className="btn-secondary">
             <Plus size={16}/> Thêm Mã Bằng Tay
-          </button>
-          <button onClick={downloadCapacityTemplate} className="btn-secondary"><Download size={16}/> Tải Template</button>
-          <button onClick={() => fileInputRef.current?.click()} className="btn-primary" style={{background: 'var(--success-gradient)'}}>
+          </button>}
+          {p.io && <button onClick={downloadCapacityTemplate} className="btn-secondary"><Download size={16}/> Tải Template</button>}
+          {p.io && <button onClick={() => fileInputRef.current?.click()} className="btn-primary" style={{background: 'var(--success-gradient)'}}>
             <Upload size={16} /> Nạp Từ Excel
-          </button>
+          </button>}
           <input type="file" accept=".xlsx, .xls, .csv" onChange={handleCapacityUpload} ref={fileInputRef} style={{display:'none'}} />
         </div>
       </div>
@@ -456,12 +458,12 @@ const AdminDashboard = () => {
                   <td><strong>{(1/parseFloat(cap.capacity_per_hour)).toFixed(4)}</strong> <span style={{fontSize:'0.8rem', color:'var(--text-tertiary)'}}>(~ {parseFloat(cap.capacity_per_hour).toFixed(2)} SP/Giờ)</span></td>
                   <td>
                     <div style={{display:'flex', gap:'0.5rem'}}>
-                       <button onClick={() => editCapacity(cap)} style={{background: 'none', border:'none', color:'var(--text-secondary)', cursor:'pointer'}} title="Sửa rập">
+                       {p.edit && <button onClick={() => editCapacity(cap)} style={{background: 'none', border:'none', color:'var(--text-secondary)', cursor:'pointer'}} title="Sửa rập">
                          <Edit size={16} />
-                       </button>
-                       <button onClick={() => deleteCapacity(cap.id, cap.product_code)} style={{background: 'none', border:'none', color:'var(--danger-color)', cursor:'pointer'}} title="Xóa dữ liệu này">
+                       </button>}
+                       {p.delete && <button onClick={() => deleteCapacity(cap.id, cap.product_code)} style={{background: 'none', border:'none', color:'var(--danger-color)', cursor:'pointer'}} title="Xóa dữ liệu này">
                          <Trash2 size={16} />
-                       </button>
+                       </button>}
                     </div>
                   </td>
                 </tr>
@@ -487,11 +489,11 @@ const AdminDashboard = () => {
       <div style={styles.tableHeaderFlex}>
         <h3>Lệnh Sản Xuất Nền</h3>
         <div style={{display:'flex', gap:'0.75rem'}}>
-          <button onClick={() => openModal(setShowOrderModal)} className="btn-secondary"><Plus size={16}/> Thêm 1 Lệnh</button>
-          <button onClick={downloadOrderTemplate} className="btn-secondary"><Download size={16}/> Tải Mẫu</button>
-          <button onClick={() => orderFileRef.current?.click()} className="btn-primary" style={{background: 'var(--success-gradient)'}}>
+          {p.create && <button onClick={() => openModal(setShowOrderModal)} className="btn-secondary"><Plus size={16}/> Thêm 1 Lệnh</button>}
+          {p.io && <button onClick={downloadOrderTemplate} className="btn-secondary"><Download size={16}/> Tải Mẫu</button>}
+          {p.io && <button onClick={() => orderFileRef.current?.click()} className="btn-primary" style={{background: 'var(--success-gradient)'}}>
             <Upload size={16} /> Nạp Từ Excel
-          </button>
+          </button>}
           <input type="file" accept=".xlsx, .xls, .csv" onChange={handleOrderUpload} ref={orderFileRef} style={{display:'none'}} />
         </div>
       </div>
@@ -514,9 +516,9 @@ const AdminDashboard = () => {
                   <td>{parseFloat(ord.standard_time_per_unit).toFixed(3)}</td>
                   <td>{new Date(ord.created_at).toLocaleDateString('vi-VN')}</td>
                   <td>
-                    <button onClick={() => deleteOrder(ord.id, ord.order_code)} style={{background: 'none', border:'none', color:'var(--danger-color)', cursor:'pointer'}} title="Xóa toàn bộ Lệnh và Nhật ký của lệnh này">
+                    {p.delete && <button onClick={() => deleteOrder(ord.id, ord.order_code)} style={{background: 'none', border:'none', color:'var(--danger-color)', cursor:'pointer'}} title="Xóa toàn bộ Lệnh và Nhật ký của lệnh này">
                       <Trash2 size={16} />
-                    </button>
+                    </button>}
                   </td>
                 </tr>
                  );

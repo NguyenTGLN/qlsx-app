@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabase';
+import { getTabPerm as _getTabPerm, canSeeTab as _canSeeTab, canSeeModule as _canSeeModule, migrateLegacyToTabPerms } from './permRegistry';
 
 // ============================================================
 // 🔐 RBAC — Hệ thống Phân quyền Toàn App
@@ -93,7 +94,19 @@ const DEFAULT_PERMS_AGENT = {
   // Chất Lượng SP
   quality_edit:       false,
   quality_delete:     false,
+  // Phân quyền theo tab: MẶC ĐỊNH TẮT HẾT. Nhân viên mới khởi đầu không có
+  // tab nào tới khi Admin cấp trong ma trận (khớp lựa chọn "mặc định tắt hết").
 };
+
+/** Migrate legacy perms -> tab.* keys in memory (transitional). Admin unaffected; users with tab.* keys unchanged. */
+function withMigratedPerms(data) {
+  if (!data || data.role === 'ADMIN') return data;
+  const perms = data.permissions;
+  const hasTabKeys = perms && typeof perms === 'object' &&
+    Object.keys(perms).some(k => k.startsWith('tab.'));
+  if (hasTabKeys) return data;
+  return { ...data, permissions: migrateLegacyToTabPerms(perms || {}) };
+}
 
 /**
  * Lấy permissions cho user dựa trên role + saved permissions
@@ -145,7 +158,7 @@ export function AuthProvider({ children }) {
             .then(({ data, error }) => {
               if (!error && data) {
                 data.role = data.role ? data.role.toUpperCase() : 'AGENT';
-                setUser(data);
+                setUser(withMigratedPerms(data));
               } else {
                 localStorage.removeItem(STORAGE_KEY);
               }
@@ -175,7 +188,7 @@ export function AuthProvider({ children }) {
     }
 
     data.role = data.role ? data.role.toUpperCase() : 'AGENT';
-    setUser(data);
+    setUser(withMigratedPerms(data));
 
     // Lưu credentials
     const authData = JSON.stringify({ id: data.id, pw: password });
@@ -230,6 +243,23 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within <AuthProvider>');
   return ctx;
+}
+
+export { getTabPerm, canSeeTab, canSeeModule } from './permRegistry';
+
+/** Hook: trả {view,create,edit,delete,io} cho 1 tab của user hiện tại */
+export function useTabPerm(module, tabId) {
+  const { user } = useAuth();
+  return _getTabPerm(user, module, tabId);
+}
+/** Hook tiện ích */
+export function useCanSeeTab(module, tabId) {
+  const { user } = useAuth();
+  return _canSeeTab(user, module, tabId);
+}
+export function useCanSeeModule(module) {
+  const { user } = useAuth();
+  return _canSeeModule(user, module);
 }
 
 export default AuthContext;

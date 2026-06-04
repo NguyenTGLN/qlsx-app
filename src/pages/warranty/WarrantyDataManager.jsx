@@ -6,6 +6,7 @@ import {
    Edit, Trash2, Save, X, Calendar as CalendarIcon, Download, Check
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { useTabPerm } from '../../lib/AuthContext';
 
 const MultiSelectDropdown = ({ options, selected, onChange, placeholder }) => {
   const [open, setOpen] = useState(false);
@@ -180,6 +181,7 @@ const DateRangeDropdown = ({ label, value, onChange }) => {
 };
 
 const WarrantyDataManager = ({ data, refreshData }) => {
+  const p = useTabPerm('warranty', 'dataManager');
   // Config columns dynamically
   const allColumns = useMemo(() => {
     if (!data || data.length === 0) return [
@@ -553,9 +555,11 @@ const WarrantyDataManager = ({ data, refreshData }) => {
           {/* Export Button */}
           {selectedRowIds.size > 0 && (
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <button onClick={exportToExcel} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#10b981', color: '#fff', border: 'none', padding: '0.4rem 1rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', boxShadow: '0 2px 4px rgba(16,185,129,0.2)' }}>
-                <Download size={16}/> Xuất Excel ({selectedRowIds.size})
-              </button>
+              {p.io && (
+                <button onClick={exportToExcel} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#10b981', color: '#fff', border: 'none', padding: '0.4rem 1rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem', boxShadow: '0 2px 4px rgba(16,185,129,0.2)' }}>
+                  <Download size={16}/> Xuất Excel ({selectedRowIds.size})
+                </button>
+              )}
               <button onClick={handleClearSelection} style={{ background: 'none', border: '1px solid #cbd5e1', padding: '0.4rem 0.8rem', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>
                 Bỏ chọn
               </button>
@@ -663,12 +667,16 @@ const WarrantyDataManager = ({ data, refreshData }) => {
                      ))}
                      <td style={{ padding: '0.6rem 0.5rem', textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                           <button onClick={(e) => { e.stopPropagation(); openEdit(row); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '4px', color: '#3b82f6', display: 'flex', alignItems: 'center', transition: '0.2s' }} title="Sửa phiếu">
-                              <Edit size={16} />
-                           </button>
-                           <button onClick={(e) => { e.stopPropagation(); handleDelete(row); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '4px', color: '#ef4444', display: 'flex', alignItems: 'center', transition: '0.2s' }} title="Xóa phiếu vĩnh viễn">
-                              <Trash2 size={16} />
-                           </button>
+                           {p.edit && (
+                             <button onClick={(e) => { e.stopPropagation(); openEdit(row); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '4px', color: '#3b82f6', display: 'flex', alignItems: 'center', transition: '0.2s' }} title="Sửa phiếu">
+                                <Edit size={16} />
+                             </button>
+                           )}
+                           {p.delete && (
+                             <button onClick={(e) => { e.stopPropagation(); handleDelete(row); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', borderRadius: '4px', color: '#ef4444', display: 'flex', alignItems: 'center', transition: '0.2s' }} title="Xóa phiếu vĩnh viễn">
+                                <Trash2 size={16} />
+                             </button>
+                           )}
                         </div>
                      </td>
                   </tr>

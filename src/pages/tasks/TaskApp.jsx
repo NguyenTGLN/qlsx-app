@@ -5,7 +5,8 @@ import { useNavigate } from 'react-router-dom';
     import WorkReport from './WorkReport';
     import ZaloReportModal from '../cskh/ZaloReportModal';
     import { useAuth } from '../../lib/AuthContext';
-    import { MODULE_PERMS, FEATURE_PERMS, ALL_PERMS } from '../../lib/AuthContext';
+    import { MODULE_PERMS, ALL_PERMS, canSeeTab, getTabPerm } from '../../lib/AuthContext';
+    import { PERM_REGISTRY, ALL_CAPS, CAP_LABEL, tabKey, migrateLegacyToTabPerms } from '../../lib/permRegistry';
     import ModuleShell, { TabButton } from '../../components/ModuleShell';
     import { ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart } from 'lucide-react';
 
@@ -370,11 +371,34 @@ import { useNavigate } from 'react-router-dom';
     // ============================================================
     function UserModal({user, onSave, onClose}) {
       const isEdit = !!user
-      const currentPerms = user ? getUserPerms(user) : DEFAULT_PERMS_AGENT
-      const [f,setF] = useState({id:user?.id||'',name:user?.name||'',password:'',role:user?.role||ROLE.AGENT,avatar:user?.avatar||'',originalId:user?.id||'',permissions:{...currentPerms}})
+      const hasTabKeys = user && user.permissions &&
+        Object.keys(user.permissions).some(k => k.startsWith('tab.'));
+      const seedPerms = !user
+        ? { ...DEFAULT_PERMS_AGENT }
+        : (hasTabKeys ? { ...user.permissions } : migrateLegacyToTabPerms(user.permissions || {}));
+      const [f,setF] = useState({id:user?.id||'',name:user?.name||'',password:'',role:user?.role||ROLE.AGENT,avatar:user?.avatar||'',originalId:user?.id||'',permissions:{...seedPerms}})
       const [busy,setBusy] = useState(false)
       const set = (k,v)=>setF(p=>({...p,[k]:v}))
-      const togglePerm = (k) => setF(p=>({...p, permissions:{...p.permissions,[k]:!p.permissions[k]}}))
+      const tabOn = (m, t, cap) => f.permissions[tabKey(m, t, cap)] === true;
+      const setTab = (m, t, cap, val) => setF(p => {
+        const np = { ...p.permissions };
+        const k = tabKey(m, t, cap);
+        if (val) np[k] = true; else delete np[k];
+        if (cap === 'view' && !val) {
+          for (const c of ALL_CAPS) if (c !== 'view') delete np[tabKey(m, t, c)];
+        }
+        return { ...p, permissions: np };
+      });
+      const bulkModule = (mod, mode) => setF(p => {
+        const np = { ...p.permissions };
+        for (const t of mod.tabs) for (const c of t.caps) {
+          const k = tabKey(mod.module, t.id, c);
+          if (mode === 'clear') delete np[k];
+          else if (mode === 'view') { if (c === 'view') np[k] = true; else delete np[k]; }
+          else if (mode === 'all') np[k] = true;
+        }
+        return { ...p, permissions: np };
+      });
 
       function changeRole(newRole) {
         const defPerms = newRole === ROLE.ADMIN
@@ -392,14 +416,6 @@ import { useNavigate } from 'react-router-dom';
 
       // Group styling for permission sections
       const sectionStyle = {marginBottom:'0.75rem',padding:'0.6rem',background:'#f8fafc',borderRadius:'10px',border:'1px solid #e2e8f0'}
-      const sectionTitle = (icon,text,color) => h('div',{style:{display:'flex',alignItems:'center',gap:'0.4rem',marginBottom:'0.5rem',paddingBottom:'0.4rem',borderBottom:'1px solid #e2e8f0'}},
-        h('span',{style:{fontSize:'1rem'}}, icon),
-        h('span',{style:{fontSize:'0.75rem',fontWeight:700,color:color||'#334155',textTransform:'uppercase',letterSpacing:'0.5px'}}, text)
-      )
-      const permCheckbox = (k,label) => h('label',{key:k, style:{display:'flex',alignItems:'center',gap:'0.4rem',fontSize:'0.75rem',color:f.permissions[k]?'#0f172a':'#94a3b8',cursor:'pointer',padding:'0.3rem 0.5rem',borderRadius:'6px',background:f.permissions[k]?'#dbeafe':'transparent',transition:'all 0.15s',border:f.permissions[k]?'1px solid #93c5fd':'1px solid transparent',fontWeight:f.permissions[k]?600:400}},
-        h('input',{type:'checkbox', checked:!!f.permissions[k], onChange:()=>togglePerm(k), style:{width:'14px',height:'14px',accentColor:'#2563eb'}}),
-        label
-      )
 
       return h(Modal,{title:isEdit?'Sửa nhân viên':'Thêm nhân viên',onClose},
         h('form',{onSubmit:submit},
@@ -409,20 +425,35 @@ import { useNavigate } from 'react-router-dom';
           h(Field,{label:'Vai trò'}, h('select',{className:sel,value:f.role,onChange:e=>changeRole(e.target.value)}, h('option',{value:ROLE.AGENT},'Nhân viên'), h('option',{value:ROLE.ADMIN},'Admin'))),
           
           f.role !== ROLE.ADMIN && h('div',{style:{marginTop:'0.75rem',paddingTop:'0.75rem',borderTop:'1px solid #e2e8f0'}},
-            // Section 1: Module Access
-            h('div',{style:sectionStyle},
-              sectionTitle('🔐','Truy cập Phân hệ','#2563eb'),
-              h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.35rem'}},
-                Object.entries(MODULE_PERMS).map(([k,label]) => permCheckbox(k, label.replace('Truy cập ','')))
-              )
-            ),
-            // Section 2: Feature Permissions (Công Việc)
-            h('div',{style:sectionStyle},
-              sectionTitle('⚙️','Quyền tính năng (Công Việc)','#7c3aed'),
-              h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.35rem'}},
-                Object.entries(FEATURE_PERMS).map(([k,label]) => permCheckbox(k, label))
-              )
-            )
+            PERM_REGISTRY.map(mod => {
+              const onCount = mod.tabs.filter(t => tabOn(mod.module, t.id, 'view')).length;
+              return h('details', {key:mod.module, style:sectionStyle},
+                h('summary', {style:{cursor:'pointer',fontSize:'0.8rem',fontWeight:700,color:'#334155',display:'flex',alignItems:'center',gap:'0.4rem'}},
+                  h('span',null, mod.icon+' '+mod.label),
+                  h('span',{style:{color:'#94a3b8',fontWeight:400}}, ` — ${onCount}/${mod.tabs.length} tab`),
+                ),
+                h('div',{style:{display:'flex',gap:'0.3rem',margin:'0.4rem 0'}},
+                  h('button',{type:'button',onClick:()=>bulkModule(mod,'view'),className:'text-xs px-2 py-0.5 rounded bg-slate-100'},'Chỉ xem'),
+                  h('button',{type:'button',onClick:()=>bulkModule(mod,'all'),className:'text-xs px-2 py-0.5 rounded bg-blue-100'},'Toàn quyền'),
+                  h('button',{type:'button',onClick:()=>bulkModule(mod,'clear'),className:'text-xs px-2 py-0.5 rounded bg-slate-100'},'Bỏ chọn'),
+                ),
+                h('div',{style:{display:'grid',gridTemplateColumns:'1.6fr repeat(5, 1fr)',gap:'0.2rem',fontSize:'0.65rem',color:'#64748b',fontWeight:600,padding:'0.2rem 0'}},
+                  h('span',null,'Tab'), ...ALL_CAPS.map(c => h('span',{key:c,style:{textAlign:'center'}}, CAP_LABEL[c])),
+                ),
+                mod.tabs.map(t => h('div',{key:t.id, style:{display:'grid',gridTemplateColumns:'1.6fr repeat(5, 1fr)',gap:'0.2rem',alignItems:'center',padding:'0.15rem 0'}},
+                  h('span',{style:{fontSize:'0.7rem',color:'#0f172a'}}, t.label),
+                  ...ALL_CAPS.map(c => {
+                    if (!t.caps.includes(c)) return h('span',{key:c,style:{textAlign:'center',color:'#cbd5e1'}}, '—');
+                    const disabled = c !== 'view' && !tabOn(mod.module, t.id, 'view');
+                    return h('span',{key:c,style:{textAlign:'center'}},
+                      h('input',{type:'checkbox', disabled, checked:tabOn(mod.module,t.id,c),
+                        onChange:e=>setTab(mod.module,t.id,c,e.target.checked),
+                        style:{width:'14px',height:'14px',accentColor:'#2563eb',opacity:disabled?0.4:1}}),
+                    );
+                  }),
+                )),
+              );
+            }),
           ),
 
           h('div',{className:'flex justify-end gap-2 pt-3 mt-3 border-t border-gray-100'}, h('button',{type:'button',onClick:onClose,className:btn.secondary+' px-3 py-1.5 text-xs'},'Hủy'), h('button',{type:'submit',disabled:busy,className:btn.primary+' px-3 py-1.5 text-xs'},busy?'...':'Lưu'))
@@ -698,7 +729,7 @@ import { useNavigate } from 'react-router-dom';
     // ============================================================
     function TaskTable({tasks,users,currentUser,assFilter,setAssFilter,onEdit,onDetail,onDelete,onBulkDelete}) {
       const [search,setSearch] = useState(''); const [stFilter,setStFilter] = useState('IN_PROGRESS'); const isAdmin = currentUser.role===ROLE.ADMIN
-      const canDelete = hasPerm(currentUser, 'delete_task');
+      const canDelete = getTabPerm(currentUser, 'tasks', 'tasks').delete;
       const filtered = tasks.filter(t=>{
         if (stFilter!=='ALL'&&t.status!==stFilter) return false; if (assFilter!=='ALL'&&t.assignee_id!==assFilter) return false
         if (search) { const q=search.toLowerCase(); if (!t.title.toLowerCase().includes(q)&&!t.id.toLowerCase().includes(q)&&!(t.assignee?.name||'').toLowerCase().includes(q)&&!(t.label||'').toLowerCase().includes(q)) return false }
@@ -754,7 +785,8 @@ import { useNavigate } from 'react-router-dom';
     function UserTaskBoard({user, tasks, onBack, onDetail, onEdit, onUpdate, onRemind, onDelete, currentUser}) {
       const [tab, setTab] = useState('ALL');
       const isAdmin = currentUser.role === ROLE.ADMIN;
-      const canDelete = hasPerm(currentUser, 'delete_task');
+      const tPerm = getTabPerm(currentUser, 'tasks', 'tasks');
+      const canDelete = tPerm.delete;
 
       const sortKanbanTasks = (taskArray) => {
         const now = new Date();
@@ -859,7 +891,7 @@ import { useNavigate } from 'react-router-dom';
               h('div', {className: 'pt-2 sm:pt-3 border-t border-gray-100 flex justify-between gap-1 w-full pl-1 sm:pl-3'},
                 hasPerm(currentUser,'remind_task') && !isCompleted && h('button', {onClick: () => onRemind(t), className: 'flex-1 px-0 bg-blue-600 text-white py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-blue-700 flex items-center justify-center gap-0.5 transition-colors shadow-sm'}, h(IconBell), 'Nhắc'),
                 h('button', {onClick: () => onDetail(t), className: 'flex-1 px-0 bg-gray-100 text-gray-700 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-gray-200 flex items-center justify-center gap-0.5 transition-colors'}, h(IconEye), 'Xem'),
-                hasPerm(currentUser,'edit_task') && (!isCompleted || isAdmin) && h('button', {onClick: () => onEdit(t), className: 'flex-1 px-0 border border-gray-200 text-gray-700 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-gray-50 flex items-center justify-center gap-0.5 transition-colors'}, h(IconEdit), 'Sửa'),
+                tPerm.edit && (!isCompleted || isAdmin) && h('button', {onClick: () => onEdit(t), className: 'flex-1 px-0 border border-gray-200 text-gray-700 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-gray-50 flex items-center justify-center gap-0.5 transition-colors'}, h(IconEdit), 'Sửa'),
                 hasPerm(currentUser,'change_status') && !isCompleted && h('button', {onClick: () => quickStatus(t, STATUS.COMPLETED), className: 'flex-1 px-0 bg-emerald-500 text-white py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-emerald-600 flex items-center justify-center gap-0.5 transition-colors shadow-sm'}, h(IconCheck), 'Xong'),
                 hasPerm(currentUser,'cancel_task') && t.status !== STATUS.CANCELLED && h('button', {onClick: () => quickStatus(t, STATUS.CANCELLED), className: 'flex-1 px-0 bg-yellow-100 text-yellow-700 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-yellow-200 flex items-center justify-center gap-0.5 transition-colors shadow-sm'}, h(IconX), 'Hủy'),
                 canDelete && h('button', {onClick: (e) => { e.stopPropagation(); onDelete(t); }, className: 'flex-1 px-0 bg-red-100 text-red-600 py-1 sm:py-2 rounded-lg text-[9px] sm:text-[11px] font-bold hover:bg-red-200 flex items-center justify-center gap-0.5 transition-colors shadow-sm'}, h(IconTrash), 'Xóa'),
@@ -909,8 +941,9 @@ import { useNavigate } from 'react-router-dom';
     // ============================================================
     function TaskDetail({task, currentUser, onUpdate, onAddUpdate, onDelete, onRemind, onClose, onOpenEdit}) {
       const [comment, setComment] = useState(''); const [busy, setBusy] = useState(false); const isAdmin  = currentUser.role === ROLE.ADMIN; 
-      const canEdit = hasPerm(currentUser,'edit_task');
-      const canDelete = hasPerm(currentUser,'delete_task');
+      const tPerm = getTabPerm(currentUser, 'tasks', 'tasks');
+      const canEdit = tPerm.edit;
+      const canDelete = tPerm.delete;
       const canStatus = hasPerm(currentUser,'change_status');
       const canUpdate = hasPerm(currentUser,'add_update');
       const canCancel = hasPerm(currentUser,'cancel_task');
@@ -1014,7 +1047,7 @@ import { useNavigate } from 'react-router-dom';
         }
       }, [authUser])
 
-      useEffect(() => { if (me && !hasPerm(me,'view_dashboard') && view === 'dashboard') { setView('tasks'); setAssFilter(me.id) } }, [me, view])
+      useEffect(() => { if (me && !canSeeTab(me,'tasks','dashboard') && view === 'dashboard') { setView('tasks'); setAssFilter(me.id) } }, [me, view])
 
       const lastCheckDayRef = useRef(new Date().toISOString().split('T')[0])
       useEffect(() => {
@@ -1180,11 +1213,13 @@ import { useNavigate } from 'react-router-dom';
 
       if (!me) return h('div',{className:'flex items-center justify-center h-64'}, h('div',{className:'text-blue-500 font-bold animate-pulse text-sm'},'Đang tải...'))
 
+      const tPerm = getTabPerm(me, 'tasks', 'tasks'); // {view,create,edit,delete}
+
       // Build tabs array based on permissions
       const tabItems = [
-        hasPerm(me,'view_dashboard') && h(TabButton, {key:'dashboard', active: view==='dashboard', onClick: ()=>navTo('dashboard'), label:'Tổng quan', color:'#2563eb'}),
-        hasPerm(me,'view_tasks') && h(TabButton, {key:'tasks', active: view==='tasks', onClick: ()=>navTo('tasks'), label:'Công việc', color:'#2563eb'}),
-        hasPerm(me,'view_dashboard') && h(TabButton, {key:'work_report', active: view==='work_report', onClick: ()=>navTo('work_report'), label:'Báo Cáo', color:'#2563eb'}),
+        canSeeTab(me,'tasks','dashboard') && h(TabButton, {key:'dashboard', active: view==='dashboard', onClick: ()=>navTo('dashboard'), label:'Tổng quan', color:'#2563eb'}),
+        canSeeTab(me,'tasks','tasks') && h(TabButton, {key:'tasks', active: view==='tasks', onClick: ()=>navTo('tasks'), label:'Công việc', color:'#2563eb'}),
+        canSeeTab(me,'tasks','work_report') && h(TabButton, {key:'work_report', active: view==='work_report', onClick: ()=>navTo('work_report'), label:'Báo Cáo', color:'#2563eb'}),
       ].filter(Boolean)
 
       return h(ModuleShell, {
@@ -1205,21 +1240,21 @@ import { useNavigate } from 'react-router-dom';
                      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', maxWidth: 800, width: '100%', alignSelf: 'center', margin: '0 auto'
                    }
                  },
-                   hasPerm(me, 'view_dashboard') && h('button', {
+                   canSeeTab(me,'tasks','dashboard') && h('button', {
                      onClick: () => navTo('dashboard'),
                      style: { background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: '1.25rem 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'all 0.25s', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07)' }
                    },
                      h('div', {style: {width: 46, height: 46, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #2563eb, #3b82f6)', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)'}}, h(LayoutDashboard, {size: 24, color: '#fff'})),
                      h('h3', {style: {margin: 0, fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', textAlign: 'center'}}, 'Tổng quan')
                    ),
-                   hasPerm(me, 'view_tasks') && h('button', {
+                   canSeeTab(me,'tasks','tasks') && h('button', {
                      onClick: () => navTo('tasks'),
                      style: { background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: '1.25rem 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'all 0.25s', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07)' }
                    },
                      h('div', {style: {width: 46, height: 46, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #2563eb, #3b82f6)', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)'}}, h(ListTodo, {size: 24, color: '#fff'})),
                      h('h3', {style: {margin: 0, fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', textAlign: 'center'}}, 'Công việc')
                    ),
-                   hasPerm(me, 'view_dashboard') && h('button', {
+                   canSeeTab(me,'tasks','work_report') && h('button', {
                      onClick: () => navTo('work_report'),
                      style: { background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: '1.25rem 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'all 0.25s', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07)' }
                    },
@@ -1227,9 +1262,9 @@ import { useNavigate } from 'react-router-dom';
                      h('h3', {style: {margin: 0, fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', textAlign: 'center'}}, 'Báo Cáo')
                    )
                  )
-               : view==='dashboard'&&hasPerm(me,'view_dashboard') ? h(Dashboard, {tasks, users, currentUser: me, pendingOrders, onUserClick:handleUserClick, onDetail:t=>setDetailTask(t), onAddUser: ()=>setUserModal({}), onEditUser: u=>setUserModal({user:u})})
-               : view==='work_report' && hasPerm(me,'view_dashboard') ? h(WorkReport)
-               : view==='tasks' && assFilter !== 'ALL' ? h(UserTaskBoard, { user: users.find(u=>u.id===assFilter) || me, tasks, currentUser: me, onBack: hasPerm(me,'view_dashboard') ? () => { setView('dashboard'); setAssFilter('ALL'); } : null, onDetail: t=>setDetailTask(t), onEdit: t=>setTaskModal({task:t}), onUpdate: handleUpdateTask, onRemind: handleRemind, onDelete: handleDeleteTask })
+               : view==='dashboard'&&canSeeTab(me,'tasks','dashboard') ? h(Dashboard, {tasks, users, currentUser: me, pendingOrders, onUserClick:handleUserClick, onDetail:t=>setDetailTask(t), onAddUser: ()=>setUserModal({}), onEditUser: u=>setUserModal({user:u})})
+               : view==='work_report' && canSeeTab(me,'tasks','work_report') ? h(WorkReport)
+               : view==='tasks' && assFilter !== 'ALL' ? h(UserTaskBoard, { user: users.find(u=>u.id===assFilter) || me, tasks, currentUser: me, onBack: canSeeTab(me,'tasks','dashboard') ? () => { setView('dashboard'); setAssFilter('ALL'); } : null, onDetail: t=>setDetailTask(t), onEdit: t=>setTaskModal({task:t}), onUpdate: handleUpdateTask, onRemind: handleRemind, onDelete: handleDeleteTask })
                : view==='tasks' && assFilter === 'ALL' ? h('div',null, h('div',{className:'flex items-center justify-between mb-4'}, h('h1',{className:'text-sm sm:text-xl font-bold text-gray-900'}, 'Tất cả công việc'), h('button',{onClick:()=>{dataCache.invalidate(TASK_CACHE_KEY);bootstrap(me,true);},className:btn.secondary+' px-2 py-1 text-[10px] sm:text-xs'},'↻ Làm mới')), h(TaskTable,{ tasks, users, currentUser:me, assFilter, setAssFilter, onEdit: t=>setTaskModal({task:t}), onDetail:t=>setDetailTask(t), onDelete:handleDeleteTask, onBulkDelete:handleBulkDelete }))
                : null
         ),
@@ -1291,7 +1326,7 @@ import { useNavigate } from 'react-router-dom';
           ),
 
           // Tạo việc mới
-          hasPerm(me,'create_task') && h('button', {
+          tPerm.create && h('button', {
             onClick: () => setTaskModal({}),
             style: {
               display: 'flex', alignItems: 'center', gap: '6px',

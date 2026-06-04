@@ -11,7 +11,7 @@ import { shortDate, ColumnToggleModal } from '../../components/WarehouseSharedUI
 const TABLE_COLS = ['ngay_xuat', 'san_pham', 'sl', 'ma_don_hang'];
 const COL_LABELS = { ngay_xuat: 'Ngày xuất', san_pham: 'Sản phẩm', sl: 'Số lượng', ma_don_hang: 'Mã ĐH' };
 
-export default function SaveExportTab({ perms = { edit: true, del: true } }) {
+export default function SaveExportTab({ perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
@@ -358,11 +358,11 @@ export default function SaveExportTab({ perms = { edit: true, del: true } }) {
             {perms.edit && selectedKeys.size === 1 && (
               <button onClick={()=>setEditRow(data.find(r=>r.id===Array.from(selectedKeys)[0]))} style={{display:'flex',alignItems:'center',gap:5,padding:'0.4rem 0.75rem',borderRadius:7,border:'none',background:'#f59e0b',color:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,flexShrink:0}}><Edit3 size={14}/>Sửa</button>
             )}
-            {perms.del && <button onClick={handleDelete} style={{display:'flex',alignItems:'center',gap:5,padding:'0.4rem 0.75rem',borderRadius:7,border:'none',background:'#ef4444',color:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,marginLeft:'auto',flexShrink:0}}><Trash2 size={14}/>Xóa</button>}
+            {perms.delete && <button onClick={handleDelete} style={{display:'flex',alignItems:'center',gap:5,padding:'0.4rem 0.75rem',borderRadius:7,border:'none',background:'#ef4444',color:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,marginLeft:'auto',flexShrink:0}}><Trash2 size={14}/>Xóa</button>}
           </>
         ) : (
           <>
-            {perms.edit && <button
+            {perms.io && <button
               onClick={() => setShowImportModal(true)}
               style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.4rem 0.75rem', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, marginLeft: 'auto' }}
             >

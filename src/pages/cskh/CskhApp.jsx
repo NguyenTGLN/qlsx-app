@@ -3,7 +3,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb as db } from '../../lib/task_supabase';
 import { dataCache } from '../../lib/dataCache';
 import { HeadphonesIcon, LayoutDashboard, Calendar, MessageSquare, Send } from 'lucide-react';
-import { useAuth } from '../../lib/AuthContext';
+import { useAuth, canSeeTab, getTabPerm } from '../../lib/AuthContext';
 import ModuleShell, { TabButton, ActionButton } from '../../components/ModuleShell';
 import DateRangeDropdown from '../../components/DateRangeDropdown';
 import CskhDashboard from './CskhDashboard';
@@ -79,10 +79,18 @@ const isDateInRange = (dateStr, preset, customRange) => {
 };
 
 const CskhApp = () => {
-  const { hasPerm, isAdmin } = useAuth();
-  const canViewKpi = isAdmin || hasPerm('zalo_kpi_view');
+  const { user } = useAuth();
+  const canViewDashboard = canSeeTab(user, 'cskh', 'dashboard');
+  const canViewKpi = canSeeTab(user, 'cskh', 'zalo_kpi');
+  const canViewReport = canSeeTab(user, 'cskh', 'zalo_report');
+  const canCreateReport = getTabPerm(user, 'cskh', 'zalo_report').create;
 
   const [activeTab, setActiveTab] = usePersistedState('cskh_activeTab', 'menu');
+
+  // Nếu tab đã lưu không còn quyền xem → quay về menu
+  useEffect(() => {
+    if (activeTab !== 'menu' && !canSeeTab(user, 'cskh', activeTab)) setActiveTab('menu');
+  }, [activeTab, user, setActiveTab]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [showZaloModal, setShowZaloModal] = useState(false);
@@ -194,13 +202,13 @@ const CskhApp = () => {
       headerRight={<>
         {/* Date filter — DateRangeDropdown chuẩn (đồng bộ với Kho) */}
         <DateRangeDropdown label="Ngày" value={dateRange} onChange={setDateRange} />
-        <ActionButton onClick={() => setShowZaloModal(true)} icon={Send} label="BC Zalo" color="#0068ff" />
+        {canCreateReport && <ActionButton onClick={() => setShowZaloModal(true)} icon={Send} label="BC Zalo" color="#0068ff" />}
       </>}
       tabs={activeTab !== 'menu' ? (
         <>
-          <TabButton active={activeTab==='dashboard'} onClick={()=>setActiveTab('dashboard')} icon={LayoutDashboard} label="Tổng Quan" color="#6366f1" />
+          {canViewDashboard && <TabButton active={activeTab==='dashboard'} onClick={()=>setActiveTab('dashboard')} icon={LayoutDashboard} label="Tổng Quan" color="#6366f1" />}
           {canViewKpi && <TabButton active={activeTab==='zalo_kpi'} onClick={()=>setActiveTab('zalo_kpi')} icon={HeadphonesIcon} label="KPI CSKH Zalo" color="#16a34a" />}
-          <TabButton active={activeTab==='zalo_report'} onClick={()=>setActiveTab('zalo_report')} icon={MessageSquare} label="BC Trực Zalo" color="#0068ff" />
+          {canViewReport && <TabButton active={activeTab==='zalo_report'} onClick={()=>setActiveTab('zalo_report')} icon={MessageSquare} label="BC Trực Zalo" color="#0068ff" />}
         </>
       ) : null}
     >
@@ -215,9 +223,9 @@ const CskhApp = () => {
             alignSelf: 'center',
           }}>
             {[
-              { id: 'dashboard', label: 'Tổng Quan', icon: LayoutDashboard, color: '#6366f1' },
+              ...(canViewDashboard ? [{ id: 'dashboard', label: 'Tổng Quan', icon: LayoutDashboard, color: '#6366f1' }] : []),
               ...(canViewKpi ? [{ id: 'zalo_kpi', label: 'KPI CSKH Zalo', icon: HeadphonesIcon, color: '#16a34a' }] : []),
-              { id: 'zalo_report', label: 'BC Trực Zalo (Thủ công)', icon: MessageSquare, color: '#0068ff' }
+              ...(canViewReport ? [{ id: 'zalo_report', label: 'BC Trực Zalo (Thủ công)', icon: MessageSquare, color: '#0068ff' }] : [])
             ].map(tabDef => (
               <button
                 key={tabDef.id}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useNavigate } from 'react-router-dom';
 import { supabase as db } from '../../lib/supabase';
-import { useAuth, hasPerm } from '../../lib/AuthContext';
+import { useAuth, getTabPerm, canSeeTab } from '../../lib/AuthContext';
 import { Package, RefreshCw, Search, ChevronLeft, ChevronRight, Download, Database, Loader2, Trash2, Edit3, X, Check, Calendar, Eye, EyeOff, ChevronDown, Upload, Layers, List, GitMerge, Settings, ArrowUp, ArrowDown, Printer, LayoutGrid, Star } from 'lucide-react';
 import ModuleShell from '../../components/ModuleShell';
 import * as XLSX from 'xlsx';
@@ -559,13 +559,12 @@ export default function KhoHangApp() {
   };
 
   // Phân quyền theo nhóm thao tác trong Kho. Vào được Kho (access_warehouse) mà
-  // không có nhóm nào = chỉ xem. Admin có hết qua hasPerm.
+  // không có nhóm nào = chỉ xem. Admin có hết qua getTabPerm/canSeeTab.
   const { user } = useAuth();
+  // perms của TAB đang mở — dùng CAP CHUẨN (chính xác) cho từng nút trong tab.
+  const tp = getTabPerm(user, 'kho', activeTab);
   const perms = {
-    edit:    hasPerm(user, 'kho_edit'),
-    catalog: hasPerm(user, 'kho_catalog'),
-    del:     hasPerm(user, 'kho_delete'),
-    order:   hasPerm(user, 'kho_order'),
+    view: tp.view, create: tp.create, edit: tp.edit, delete: tp.delete, io: tp.io,
   };
 
   // Tabs Config State (persisted)
@@ -585,6 +584,14 @@ export default function KhoHangApp() {
     return merged;
   })();
   const setTabsConfig = setRawTabsConfig;
+
+  // Tab nào user được xem (view). Admin = tất cả. AND với cấu hình visible ở từng render site.
+  const visibleTabIds = ALL_TABS.filter(t => canSeeTab(user, 'kho', t.id)).map(t => t.id);
+
+  // Nếu tab đang mở mất quyền xem → quay về menu.
+  useEffect(() => {
+    if (activeTab !== 'menu' && !visibleTabIds.includes(activeTab)) setActiveTab('menu');
+  }, [activeTab, visibleTabIds, setActiveTab]);
 
   // ── Build query with filters ──
   const buildQuery = useCallback((countOnly = false) => {
@@ -718,7 +725,7 @@ export default function KhoHangApp() {
           <div style={{display:'flex',alignItems:'center',gap:6,flex:1,padding:'0.35rem 0',minWidth:0}}>
             <div style={{display:'flex',alignItems:'center',gap:5,overflowX:'auto',flex:1,minWidth:0}}>
               {(() => {
-                const pinnedDefs = tabsConfig.filter(t=>t.visible && pinnedTabs.includes(t.id)).map(t=>ALL_TABS.find(a=>a.id===t.id)).filter(Boolean);
+                const pinnedDefs = tabsConfig.filter(t=>t.visible && pinnedTabs.includes(t.id) && visibleTabIds.includes(t.id)).map(t=>ALL_TABS.find(a=>a.id===t.id)).filter(Boolean);
                 const activeDef = ALL_TABS.find(t => t.id === activeTab);
                 const showList = (activeDef && !pinnedDefs.some(d=>d.id===activeTab)) ? [activeDef, ...pinnedDefs] : pinnedDefs;
                 return showList.map(tabDef => {
@@ -769,7 +776,7 @@ export default function KhoHangApp() {
             </div>
             <p style={{margin:'0 0 0.7rem 0',fontSize:'0.72rem',color:'#94a3b8',display:'flex',alignItems:'center',gap:4}}><Star size={13} color="#f59e0b" fill="#f59e0b"/> Chạm ngôi sao để ghim tab dùng thường xuyên ra thanh ngoài.</p>
             <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:8}}>
-              {tabsConfig.filter(t => t.visible).map(tConfig => {
+              {tabsConfig.filter(t => t.visible && visibleTabIds.includes(t.id)).map(tConfig => {
                 const tabDef = ALL_TABS.find(t => t.id === tConfig.id);
                 if (!tabDef) return null;
                 const Icon = tabDef.icon;
@@ -808,7 +815,7 @@ export default function KhoHangApp() {
             maxWidth: 800,
             width: '100%',
           }}>
-            {tabsConfig.filter(t => t.visible).map(tConfig => {
+            {tabsConfig.filter(t => t.visible && visibleTabIds.includes(t.id)).map(tConfig => {
               const tabDef = ALL_TABS.find(t => t.id === tConfig.id);
               if (!tabDef) return null;
               const Icon = tabDef.icon;
@@ -868,7 +875,7 @@ export default function KhoHangApp() {
       ) : activeTab === 'print_queue' ? (
         <PrintQueueTab />
       ) : activeTab === 'du-lieu-nhap' ? (
-        <ImportLogsTab />
+        <ImportLogsTab perms={perms} />
       ) : activeTab === 'luu-xuat' ? (
         <SaveExportTab perms={perms} />
       ) : activeTab === 'ton-kho-so-sach' ? (
@@ -995,11 +1002,11 @@ export default function KhoHangApp() {
           </select>
           {selected.size > 0 && <>
             <span style={{...s.pill('#fef2f2','#ef4444'),flexShrink:0}}>✓ {selected.size}</span>
-            {perms.del && <button onClick={handleDelete} style={{...s.btn,...s.btnD,fontSize:'0.75rem',flexShrink:0}}><Trash2 size={13}/>Xóa</button>}
+            {perms.delete && <button onClick={handleDelete} style={{...s.btn,...s.btnD,fontSize:'0.75rem',flexShrink:0}}><Trash2 size={13}/>Xóa</button>}
             <button onClick={deselectAll} style={{...s.btn,fontSize:'0.75rem',padding:'0.35rem 0.4rem',flexShrink:0}}><X size={13}/></button>
           </>}
           <button onClick={exportCSV} disabled={loading} style={{...s.btn,color:'#059669',flexShrink:0,marginLeft:'auto'}}><Download size={14}/>CSV</button>
-          {perms.edit && <button onClick={()=>setShowImport(true)} disabled={loading} style={{...s.btn,color:'#7c3aed',flexShrink:0}}><Upload size={14}/>Import</button>}
+          {perms.io && <button onClick={()=>setShowImport(true)} disabled={loading} style={{...s.btn,color:'#7c3aed',flexShrink:0}}><Upload size={14}/>Import</button>}
           <button onClick={()=>{setPage(1);fetchPage();}} disabled={loading} style={{...s.btn,padding:'0.35rem 0.4rem',flexShrink:0}} title="Làm mới">
             <RefreshCw size={14} style={{animation:loading?'spin 1s linear infinite':'none',color:'#0891b2'}}/>
           </button>

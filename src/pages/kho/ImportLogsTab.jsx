@@ -62,7 +62,7 @@ function ColumnToggle({ columns, hiddenCols, setHiddenCols }) {
   );
 }
 
-export default function ImportLogsTab() {
+export default function ImportLogsTab({ perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
@@ -407,19 +407,23 @@ export default function ImportLogsTab() {
           <>
             <span style={{fontSize:'0.8rem',fontWeight:700,color:'#1e3a8a',whiteSpace:'nowrap'}}>{selectedKeys.size} đã chọn</span>
             <button onClick={handleExportExcel} style={{display:'flex',alignItems:'center',gap:5,padding:'0.4rem 0.75rem',borderRadius:7,border:'none',background:'#10b981',color:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,flexShrink:0}}><Download size={14}/>Xuất</button>
-            {selectedKeys.size === 1 && (
+            {perms.edit && selectedKeys.size === 1 && (
               <button onClick={()=>setEditRow(data.find(r=>r.id===Array.from(selectedKeys)[0]))} style={{display:'flex',alignItems:'center',gap:5,padding:'0.4rem 0.75rem',borderRadius:7,border:'none',background:'#f59e0b',color:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,flexShrink:0}}><Edit3 size={14}/>Sửa</button>
             )}
-            <button onClick={handleDelete} style={{display:'flex',alignItems:'center',gap:5,padding:'0.4rem 0.75rem',borderRadius:7,border:'none',background:'#ef4444',color:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,marginLeft:'auto',flexShrink:0}}><Trash2 size={14}/>Xóa</button>
+            {perms.delete && (
+              <button onClick={handleDelete} style={{display:'flex',alignItems:'center',gap:5,padding:'0.4rem 0.75rem',borderRadius:7,border:'none',background:'#ef4444',color:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,marginLeft:'auto',flexShrink:0}}><Trash2 size={14}/>Xóa</button>
+            )}
           </>
         ) : (
           <>
-            <button 
-              onClick={() => setShowImportModal(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.4rem 0.75rem', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, marginLeft: 'auto' }}
-            >
-              <Upload size={14} /> Nhập Excel
-            </button>
+            {perms.io && (
+              <button
+                onClick={() => setShowImportModal(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '5px', background: '#0ea5e9', color: '#fff', border: 'none', borderRadius: '7px', padding: '0.4rem 0.75rem', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, marginLeft: 'auto' }}
+              >
+                <Upload size={14} /> Nhập Excel
+              </button>
+            )}
             <button 
               onClick={handleExportExcel}
               disabled={loading}

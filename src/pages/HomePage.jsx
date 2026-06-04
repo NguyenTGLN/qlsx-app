@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../lib/AuthContext';
+import { useAuth, canSeeModule } from '../lib/AuthContext';
 import {
   BarChart2, ClipboardList, Package, ShieldAlert,
   HeadphonesIcon, Warehouse, ShieldCheck, MonitorPlay,
@@ -19,6 +19,7 @@ const MODULES = [
     color: '#0d9488',
     gradient: 'linear-gradient(135deg, #0d9488, #14b8a6)',
     permKey: 'access_warehouse',
+    regModule: 'kho',
   },
   {
     id: 'production',
@@ -29,6 +30,7 @@ const MODULES = [
     color: '#0891b2',
     gradient: 'linear-gradient(135deg, #0891b2, #06b6d4)',
     permKey: 'access_production',
+    regModule: 'production',
   },
   {
     id: 'quality',
@@ -39,6 +41,7 @@ const MODULES = [
     color: '#16a34a',
     gradient: 'linear-gradient(135deg, #16a34a, #22c55e)',
     permKey: 'access_quality',
+    regModule: 'quality',
   },
   {
     id: 'warranty',
@@ -49,6 +52,7 @@ const MODULES = [
     color: '#ef4444',
     gradient: 'linear-gradient(135deg, #ef4444, #f87171)',
     permKey: 'access_warranty',
+    regModule: 'warranty',
   },
   {
     id: 'cskh',
@@ -59,6 +63,7 @@ const MODULES = [
     color: '#8b5cf6',
     gradient: 'linear-gradient(135deg, #8b5cf6, #a78bfa)',
     permKey: 'access_cskh',
+    regModule: 'cskh',
   },
   {
     id: 'tasks',
@@ -69,6 +74,7 @@ const MODULES = [
     color: '#6366f1',
     gradient: 'linear-gradient(135deg, #6366f1, #818cf8)',
     permKey: 'access_tasks',
+    regModule: 'tasks',
   },
   {
     id: 'overview',
@@ -79,6 +85,7 @@ const MODULES = [
     color: '#2563eb',
     gradient: 'linear-gradient(135deg, #2563eb, #3b82f6)',
     permKey: 'access_overview',
+    regModule: 'overview',
   },
   {
     id: 'tv',
@@ -94,17 +101,17 @@ const MODULES = [
 
 const HomePage = () => {
   const navigate = useNavigate();
-  const { user, logout, isAdmin, hasModule } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
-  // Lọc phân hệ theo quyền truy cập
+  // Lọc phân hệ theo quyền truy cập (tab-level: hiện nếu user có 'view' ≥ 1 tab của phân hệ)
   const accessibleModules = MODULES.filter(m => {
-    if (!m.permKey) return true; // TV luôn hiện
-    return isAdmin || hasModule(m.permKey);
+    if (!m.regModule) return true; // TV (không thuộc registry) luôn hiện
+    return canSeeModule(user, m.regModule);
   });
 
   return (

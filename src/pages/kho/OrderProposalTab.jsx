@@ -34,7 +34,7 @@ const s = {
   input: { padding:'0.25rem 0.4rem',border:'1px solid #e2e8f0',borderRadius:6,fontSize:'0.75rem',outline:'none',background:'#f8fafc',color:'#334155' },
 };
 
-export default function OrderProposalTab({ navigateTo, perms = { order: true, del: true } }) {
+export default function OrderProposalTab({ navigateTo, perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -299,7 +299,7 @@ export default function OrderProposalTab({ navigateTo, perms = { order: true, de
                       <td style={{...td,color:'#64748b'}}>{row.unit}</td>
                       <td style={{...td,color:'#64748b',whiteSpace:'nowrap'}}>{row.ngay_de_xuat || '—'}</td>
                       <td style={{...td}}>
-                        <input type="date" value={row.ngay_du_kien||''} disabled={isDone || !perms.order}
+                        <input type="date" value={row.ngay_du_kien||''} disabled={isDone || !perms.edit}
                           onChange={e=>handleUpdateRow(row.id,'ngay_du_kien',e.target.value)}
                           onBlur={()=>handleSaveRow(row)}
                           style={{...s.input,width:110,color: row.days_remaining!==null&&row.days_remaining<0?'#ef4444':'#334155'}}/>
@@ -309,7 +309,7 @@ export default function OrderProposalTab({ navigateTo, perms = { order: true, de
                       </td>
                       <td style={{...td,textAlign:'right',color:'#64748b'}}>{Number(row.calculated_qty).toLocaleString('vi-VN')}</td>
                       <td style={{...td,textAlign:'right'}}>
-                        <input type="number" min="0" value={row.actual_qty} disabled={isDone || !perms.order}
+                        <input type="number" min="0" value={row.actual_qty} disabled={isDone || !perms.edit}
                           onChange={e=>handleUpdateRow(row.id,'actual_qty',e.target.value)}
                           onBlur={()=>handleSaveRow(row)}
                           style={{...s.input,width:60,textAlign:'right',fontWeight:700,color:'#0f172a'}}/>
@@ -318,7 +318,7 @@ export default function OrderProposalTab({ navigateTo, perms = { order: true, de
                         {row.received > 0 ? row.received.toLocaleString('vi-VN') : '—'}
                       </td>
                       <td style={{...td}}>
-                        <select value={row.tien_do||'Mới'} disabled={isDone || !perms.order}
+                        <select value={row.tien_do||'Mới'} disabled={isDone || !perms.edit}
                           onChange={e=>{handleUpdateRow(row.id,'tien_do',e.target.value);}}
                           onBlur={()=>handleSaveRow(row)}
                           style={{...s.input,minWidth:120,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`,fontWeight:700}}>
@@ -326,24 +326,24 @@ export default function OrderProposalTab({ navigateTo, perms = { order: true, de
                         </select>
                       </td>
                       <td style={{...td}}>
-                        <input type="text" value={row.note||''} placeholder="..." disabled={isDone || !perms.order}
+                        <input type="text" value={row.note||''} placeholder="..." disabled={isDone || !perms.edit}
                           onChange={e=>handleUpdateRow(row.id,'note',e.target.value)}
                           onBlur={()=>handleSaveRow(row)}
                           style={{...s.input,width:100}}/>
                       </td>
                       <td style={{...td}}>
                         <div style={{display:'flex',gap:4,justifyContent:'center'}}>
-                          {perms.order && !isDone && (
+                          {perms.create && !isDone && (
                             <button onClick={()=>handleNhapMuaVao(row)} title="Nhập mua vào" style={{...s.btn,padding:'0.2rem 0.4rem',color:'#10b981',fontSize:'0.68rem',border:'1px solid #86efac'}}>
                               <ShoppingCart size={12}/>Nhập
                             </button>
                           )}
-                          {perms.order && !isDone && (
+                          {perms.delete && !isDone && (
                             <button onClick={()=>handleCancel(row)} title="Hủy đề xuất" style={{...s.btn,padding:'0.2rem 0.4rem',color:'#f59e0b',fontSize:'0.68rem',border:'1px solid #fcd34d'}}>
                               <XCircle size={12}/>
                             </button>
                           )}
-                          {perms.del && <button onClick={()=>handleDelete(row)} title="Xóa" style={{...s.btn,padding:'0.2rem 0.4rem',color:'#ef4444',fontSize:'0.68rem',border:'1px solid #fca5a5'}}>
+                          {perms.delete && <button onClick={()=>handleDelete(row)} title="Xóa" style={{...s.btn,padding:'0.2rem 0.4rem',color:'#ef4444',fontSize:'0.68rem',border:'1px solid #fca5a5'}}>
                             <Trash2 size={12}/>
                           </button>}
                         </div>

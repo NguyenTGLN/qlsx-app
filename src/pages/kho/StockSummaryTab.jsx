@@ -33,7 +33,7 @@ const s = {
   input: { padding:'0.35rem 0.6rem',border:'1px solid #e2e8f0',borderRadius:7,fontSize:'0.8rem',outline:'none',background:'#f8fafc',color:'#334155' },
 };
 
-export default function StockSummaryTab({ navigateTo, perms = { order: true } }) {
+export default function StockSummaryTab({ navigateTo, perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -430,7 +430,7 @@ export default function StockSummaryTab({ navigateTo, perms = { order: true } })
           <>
             <span style={{fontSize:'0.8rem',fontWeight:700,color:'#1e3a8a',whiteSpace:'nowrap'}}>{selectedKeys.size} đã chọn</span>
             <button onClick={handleExport} style={{...s.btn,background:'#10b981',color:'#fff',border:'none',padding:'0.4rem 0.75rem',flexShrink:0}}><Download size={14}/>Xuất Excel</button>
-            {perms.order && <button onClick={handleSendProposal} disabled={sending} style={{...s.btn,background:'#7c3aed',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}>
+            {perms.create && <button onClick={handleSendProposal} disabled={sending} style={{...s.btn,background:'#7c3aed',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}>
               {sending ? <Loader2 size={14} style={{animation:'spin 1s linear infinite'}}/> : <Send size={14}/>}
               Gửi đề xuất ({selectedKeys.size})
             </button>}

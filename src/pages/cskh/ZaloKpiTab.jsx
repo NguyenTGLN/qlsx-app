@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { taskDb as db } from '../../lib/task_supabase';
 import { RefreshCw, MessageSquare, Clock, CheckCircle, AlertCircle, Trash2, CheckSquare, Search, Filter, X, Download, Merge } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { useAuth } from '../../lib/AuthContext';
+import { useTabPerm } from '../../lib/AuthContext';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const fmtDate = (iso) => {
@@ -146,14 +146,12 @@ const KpiCard = ({ icon, label, value, color, sub, onClick, isActive }) => (
 
 // ── Main Tab Component ─────────────────────────────────────────────────────
 const ZaloKpiTab = () => {
-  const { hasPerm, isAdmin } = useAuth();
-
-  // Quyền truy cập
-  const canView      = isAdmin || hasPerm('zalo_kpi_view');
-  const canMarkDone   = isAdmin || hasPerm('zalo_kpi_mark_done');
-  const canDelete     = isAdmin || hasPerm('zalo_kpi_delete');
-  const canFilter     = isAdmin || hasPerm('zalo_kpi_filter');
-  const canExport     = isAdmin || hasPerm('zalo_kpi_export');
+  // Quyền tab (tab-level perms)
+  const p = useTabPerm('cskh', 'zalo_kpi');
+  const canMarkDone = p.edit;    // Đánh dấu đã xử lý
+  const canDelete   = p.delete;  // Xóa
+  const canExport   = p.io;      // Xuất Excel
+  // Lọc nâng cao: không cần quyền (chỉ xem/lọc)
 
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -587,8 +585,7 @@ const ZaloKpiTab = () => {
                  sub="Thời gian NV phản hồi khách" />
       </div>
 
-      {/* ── Filter Bar (cần quyền zalo_kpi_filter) ──────────────────── */}
-      {canFilter ? (
+      {/* ── Filter Bar (không cần quyền — chỉ lọc/xem) ──────────────── */}
       <div style={{
         background: '#fff', borderRadius: '14px',
         border: '1px solid #e2e8f0', overflow: 'visible',
@@ -818,7 +815,6 @@ const ZaloKpiTab = () => {
           </div>
         )}
       </div>
-      ) : null}
 
       {/* ── Table Header ────────────────────────────────────────────── */}
       <div style={{
