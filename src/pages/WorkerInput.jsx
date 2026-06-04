@@ -2,12 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Send, Clock, Users, PackageCheck, Info } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useTabPerm } from '../lib/AuthContext';
 
 const WorkerInput = () => {
   const navigate = useNavigate();
   const { orderId } = useParams();
   const location = useLocation();
   const order = location.state?.order || null;
+  const p = useTabPerm('production', 'main');
+  // Màn hình này là 1 form nhập liệu tạo báo cáo sản xuất → gate nút gửi bằng create|edit.
+  const canSubmit = p.create || p.edit;
 
   const [actualQuantity, setActualQuantity] = useState('');
   const [executionDate, setExecutionDate] = useState(() => {
@@ -558,15 +562,17 @@ const WorkerInput = () => {
             </div>
           </div>
 
-          <button 
-            type="submit" 
-            className="btn-primary" 
-            style={{ width: '100%', padding: '1rem', fontSize: '1rem', marginTop: '0.5rem', background: (submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? '#cbd5e1' : 'var(--accent-gradient)', border: 'none', cursor: (submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? 'not-allowed' : 'pointer' }}
-            disabled={submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)}
+          <button
+            type="submit"
+            className="btn-primary"
+            style={{ width: '100%', padding: '1rem', fontSize: '1rem', marginTop: '0.5rem', background: (!canSubmit || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? '#cbd5e1' : 'var(--accent-gradient)', border: 'none', cursor: (!canSubmit || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? 'not-allowed' : 'pointer' }}
+            disabled={!canSubmit || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)}
           >
-            {submitting ? 'Đang gửi...' : (
-              isLoadingData ? 'Đang tải...' : (
-                 remainingQty !== null && remainingQty <= 0 ? 'Lệnh hoàn thành' : `Phân Bổ & Gửi`
+            {!canSubmit ? 'Bạn không có quyền gửi báo cáo' : (
+              submitting ? 'Đang gửi...' : (
+                isLoadingData ? 'Đang tải...' : (
+                   remainingQty !== null && remainingQty <= 0 ? 'Lệnh hoàn thành' : `Phân Bổ & Gửi`
+                )
               )
             )}
           </button>

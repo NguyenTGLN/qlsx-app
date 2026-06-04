@@ -5,10 +5,12 @@ import { LayoutDashboard, CheckCircle, TrendingUp, Users, RefreshCw, Plus, X, Up
 import ModuleShell, { TabButton } from '../components/ModuleShell';
 import { supabase, fetchAllRows } from '../lib/supabase';
 import { dataCache } from '../lib/dataCache';
+import { useTabPerm } from '../lib/AuthContext';
 import * as XLSX from 'xlsx';
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const p = useTabPerm('overview', 'main'); // chỉ có view/io — gate các nút Tải mẫu / Nạp Excel
   const [activeTab, setActiveTab] = useState('menu'); // 'menu' | overview | capacities | orders | timeline
   
   // States
@@ -435,10 +437,10 @@ const AdminDashboard = () => {
           <button onClick={() => { setNewCapacity({product_code: '', product_name: '', standard_time: ''}); openModal(setShowCapacityModal); }} className="btn-secondary">
             <Plus size={16}/> Thêm Mã Bằng Tay
           </button>
-          <button onClick={downloadCapacityTemplate} className="btn-secondary"><Download size={16}/> Tải Template</button>
-          <button onClick={() => fileInputRef.current?.click()} className="btn-primary" style={{background: 'var(--success-gradient)'}}>
+          {p.io && <button onClick={downloadCapacityTemplate} className="btn-secondary"><Download size={16}/> Tải Template</button>}
+          {p.io && <button onClick={() => fileInputRef.current?.click()} className="btn-primary" style={{background: 'var(--success-gradient)'}}>
             <Upload size={16} /> Nạp Từ Excel
-          </button>
+          </button>}
           <input type="file" accept=".xlsx, .xls, .csv" onChange={handleCapacityUpload} ref={fileInputRef} style={{display:'none'}} />
         </div>
       </div>
@@ -488,10 +490,10 @@ const AdminDashboard = () => {
         <h3>Lệnh Sản Xuất Nền</h3>
         <div style={{display:'flex', gap:'0.75rem'}}>
           <button onClick={() => openModal(setShowOrderModal)} className="btn-secondary"><Plus size={16}/> Thêm 1 Lệnh</button>
-          <button onClick={downloadOrderTemplate} className="btn-secondary"><Download size={16}/> Tải Mẫu</button>
-          <button onClick={() => orderFileRef.current?.click()} className="btn-primary" style={{background: 'var(--success-gradient)'}}>
+          {p.io && <button onClick={downloadOrderTemplate} className="btn-secondary"><Download size={16}/> Tải Mẫu</button>}
+          {p.io && <button onClick={() => orderFileRef.current?.click()} className="btn-primary" style={{background: 'var(--success-gradient)'}}>
             <Upload size={16} /> Nạp Từ Excel
-          </button>
+          </button>}
           <input type="file" accept=".xlsx, .xls, .csv" onChange={handleOrderUpload} ref={orderFileRef} style={{display:'none'}} />
         </div>
       </div>
