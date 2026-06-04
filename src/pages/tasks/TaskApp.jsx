@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
     import WorkReport from './WorkReport';
     import ZaloReportModal from '../cskh/ZaloReportModal';
     import { useAuth } from '../../lib/AuthContext';
-    import { MODULE_PERMS, ALL_PERMS } from '../../lib/AuthContext';
+    import { MODULE_PERMS, ALL_PERMS, canSeeTab, getTabPerm } from '../../lib/AuthContext';
     import { PERM_REGISTRY, ALL_CAPS, CAP_LABEL, tabKey, migrateLegacyToTabPerms } from '../../lib/permRegistry';
     import ModuleShell, { TabButton } from '../../components/ModuleShell';
     import { ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart } from 'lucide-react';
@@ -1044,7 +1044,7 @@ import { useNavigate } from 'react-router-dom';
         }
       }, [authUser])
 
-      useEffect(() => { if (me && !hasPerm(me,'view_dashboard') && view === 'dashboard') { setView('tasks'); setAssFilter(me.id) } }, [me, view])
+      useEffect(() => { if (me && !canSeeTab(me,'tasks','dashboard') && view === 'dashboard') { setView('tasks'); setAssFilter(me.id) } }, [me, view])
 
       const lastCheckDayRef = useRef(new Date().toISOString().split('T')[0])
       useEffect(() => {
@@ -1210,11 +1210,13 @@ import { useNavigate } from 'react-router-dom';
 
       if (!me) return h('div',{className:'flex items-center justify-center h-64'}, h('div',{className:'text-blue-500 font-bold animate-pulse text-sm'},'Đang tải...'))
 
+      const tPerm = getTabPerm(me, 'tasks', 'tasks'); // {view,create,edit,delete}
+
       // Build tabs array based on permissions
       const tabItems = [
-        hasPerm(me,'view_dashboard') && h(TabButton, {key:'dashboard', active: view==='dashboard', onClick: ()=>navTo('dashboard'), label:'Tổng quan', color:'#2563eb'}),
-        hasPerm(me,'view_tasks') && h(TabButton, {key:'tasks', active: view==='tasks', onClick: ()=>navTo('tasks'), label:'Công việc', color:'#2563eb'}),
-        hasPerm(me,'view_dashboard') && h(TabButton, {key:'work_report', active: view==='work_report', onClick: ()=>navTo('work_report'), label:'Báo Cáo', color:'#2563eb'}),
+        canSeeTab(me,'tasks','dashboard') && h(TabButton, {key:'dashboard', active: view==='dashboard', onClick: ()=>navTo('dashboard'), label:'Tổng quan', color:'#2563eb'}),
+        canSeeTab(me,'tasks','tasks') && h(TabButton, {key:'tasks', active: view==='tasks', onClick: ()=>navTo('tasks'), label:'Công việc', color:'#2563eb'}),
+        canSeeTab(me,'tasks','work_report') && h(TabButton, {key:'work_report', active: view==='work_report', onClick: ()=>navTo('work_report'), label:'Báo Cáo', color:'#2563eb'}),
       ].filter(Boolean)
 
       return h(ModuleShell, {
@@ -1235,21 +1237,21 @@ import { useNavigate } from 'react-router-dom';
                      display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', maxWidth: 800, width: '100%', alignSelf: 'center', margin: '0 auto'
                    }
                  },
-                   hasPerm(me, 'view_dashboard') && h('button', {
+                   canSeeTab(me,'tasks','dashboard') && h('button', {
                      onClick: () => navTo('dashboard'),
                      style: { background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: '1.25rem 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'all 0.25s', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07)' }
                    },
                      h('div', {style: {width: 46, height: 46, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #2563eb, #3b82f6)', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)'}}, h(LayoutDashboard, {size: 24, color: '#fff'})),
                      h('h3', {style: {margin: 0, fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', textAlign: 'center'}}, 'Tổng quan')
                    ),
-                   hasPerm(me, 'view_tasks') && h('button', {
+                   canSeeTab(me,'tasks','tasks') && h('button', {
                      onClick: () => navTo('tasks'),
                      style: { background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: '1.25rem 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'all 0.25s', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07)' }
                    },
                      h('div', {style: {width: 46, height: 46, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #2563eb, #3b82f6)', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)'}}, h(ListTodo, {size: 24, color: '#fff'})),
                      h('h3', {style: {margin: 0, fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', textAlign: 'center'}}, 'Công việc')
                    ),
-                   hasPerm(me, 'view_dashboard') && h('button', {
+                   canSeeTab(me,'tasks','work_report') && h('button', {
                      onClick: () => navTo('work_report'),
                      style: { background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: '1.25rem 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'all 0.25s', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07)' }
                    },
@@ -1257,9 +1259,9 @@ import { useNavigate } from 'react-router-dom';
                      h('h3', {style: {margin: 0, fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', textAlign: 'center'}}, 'Báo Cáo')
                    )
                  )
-               : view==='dashboard'&&hasPerm(me,'view_dashboard') ? h(Dashboard, {tasks, users, currentUser: me, pendingOrders, onUserClick:handleUserClick, onDetail:t=>setDetailTask(t), onAddUser: ()=>setUserModal({}), onEditUser: u=>setUserModal({user:u})})
-               : view==='work_report' && hasPerm(me,'view_dashboard') ? h(WorkReport)
-               : view==='tasks' && assFilter !== 'ALL' ? h(UserTaskBoard, { user: users.find(u=>u.id===assFilter) || me, tasks, currentUser: me, onBack: hasPerm(me,'view_dashboard') ? () => { setView('dashboard'); setAssFilter('ALL'); } : null, onDetail: t=>setDetailTask(t), onEdit: t=>setTaskModal({task:t}), onUpdate: handleUpdateTask, onRemind: handleRemind, onDelete: handleDeleteTask })
+               : view==='dashboard'&&canSeeTab(me,'tasks','dashboard') ? h(Dashboard, {tasks, users, currentUser: me, pendingOrders, onUserClick:handleUserClick, onDetail:t=>setDetailTask(t), onAddUser: ()=>setUserModal({}), onEditUser: u=>setUserModal({user:u})})
+               : view==='work_report' && canSeeTab(me,'tasks','work_report') ? h(WorkReport)
+               : view==='tasks' && assFilter !== 'ALL' ? h(UserTaskBoard, { user: users.find(u=>u.id===assFilter) || me, tasks, currentUser: me, onBack: canSeeTab(me,'tasks','dashboard') ? () => { setView('dashboard'); setAssFilter('ALL'); } : null, onDetail: t=>setDetailTask(t), onEdit: t=>setTaskModal({task:t}), onUpdate: handleUpdateTask, onRemind: handleRemind, onDelete: handleDeleteTask })
                : view==='tasks' && assFilter === 'ALL' ? h('div',null, h('div',{className:'flex items-center justify-between mb-4'}, h('h1',{className:'text-sm sm:text-xl font-bold text-gray-900'}, 'Tất cả công việc'), h('button',{onClick:()=>{dataCache.invalidate(TASK_CACHE_KEY);bootstrap(me,true);},className:btn.secondary+' px-2 py-1 text-[10px] sm:text-xs'},'↻ Làm mới')), h(TaskTable,{ tasks, users, currentUser:me, assFilter, setAssFilter, onEdit: t=>setTaskModal({task:t}), onDetail:t=>setDetailTask(t), onDelete:handleDeleteTask, onBulkDelete:handleBulkDelete }))
                : null
         ),
@@ -1321,7 +1323,7 @@ import { useNavigate } from 'react-router-dom';
           ),
 
           // Tạo việc mới
-          hasPerm(me,'create_task') && h('button', {
+          tPerm.create && h('button', {
             onClick: () => setTaskModal({}),
             style: {
               display: 'flex', alignItems: 'center', gap: '6px',
