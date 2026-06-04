@@ -70,7 +70,7 @@ export const PERM_REGISTRY = [
   {
     module: 'overview', label: 'Tổng Quan / Sản Xuất', icon: '📊', legacyAccess: 'access_overview',
     tabs: [
-      { id: 'main', label: 'Tổng quan sản xuất', caps: ['view', 'io'] },
+      { id: 'main', label: 'Tổng quan sản xuất', caps: ['view', 'create', 'edit', 'delete', 'io'] },
     ],
   },
 ];
