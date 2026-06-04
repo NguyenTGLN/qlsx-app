@@ -3,7 +3,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb as db } from '../../lib/task_supabase';
 import { dataCache } from '../../lib/dataCache';
 import { HeadphonesIcon, LayoutDashboard, Calendar, MessageSquare, Send } from 'lucide-react';
-import { useAuth, canSeeTab } from '../../lib/AuthContext';
+import { useAuth, canSeeTab, getTabPerm } from '../../lib/AuthContext';
 import ModuleShell, { TabButton, ActionButton } from '../../components/ModuleShell';
 import DateRangeDropdown from '../../components/DateRangeDropdown';
 import CskhDashboard from './CskhDashboard';
@@ -83,6 +83,7 @@ const CskhApp = () => {
   const canViewDashboard = canSeeTab(user, 'cskh', 'dashboard');
   const canViewKpi = canSeeTab(user, 'cskh', 'zalo_kpi');
   const canViewReport = canSeeTab(user, 'cskh', 'zalo_report');
+  const canCreateReport = getTabPerm(user, 'cskh', 'zalo_report').create;
 
   const [activeTab, setActiveTab] = usePersistedState('cskh_activeTab', 'menu');
 
@@ -201,7 +202,7 @@ const CskhApp = () => {
       headerRight={<>
         {/* Date filter — DateRangeDropdown chuẩn (đồng bộ với Kho) */}
         <DateRangeDropdown label="Ngày" value={dateRange} onChange={setDateRange} />
-        <ActionButton onClick={() => setShowZaloModal(true)} icon={Send} label="BC Zalo" color="#0068ff" />
+        {canCreateReport && <ActionButton onClick={() => setShowZaloModal(true)} icon={Send} label="BC Zalo" color="#0068ff" />}
       </>}
       tabs={activeTab !== 'menu' ? (
         <>
