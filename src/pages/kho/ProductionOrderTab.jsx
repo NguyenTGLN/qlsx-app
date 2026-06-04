@@ -197,7 +197,7 @@ const EditAllocationModal = ({ comp, poolRows, onSave, onClose }) => {
   );
 };
 
-export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { edit: true } } = {}) {
+export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { view: true, create: true, edit: true, delete: true, io: true } } = {}) {
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState([]);
   const fileInputRef = useRef(null);
@@ -1303,8 +1303,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       {!allocations ? (
         <div style={{padding:'1rem 0.75rem', display:'flex', flexDirection:'column', alignItems:'center', flex:1, overflow:'auto'}}>
           <h2 style={{fontSize:'0.95rem', color:'#0f172a', marginBottom:'1rem', fontWeight:700, textAlign:'center'}}>Chọn loại phiếu xuất kho</h2>
-          {!perms.edit && <div style={{padding:'2rem 1rem', textAlign:'center', color:'#94a3b8', fontSize:'0.85rem'}}>Bạn chỉ có quyền xem Kho — không có quyền tạo phiếu xuất / lệnh sản xuất.</div>}
-          {perms.edit && <div style={{display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:10, width:'100%', maxWidth:460}}>
+          {!perms.create && <div style={{padding:'2rem 1rem', textAlign:'center', color:'#94a3b8', fontSize:'0.85rem'}}>Bạn chỉ có quyền xem Kho — không có quyền tạo phiếu xuất / lệnh sản xuất.</div>}
+          {perms.create && <div style={{display:'grid', gridTemplateColumns:'repeat(2, minmax(0, 1fr))', gap:10, width:'100%', maxWidth:460}}>
             {EXPORT_TYPES.map(type => {
               const Icon = type.icon;
               return (
@@ -1329,7 +1329,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
             })}
           </div>}
 
-          {perms.edit && (
+          {perms.create && (
             <button
               onClick={handleDownloadTemplate}
               style={{...s.btn, marginTop:14, background:'#f1f5f9', color:'#7c3aed', border:'1px solid #ddd6fe'}}

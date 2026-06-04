@@ -15,7 +15,7 @@ const s = {
   input: { padding:'0.35rem 0.6rem',border:'1px solid #e2e8f0',borderRadius:7,fontSize:'0.8rem',outline:'none',background:'#f8fafc',color:'#334155' },
 };
 
-export default function InventoryTab({ perms = { edit: true, del: true } }) {
+export default function InventoryTab({ perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   // const PAGE_SIZE = 50;
   const [pageSize, setPageSize] = usePersistedState('inventory_pageSize', 50);
   const [loading, setLoading] = useState(true);
@@ -510,15 +510,15 @@ export default function InventoryTab({ perms = { edit: true, del: true } }) {
             {perms.edit && selectedKeys.size === 1 && (
               <button onClick={()=>setEditRow(rows.find(r=>r.id===Array.from(selectedKeys)[0]))} style={{...s.btn,background:'#f59e0b',color:'#fff',border:'none',padding:'0.4rem 0.75rem',flexShrink:0}}><Edit3 size={14}/>Sửa</button>
             )}
-            {perms.del && <button onClick={handleDelete} style={{...s.btn,background:'#ef4444',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}><Trash2 size={14}/>Xóa</button>}
+            {perms.delete && <button onClick={handleDelete} style={{...s.btn,background:'#ef4444',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}><Trash2 size={14}/>Xóa</button>}
           </>
         ) : (
           <>
             <button onClick={fetchInventory} disabled={loading} style={{...s.btn,padding:'0.4rem',flexShrink:0}} title="Làm mới">
               <RefreshCw size={16} style={{animation:loading?'spin 1s linear infinite':'none',color:'#0891b2'}}/>
             </button>
-            {perms.edit && <button onClick={()=>setShowManualInput(true)} style={{...s.btn,padding:'0.4rem 0.75rem',flexShrink:0}}><Plus size={14}/>Thêm vị trí</button>}
-            {perms.edit && <button onClick={()=>setShowImport(true)} style={{...s.btn,background:'#e0f2fe',color:'#0369a1',border:'none',padding:'0.4rem 0.75rem',flexShrink:0}}><Upload size={14}/>Nhập Excel</button>}
+            {perms.create && <button onClick={()=>setShowManualInput(true)} style={{...s.btn,padding:'0.4rem 0.75rem',flexShrink:0}}><Plus size={14}/>Thêm vị trí</button>}
+            {perms.io && <button onClick={()=>setShowImport(true)} style={{...s.btn,background:'#e0f2fe',color:'#0369a1',border:'none',padding:'0.4rem 0.75rem',flexShrink:0}}><Upload size={14}/>Nhập Excel</button>}
             <button onClick={()=>setShowPrintModal(true)} style={{...s.btn,padding:'0.4rem 0.75rem',flexShrink:0}}><Printer size={14}/>In phiếu</button>
             <button onClick={handleExport} disabled={loading} style={{...s.btn,background:'#10b981',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}><Download size={14}/>Xuất Excel</button>
           </>

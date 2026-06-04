@@ -11,7 +11,7 @@ const td = { padding:'0.35rem', textAlign:'center', verticalAlign:'middle', font
 
 function pctColor(p) { return p >= 100 ? '#16a34a' : p >= 50 ? '#d97706' : '#dc2626'; }
 
-export default function DKSXTab({ navigateTo, perms = { order: true } }) {
+export default function DKSXTab({ navigateTo, perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(new Set());
@@ -141,13 +141,13 @@ export default function DKSXTab({ navigateTo, perms = { order: true } }) {
                     <td style={{...td,color:'#64748b',whiteSpace:'nowrap'}}>{row.ngay_de_xuat || '—'}</td>
                     <td style={td}>
                       <div style={{display:'flex',gap:5,justifyContent:'center'}}>
-                        {perms.order ? (<>
-                        <button onClick={()=>handleMakeOrder(row)} style={{...s.btn,padding:'0.25rem 0.5rem',color:'#fff',background:'#4f46e5',border:'none'}}>
+                        {(perms.create || perms.delete) ? (<>
+                        {perms.create && <button onClick={()=>handleMakeOrder(row)} style={{...s.btn,padding:'0.25rem 0.5rem',color:'#fff',background:'#4f46e5',border:'none'}}>
                           <Factory size={12}/>Làm phiếu SX
-                        </button>
-                        <button onClick={()=>handleCancel(row)} title="Hủy" style={{...s.btn,padding:'0.25rem 0.4rem',color:'#ef4444',border:'1px solid #fca5a5'}}>
+                        </button>}
+                        {perms.delete && <button onClick={()=>handleCancel(row)} title="Hủy" style={{...s.btn,padding:'0.25rem 0.4rem',color:'#ef4444',border:'1px solid #fca5a5'}}>
                           <Trash2 size={12}/>
-                        </button>
+                        </button>}
                         </>) : <span style={{color:'#94a3b8',fontSize:'0.7rem'}}>—</span>}
                       </div>
                     </td>

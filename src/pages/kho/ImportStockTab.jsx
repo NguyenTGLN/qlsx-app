@@ -69,7 +69,7 @@ function AutoSuggest({ value, onChange, placeholder, data, keyField = 'item_code
   );
 }
 
-export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { edit: true } }) {
+export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(false);
   const [reason, setReason] = useState('');
@@ -625,8 +625,8 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { ed
       {/* Màn hình chính luôn hiển thị các Card */}
       <div style={{padding:'1rem 0.75rem', display:'flex', flexDirection:'column', alignItems:'center', flex:1, overflow:'auto'}}>
           <h2 style={{fontSize:'0.95rem', color:'#0f172a', marginBottom:'1rem', fontWeight:700, textAlign:'center'}}>Chọn loại phiếu nhập kho</h2>
-          {!perms.edit && <div style={{padding:'2rem 1rem', textAlign:'center', color:'#94a3b8', fontSize:'0.85rem'}}>Bạn chỉ có quyền xem Kho — không có quyền nhập kho.</div>}
-          {perms.edit && <div style={{display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:10, width:'100%', maxWidth:480}}>
+          {!perms.create && <div style={{padding:'2rem 1rem', textAlign:'center', color:'#94a3b8', fontSize:'0.85rem'}}>Bạn chỉ có quyền xem Kho — không có quyền nhập kho.</div>}
+          {perms.create && <div style={{display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:10, width:'100%', maxWidth:480}}>
             {IMPORT_TYPES.map(type => {
               const Icon = type.icon;
               return (

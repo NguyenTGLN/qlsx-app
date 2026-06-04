@@ -561,14 +561,10 @@ export default function KhoHangApp() {
   // Phân quyền theo nhóm thao tác trong Kho. Vào được Kho (access_warehouse) mà
   // không có nhóm nào = chỉ xem. Admin có hết qua getTabPerm/canSeeTab.
   const { user } = useAuth();
-  // perms của TAB đang mở, kèm alias tương thích các tab component cũ (edit/catalog/del/order)
+  // perms của TAB đang mở — dùng CAP CHUẨN (chính xác) cho từng nút trong tab.
   const tp = getTabPerm(user, 'kho', activeTab);
   const perms = {
-    ...tp,
-    edit: tp.create || tp.edit || tp.io, // tab Kho cũ gộp thêm/sửa/nhập-xuất vào 'edit'
-    catalog: tp.create || tp.edit,       // danh-muc/bom dùng 'catalog'
-    del: tp.delete,
-    order: tp.create || tp.edit,         // dksx/de-xuat/ton-kho-tong dùng 'order'
+    view: tp.view, create: tp.create, edit: tp.edit, delete: tp.delete, io: tp.io,
   };
 
   // Tabs Config State (persisted)
@@ -1006,11 +1002,11 @@ export default function KhoHangApp() {
           </select>
           {selected.size > 0 && <>
             <span style={{...s.pill('#fef2f2','#ef4444'),flexShrink:0}}>✓ {selected.size}</span>
-            {perms.del && <button onClick={handleDelete} style={{...s.btn,...s.btnD,fontSize:'0.75rem',flexShrink:0}}><Trash2 size={13}/>Xóa</button>}
+            {perms.delete && <button onClick={handleDelete} style={{...s.btn,...s.btnD,fontSize:'0.75rem',flexShrink:0}}><Trash2 size={13}/>Xóa</button>}
             <button onClick={deselectAll} style={{...s.btn,fontSize:'0.75rem',padding:'0.35rem 0.4rem',flexShrink:0}}><X size={13}/></button>
           </>}
           <button onClick={exportCSV} disabled={loading} style={{...s.btn,color:'#059669',flexShrink:0,marginLeft:'auto'}}><Download size={14}/>CSV</button>
-          {perms.edit && <button onClick={()=>setShowImport(true)} disabled={loading} style={{...s.btn,color:'#7c3aed',flexShrink:0}}><Upload size={14}/>Import</button>}
+          {perms.io && <button onClick={()=>setShowImport(true)} disabled={loading} style={{...s.btn,color:'#7c3aed',flexShrink:0}}><Upload size={14}/>Import</button>}
           <button onClick={()=>{setPage(1);fetchPage();}} disabled={loading} style={{...s.btn,padding:'0.35rem 0.4rem',flexShrink:0}} title="Làm mới">
             <RefreshCw size={14} style={{animation:loading?'spin 1s linear infinite':'none',color:'#0891b2'}}/>
           </button>
