@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import BatchAnalytics from './BatchAnalytics';
 import WarrantyDataManager from './WarrantyDataManager';
+import { useAuth, canSeeTab } from '../../lib/AuthContext';
 
 // Nếu dùng supabase của taskDb (ẩn danh)
 const db = taskDb;
@@ -23,6 +24,7 @@ const COLORS = ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#06b6d4'
 
 const WarrantyApp = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   const [salesData, setSalesData] = useState([]);
@@ -115,6 +117,21 @@ const WarrantyApp = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Định nghĩa các tab + lọc theo quyền xem (view) của user hiện tại
+  const ALL_TABS = [
+    { id: 'history', label: 'Lịch Sử Phiếu', icon: Layers },
+    { id: 'batchAnalytics', label: 'Phân Tích Lỗi', icon: BarChart2 },
+    { id: 'dataManager', label: 'QL Dữ Liệu', icon: PenTool }
+  ];
+  const visibleTabs = ALL_TABS.filter(t => canSeeTab(user, 'warranty', t.id));
+
+  // Nếu tab đang mở không còn quyền xem → quay về menu
+  useEffect(() => {
+    if (viewMode !== 'menu' && !canSeeTab(user, 'warranty', viewMode)) {
+      setViewMode('menu');
+    }
+  }, [viewMode, user, setViewMode]);
 
   // Lọc dữ liệu theo thời gian
   const getFilteredData = () => {
@@ -284,9 +301,9 @@ const WarrantyApp = () => {
       onBack={viewMode !== 'menu' ? () => setViewMode('menu') : undefined}
       tabs={viewMode !== 'menu' ? (
         <>
-          <TabButton active={viewMode==='history'} onClick={()=>setViewMode('history')} icon={Layers} label="Lịch Sử Phiếu" color="#6366f1" />
-          <TabButton active={viewMode==='batchAnalytics'} onClick={()=>setViewMode('batchAnalytics')} icon={BarChart2} label="Phân Tích Lỗi" color="#6366f1" />
-          <TabButton active={viewMode==='dataManager'} onClick={()=>setViewMode('dataManager')} icon={PenTool} label="QL Dữ Liệu" color="#6366f1" />
+          {visibleTabs.map(t => (
+            <TabButton key={t.id} active={viewMode===t.id} onClick={()=>setViewMode(t.id)} icon={t.icon} label={t.label} color="#6366f1" />
+          ))}
         </>
       ) : null}
     >
@@ -307,11 +324,7 @@ const WarrantyApp = () => {
             width: '100%',
             alignSelf: 'center',
           }}>
-            {[
-              { id: 'history', label: 'Lịch Sử Phiếu', icon: Layers },
-              { id: 'batchAnalytics', label: 'Phân Tích Lỗi', icon: BarChart2 },
-              { id: 'dataManager', label: 'QL Dữ Liệu', icon: PenTool }
-            ].map(tabDef => (
+            {visibleTabs.map(tabDef => (
               <button
                 key={tabDef.id}
                 onClick={() => setViewMode(tabDef.id)}
