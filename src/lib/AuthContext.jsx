@@ -94,9 +94,8 @@ const DEFAULT_PERMS_AGENT = {
   // Chất Lượng SP
   quality_edit:       false,
   quality_delete:     false,
-  // Mặc định nhân viên mới: chỉ thấy & làm tab Công việc
-  'tab.tasks.tasks.view': true,
-  'tab.tasks.tasks.edit': true,
+  // Phân quyền theo tab: MẶC ĐỊNH TẮT HẾT. Nhân viên mới khởi đầu không có
+  // tab nào tới khi Admin cấp trong ma trận (khớp lựa chọn "mặc định tắt hết").
 };
 
 /** Migrate legacy perms -> tab.* keys in memory (transitional). Admin unaffected; users with tab.* keys unchanged. */
