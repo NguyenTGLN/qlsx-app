@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabase';
-import { getTabPerm as _getTabPerm, canSeeTab as _canSeeTab, canSeeModule as _canSeeModule } from './permRegistry';
+import { getTabPerm as _getTabPerm, canSeeTab as _canSeeTab, canSeeModule as _canSeeModule, migrateLegacyToTabPerms } from './permRegistry';
 
 // ============================================================
 // 🔐 RBAC — Hệ thống Phân quyền Toàn App
@@ -99,6 +99,16 @@ const DEFAULT_PERMS_AGENT = {
   'tab.tasks.tasks.edit': true,
 };
 
+/** Migrate legacy perms -> tab.* keys in memory (transitional). Admin unaffected; users with tab.* keys unchanged. */
+function withMigratedPerms(data) {
+  if (!data || data.role === 'ADMIN') return data;
+  const perms = data.permissions;
+  const hasTabKeys = perms && typeof perms === 'object' &&
+    Object.keys(perms).some(k => k.startsWith('tab.'));
+  if (hasTabKeys) return data;
+  return { ...data, permissions: migrateLegacyToTabPerms(perms || {}) };
+}
+
 /**
  * Lấy permissions cho user dựa trên role + saved permissions
  */
@@ -149,7 +159,7 @@ export function AuthProvider({ children }) {
             .then(({ data, error }) => {
               if (!error && data) {
                 data.role = data.role ? data.role.toUpperCase() : 'AGENT';
-                setUser(data);
+                setUser(withMigratedPerms(data));
               } else {
                 localStorage.removeItem(STORAGE_KEY);
               }
@@ -179,7 +189,7 @@ export function AuthProvider({ children }) {
     }
 
     data.role = data.role ? data.role.toUpperCase() : 'AGENT';
-    setUser(data);
+    setUser(withMigratedPerms(data));
 
     // Lưu credentials
     const authData = JSON.stringify({ id: data.id, pw: password });
