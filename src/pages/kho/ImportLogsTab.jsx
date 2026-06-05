@@ -17,7 +17,7 @@ const shortDate = (d) => {
 function ColumnToggle({ columns, hiddenCols, setHiddenCols }) {
   const [open, setOpen] = useState(false);
   const toggle = (col) => setHiddenCols(h => { const n = new Set(h); n.has(col)?n.delete(col):n.add(col); return n; });
-  const colLabel = (k) => ({ngay_nhap:'Ngày nhập', san_pham:'Sản phẩm', sl:'Số lượng', ma_ncc:'Mã NCC', kho:'Kho nhập', ly_do:'Lý do'}[k] || k);
+  const colLabel = (k) => ({ngay_nhap:'Ngày nhập', san_pham:'Sản phẩm', sl:'Số lượng', ma_ncc:'Mã NCC', ma_don_hang_nhap:'Mã đơn hàng nhập', kho:'Kho nhập', ly_do:'Lý do'}[k] || k);
   return (
     <div style={{position:'relative',flexShrink:0}}>
       <button onClick={()=>setOpen(!open)} style={{display:'flex',alignItems:'center',gap:3,padding:'0.4rem 0.5rem',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',fontSize:'0.75rem',fontWeight:600,color:'#475569'}} title="Ẩn/Hiện cột">
@@ -78,7 +78,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
 
   // Column Toggle
   const [hiddenCols, setHiddenCols] = usePersistedState('importLogs_hiddenCols_v3', new Set());
-  const TABLE_COLS = ['ngay_nhap', 'san_pham', 'sl', 'ma_ncc', 'kho', 'ly_do'];
+  const TABLE_COLS = ['ngay_nhap', 'san_pham', 'sl', 'ma_ncc', 'ma_don_hang_nhap', 'kho', 'ly_do'];
 
   // Advanced features
   const [selectedKeys, setSelectedKeys] = useState(new Set());
@@ -161,6 +161,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
         "Tên hàng": r.ten_hang,
         "Số lượng nhập": r.so_luong_nhap,
         "Mã NCC": r.ma_ncc,
+        "Mã đơn hàng nhập": r.ma_don_hang_nhap,
         "Kho nhập": r.kho_nhap,
         "Lý do nhập": r.ly_do_nhap
       }));
@@ -184,6 +185,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
         "Tên hàng": "Tên Hàng Mẫu 01",
         "Số lượng nhập": 100,
         "Mã NCC": "NCC01",
+        "Mã đơn hàng nhập": "PO-2026-001",
         "Kho nhập": "Kho A",
         "Lý do nhập": "Nhập mới"
       }
@@ -230,6 +232,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
           ten_hang: String(row["Tên hàng"] || row["ten_hang"] || '').trim(),
           so_luong_nhap: parseFloat(row["Số lượng nhập"] || row["so_luong_nhap"]) || 0,
           ma_ncc: String(row["Mã NCC"] || row["ma_ncc"] || '').trim(),
+          ma_don_hang_nhap: String(row["Mã đơn hàng nhập"] || row["ma_don_hang_nhap"] || '').trim(),
           kho_nhap: String(row["Kho nhập"] || row["kho_nhap"] || '').trim(),
           ly_do_nhap: String(row["Lý do nhập"] || row["ly_do_nhap"] || '').trim()
         };
@@ -282,6 +285,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
         ten_hang: updatedRow.ten_hang,
         so_luong_nhap: parseFloat(updatedRow.so_luong_nhap || 0),
         ma_ncc: updatedRow.ma_ncc,
+        ma_don_hang_nhap: updatedRow.ma_don_hang_nhap,
         kho_nhap: updatedRow.kho_nhap,
         ly_do_nhap: updatedRow.ly_do_nhap
       };
@@ -305,7 +309,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
         <div style={{minWidth:120, flexShrink:0, flex:1}}>
           <SearchAutoSuggest
             tableName="du_lieu_nhap"
-            searchColumns={['ma_hang','ten_hang','ma_ncc','ly_do_nhap']}
+            searchColumns={['ma_hang','ten_hang','ma_ncc','ma_don_hang_nhap','ly_do_nhap']}
             displayColumn="ma_hang"
             placeholder="Tìm mã, tên, lý do..."
             value={search}
@@ -331,15 +335,16 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
               {!hiddenCols.has('san_pham') && <th style={thStyle}>Sản phẩm</th>}
               {!hiddenCols.has('sl') && <th style={{...thStyle, textAlign: 'right', whiteSpace: 'nowrap'}}>SL</th>}
               {!hiddenCols.has('ma_ncc') && <th style={{...thStyle, whiteSpace: 'nowrap'}}>Mã NCC</th>}
+              {!hiddenCols.has('ma_don_hang_nhap') && <th style={{...thStyle, whiteSpace: 'nowrap'}}>Mã ĐH nhập</th>}
               {!hiddenCols.has('kho') && <th style={{...thStyle, whiteSpace: 'nowrap'}}>Kho</th>}
               {!hiddenCols.has('ly_do') && <th style={thStyle}>Lý do</th>}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7 - hiddenCols.size} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}><Loader2 size={24} className="spin" style={{ margin: '0 auto' }}/></td></tr>
+              <tr><td colSpan={8 - hiddenCols.size} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}><Loader2 size={24} className="spin" style={{ margin: '0 auto' }}/></td></tr>
             ) : data.length === 0 ? (
-              <tr><td colSpan={7 - hiddenCols.size} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>Không có dữ liệu</td></tr>
+              <tr><td colSpan={8 - hiddenCols.size} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>Không có dữ liệu</td></tr>
             ) : (
               data.map(row => (
                 <tr key={row.id} onClick={()=>toggleRow(row.id)} style={{ transition: 'background 0.2s', background:selectedKeys.has(row.id)?'#f0f9ff':'transparent', cursor:'pointer' }} onMouseEnter={e => !selectedKeys.has(row.id) && (e.currentTarget.style.background = '#f8fafc')} onMouseLeave={e => !selectedKeys.has(row.id) && (e.currentTarget.style.background = 'transparent')}>
@@ -353,6 +358,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
                   </td>}
                   {!hiddenCols.has('sl') && <td style={{padding:'0.4rem 0.2rem', textAlign: 'right', fontWeight: 700, color: '#16a34a', fontVariantNumeric:'tabular-nums'}}>{Number(row.so_luong_nhap).toLocaleString('vi-VN')}</td>}
                   {!hiddenCols.has('ma_ncc') && <td style={{padding:'0.4rem 0.2rem', whiteSpace:'nowrap', color:'#475569'}}>{row.ma_ncc}</td>}
+                  {!hiddenCols.has('ma_don_hang_nhap') && <td style={{padding:'0.4rem 0.2rem', whiteSpace:'nowrap', color:'#475569'}}>{row.ma_don_hang_nhap}</td>}
                   {!hiddenCols.has('kho') && <td style={{padding:'0.4rem 0.2rem', whiteSpace:'nowrap', color:'#475569'}}>{row.kho_nhap}</td>}
                   {!hiddenCols.has('ly_do') && <td style={{padding:'0.4rem 0.2rem', color:'#475569'}}>{row.ly_do_nhap}</td>}
                 </tr>
@@ -451,6 +457,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
                 ten_hang: 'Tên hàng',
                 so_luong_nhap: 'Số lượng nhập',
                 ma_ncc: 'Mã NCC',
+                ma_don_hang_nhap: 'Mã đơn hàng nhập',
                 kho_nhap: 'Kho nhập',
                 ly_do_nhap: 'Lý do nhập'
               }).map(([k, label]) => (

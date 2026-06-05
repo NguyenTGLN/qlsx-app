@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, ShoppingCart, RefreshCw, XCircle, MoreHorizontal, ArrowLeft } from 'lucide-react';
 
@@ -14,16 +14,41 @@ import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 
 // Component Autocomplete Component
-function AutoSuggest({ value, onChange, placeholder, data, keyField = 'item_code', labelField = 'item_name' }) {
+function AutoSuggest({ onChange, placeholder, data, keyField = 'item_code', labelField = 'item_name' }) {
   const [input, setInput] = useState('');
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null); // {top,left,width,maxHeight} cho dropdown position:fixed
   const wrapRef = useRef(null);
+
+  // Tính vị trí dropdown theo ô input. Dùng position:fixed để dropdown KHÔNG bị cắt
+  // bởi vùng cuộn (overflow:auto) của thân modal — vốn làm danh sách gợi ý quá ngắn.
+  const updatePos = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const gap = 4, margin = 12;
+    const spaceBelow = window.innerHeight - r.bottom - margin;
+    setPos({ top: r.bottom + gap, left: r.left, width: r.width, maxHeight: Math.max(180, Math.min(360, spaceBelow)) });
+  }, []);
 
   useEffect(() => {
     const handler = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Khi mở: tính vị trí và bám theo khi cuộn/đổi kích thước cửa sổ.
+  useEffect(() => {
+    if (!open) return;
+    updatePos();
+    const onMove = () => updatePos();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [open, updatePos]);
 
   const results = data.filter(item =>
     (item[keyField]||'').toLowerCase().includes(input.toLowerCase()) ||
@@ -48,8 +73,8 @@ function AutoSuggest({ value, onChange, placeholder, data, keyField = 'item_code
           style={{border:'none', outline:'none', background:'transparent', width:'100%', fontSize:'0.85rem', paddingLeft:8}}
         />
       </div>
-      {open && input && (
-        <div style={{position:'absolute', top:'100%', left:0, right:0, background:'#fff', border:'1px solid #cbd5e1', borderRadius:6, marginTop:4, maxHeight:300, overflow:'auto', zIndex:50, boxShadow:'0 10px 15px -3px rgba(0,0,0,0.1)'}}>
+      {open && input && pos && (
+        <div style={{position:'fixed', top:pos.top, left:pos.left, width:pos.width, background:'#fff', border:'1px solid #cbd5e1', borderRadius:6, maxHeight:pos.maxHeight, overflow:'auto', zIndex:200, boxShadow:'0 10px 15px -3px rgba(0,0,0,0.1)'}}>
           {results.length === 0 ? <div style={{padding:10, fontSize:'0.8rem', color:'#64748b', textAlign:'center'}}>Không tìm thấy kết quả</div> :
             results.map((item, idx) => (
               <div
@@ -86,7 +111,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
 
   const initBlocksFor = (r) => {
     if (r === 'Nhập mua vào') return [{ id: newBlockId(), sourceType: 'ncc', sourceValue: '', dlkCode: '', items: [] }];
-    if (r === 'Nhập mới' || r === 'Khác') return [{ id: newBlockId(), sourceType: 'none', sourceValue: '', dlkCode: '', items: [] }];
+    if (r === 'Nhập mới' || r === 'Khác') return [{ id: newBlockId(), sourceType: 'none', sourceValue: '', dlkCode: '', orderCode: '', items: [] }];
     return []; // psx / order: tạo block khi fetch nguồn
   };
 
@@ -432,6 +457,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
               kho_nhap: mainLocation || 'Kho',
               ly_do_nhap: reason,
               dlk_code: (reason === 'Nhập mua vào' && b.dlkCode) ? b.dlkCode : null,
+              ma_don_hang_nhap: (b.sourceType === 'none' && b.orderCode) ? b.orderCode.trim() : null,
             });
 
             // Trừ tồn WIP nếu nhập thành phẩm (theo phiếu SX nguồn)
@@ -773,6 +799,15 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
                                   placeholder="VD: NCC A"
                                 />
                                 <span className="only-print" style={{display:'none', fontWeight:700, color:'#0f172a'}}>Nhà cung cấp: {block.sourceValue || '---'}</span>
+                                <label style={{...s.label, marginTop:8}} className="no-print">Mã đơn hàng nhập (tùy chọn)</label>
+                                <input
+                                  className="no-print"
+                                  style={{...s.input, padding:'8px'}}
+                                  value={block.orderCode || ''}
+                                  onChange={e=>updateBlock(block.id, b=>({ ...b, orderCode: e.target.value }))}
+                                  placeholder="VD: PO-2026-001"
+                                />
+                                <span className="only-print" style={{display:'none', fontWeight:700, color:'#0f172a'}}>Mã đơn hàng nhập: {block.orderCode || '---'}</span>
                               </>
                             )}
                             {block.sourceType === 'psx' && (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
-import { Search, Loader2, RefreshCw, Trash2, Edit3, Download, Upload, X, Check } from 'lucide-react';
+import { Search, Loader2, RefreshCw, Trash2, Edit3, Download, Upload, X, Check, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
@@ -28,6 +28,8 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
   // Advanced features
   const [selectedKeys, setSelectedKeys] = useState(new Set());
   const [editRow, setEditRow] = useState(null);
+  const [addRow, setAddRow] = useState(null);
+  const [adding, setAdding] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -158,6 +160,34 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
       setEditRow(null);
       fetchCatalog();
     } catch(e) { alert('Lỗi cập nhật: ' + e.message); }
+  };
+
+  const NUM_FIELDS = ['min_stock_days', 'backup_stock_days', 'lead_time_days'];
+
+  const handleSaveAdd = async (newRow) => {
+    const allFilled = Object.keys(colLabel).every(k => String(newRow[k] ?? '').trim() !== '');
+    if (!allFilled) return alert('Vui lòng nhập đầy đủ tất cả các trường');
+    setAdding(true);
+    try {
+      const code = String(newRow.item_code).trim();
+      // Kiểm tra trùng mã trước khi thêm
+      const { data: existing, error: checkErr } = await db.from('inventory_items').select('item_code').eq('item_code', code).maybeSingle();
+      if (checkErr) throw checkErr;
+      if (existing) { setAdding(false); return alert('Mã HH đã tồn tại'); }
+      // Dựng payload, ép kiểu số cho các trường số
+      const payload = {};
+      Object.keys(colLabel).forEach(k => {
+        payload[k] = NUM_FIELDS.includes(k) ? Number(newRow[k]) : String(newRow[k]).trim();
+      });
+      const { error } = await db.from('inventory_items').insert(payload);
+      if (error) throw error;
+      setAddRow(null);
+      fetchCatalog();
+    } catch(e) {
+      alert('Lỗi thêm mã: ' + e.message);
+    } finally {
+      setAdding(false);
+    }
   };
 
   const handleDownloadTemplate = () => {
@@ -319,6 +349,9 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
             <button onClick={fetchCatalog} disabled={loading} style={{...s.btn,padding:'0.4rem',flexShrink:0}} title="Làm mới">
               <RefreshCw size={16} style={{animation:loading?'spin 1s linear infinite':'none',color:'#0891b2'}}/>
             </button>
+            {perms.create && <button onClick={()=>setAddRow({item_code:'',item_name:'',unit:'',min_stock_days:'',backup_stock_days:'',warehouse:'',lead_time_days:''})} style={{...s.btn, padding:'0.4rem 0.75rem', background:'#0891b2', color:'#fff', border:'none', flexShrink:0}}>
+              <Plus size={14}/> Thêm mã
+            </button>}
             {perms.io && <button onClick={()=>setShowImport(true)} style={{...s.btn, padding:'0.4rem 0.75rem', background:'#e0f2fe', color:'#0369a1', border:'none', flexShrink:0}}>
               <Upload size={14}/> Nhập Excel
             </button>}
@@ -341,6 +374,31 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
             <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}>
               <button onClick={()=>setEditRow(null)} style={s.btn}>Hủy</button>
               <button onClick={()=>handleSaveEdit(editRow)} style={{...s.btn, background:'#2563eb', color:'#fff'}}>Lưu</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {addRow && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div style={{background:'#fff',padding:'1.5rem',borderRadius:12,width:400,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)'}}>
+            <h3 style={{marginTop:0,marginBottom:15}}>Thêm mã hàng hóa</h3>
+            {Object.keys(colLabel).map(k => (
+              <div key={k} style={{marginBottom:10}}>
+                <label style={{display:'block',fontSize:'0.75rem',fontWeight:600,color:'#64748b',marginBottom:4}}>{colLabel[k]} <span style={{color:'#ef4444'}}>*</span></label>
+                <input
+                  type={NUM_FIELDS.includes(k) ? 'number' : 'text'}
+                  value={addRow[k] ?? ''}
+                  onChange={e=>setAddRow({...addRow, [k]: e.target.value})}
+                  style={{...s.input, width:'100%',boxSizing:'border-box'}}
+                />
+              </div>
+            ))}
+            <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}>
+              <button onClick={()=>setAddRow(null)} style={s.btn}>Hủy</button>
+              <button onClick={()=>handleSaveAdd(addRow)} disabled={adding} style={{...s.btn, background:'#0891b2', color:'#fff'}}>
+                {adding ? <Loader2 size={14} style={{animation:'spin 1s linear infinite'}}/> : <Check size={14}/>} Lưu
+              </button>
             </div>
           </div>
         </div>
