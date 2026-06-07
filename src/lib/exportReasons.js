@@ -29,7 +29,8 @@ export const EXPORT_REASONS = [
   { label: 'Xuất sửa chữa',         type: 'XBS', needsOrderRef: true },
   { label: 'Cho mượn',              type: 'KHAC' },
   { label: 'Xuất mẫu',              type: 'KHAC' },
-];
+].map(Object.freeze);
+Object.freeze(EXPORT_REASONS);
 
 const BY_LABEL = new Map(EXPORT_REASONS.map(r => [r.label, r]));
 
