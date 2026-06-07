@@ -4,10 +4,15 @@ import { Search, Loader2, Play, Printer, AlertCircle, CheckCircle, Package, Uplo
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
+import { aggregateComponentDemand, allocateFIFO, buildFinishedItems } from '../../lib/productionAlloc';
 
 // id ổn định cho từng dòng xuất thủ công — tránh mất focus khi xoá dòng giữa (React key)
 let __manualRowSeq = 0;
 const emptyManualRow = () => ({ id: ++__manualRowSeq, code: '', name: '', qty: '', reason: 'Bán ra', orderRef: '' });
+
+// id ổn định cho từng dòng thành phẩm SX — giữ focus khi xoá dòng giữa (React key)
+let __prodRowSeq = 0;
+const emptyProdRow = () => ({ id: ++__prodRowSeq, code: '', name: '', qty: 1 });
 
 const s = {
   btn: { display:'flex',alignItems:'center',gap:5,padding:'0.5rem 1rem',borderRadius:7,border:'none',background:'#0891b2',cursor:'pointer',fontSize:'0.85rem',fontWeight:600,color:'#fff',transition:'all 0.15s' },
@@ -208,8 +213,25 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const fileInputRef = useRef(null);
   
   // Form State (Persist across tab switch)
-  const [selectedProduct, setSelectedProduct] = useState(() => localStorage.getItem('prod_selectedProduct') || '');
-  const [quantity, setQuantity] = useState(() => Number(localStorage.getItem('prod_quantity')) || 1);
+  // Danh sách thành phẩm trên 1 phiếu SX (multi). Mỗi dòng: { id, code, name, qty }
+  const [prodRows, setProdRows] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('prod_rows'));
+      if (Array.isArray(saved) && saved.length > 0) {
+        return saved.map(r => ({ ...r, id: ++__prodRowSeq }));
+      }
+    } catch { /* ignore */ }
+    return [emptyProdRow()];
+  });
+  // Các lệnh con sinh ra cho phiếu hiện tại: [{ orderCode, productCode, productName, qty }]
+  const [prodFinishedItems, setProdFinishedItems] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('prod_finishedItems')) || []; } catch { return []; }
+  });
+
+  const updateProdRow = (id, patch) => setProdRows(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+  const addProdRow = () => setProdRows(prev => [...prev, emptyProdRow()]);
+  const removeProdRow = (id) => setProdRows(prev => (prev.length <= 1 ? prev : prev.filter(r => r.id !== id)));
+
   const [prodDate, setProdDate] = useState(() => localStorage.getItem('prod_date') || todayLocal());
   const [notes, setNotes] = useState(() => localStorage.getItem('prod_notes') || '');
   const [priorityVTSX, setPriorityVTSX] = useState(() => localStorage.getItem('prod_priorityVTSX') === 'true');
@@ -232,8 +254,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   useEffect(() => {
     if (!sxPrefill) return;
     setMode('production');
-    setSelectedProduct(sxPrefill.item_code || '');
-    if (sxPrefill.qty) setQuantity(Number(sxPrefill.qty));
+    setProdRows([{ id: ++__prodRowSeq, code: sxPrefill.item_code || '', name: '', qty: sxPrefill.qty ? Number(sxPrefill.qty) : 1 }]);
     if (onSxConsumed) onSxConsumed();
     // onSxConsumed cố tình bỏ khỏi deps: chỉ chạy khi sxPrefill đổi, tránh vòng lặp khi parent truyền hàm inline
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -268,8 +289,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const [editingCompIdx, setEditingCompIdx] = useState(null);
 
   useEffect(() => {
-    localStorage.setItem('prod_selectedProduct', selectedProduct);
-    localStorage.setItem('prod_quantity', quantity);
+    localStorage.setItem('prod_rows', JSON.stringify(prodRows));
     localStorage.setItem('prod_date', prodDate);
     localStorage.setItem('prod_notes', notes);
     localStorage.setItem('prod_priorityVTSX', priorityVTSX);
@@ -282,8 +302,9 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       localStorage.setItem('prod_orderItems', JSON.stringify(orderItems));
       localStorage.setItem('prod_generatedComponents', JSON.stringify(generatedComponents));
       localStorage.setItem('prod_stockPool', JSON.stringify(stockPool));
+      localStorage.setItem('prod_finishedItems', JSON.stringify(prodFinishedItems));
     }
-  }, [selectedProduct, quantity, prodDate, notes, priorityVTSX, orderCode, allocations, isShortage, orderCreated, mode, orderItems, generatedComponents, stockPool]);
+  }, [prodRows, prodDate, notes, priorityVTSX, orderCode, allocations, isShortage, orderCreated, mode, orderItems, generatedComponents, stockPool, prodFinishedItems]);
 
   useEffect(() => {
     // Fetch unique products from BOM with pagination to bypass 1000 rows limit
@@ -332,17 +353,19 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   }, []);
 
   const handleCalculate = async () => {
-    if (!selectedProduct || quantity <= 0) return alert('Vui lòng chọn mã sản phẩm và nhập số lượng > 0');
+    const rows = prodRows
+      .filter(r => r.code && Number(r.qty) > 0)
+      .map(r => ({ code: r.code, name: r.name || (products.find(p => p.code === r.code)?.name || ''), qty: Number(r.qty) }));
+    if (rows.length === 0) return alert('Vui lòng nhập ít nhất 1 thành phẩm và số lượng > 0');
+
     setLoading(true);
     setMode('production');
     setAllocations(null);
     setOrderCreated(false);
-    
+
     try {
-      // 0. Tạo mã phiếu PSX-YYYYMMDD-xx
+      // 0. Tạo mã phiếu PSX-YYYYMMDD-NN
       const todayStr = new Date(prodDate).toISOString().split('T')[0].replace(/-/g, '');
-      
-      // Lấy mã Lệnh Sản Xuất lớn nhất trong ngày từ bảng production_orders
       const { data: latestOrder, error: latestErr } = await db.from('production_orders')
         .select('order_code')
         .like('order_code', `PSX-${todayStr}-%`)
@@ -351,41 +374,48 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
       let seq = 1;
       if (!latestErr && latestOrder && latestOrder.length > 0) {
-        const lastCode = latestOrder[0].order_code;
-        const lastSeq = parseInt(lastCode.split('-').pop(), 10);
+        const lastSeq = parseInt(latestOrder[0].order_code.split('-').pop(), 10);
         if (!isNaN(lastSeq)) seq = lastSeq + 1;
       }
-
       const generatedCode = `PSX-${todayStr}-${seq.toString().padStart(2, '0')}`;
       setOrderCode(generatedCode);
 
-      // 1. Lấy cấu trúc BOM của SP
+      // Danh sách lệnh con (mỗi thành phẩm 1 lệnh)
+      const finishedItems = buildFinishedItems(rows, generatedCode);
+      setProdFinishedItems(finishedItems);
+
+      // 1. Lấy BOM của tất cả thành phẩm
+      const prodCodes = [...new Set(rows.map(r => r.code))];
       const { data: bomData, error: bomErr } = await db.from('bom_items')
-        .select(`component_code, quantity, unit, inventory_items!bom_items_component_code_fkey ( item_name )`)
-        .eq('product_code', selectedProduct);
-      
+        .select(`product_code, component_code, quantity, unit, inventory_items!bom_items_component_code_fkey ( item_name )`)
+        .in('product_code', prodCodes);
       if (bomErr) throw bomErr;
-      if (!bomData || bomData.length === 0) throw new Error('Sản phẩm này chưa có cấu trúc BOM');
+      if (!bomData || bomData.length === 0) throw new Error('Các thành phẩm này chưa có cấu trúc BOM');
 
-      const componentsRequired = bomData.map(b => ({
-        code: b.component_code,
-        name: b.inventory_items?.item_name || '',
-        unit: b.unit,
-        requiredQty: b.quantity * quantity
-      }));
+      const bomByProduct = {};
+      bomData.forEach(b => {
+        if (!bomByProduct[b.product_code]) bomByProduct[b.product_code] = [];
+        bomByProduct[b.product_code].push({
+          component_code: b.component_code,
+          quantity: b.quantity,
+          unit: b.unit,
+          item_name: b.inventory_items?.item_name || '',
+        });
+      });
 
+      // 2. Gộp nhu cầu linh kiện tổng theo mã
+      const componentsRequired = aggregateComponentDemand(rows, bomByProduct);
       const compCodes = componentsRequired.map(c => c.code);
 
-      // 2. Lấy Tồn kho của các linh kiện này (Sắp xếp FIFO: ngay_nhap ASC, quantity ASC)
+      // 3. Lấy tồn kho (FIFO: import_date asc, quantity asc)
       const { data: stockData, error: stockErr } = await db.from('inventory_stock')
         .select('*')
         .in('item_code', compCodes)
         .order('import_date', { ascending: true })
         .order('quantity', { ascending: true });
-
       if (stockErr) throw stockErr;
 
-      // Lưu tồn gốc theo item_code để popup Sửa phân bổ tra cứu/validate
+      // Lưu tồn gốc theo item_code cho popup "Sửa phân bổ"
       const pool = {};
       (stockData || []).forEach(r => {
         if (!pool[r.item_code]) pool[r.item_code] = [];
@@ -393,73 +423,13 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       });
       setStockPool(pool);
 
-      // Deep copy stock to simulate deduction
-      let availableStock = JSON.parse(JSON.stringify(stockData || []));
-      
-      if (priorityVTSX) {
-         const priorityItems = availableStock.filter(s => s.location && s.location.startsWith('SX11-'));
-         const normalItems = availableStock.filter(s => !(s.location && s.location.startsWith('SX11-')));
-         availableStock = [...priorityItems, ...normalItems];
-      }
-      
-      let hasShortage = false;
-      const result = [];
-
-      // 3. Tính toán Allocation
-      componentsRequired.forEach(comp => {
-        let qtyNeeded = comp.requiredQty;
-        const compAllocations = [];
-
-        // Trường hợp THÁO MÁY (SL cần âm) -> Cộng ngược lại vào kho
-        if (qtyNeeded < 0) {
-          compAllocations.push({
-            stock_id: null, // Sẽ tạo mới hoặc update dựa vào location này lúc lưu
-            location: `SX9-${generatedCode}`,
-            before: 0,
-            taken: qtyNeeded, // số âm
-            remaining: Math.abs(qtyNeeded)
-          });
-          result.push({
-            ...comp,
-            allocations: compAllocations,
-            missing: 0, // Không bị thiếu
-            isShortage: false
-          });
-          return;
-        }
-
-        const compStockRows = availableStock.filter(s => s.item_code === comp.code && s.quantity > 0);
-        
-        for (let i = 0; i < compStockRows.length && qtyNeeded > 0; i++) {
-          const row = compStockRows[i];
-          const take = Math.min(row.quantity, qtyNeeded);
-          
-          const beforeQty = row.quantity;
-          row.quantity -= take;
-          qtyNeeded -= take;
-          
-          compAllocations.push({
-            stock_id: row.id,
-            location: row.location,
-            before: beforeQty,
-            taken: take,
-            remaining: row.quantity
-          });
-        }
-
-        if (qtyNeeded > 0) hasShortage = true;
-
-        result.push({
-          ...comp,
-          allocations: compAllocations,
-          missing: qtyNeeded,
-          isShortage: qtyNeeded > 0
-        });
+      // 4. Phân bổ FIFO 1 lần trên nhu cầu tổng
+      const { result, isShortage: hasShortage } = allocateFIFO(componentsRequired, stockData, {
+        priorityVTSX, phieuCode: generatedCode,
       });
 
       setAllocations(result);
       setIsShortage(hasShortage);
-
     } catch (e) {
       console.error(e);
       alert('Lỗi tính toán: ' + e.message);
@@ -554,7 +524,6 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
             } else {
               setMode('delivery');
               setOrderItems(parsedItems);
-              setSelectedProduct('');
               setTimeout(() => handleCalculateDelivery(parsedItems), 100);
             }
           } catch (error) {
@@ -585,8 +554,6 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
     setMode('delivery');
     setOrderItems(filteredItems);
-    setSelectedProduct('');
-    
     setTimeout(() => handleCalculateDelivery(filteredItems), 100);
   };
 
@@ -951,7 +918,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
             pickingLogs.push({
               order_code: orderCode,
-              product_code: selectedProduct, // Liên kết đúng với sản phẩm đang sản xuất
+              product_code: prodFinishedItems.length === 1 ? prodFinishedItems[0].productCode : 'SAN_XUAT',
               component_code: comp.code,
               component_name: comp.name,
               location: alloc.location,
@@ -973,7 +940,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
             
             pickingLogs.push({
               order_code: orderCode,
-              product_code: mode === 'delivery' ? 'DON_HANG' : (mode === 'manual_export' ? 'XUAT_KHO' : (mode === 'disassemble' ? allocations[0].code : selectedProduct)),
+              product_code: mode === 'delivery' ? 'DON_HANG' : (mode === 'manual_export' ? 'XUAT_KHO' : (mode === 'disassemble' ? allocations[0].code : (prodFinishedItems.length === 1 ? prodFinishedItems[0].productCode : 'SAN_XUAT'))),
               component_code: comp.code,
               component_name: comp.name,
               location: alloc.location,
@@ -1000,43 +967,54 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       }
 
       if (mode === 'production') {
-        // 5. Đồng thời tạo 1 lệnh sản xuất mới đẩy sang AdminDashboard
-        const { data: capData } = await db.from('product_capacities').select('capacity_per_hour').eq('product_code', selectedProduct).single();
-        const stdTime = capData?.capacity_per_hour ? (1 / parseFloat(capData.capacity_per_hour)) : 0.05; 
-        
-        const { error: orderErr } = await db.from('production_orders').upsert([{
-            order_code: orderCode,
-            product_code: selectedProduct,
-            target_quantity: quantity,
+        // 5. Tạo 1 lệnh sản xuất + 1 tồn WIP (SX9-...) cho MỖI thành phẩm
+        const orderUpserts = [];
+        const wipInserts = [];
+        for (const it of prodFinishedItems) {
+          const { data: capData } = await db.from('product_capacities')
+            .select('capacity_per_hour').eq('product_code', it.productCode).maybeSingle();
+          const stdTime = capData?.capacity_per_hour ? (1 / parseFloat(capData.capacity_per_hour)) : 0.05;
+          orderUpserts.push({
+            order_code: it.orderCode,
+            product_code: it.productCode,
+            target_quantity: it.qty,
             standard_time_per_unit: stdTime,
-            status: 'pending'
-        }], { onConflict: 'order_code' });
-        
+            status: 'pending',
+          });
+          wipInserts.push({
+            item_code: it.productCode,
+            item_name: it.productName || `Thành phẩm ${it.productCode}`,
+            unit: 'Bộ',
+            location: `SX9-${it.orderCode}`,
+            quantity: it.qty,
+            import_date: todayLocal(),
+          });
+        }
+
+        const { error: orderErr } = await db.from('production_orders').upsert(orderUpserts, { onConflict: 'order_code' });
         if (orderErr) throw orderErr;
 
-        // 5.1 Tạo tồn kho tạm cho thành phẩm ở vị trí SX9-[mã phiếu]
-        const { error: wipErr } = await db.from('inventory_stock').insert([{
-            item_code: selectedProduct,
-            item_name: selectedProductName || `Thành phẩm ${selectedProduct}`,
-            unit: 'Bộ', // Mặc định thành phẩm là Bộ, hoặc có thể lấy từ DB nếu có
-            location: `SX9-${orderCode}`,
-            quantity: quantity,
-            import_date: todayLocal()
-        }]);
-        if (wipErr) console.warn('Không thể tạo tồn kho tạm (WIP) cho sản phẩm:', wipErr);
+        const { error: wipErr } = await db.from('inventory_stock').insert(wipInserts);
+        if (wipErr) console.warn('Không thể tạo tồn kho tạm (WIP):', wipErr);
 
-        // 5.2 Trừ nhu cầu DKSX nếu mã này đang có (làm phiếu SX → giảm SL cần SX)
-        try {
-          const { data: pd } = await db.from('production_demand').select('id, qty_demand').eq('item_code', selectedProduct).maybeSingle();
-          if (pd) {
-            const remain = Math.max(0, Number(pd.qty_demand) - Number(quantity));
-            await db.from('production_demand').update({
-              qty_demand: remain,
-              trang_thai: remain <= 0 ? 'Hoàn thành' : 'Đang SX',
-              updated_at: new Date().toISOString()
-            }).eq('id', pd.id);
-          }
-        } catch (e) { console.warn('Không cập nhật được DKSX:', e.message); }
+        // 5.2 Trừ nhu cầu DKSX — gộp theo mã thành phẩm (Σqty) để không trừ thiếu/thừa khi trùng mã
+        const demandByCode = {};
+        for (const it of prodFinishedItems) {
+          demandByCode[it.productCode] = (demandByCode[it.productCode] || 0) + Number(it.qty);
+        }
+        for (const [code, qtySum] of Object.entries(demandByCode)) {
+          try {
+            const { data: pd } = await db.from('production_demand').select('id, qty_demand').eq('item_code', code).maybeSingle();
+            if (pd) {
+              const remain = Math.max(0, Number(pd.qty_demand) - qtySum);
+              await db.from('production_demand').update({
+                qty_demand: remain,
+                trang_thai: remain <= 0 ? 'Hoàn thành' : 'Đang SX',
+                updated_at: new Date().toISOString(),
+              }).eq('id', pd.id);
+            }
+          } catch (e) { console.warn('Không cập nhật được DKSX:', e.message); }
+        }
       }
 
       // 6. Ghi vào Dữ liệu xuất (so_luong_ban)
@@ -1244,7 +1222,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     }
   };
 
-  const selectedProductName = products.find(p => p.code === selectedProduct)?.name || '';
+  const totalProdQty = prodFinishedItems.reduce((sum, it) => sum + Number(it.qty || 0), 0);
 
   const EXPORT_TYPES = [
     { id: 'production', label: 'Lệnh Sản Xuất', icon: Play, color: '#0891b2', desc: 'Tạo phiếu sản xuất từ BOM' },
@@ -1276,8 +1254,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     setAllocations(null);
     setOrderCreated(false);
     setMode('production');
-    setSelectedProduct('');
-    setQuantity(1);
+    setProdRows([emptyProdRow()]);
+    setProdFinishedItems([]);
     setNotes('');
     setOrderItems([]);
     setGeneratedComponents([]);
@@ -1423,24 +1401,51 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                      </>
                   ) : (
                      <>
-                       <p style={{margin:'3px 0'}}><strong>Mã SP:</strong> {selectedProduct}</p>
-                       <p style={{margin:'3px 0'}}><strong>Tên SP:</strong> {selectedProductName}</p>
+                       <p style={{margin:'3px 0'}}><strong>Số mã SX:</strong> {prodFinishedItems.length}</p>
+                       <p style={{margin:'3px 0'}}><strong>Tổng SL:</strong> {totalProdQty.toLocaleString('vi-VN')}</p>
                      </>
                   )}
                   {notes && <p style={{margin:'3px 0'}}><strong>Ghi chú:</strong> {notes}</p>}
                 </div>
                 <div style={{textAlign:'right'}}>
                   <p style={{margin:'3px 0'}}><strong>Mã phiếu:</strong> <span style={{fontSize:'1.05rem',fontWeight:800,color:'#0f172a'}}>{orderCode}</span></p>
-                  {mode === 'production' && <p style={{margin:'3px 0'}}><strong>Số lượng SX:</strong> <span style={{fontSize:'1.1rem',fontWeight:800,color:'#0f172a'}}>{quantity}</span></p>}
+                  {mode === 'production' && <p style={{margin:'3px 0'}}><strong>Tổng SL SX:</strong> <span style={{fontSize:'1.1rem',fontWeight:800,color:'#0f172a'}}>{totalProdQty.toLocaleString('vi-VN')}</span></p>}
                   {mode === 'disassemble' && <p style={{margin:'3px 0'}}><strong>Số lượng phân rã:</strong> <span style={{fontSize:'1.1rem',fontWeight:800,color:'#0f172a'}}>{allocations[0]?.requiredQty}</span></p>}
                   <p style={{margin:'3px 0'}}><strong>Ngày:</strong> {new Date(prodDate).toLocaleDateString('vi-VN')}</p>
                 </div>
               </div>
             </div>
 
+            {/* Danh sách thành phẩm (mode production, nhiều mã / 1 phiếu) */}
+            {mode === 'production' && (
+              <div style={{margin:'0 1rem 1.5rem'}}>
+                <h3 style={{fontSize:'1rem',fontWeight:700,marginBottom:'0.75rem',color:'#334155'}}>Danh sách thành phẩm sản xuất:</h3>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.75rem'}}>
+                  <thead>
+                    <tr style={{background:'#f8fafc',borderBottom:'2px solid #cbd5e1',borderTop:'2px solid #cbd5e1'}}>
+                      <th style={{padding:'0.4rem',textAlign:'left',fontWeight:700,color:'#334155'}}>Mã SP</th>
+                      <th style={{padding:'0.4rem',textAlign:'left',fontWeight:700,color:'#334155'}}>Tên</th>
+                      <th style={{padding:'0.4rem',textAlign:'center',fontWeight:700,color:'#334155'}}>Số lượng</th>
+                      <th style={{padding:'0.4rem',textAlign:'left',fontWeight:700,color:'#334155'}}>Mã lệnh</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prodFinishedItems.map(it => (
+                      <tr key={it.orderCode} style={{borderBottom:'1px solid #e2e8f0'}}>
+                        <td style={{padding:'0.4rem',fontWeight:600,color:'#0f172a'}}>{it.productCode}</td>
+                        <td style={{padding:'0.4rem'}}>{it.productName}</td>
+                        <td style={{padding:'0.4rem',textAlign:'center',fontWeight:700}}>{it.qty}</td>
+                        <td style={{padding:'0.4rem',color:'#64748b'}}>{it.orderCode}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {/* Print Details */}
             <h3 style={{fontSize:'1rem',fontWeight:700,marginBottom:'1rem',color:'#334155', padding:'0 1rem'}}>
-              {(mode === 'delivery' || mode === 'manual_export' || mode === 'disassemble') ? 'Danh sách hàng hóa xuất kho:' : 'Danh sách linh kiện cần lấy:'}
+              {(mode === 'delivery' || mode === 'manual_export' || mode === 'disassemble') ? 'Danh sách hàng hóa xuất kho:' : 'Danh sách linh kiện cần lấy (tổng chung):'}
             </h3>
             <div style={{overflowX:'auto', margin:'0 1rem'}}>
               <table style={{width:'100%',borderCollapse:'collapse',fontSize:'0.75rem'}}>
@@ -1611,24 +1616,43 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       {/* Production Form Modal */}
       {showProductionModal && (
         <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.6)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
-          <div style={{ background:'#fff', padding:'2rem', borderRadius:16, maxWidth:500, width:'100%', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)', animation:'fadeIn 0.2s ease-out', maxHeight:'90vh', overflowY:'auto' }}>
+          <div style={{ background:'#fff', padding:'2rem', borderRadius:16, maxWidth:640, width:'100%', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)', animation:'fadeIn 0.2s ease-out', maxHeight:'90vh', overflowY:'auto' }}>
             <h3 style={{ margin:'0 0 1.5rem 0', fontSize:'1.25rem', color:'#0f172a', display:'flex', alignItems:'center', gap:10, fontWeight:800 }}>
               <Play size={24} color="#0891b2"/> Lệnh Sản Xuất
             </h3>
 
             <div style={{marginBottom:15}}>
               <label style={s.label}>Thành phẩm cần sản xuất</label>
-              <SearchableSelect 
-                value={selectedProduct} 
-                onChange={setSelectedProduct} 
-                placeholder="-- Gõ hoặc chọn mã SP --"
-                options={products.map(p => ({ value: p.code, label: p.name }))}
-              />
-            </div>
-
-            <div style={{marginBottom:15}}>
-              <label style={s.label}>Số lượng</label>
-              <input type="number" min="1" value={quantity} onChange={e=>setQuantity(Number(e.target.value))} style={s.input}/>
+              <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                {prodRows.map(row => (
+                  <div key={row.id} style={{display:'flex', gap:8, alignItems:'flex-start'}}>
+                    <div style={{flex:1}}>
+                      <SearchableSelect
+                        value={row.code}
+                        onChange={(v) => updateProdRow(row.id, { code: v, name: products.find(p => p.code === v)?.name || '' })}
+                        placeholder="-- Gõ hoặc chọn mã SP --"
+                        options={products.map(p => ({ value: p.code, label: p.name }))}
+                      />
+                    </div>
+                    <input
+                      type="number" min="1"
+                      value={row.qty}
+                      onChange={(e) => updateProdRow(row.id, { qty: e.target.value })}
+                      placeholder="SL"
+                      style={{...s.input, width:90}}
+                    />
+                    <button
+                      onClick={() => removeProdRow(row.id)}
+                      disabled={prodRows.length <= 1}
+                      title="Xoá dòng"
+                      style={{border:'none', background:'#fef2f2', color: prodRows.length <= 1 ? '#cbd5e1' : '#dc2626', borderRadius:7, width:34, height:34, cursor: prodRows.length <= 1 ? 'not-allowed' : 'pointer', fontWeight:700, flexShrink:0}}
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={addProdRow} style={{marginTop:8, ...s.btn, background:'#f1f5f9', color:'#0891b2', border:'1px dashed #94a3b8'}}>
+                + Thêm thành phẩm
+              </button>
             </div>
 
             <div style={{marginBottom:15}}>
@@ -1650,10 +1674,10 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
               <button onClick={() => setShowProductionModal(false)} style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'1px solid #cbd5e1', background:'#fff', color:'#475569', fontWeight:600, cursor:'pointer' }}>
                 Hủy Bỏ
               </button>
-              <button 
-                onClick={handleProductionSubmit} 
-                disabled={!selectedProduct || quantity <= 0}
-                style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'none', background:(selectedProduct && quantity > 0) ? '#0891b2' : '#cbd5e1', color:'#fff', fontWeight:600, cursor:(selectedProduct && quantity > 0) ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:5 }}
+              <button
+                onClick={handleProductionSubmit}
+                disabled={!prodRows.some(r => r.code && Number(r.qty) > 0)}
+                style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'none', background: prodRows.some(r => r.code && Number(r.qty) > 0) ? '#0891b2' : '#cbd5e1', color:'#fff', fontWeight:600, cursor: prodRows.some(r => r.code && Number(r.qty) > 0) ? 'pointer' : 'not-allowed', display:'flex', alignItems:'center', gap:5 }}
               >
                 <Play size={16}/> Tính toán bốc dỡ
               </button>
