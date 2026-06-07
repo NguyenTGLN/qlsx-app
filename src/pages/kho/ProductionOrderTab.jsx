@@ -3,6 +3,7 @@ import { supabase as db } from '../../lib/supabase';
 import { Search, Loader2, Play, Printer, AlertCircle, CheckCircle, Package, Upload, Check, Download, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
+import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
 
 const s = {
   btn: { display:'flex',alignItems:'center',gap:5,padding:'0.5rem 1rem',borderRadius:7,border:'none',background:'#0891b2',cursor:'pointer',fontSize:'0.85rem',fontWeight:600,color:'#fff',transition:'all 0.15s' },
@@ -239,12 +240,10 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const [duplicateOrders, setDuplicateOrders] = useState([]);
   const [pendingParsedItems, setPendingParsedItems] = useState([]);
   
-  // States for Manual Export Modal
+  // States for Manual Export Modal — nhiều mã trên 1 phiếu, mỗi dòng 1 lý do
   const [showManualExportModal, setShowManualExportModal] = useState(false);
-  const [manualProduct, setManualProduct] = useState('');
-  const [manualQty, setManualQty] = useState('');
-  const [manualReason, setManualReason] = useState('XDG'); // 'XDG' (Đóng gói) | 'XBS' (Bổ sung)
-  const [manualOrderRef, setManualOrderRef] = useState('');
+  const emptyManualRow = () => ({ code: '', name: '', qty: '', reason: 'Bán ra', orderRef: '' });
+  const [manualRows, setManualRows] = useState([emptyManualRow()]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [stockItems, setStockItems] = useState([]);
 
@@ -688,6 +687,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
   const handleOpenManualExport = async () => {
     setShowManualExportModal(true);
+    setManualRows([emptyManualRow()]);
     const { data: orderData } = await db.from('production_orders')
       .select('order_code')
       .in('status', ['pending', 'in_progress'])
@@ -719,8 +719,10 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   };
 
   const handleCalculateManualExport = async () => {
-    if (!manualProduct || !manualQty || isNaN(manualQty) || Number(manualQty) <= 0) return alert('Vui lòng chọn Mã SP và nhập Số lượng hợp lệ!');
-    if (manualReason === 'XBS' && !manualOrderRef) return alert('Vui lòng chọn Phiếu sản xuất để bổ sung!');
+    // Lọc dòng hợp lệ
+    const rows = manualRows.filter(r => r.code && r.qty && !isNaN(r.qty) && Number(r.qty) > 0);
+    if (rows.length === 0) return alert('Vui lòng nhập ít nhất 1 dòng có Mã và Số lượng hợp lệ!');
+    // Ô Phiếu SX là TÙY CHỌN — để trống thì dùng mã phiếu PXK chung. Không bắt buộc.
 
     setLoading(true);
     setMode('manual_export');
@@ -738,31 +740,22 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
       let seq = 1;
       if (!latestErr && latestOrder && latestOrder.length > 0) {
-        const lastCode = latestOrder[0].order_code;
-        const lastSeq = parseInt(lastCode.split('-').pop(), 10);
+        const lastSeq = parseInt(latestOrder[0].order_code.split('-').pop(), 10);
         if (!isNaN(lastSeq)) seq = lastSeq + 1;
       }
       const generatedCode = `PXK-${todayStr}-${seq.toString().padStart(2, '0')}`;
       setOrderCode(generatedCode);
 
-      // Nhu cầu chỉ là 1 sản phẩm
-      const selectedProdObj = stockItems.find(p => p.code === manualProduct);
-      const componentsRequired = [{
-        code: manualProduct,
-        name: selectedProdObj ? selectedProdObj.name : '',
-        unit: '', // có thể bỏ qua
-        requiredQty: Number(manualQty)
-      }];
-
+      // Lấy tồn của tất cả mã được chọn (FIFO theo import_date)
+      const codes = [...new Set(rows.map(r => r.code))];
       const { data: stockData, error: stockErr } = await db.from('inventory_stock')
         .select('*')
-        .eq('item_code', manualProduct)
+        .in('item_code', codes)
         .order('import_date', { ascending: true })
         .order('quantity', { ascending: true });
-
       if (stockErr) throw stockErr;
 
-      // Lưu tồn gốc theo item_code để popup Sửa phân bổ tra cứu/validate
+      // Lưu tồn gốc theo item_code cho popup "Sửa phân bổ"
       const pool = {};
       (stockData || []).forEach(r => {
         if (!pool[r.item_code]) pool[r.item_code] = [];
@@ -770,37 +763,51 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       });
       setStockPool(pool);
 
-      const availableStock = JSON.parse(JSON.stringify(stockData || []));
+      // Bản sao tồn để trừ dần, dùng chung cho mọi dòng (nhiều dòng cùng mã sẽ trừ tiếp)
+      const working = JSON.parse(JSON.stringify(stockData || []));
       let hasShortage = false;
       const result = [];
+      const orderItemsArr = [];
 
-      componentsRequired.forEach(comp => {
-        let qtyNeeded = comp.requiredQty;
-        // Xuất thủ công cũng KHÔNG lấy từ kho sản xuất (SX9-*, hàng đang dở dang).
-        const compStockRows = availableStock.filter(s => s.quantity > 0 && !String(s.location || '').startsWith('SX9-'));
+      for (const r of rows) {
+        let qtyNeeded = Number(r.qty);
+        const type = reasonType(r.reason);
+        // Không lấy từ kho sản xuất dở dang (SX9-*)
+        const compStockRows = working.filter(s => s.item_code === r.code && s.quantity > 0 && !String(s.location || '').startsWith('SX9-'));
         const compAllocations = [];
-        
         for (let i = 0; i < compStockRows.length && qtyNeeded > 0; i++) {
           const row = compStockRows[i];
           const take = Math.min(row.quantity, qtyNeeded);
           row.quantity -= take;
           qtyNeeded -= take;
-          compAllocations.push({
-            stock_id: row.id, location: row.location, before: row.quantity + take, taken: take, remaining: row.quantity
-          });
+          compAllocations.push({ stock_id: row.id, location: row.location, before: row.quantity + take, taken: take, remaining: row.quantity });
         }
         if (qtyNeeded > 0) hasShortage = true;
-        result.push({ ...comp, allocations: compAllocations, missing: qtyNeeded, isShortage: qtyNeeded > 0 });
-      });
+        result.push({
+          code: r.code,
+          name: r.name,
+          unit: '',
+          requiredQty: Number(r.qty),
+          reason: r.reason,
+          type,
+          orderRef: r.orderRef || '',
+          allocations: compAllocations,
+          missing: qtyNeeded,
+          isShortage: qtyNeeded > 0,
+        });
+        orderItemsArr.push({
+          orderCode: r.orderRef || generatedCode,
+          productCode: r.code,
+          productName: r.name,
+          qty: Number(r.qty),
+          reason: r.reason,
+          type,
+        });
+      }
 
       setAllocations(result);
       setIsShortage(hasShortage);
-      setOrderItems([{
-        orderCode: manualReason === 'XBS' ? manualOrderRef : generatedCode,
-        productCode: manualProduct,
-        productName: selectedProdObj ? selectedProdObj.name : '',
-        qty: Number(manualQty)
-      }]);
+      setOrderItems(orderItemsArr);
     } catch (e) {
       console.error(e);
       alert('Lỗi xuất kho thủ công: ' + e.message);
@@ -963,7 +970,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
             
             pickingLogs.push({
               order_code: orderCode,
-              product_code: mode === 'delivery' ? 'DON_HANG' : (mode === 'manual_export' ? (manualReason === 'XBS' ? 'Bổ sung' : 'XUAT_KHO') : (mode === 'disassemble' ? allocations[0].code : selectedProduct)),
+              product_code: mode === 'delivery' ? 'DON_HANG' : (mode === 'manual_export' ? 'XUAT_KHO' : (mode === 'disassemble' ? allocations[0].code : selectedProduct)),
               component_code: comp.code,
               component_name: comp.name,
               location: alloc.location,
@@ -971,7 +978,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
               quantity_taken: -alloc.taken, // Lịch sử bốc dỡ là số ÂM (Trừ kho)
               quantity_after: alloc.remaining,
               created_by: userStr,
-              notes: mode === 'disassemble' ? 'Phân rã (Xuất SP)' : notes,
+              notes: mode === 'manual_export' ? (comp.reason || 'Xuất kho') : (mode === 'disassemble' ? 'Phân rã (Xuất SP)' : notes),
               created_at: new Date(baseTimeMs).toISOString()
             });
           }
@@ -1033,11 +1040,12 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       let slbData = [];
       if (mode === 'delivery' || mode === 'manual_export') {
          slbData = orderItems.map(item => ({
-            ma_don_hang: item.orderCode, // Sẽ là PXK-... (hoặc PSX-... nếu bổ sung)
+            ma_don_hang: item.orderCode, // PXK-... (hoặc PSX-... nếu chọn Phiếu SX)
             ma_san_pham: item.productCode,
             ten_san_pham: item.productName,
             so_luong: item.qty,
             ngay_xuat: todayLocal(),
+            type: item.type, // manual_export: type theo lý do từng dòng; delivery: undefined -> dùng exportType
             created_at: new Date(baseTimeMs).toISOString()
          }));
       } else if (mode === 'disassemble') {
@@ -1068,10 +1076,10 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
       if (slbData.length > 0) {
          // Gắn loại xuất (type) theo mode để phân biệt khi tính demand:
-         //   delivery -> XB (đơn hàng) | manual_export -> XBS/XDG (theo manualReason)
+         //   delivery -> XB (đơn hàng) | manual_export -> type đã nhúng vào từng item
          //   disassemble -> KHAC (tháo máy) | production -> XBS (cấp linh kiện cho chuyền)
          const exportType = mode === 'delivery' ? 'XB'
-            : mode === 'manual_export' ? manualReason
+            : mode === 'manual_export' ? 'KHAC' // fallback; item.type từng dòng được ưu tiên qua r.type || exportType
             : mode === 'disassemble' ? 'KHAC'
             : 'XBS';
          const slbDataTyped = slbData.map(r => ({ ...r, type: r.type || exportType }));
@@ -1402,9 +1410,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                      </>
                   ) : mode === 'manual_export' ? (
                      <>
-                       <p style={{margin:'3px 0'}}><strong>Mã SP xuất:</strong> {orderItems[0]?.productCode}</p>
-                       <p style={{margin:'3px 0'}}><strong>Tên SP xuất:</strong> {orderItems[0]?.productName}</p>
-                       <p style={{margin:'3px 0'}}><strong>Mục đích:</strong> {orderItems[0]?.orderCode === 'XDG' ? 'Xuất đóng gói' : `Xuất bổ sung cho phiếu: ${orderItems[0]?.orderCode}`}</p>
+                       <p style={{margin:'3px 0'}}><strong>Số mã xuất:</strong> {orderItems.length}</p>
+                       <p style={{margin:'3px 0'}}><strong>Tổng SL xuất:</strong> {orderItems.reduce((acc, c) => acc + (Number(c.qty) || 0), 0).toLocaleString('vi-VN')}</p>
                      </>
                   ) : mode === 'disassemble' ? (
                      <>
@@ -1422,7 +1429,6 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                 <div style={{textAlign:'right'}}>
                   <p style={{margin:'3px 0'}}><strong>Mã phiếu:</strong> <span style={{fontSize:'1.05rem',fontWeight:800,color:'#0f172a'}}>{orderCode}</span></p>
                   {mode === 'production' && <p style={{margin:'3px 0'}}><strong>Số lượng SX:</strong> <span style={{fontSize:'1.1rem',fontWeight:800,color:'#0f172a'}}>{quantity}</span></p>}
-                  {mode === 'manual_export' && <p style={{margin:'3px 0'}}><strong>Số lượng xuất:</strong> <span style={{fontSize:'1.1rem',fontWeight:800,color:'#0f172a'}}>{orderItems[0]?.qty}</span></p>}
                   {mode === 'disassemble' && <p style={{margin:'3px 0'}}><strong>Số lượng phân rã:</strong> <span style={{fontSize:'1.1rem',fontWeight:800,color:'#0f172a'}}>{allocations[0]?.requiredQty}</span></p>}
                   <p style={{margin:'3px 0'}}><strong>Ngày:</strong> {new Date(prodDate).toLocaleDateString('vi-VN')}</p>
                 </div>
@@ -1455,7 +1461,10 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                         // Trường hợp cháy kho hoàn toàn
                         <tr style={{borderBottom:'1px solid #e2e8f0',background:'#fef2f2'}}>
                           <td style={{padding:'0.4rem',fontWeight:600}}>{comp.code}</td>
-                          <td style={{padding:'0.4rem',minWidth:120}}>{comp.name}</td>
+                          <td style={{padding:'0.4rem',minWidth:120}}>
+                            {comp.name}
+                            {mode === 'manual_export' && comp.reason && <div style={{fontSize:'0.65rem',color:'#0284c7',fontWeight:700,marginTop:3}}>Lý do: {comp.reason}{comp.orderRef ? ` → ${comp.orderRef}` : ''}</div>}
+                          </td>
                           <td style={{padding:'0.4rem',textAlign:'center',fontWeight:700}}>
                             {comp.requiredQty}
                             {!orderCreated && comp.requiredQty > 0 && (
@@ -1470,7 +1479,10 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                             {i === 0 && (
                               <>
                                 <td rowSpan={rows} style={{padding:'0.4rem',fontWeight:600,verticalAlign:'top',borderRight:'1px dotted #e2e8f0'}}>{comp.code}</td>
-                                <td rowSpan={rows} style={{padding:'0.4rem',verticalAlign:'top',borderRight:'1px dotted #e2e8f0',minWidth:120}}>{comp.name}</td>
+                                <td rowSpan={rows} style={{padding:'0.4rem',verticalAlign:'top',borderRight:'1px dotted #e2e8f0',minWidth:120}}>
+                                  {comp.name}
+                                  {mode === 'manual_export' && comp.reason && <div style={{fontSize:'0.65rem',color:'#0284c7',fontWeight:700,marginTop:3}}>Lý do: {comp.reason}{comp.orderRef ? ` → ${comp.orderRef}` : ''}</div>}
+                                </td>
                                 <td rowSpan={rows} style={{padding:'0.4rem',textAlign:'center',fontWeight:700,verticalAlign:'top',borderRight:'1px dotted #e2e8f0'}}>
                                   {comp.requiredQty}
                                   {comp.isShortage && <div style={{color:'#dc2626',fontSize:'0.65rem',marginTop:5}}>(Thiếu {comp.missing})</div>}
@@ -1652,74 +1664,72 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       {/* Manual Export Modal */}
       {showManualExportModal && (
         <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.6)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
-          <div style={{ background:'#fff', padding:'2rem', borderRadius:16, maxWidth:500, width:'100%', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)', animation:'fadeIn 0.2s ease-out' }}>
+          <div style={{ background:'#fff', padding:'2rem', borderRadius:16, maxWidth:880, width:'100%', maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)', animation:'fadeIn 0.2s ease-out' }}>
             <h3 style={{ margin:'0 0 1.5rem 0', fontSize:'1.25rem', color:'#0f172a', display:'flex', alignItems:'center', gap:10, fontWeight: 800 }}>
               <Package size={24} color="#0284c7"/> Xuất Kho Thủ Công
             </h3>
-            
-            <div style={{marginBottom:15}}>
-              <label style={s.label}>Mã sản phẩm / linh kiện</label>
-              <SearchableSelect 
-                options={stockItems.map(p => ({value: p.code, label: p.name}))} 
-                value={manualProduct} 
-                onChange={setManualProduct} 
-                placeholder="Tìm mã hoặc tên..." 
-              />
-            </div>
-            
-            <div style={{marginBottom:15}}>
-              <label style={s.label}>Tên sản phẩm / linh kiện</label>
-              <input 
-                type="text" 
-                style={{...s.input, background:'#f1f5f9', color:'#94a3b8'}} 
-                value={stockItems.find(p => p.code === manualProduct)?.name || ''} 
-                disabled 
-              />
-            </div>
 
-            <div style={{marginBottom:15}}>
-              <label style={s.label}>Số lượng xuất</label>
-              <input 
-                type="number" 
-                style={s.input} 
-                value={manualQty} 
-                onChange={e => setManualQty(e.target.value)} 
-                placeholder="Nhập số lượng..." 
-                min="1"
-              />
-            </div>
+            {manualRows.map((row, idx) => {
+              const needRef = reasonNeedsOrderRef(row.reason);
+              return (
+                <div key={idx} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:'0.9rem', marginBottom:12, background:'#f8fafc' }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'1.4fr 1.4fr 0.7fr 1.2fr auto', gap:10, alignItems:'end' }}>
+                    <div>
+                      <label style={s.label}>Mã SP / linh kiện</label>
+                      <SearchableSelect
+                        options={stockItems.map(p => ({value: p.code, label: p.name}))}
+                        value={row.code}
+                        onChange={(val) => setManualRows(rs => rs.map((r, i) => i === idx
+                          ? { ...r, code: val, name: stockItems.find(p => p.code === val)?.name || '' }
+                          : r))}
+                        placeholder="Tìm mã hoặc tên..."
+                      />
+                    </div>
+                    <div>
+                      <label style={s.label}>Tên</label>
+                      <input type="text" style={{...s.input, background:'#eef2f7', color:'#64748b'}} value={row.name} disabled />
+                    </div>
+                    <div>
+                      <label style={s.label}>Số lượng</label>
+                      <input type="number" min="1" style={s.input} value={row.qty}
+                        onChange={e => setManualRows(rs => rs.map((r, i) => i === idx ? { ...r, qty: e.target.value } : r))}
+                        placeholder="SL..." />
+                    </div>
+                    <div>
+                      <label style={s.label}>Lý do xuất</label>
+                      <select style={s.input} value={row.reason}
+                        onChange={e => setManualRows(rs => rs.map((r, i) => i === idx ? { ...r, reason: e.target.value, orderRef: '' } : r))}>
+                        {EXPORT_REASONS.map(opt => <option key={opt.label} value={opt.label}>{opt.label}</option>)}
+                      </select>
+                    </div>
+                    <button onClick={() => setManualRows(rs => rs.length > 1 ? rs.filter((_, i) => i !== idx) : [emptyManualRow()])}
+                      title="Xoá dòng"
+                      style={{ height:38, width:38, borderRadius:8, border:'1px solid #fecaca', background:'#fef2f2', color:'#dc2626', cursor:'pointer', fontWeight:700 }}>✕</button>
+                  </div>
+                  {needRef && (
+                    <div style={{ marginTop:10 }}>
+                      <label style={s.label}>Bổ sung cho Phiếu Sản Xuất (tùy chọn)</label>
+                      <select style={s.input} value={row.orderRef}
+                        onChange={e => setManualRows(rs => rs.map((r, i) => i === idx ? { ...r, orderRef: e.target.value } : r))}>
+                        <option value="">-- Dùng mã phiếu PXK chung --</option>
+                        {recentOrders.map(code => <option key={code} value={code}>{code}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
-            <div style={{marginBottom:15}}>
-              <label style={s.label}>Lý do xuất kho</label>
-              <div style={{display:'flex', gap:20, marginTop:8}}>
-                <label style={{display:'flex', alignItems:'center', gap:5, cursor:'pointer', fontSize:'0.85rem', color:'#334155'}}>
-                  <input type="radio" name="reason" value="XDG" checked={manualReason === 'XDG'} onChange={() => setManualReason('XDG')} /> Xuất đóng gói
-                </label>
-                <label style={{display:'flex', alignItems:'center', gap:5, cursor:'pointer', fontSize:'0.85rem', color:'#334155'}}>
-                  <input type="radio" name="reason" value="XBS" checked={manualReason === 'XBS'} onChange={() => setManualReason('XBS')} /> Xuất bổ sung lắp ráp
-                </label>
-              </div>
-            </div>
+            <button onClick={() => setManualRows(rs => [...rs, emptyManualRow()])}
+              style={{ padding:'0.5rem 1rem', borderRadius:8, border:'1px dashed #0284c7', background:'#f0f9ff', color:'#0284c7', fontWeight:700, cursor:'pointer', marginBottom:10 }}>
+              + Thêm dòng
+            </button>
 
-            {manualReason === 'XBS' && (
-              <div style={{marginBottom:15}}>
-                <label style={s.label}>Bổ sung cho Phiếu Sản Xuất nào?</label>
-                <select 
-                  style={s.input} 
-                  value={manualOrderRef} 
-                  onChange={e => setManualOrderRef(e.target.value)}
-                >
-                  <option value="">-- Chọn Phiếu Sản Xuất --</option>
-                  {recentOrders.map(code => <option key={code} value={code}>{code}</option>)}
-                </select>
-              </div>
-            )}
-
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:'1rem', marginTop:25 }}>
-              <button onClick={() => setShowManualExportModal(false)} style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'1px solid #cbd5e1', background:'#fff', color:'#475569', fontWeight:600, cursor:'pointer', transition:'0.2s' }}>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:'1rem', marginTop:15 }}>
+              <button onClick={() => setShowManualExportModal(false)} style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'1px solid #cbd5e1', background:'#fff', color:'#475569', fontWeight:600, cursor:'pointer' }}>
                 Hủy Bỏ
               </button>
-              <button onClick={handleCalculateManualExport} style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'none', background:'#0284c7', color:'#fff', fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:5, transition:'0.2s' }}>
+              <button onClick={handleCalculateManualExport} style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'none', background:'#0284c7', color:'#fff', fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
                 Đồng ý & Tính toán
               </button>
             </div>
