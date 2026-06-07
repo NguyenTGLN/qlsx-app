@@ -403,6 +403,12 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
         });
       });
 
+      // Cảnh báo nếu có thành phẩm chưa khai báo BOM (sẽ bị bỏ qua linh kiện → xuất thiếu).
+      const missingBom = prodCodes.filter(c => !bomByProduct[c]);
+      if (missingBom.length > 0) {
+        throw new Error('Các thành phẩm sau chưa có cấu trúc BOM: ' + missingBom.join(', '));
+      }
+
       // 2. Gộp nhu cầu linh kiện tổng theo mã
       const componentsRequired = aggregateComponentDemand(rows, bomByProduct);
       const compCodes = componentsRequired.map(c => c.code);
@@ -795,6 +801,10 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   };
 
   const confirmDeductAndCreateOrder = async () => {
+    if (mode === 'production' && prodFinishedItems.length === 0) {
+      alert('Dữ liệu phiếu sản xuất không hợp lệ (thiếu danh sách thành phẩm). Vui lòng bấm "← Quay lại" rồi tính toán lại.');
+      return;
+    }
     setIsProcessing(true);
     try {
       // 3. Trừ kho / Cộng kho trên DB
