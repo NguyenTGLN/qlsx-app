@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { aggregateComponentDemand, allocateFIFO, buildFinishedItems } from './productionAlloc';
+import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1 } from './productionAlloc';
+
+describe('round1', () => {
+  it('khử nhiễu dấu phẩy động, làm tròn 1 số thập phân', () => {
+    expect(round1(284.30000000000007)).toBe(284.3);
+    expect(round1(30.699999999999932)).toBe(30.7);
+    expect(round1(35)).toBe(35);
+    expect(round1(0.25)).toBe(0.3);
+  });
+});
 
 describe('aggregateComponentDemand', () => {
   const bomByProduct = {
@@ -11,6 +20,13 @@ describe('aggregateComponentDemand', () => {
       { component_code: 'T-0402', quantity: 3, unit: 'm', item_name: 'Dây 6' },
     ],
   };
+
+  it('làm tròn requiredQty 1 số thập phân (khử nhiễu float khi nhân dây)', () => {
+    const out = aggregateComponentDemand(
+      [{ code: 'SP-A', name: 'A', qty: 0.1 }], { 'SP-A': [{ component_code: 'T-0402', quantity: 2.843, item_name: 'Dây 6' }] });
+    // 2.843 * 0.1 = 0.2843 → làm tròn 0.3
+    expect(out[0].requiredQty).toBe(0.3);
+  });
 
   it('gộp tổng theo mã linh kiện qua nhiều thành phẩm', () => {
     const rows = [{ code: 'SP-A', name: 'A', qty: 10 }, { code: 'SP-B', name: 'B', qty: 5 }];

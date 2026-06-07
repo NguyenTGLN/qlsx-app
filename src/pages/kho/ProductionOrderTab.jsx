@@ -4,7 +4,10 @@ import { Search, Loader2, Play, Printer, AlertCircle, CheckCircle, Package, Uplo
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
-import { aggregateComponentDemand, allocateFIFO, buildFinishedItems } from '../../lib/productionAlloc';
+import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1 } from '../../lib/productionAlloc';
+
+// Làm tròn số lượng hiển thị tới 1 chữ số thập phân (khử nhiễu dấu phẩy động của mã dây, vd 284.30000000000007 → 284.3)
+const fmtQty = round1;
 
 // id ổn định cho từng dòng xuất thủ công — tránh mất focus khi xoá dòng giữa (React key)
 let __manualRowSeq = 0;
@@ -149,14 +152,14 @@ const EditAllocationModal = ({ comp, poolRows, onSave, onClose }) => {
     onSave(newAllocations);
   };
 
-  const locOptions = rows.map(r => ({ value: r.location, label: `Tồn: ${r.quantity}` }));
+  const locOptions = rows.map(r => ({ value: r.location, label: `Tồn: ${fmtQty(r.quantity)}` }));
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:10000, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
       <div style={{ background:'#fff', padding:'1.5rem', borderRadius:16, maxWidth:560, width:'100%', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)', maxHeight:'90vh', overflowY:'auto' }}>
         <h3 style={{ margin:'0 0 0.25rem 0', fontSize:'1.1rem', color:'#0f172a', fontWeight:800 }}>Sửa phân bổ vị trí lấy</h3>
         <p style={{ margin:'0 0 1rem 0', fontSize:'0.85rem', color:'#475569' }}>
-          <strong>{comp.code}</strong> — {comp.name} · SL Cần: <strong>{required}</strong>
+          <strong>{comp.code}</strong> — {comp.name} · SL Cần: <strong>{fmtQty(required)}</strong>
         </p>
 
         <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
@@ -179,7 +182,7 @@ const EditAllocationModal = ({ comp, poolRows, onSave, onClose }) => {
                   placeholder="SL lấy"
                   style={{ ...s.input, borderColor: (li.overStock || (li.taken !== '' && !li.takenValid)) ? '#fca5a5' : '#e2e8f0' }}
                 />
-                {li.row && <div style={{ fontSize:'0.7rem', color: li.overStock ? '#dc2626' : '#94a3b8', marginTop:2 }}>Tồn: {li.before}{li.overStock ? ' (vượt!)' : ''}</div>}
+                {li.row && <div style={{ fontSize:'0.7rem', color: li.overStock ? '#dc2626' : '#94a3b8', marginTop:2 }}>Tồn: {fmtQty(li.before)}{li.overStock ? ' (vượt!)' : ''}</div>}
               </div>
               <button onClick={() => removeLine(idx)} title="Xoá dòng" style={{ border:'none', background:'#fef2f2', color:'#dc2626', borderRadius:7, width:34, height:34, cursor:'pointer', fontWeight:700, flexShrink:0 }}>✕</button>
             </div>
@@ -193,7 +196,7 @@ const EditAllocationModal = ({ comp, poolRows, onSave, onClose }) => {
 
         <div style={{ marginTop:14, padding:'0.6rem 0.8rem', borderRadius:8, background: totalOk ? '#f0fdf4' : '#fef2f2', border:`1px solid ${totalOk ? '#bbf7d0' : '#fecaca'}`, fontSize:'0.85rem' }}>
           <div style={{ color: totalOk ? '#16a34a' : '#dc2626', fontWeight:700 }}>
-            Tổng đã lấy: {total} / {required} {totalOk ? '✓' : '(phải bằng SL Cần)'}
+            Tổng đã lấy: {fmtQty(total)} / {fmtQty(required)} {totalOk ? '✓' : '(phải bằng SL Cần)'}
           </div>
           {dupLocations.length > 0 && <div style={{ color:'#dc2626', marginTop:4 }}>Trùng vị trí: {dupLocations.join(', ')}</div>}
         </div>
@@ -1420,7 +1423,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                 <div style={{textAlign:'right'}}>
                   <p style={{margin:'3px 0'}}><strong>Mã phiếu:</strong> <span style={{fontSize:'1.05rem',fontWeight:800,color:'#0f172a'}}>{orderCode}</span></p>
                   {mode === 'production' && <p style={{margin:'3px 0'}}><strong>Tổng SL SX:</strong> <span style={{fontSize:'1.1rem',fontWeight:800,color:'#0f172a'}}>{totalProdQty.toLocaleString('vi-VN')}</span></p>}
-                  {mode === 'disassemble' && <p style={{margin:'3px 0'}}><strong>Số lượng phân rã:</strong> <span style={{fontSize:'1.1rem',fontWeight:800,color:'#0f172a'}}>{allocations[0]?.requiredQty}</span></p>}
+                  {mode === 'disassemble' && <p style={{margin:'3px 0'}}><strong>Số lượng phân rã:</strong> <span style={{fontSize:'1.1rem',fontWeight:800,color:'#0f172a'}}>{fmtQty(allocations[0]?.requiredQty)}</span></p>}
                   <p style={{margin:'3px 0'}}><strong>Ngày:</strong> {new Date(prodDate).toLocaleDateString('vi-VN')}</p>
                 </div>
               </div>
@@ -1484,12 +1487,12 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                             {mode === 'manual_export' && comp.reason && <div style={{fontSize:'0.65rem',color:'#0284c7',fontWeight:700,marginTop:3}}>Lý do: {comp.reason}{comp.orderRef ? ` → ${comp.orderRef}` : ''}</div>}
                           </td>
                           <td style={{padding:'0.4rem',textAlign:'center',fontWeight:700}}>
-                            {comp.requiredQty}
+                            {fmtQty(comp.requiredQty)}
                             {!orderCreated && comp.requiredQty > 0 && (
                               <button className="no-print" onClick={() => setEditingCompIdx(idx)} style={{display:'block',margin:'5px auto 0',border:'1px solid #bae6fd',background:'#f0f9ff',color:'#0891b2',borderRadius:6,padding:'2px 8px',fontSize:'0.65rem',fontWeight:700,cursor:'pointer'}}>✎ Sửa</button>
                             )}
                           </td>
-                          <td colSpan={4} style={{padding:'0.4rem',textAlign:'center',color:'#dc2626',fontWeight:600}}>Hết hàng (Thiếu {comp.missing})</td>
+                          <td colSpan={4} style={{padding:'0.4rem',textAlign:'center',color:'#dc2626',fontWeight:600}}>Hết hàng (Thiếu {fmtQty(comp.missing)})</td>
                         </tr>
                       ) : (
                         comp.allocations.map((alloc, i) => (
@@ -1502,8 +1505,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                                   {mode === 'manual_export' && comp.reason && <div style={{fontSize:'0.65rem',color:'#0284c7',fontWeight:700,marginTop:3}}>Lý do: {comp.reason}{comp.orderRef ? ` → ${comp.orderRef}` : ''}</div>}
                                 </td>
                                 <td rowSpan={rows} style={{padding:'0.4rem',textAlign:'center',fontWeight:700,verticalAlign:'top',borderRight:'1px dotted #e2e8f0'}}>
-                                  {comp.requiredQty}
-                                  {comp.isShortage && <div style={{color:'#dc2626',fontSize:'0.65rem',marginTop:5}}>(Thiếu {comp.missing})</div>}
+                                  {fmtQty(comp.requiredQty)}
+                                  {comp.isShortage && <div style={{color:'#dc2626',fontSize:'0.65rem',marginTop:5}}>(Thiếu {fmtQty(comp.missing)})</div>}
                                   {!orderCreated && comp.requiredQty > 0 && (
                                     <button className="no-print" onClick={() => setEditingCompIdx(idx)} style={{display:'block',margin:'5px auto 0',border:'1px solid #bae6fd',background:'#f0f9ff',color:'#0891b2',borderRadius:6,padding:'2px 8px',fontSize:'0.65rem',fontWeight:700,cursor:'pointer'}}>✎ Sửa</button>
                                   )}
@@ -1515,9 +1518,9 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                                {alloc.taken < 0 ? 'Nhập' : 'Xuất'}
                             </td>
                             <td style={{padding:'0.4rem',textAlign:'right',fontWeight:800,color: alloc.taken < 0 ? '#10b981' : '#0891b2'}}>
-                               {Math.abs(alloc.taken)}
+                               {fmtQty(Math.abs(alloc.taken))}
                             </td>
-                            <td style={{padding:'0.4rem',textAlign:'right',color:'#64748b'}}>{alloc.remaining}</td>
+                            <td style={{padding:'0.4rem',textAlign:'right',color:'#64748b'}}>{fmtQty(alloc.remaining)}</td>
                           </tr>
                         ))
                       )}
@@ -1547,7 +1550,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                       <tr key={comp.code} style={{borderBottom: '1px solid #e2e8f0'}}>
                         <td style={{padding:'0.4rem',fontWeight:600,color:'#0f172a'}}>{comp.code}</td>
                         <td style={{padding:'0.4rem',minWidth:120}}>{comp.name}</td>
-                        <td style={{padding:'0.4rem',textAlign:'center',fontWeight:800,color:'#10b981'}}>+{comp.importQty}</td>
+                        <td style={{padding:'0.4rem',textAlign:'center',fontWeight:800,color:'#10b981'}}>+{fmtQty(comp.importQty)}</td>
                         <td style={{padding:'0.4rem'}}>
                           <input 
                             type="text" 

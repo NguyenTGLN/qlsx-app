@@ -1,10 +1,17 @@
 // Logic thuần cho "Lệnh Sản Xuất nhiều mã / 1 phiếu".
 // Tách khỏi ProductionOrderTab.jsx để unit-test (vitest).
 
+// Làm tròn tới tối đa 1 chữ số thập phân, khử nhiễu dấu phẩy động
+// (vd: 284.30000000000007 → 284.3, 30.699999999999932 → 30.7, 35 → 35).
+export function round1(n) {
+  const num = Number(n);
+  return isFinite(num) ? Math.round(num * 10) / 10 : n;
+}
+
 // Gộp BOM của nhiều thành phẩm thành nhu cầu linh kiện tổng (cộng theo mã linh kiện).
 // rows: [{ code, name, qty }]
 // bomByProduct: { [productCode]: [{ component_code, quantity, unit, item_name }] }
-// → [{ code, name, unit, requiredQty }]
+// → [{ code, name, unit, requiredQty }]  (requiredQty làm tròn 1 số thập phân)
 export function aggregateComponentDemand(rows, bomByProduct) {
   const demandMap = {};
   for (const row of rows) {
@@ -17,7 +24,7 @@ export function aggregateComponentDemand(rows, bomByProduct) {
       demandMap[key].requiredQty += Number(b.quantity) * Number(row.qty);
     }
   }
-  return Object.values(demandMap);
+  return Object.values(demandMap).map(c => ({ ...c, requiredQty: round1(c.requiredQty) }));
 }
 
 // Phân bổ FIFO. stockData nên đã sort sẵn (import_date asc, quantity asc).
