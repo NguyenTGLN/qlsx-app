@@ -252,12 +252,7 @@ Thay toàn bộ thân `handleCalculateManualExport` (khoảng dòng 721-810). Ph
     // Lọc dòng hợp lệ
     const rows = manualRows.filter(r => r.code && r.qty && !isNaN(r.qty) && Number(r.qty) > 0);
     if (rows.length === 0) return alert('Vui lòng nhập ít nhất 1 dòng có Mã và Số lượng hợp lệ!');
-    // Dòng nào cần Phiếu SX thì phải chọn
-    for (const r of rows) {
-      if (reasonNeedsOrderRef(r.reason) && !r.orderRef) {
-        return alert(`Lý do "${r.reason}" cần chọn Phiếu Sản Xuất (mã ${r.code}).`);
-      }
-    }
+    // Ô Phiếu SX là TÙY CHỌN — để trống thì dùng mã phiếu PXK chung. Không bắt buộc.
 
     setLoading(true);
     setMode('manual_export');
