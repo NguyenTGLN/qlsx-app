@@ -5,6 +5,10 @@ import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
 
+// id ổn định cho từng dòng xuất thủ công — tránh mất focus khi xoá dòng giữa (React key)
+let __manualRowSeq = 0;
+const emptyManualRow = () => ({ id: ++__manualRowSeq, code: '', name: '', qty: '', reason: 'Bán ra', orderRef: '' });
+
 const s = {
   btn: { display:'flex',alignItems:'center',gap:5,padding:'0.5rem 1rem',borderRadius:7,border:'none',background:'#0891b2',cursor:'pointer',fontSize:'0.85rem',fontWeight:600,color:'#fff',transition:'all 0.15s' },
   btnDisabled: { background:'#cbd5e1', cursor:'not-allowed' },
@@ -242,7 +246,6 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   
   // States for Manual Export Modal — nhiều mã trên 1 phiếu, mỗi dòng 1 lý do
   const [showManualExportModal, setShowManualExportModal] = useState(false);
-  const emptyManualRow = () => ({ code: '', name: '', qty: '', reason: 'Bán ra', orderRef: '' });
   const [manualRows, setManualRows] = useState([emptyManualRow()]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [stockItems, setStockItems] = useState([]);
@@ -1672,7 +1675,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
             {manualRows.map((row, idx) => {
               const needRef = reasonNeedsOrderRef(row.reason);
               return (
-                <div key={idx} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:'0.9rem', marginBottom:12, background:'#f8fafc' }}>
+                <div key={row.id} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:'0.9rem', marginBottom:12, background:'#f8fafc' }}>
                   <div style={{ display:'grid', gridTemplateColumns:'1.4fr 1.4fr 0.7fr 1.2fr auto', gap:10, alignItems:'end' }}>
                     <div>
                       <label style={s.label}>Mã SP / linh kiện</label>
