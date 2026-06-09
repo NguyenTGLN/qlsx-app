@@ -3,7 +3,7 @@ import { supabase as db } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { Search, Loader2, RefreshCw, Package, Database, Download, Upload, Trash2, Edit3, X, Check, Printer, Calculator, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { todayLocal } from '../../lib/dateUtils';
+import { todayLocal, parseImportDate } from '../../lib/dateUtils';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import { ColumnToggleModal, shortDate } from '../../components/WarehouseSharedUI';
 
@@ -267,7 +267,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
   };
 
   const handleDownloadTemplate = () => {
-    const cols = ['item_code', 'item_name', 'unit', 'location', 'quantity'];
+    const cols = ['item_code', 'item_name', 'unit', 'location', 'import_date', 'quantity'];
     const ws = XLSX.utils.json_to_sheet([cols.reduce((acc, c) => ({...acc, [c]: ''}), {})], {header: cols});
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template");
@@ -301,6 +301,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
             unit: ['unit','đvt','đơn vị','đơn vị tính','dvt'],
             loc:  ['location','vị trí','vị trí kho','vi_tri','kho','vị trí lưu'],
             qty:  ['quantity','số lượng','sl','so_luong','tồn','số lượng tồn','tồn kho'],
+            date: ['import_date','ngày nhập','ngay_nhap','ngày','date'],
           };
           const inserts = data.map(r => ({
             item_code: String(get(r, ALIAS.code) ?? '').trim(),
@@ -308,7 +309,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
             unit: String(get(r, ALIAS.unit) ?? '').trim(),
             location: String(get(r, ALIAS.loc) ?? '').trim() || 'Kho',
             quantity: parseFloat(get(r, ALIAS.qty) || 0) || 0,
-            import_date: todayLocal()
+            import_date: parseImportDate(get(r, ALIAS.date)) || todayLocal()
           })).filter(r => r.item_code);
 
           if (inserts.length === 0) {
@@ -343,8 +344,12 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
           const aggMap = {};
           for (const r of inserts) {
             const k = r.item_code + '|' + r.location;
-            if (aggMap[k]) aggMap[k].quantity += r.quantity;
-            else aggMap[k] = { ...r };
+            if (aggMap[k]) {
+              aggMap[k].quantity += r.quantity;
+              if (r.import_date > aggMap[k].import_date) aggMap[k].import_date = r.import_date;
+            } else {
+              aggMap[k] = { ...r };
+            }
           }
           const aggRows = Object.values(aggMap);
           const BATCH = 500;
