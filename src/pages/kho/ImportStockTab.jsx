@@ -485,7 +485,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
         const after = before + a.sumImport;
         const srcStr = [...a.sources].join(', ');
         if (a.id) {
-          updates.push(db.from('inventory_stock').update({ quantity: after }).eq('id', a.id));
+          updates.push(db.from('inventory_stock').update({ quantity: after, import_date: todayStr }).eq('id', a.id));
         } else {
           inserts.push({ item_code: a.code, item_name: a.name, unit: a.unit, location: a.location, quantity: a.sumImport, import_date: todayStr });
         }
