@@ -5,10 +5,10 @@ import { Search, Loader2, RefreshCw, Package, Database, Download, Upload, Trash2
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
-import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
+import { ColumnToggleModal, shortDate } from '../../components/WarehouseSharedUI';
 
-const INVENTORY_COLS = ['san_pham','dvt','location','quantity'];
-const INVENTORY_LABELS = { san_pham:'Sản phẩm', dvt:'ĐVT', location:'Vị trí', quantity:'Tồn kho' };
+const INVENTORY_COLS = ['san_pham','dvt','location','import_date','quantity'];
+const INVENTORY_LABELS = { san_pham:'Sản phẩm', dvt:'ĐVT', location:'Vị trí', import_date:'Ngày nhập', quantity:'Tồn kho' };
 
 const s = {
   btn: { display:'flex',alignItems:'center',gap:5,padding:'0.35rem 0.75rem',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,color:'#475569',transition:'all 0.15s' },
@@ -117,7 +117,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
 
       while (true) {
         let q = db.from('inventory_stock').select(`
-          id, item_code, item_name, unit, location, quantity
+          id, item_code, item_name, unit, location, import_date, quantity
         `);
 
         if (searchText.trim()) {
@@ -212,6 +212,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
     item_name: 'Tên hàng hóa',
     unit: 'ĐVT',
     location: 'Vị trí',
+    import_date: 'Ngày nhập',
     quantity: 'Tồn kho',
   };
 
@@ -448,6 +449,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
                     {!hiddenCols.has('san_pham') && <th onClick={()=>handleSort('item_code')} style={{padding:'0.4rem 0.3rem',fontSize:'0.7rem',fontWeight:700,color:sortCol==='item_code'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='item_code'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>Sản phẩm{sortCol==='item_code'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {!hiddenCols.has('dvt') && <th onClick={()=>handleSort('unit')} style={{padding:'0.4rem 0.3rem',fontSize:'0.7rem',fontWeight:700,color:sortCol==='unit'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='unit'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>ĐVT{sortCol==='unit'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {!hiddenCols.has('location') && <th onClick={()=>handleSort('location')} style={{padding:'0.4rem 0.3rem',fontSize:'0.7rem',fontWeight:700,color:sortCol==='location'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='location'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>Vị trí{sortCol==='location'?(sortAsc?' ↑':' ↓'):''}</th>}
+                    {!hiddenCols.has('import_date') && <th onClick={()=>handleSort('import_date')} style={{padding:'0.4rem 0.3rem',fontSize:'0.7rem',fontWeight:700,color:sortCol==='import_date'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='import_date'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>Ngày nhập{sortCol==='import_date'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {!hiddenCols.has('quantity') && <th onClick={()=>handleSort('quantity')} style={{padding:'0.4rem 0.3rem',textAlign:'right',fontSize:'0.7rem',fontWeight:700,color:sortCol==='quantity'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='quantity'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>Tồn kho{sortCol==='quantity'?(sortAsc?' ↑':' ↓'):''}</th>}
                   </tr>
                 </thead>
@@ -466,6 +468,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
                       </td>}
                       {!hiddenCols.has('dvt') && <td style={{padding:'0.35rem 0.2rem',color:'#64748b',whiteSpace:'nowrap'}}>{row.unit}</td>}
                       {!hiddenCols.has('location') && <td style={{padding:'0.35rem 0.2rem',color:'#64748b',whiteSpace:'nowrap'}}>{row.location}</td>}
+                      {!hiddenCols.has('import_date') && <td style={{padding:'0.35rem 0.2rem',color:'#64748b',whiteSpace:'nowrap'}}>{row.import_date ? shortDate(row.import_date) : '—'}</td>}
                       {!hiddenCols.has('quantity') && <td style={{padding:'0.35rem 0.2rem',textAlign:'right',fontWeight:700,color:row.quantity<=0?'#ef4444':'#059669',fontVariantNumeric:'tabular-nums'}}>
                         {row.quantity.toLocaleString('vi-VN')}
                       </td>}
