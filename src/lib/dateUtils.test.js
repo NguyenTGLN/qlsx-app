@@ -8,7 +8,7 @@ describe('parseImportDate', () => {
   it('parse dd/MM/yyyy về ISO', () => {
     expect(parseImportDate('09/06/2026')).toBe('2026-06-09');
   });
-  it('parse số serial Excel (44986 ~ 2023-03-01)', () => {
+  it('parse số serial Excel (45817 = 2025-06-09)', () => {
     expect(parseImportDate(45817)).toBe('2025-06-09');
   });
   it('trả null khi rỗng / không hợp lệ', () => {

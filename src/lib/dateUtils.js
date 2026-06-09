@@ -29,6 +29,7 @@ export function parseImportDate(value) {
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
 
   // dd/MM/yyyy hoặc dd-MM-yyyy
+  // Giả định dd/MM/yyyy (locale VN) — KHÔNG phải M/D/YYYY kiểu Mỹ
   m = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (m) {
     const dd = String(m[1]).padStart(2, '0');
