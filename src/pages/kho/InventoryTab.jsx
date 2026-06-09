@@ -256,6 +256,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
         item_name: updatedRow.item_name,
         unit: updatedRow.unit,
         location: updatedRow.location,
+        import_date: updatedRow.import_date || null,
         quantity: parseFloat(updatedRow.quantity)
       };
       const { error } = await db.from('inventory_stock').update(payload).eq('id', updatedRow.id);
@@ -539,6 +540,10 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
                 <input value={editRow[k] || ''} onChange={e=>setEditRow({...editRow, [k]: e.target.value})} style={{...s.input, width:'100%',boxSizing:'border-box'}} />
               </div>
             ))}
+            <div style={{marginBottom:10}}>
+              <label style={{display:'block',fontSize:'0.75rem',fontWeight:600,color:'#64748b',marginBottom:4}}>Ngày nhập</label>
+              <input type="date" value={editRow.import_date || ''} onChange={e=>setEditRow({...editRow, import_date: e.target.value})} style={{...s.input, width:'100%',boxSizing:'border-box'}} />
+            </div>
             <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}>
               <button onClick={()=>setEditRow(null)} style={s.btn}>Hủy</button>
               <button onClick={()=>handleSaveEdit(editRow)} style={{...s.btn, background:'#2563eb', color:'#fff'}}>Lưu</button>
