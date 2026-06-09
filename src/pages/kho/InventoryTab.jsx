@@ -3,12 +3,12 @@ import { supabase as db } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { Search, Loader2, RefreshCw, Package, Database, Download, Upload, Trash2, Edit3, X, Check, Printer, Calculator, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { todayLocal } from '../../lib/dateUtils';
+import { todayLocal, parseImportDate } from '../../lib/dateUtils';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
-import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
+import { ColumnToggleModal, shortDate } from '../../components/WarehouseSharedUI';
 
-const INVENTORY_COLS = ['san_pham','dvt','location','quantity'];
-const INVENTORY_LABELS = { san_pham:'Sản phẩm', dvt:'ĐVT', location:'Vị trí', quantity:'Tồn kho' };
+const INVENTORY_COLS = ['san_pham','dvt','location','import_date','quantity'];
+const INVENTORY_LABELS = { san_pham:'Sản phẩm', dvt:'ĐVT', location:'Vị trí', import_date:'Ngày nhập', quantity:'Tồn kho' };
 
 const s = {
   btn: { display:'flex',alignItems:'center',gap:5,padding:'0.35rem 0.75rem',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,color:'#475569',transition:'all 0.15s' },
@@ -44,7 +44,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
 
   // Manual Input State
   const [showManualInput, setShowManualInput] = useState(false);
-  const [manualInputData, setManualInputData] = useState({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '' });
+  const [manualInputData, setManualInputData] = useState({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '', import_date: todayLocal() });
   const [productCatalog, setProductCatalog] = useState([]);
   const [showCodeSuggest, setShowCodeSuggest] = useState(false);
   const [showNameSuggest, setShowNameSuggest] = useState(false);
@@ -117,7 +117,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
 
       while (true) {
         let q = db.from('inventory_stock').select(`
-          id, item_code, item_name, unit, location, quantity
+          id, item_code, item_name, unit, location, import_date, quantity
         `);
 
         if (searchText.trim()) {
@@ -212,6 +212,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
     item_name: 'Tên hàng hóa',
     unit: 'ĐVT',
     location: 'Vị trí',
+    import_date: 'Ngày nhập',
     quantity: 'Tồn kho',
   };
 
@@ -255,6 +256,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
         item_name: updatedRow.item_name,
         unit: updatedRow.unit,
         location: updatedRow.location,
+        import_date: updatedRow.import_date || null,
         quantity: parseFloat(updatedRow.quantity)
       };
       const { error } = await db.from('inventory_stock').update(payload).eq('id', updatedRow.id);
@@ -265,7 +267,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
   };
 
   const handleDownloadTemplate = () => {
-    const cols = ['item_code', 'item_name', 'unit', 'location', 'quantity'];
+    const cols = ['item_code', 'item_name', 'unit', 'location', 'import_date', 'quantity'];
     const ws = XLSX.utils.json_to_sheet([cols.reduce((acc, c) => ({...acc, [c]: ''}), {})], {header: cols});
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Template");
@@ -299,6 +301,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
             unit: ['unit','đvt','đơn vị','đơn vị tính','dvt'],
             loc:  ['location','vị trí','vị trí kho','vi_tri','kho','vị trí lưu'],
             qty:  ['quantity','số lượng','sl','so_luong','tồn','số lượng tồn','tồn kho'],
+            date: ['import_date','ngày nhập','ngay_nhap','ngày','date'],
           };
           const inserts = data.map(r => ({
             item_code: String(get(r, ALIAS.code) ?? '').trim(),
@@ -306,7 +309,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
             unit: String(get(r, ALIAS.unit) ?? '').trim(),
             location: String(get(r, ALIAS.loc) ?? '').trim() || 'Kho',
             quantity: parseFloat(get(r, ALIAS.qty) || 0) || 0,
-            import_date: todayLocal()
+            import_date: parseImportDate(get(r, ALIAS.date)) || todayLocal()
           })).filter(r => r.item_code);
 
           if (inserts.length === 0) {
@@ -341,8 +344,12 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
           const aggMap = {};
           for (const r of inserts) {
             const k = r.item_code + '|' + r.location;
-            if (aggMap[k]) aggMap[k].quantity += r.quantity;
-            else aggMap[k] = { ...r };
+            if (aggMap[k]) {
+              aggMap[k].quantity += r.quantity;
+              if (r.import_date > aggMap[k].import_date) aggMap[k].import_date = r.import_date;
+            } else {
+              aggMap[k] = { ...r };
+            }
           }
           const aggRows = Object.values(aggMap);
           const BATCH = 500;
@@ -381,7 +388,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
         unit: manualInputData.unit.trim(),
         location: manualInputData.location.trim().toUpperCase(),
         quantity: parseFloat(manualInputData.quantity),
-        import_date: todayLocal()
+        import_date: manualInputData.import_date || todayLocal()
       };
 
       // 1 mã + 1 vị trí = 1 dòng: đã có thì CỘNG DỒN, chưa có thì tạo mới
@@ -389,7 +396,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
         .select('id, quantity').eq('item_code', payload.item_code).eq('location', payload.location).maybeSingle();
       if (existing) {
         const { error } = await db.from('inventory_stock')
-          .update({ quantity: (Number(existing.quantity) || 0) + payload.quantity }).eq('id', existing.id);
+          .update({ quantity: (Number(existing.quantity) || 0) + payload.quantity, import_date: payload.import_date }).eq('id', existing.id);
         if (error) throw error;
       } else {
         const { error } = await db.from('inventory_stock').insert([payload]);
@@ -397,7 +404,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
       }
 
       setShowManualInput(false);
-      setManualInputData({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '' });
+      setManualInputData({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '', import_date: todayLocal() });
       fetchInventory();
     } catch (e) {
       alert("Lỗi thêm vị trí: " + e.message);
@@ -448,6 +455,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
                     {!hiddenCols.has('san_pham') && <th onClick={()=>handleSort('item_code')} style={{padding:'0.4rem 0.3rem',fontSize:'0.7rem',fontWeight:700,color:sortCol==='item_code'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='item_code'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>Sản phẩm{sortCol==='item_code'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {!hiddenCols.has('dvt') && <th onClick={()=>handleSort('unit')} style={{padding:'0.4rem 0.3rem',fontSize:'0.7rem',fontWeight:700,color:sortCol==='unit'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='unit'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>ĐVT{sortCol==='unit'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {!hiddenCols.has('location') && <th onClick={()=>handleSort('location')} style={{padding:'0.4rem 0.3rem',fontSize:'0.7rem',fontWeight:700,color:sortCol==='location'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='location'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>Vị trí{sortCol==='location'?(sortAsc?' ↑':' ↓'):''}</th>}
+                    {!hiddenCols.has('import_date') && <th onClick={()=>handleSort('import_date')} style={{padding:'0.4rem 0.3rem',fontSize:'0.7rem',fontWeight:700,color:sortCol==='import_date'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='import_date'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>Ngày nhập{sortCol==='import_date'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {!hiddenCols.has('quantity') && <th onClick={()=>handleSort('quantity')} style={{padding:'0.4rem 0.3rem',textAlign:'right',fontSize:'0.7rem',fontWeight:700,color:sortCol==='quantity'?'#0891b2':'#64748b',borderBottom:`2px solid ${sortCol==='quantity'?'#0891b2':'#e2e8f0'}`,cursor:'pointer',whiteSpace:'nowrap'}}>Tồn kho{sortCol==='quantity'?(sortAsc?' ↑':' ↓'):''}</th>}
                   </tr>
                 </thead>
@@ -466,6 +474,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
                       </td>}
                       {!hiddenCols.has('dvt') && <td style={{padding:'0.35rem 0.2rem',color:'#64748b',whiteSpace:'nowrap'}}>{row.unit}</td>}
                       {!hiddenCols.has('location') && <td style={{padding:'0.35rem 0.2rem',color:'#64748b',whiteSpace:'nowrap'}}>{row.location}</td>}
+                      {!hiddenCols.has('import_date') && <td style={{padding:'0.35rem 0.2rem',color:'#64748b',whiteSpace:'nowrap'}}>{row.import_date ? shortDate(row.import_date) : '—'}</td>}
                       {!hiddenCols.has('quantity') && <td style={{padding:'0.35rem 0.2rem',textAlign:'right',fontWeight:700,color:row.quantity<=0?'#ef4444':'#059669',fontVariantNumeric:'tabular-nums'}}>
                         {row.quantity.toLocaleString('vi-VN')}
                       </td>}
@@ -536,6 +545,10 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
                 <input value={editRow[k] || ''} onChange={e=>setEditRow({...editRow, [k]: e.target.value})} style={{...s.input, width:'100%',boxSizing:'border-box'}} />
               </div>
             ))}
+            <div style={{marginBottom:10}}>
+              <label style={{display:'block',fontSize:'0.75rem',fontWeight:600,color:'#64748b',marginBottom:4}}>Ngày nhập</label>
+              <input type="date" value={editRow.import_date || ''} onChange={e=>setEditRow({...editRow, import_date: e.target.value})} style={{...s.input, width:'100%',boxSizing:'border-box'}} />
+            </div>
             <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}>
               <button onClick={()=>setEditRow(null)} style={s.btn}>Hủy</button>
               <button onClick={()=>handleSaveEdit(editRow)} style={{...s.btn, background:'#2563eb', color:'#fff'}}>Lưu</button>
@@ -633,11 +646,15 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
               <label style={{display:'block',fontSize:'0.75rem',fontWeight:600,color:'#64748b',marginBottom:4}}>Đơn vị tính</label>
               <input value={manualInputData.unit} onChange={e=>setManualInputData({...manualInputData, unit: e.target.value})} style={{...s.input, width:'100%',boxSizing:'border-box'}} placeholder="Cái" />
             </div>
+            <div style={{marginBottom:15}}>
+              <label style={{display:'block',fontSize:'0.75rem',fontWeight:600,color:'#64748b',marginBottom:4}}>Ngày nhập</label>
+              <input type="date" value={manualInputData.import_date} onChange={e=>setManualInputData({...manualInputData, import_date: e.target.value})} style={{...s.input, width:'100%',boxSizing:'border-box'}} />
+            </div>
 
             <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}>
               <button onClick={()=>{
                 setShowManualInput(false);
-                setManualInputData({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '' });
+                setManualInputData({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '', import_date: todayLocal() });
               }} style={s.btn}>Hủy</button>
               <button onClick={handleSaveManualInput} style={{...s.btn, background:'#16a34a', color:'#fff'}}>
                 <Check size={14}/> Lưu
