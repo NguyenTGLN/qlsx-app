@@ -44,7 +44,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
 
   // Manual Input State
   const [showManualInput, setShowManualInput] = useState(false);
-  const [manualInputData, setManualInputData] = useState({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '' });
+  const [manualInputData, setManualInputData] = useState({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '', import_date: todayLocal() });
   const [productCatalog, setProductCatalog] = useState([]);
   const [showCodeSuggest, setShowCodeSuggest] = useState(false);
   const [showNameSuggest, setShowNameSuggest] = useState(false);
@@ -383,7 +383,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
         unit: manualInputData.unit.trim(),
         location: manualInputData.location.trim().toUpperCase(),
         quantity: parseFloat(manualInputData.quantity),
-        import_date: todayLocal()
+        import_date: manualInputData.import_date || todayLocal()
       };
 
       // 1 mã + 1 vị trí = 1 dòng: đã có thì CỘNG DỒN, chưa có thì tạo mới
@@ -391,7 +391,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
         .select('id, quantity').eq('item_code', payload.item_code).eq('location', payload.location).maybeSingle();
       if (existing) {
         const { error } = await db.from('inventory_stock')
-          .update({ quantity: (Number(existing.quantity) || 0) + payload.quantity }).eq('id', existing.id);
+          .update({ quantity: (Number(existing.quantity) || 0) + payload.quantity, import_date: payload.import_date }).eq('id', existing.id);
         if (error) throw error;
       } else {
         const { error } = await db.from('inventory_stock').insert([payload]);
@@ -399,7 +399,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
       }
 
       setShowManualInput(false);
-      setManualInputData({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '' });
+      setManualInputData({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '', import_date: todayLocal() });
       fetchInventory();
     } catch (e) {
       alert("Lỗi thêm vị trí: " + e.message);
@@ -641,11 +641,15 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
               <label style={{display:'block',fontSize:'0.75rem',fontWeight:600,color:'#64748b',marginBottom:4}}>Đơn vị tính</label>
               <input value={manualInputData.unit} onChange={e=>setManualInputData({...manualInputData, unit: e.target.value})} style={{...s.input, width:'100%',boxSizing:'border-box'}} placeholder="Cái" />
             </div>
+            <div style={{marginBottom:15}}>
+              <label style={{display:'block',fontSize:'0.75rem',fontWeight:600,color:'#64748b',marginBottom:4}}>Ngày nhập</label>
+              <input type="date" value={manualInputData.import_date} onChange={e=>setManualInputData({...manualInputData, import_date: e.target.value})} style={{...s.input, width:'100%',boxSizing:'border-box'}} />
+            </div>
 
             <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}>
               <button onClick={()=>{
                 setShowManualInput(false);
-                setManualInputData({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '' });
+                setManualInputData({ item_code: '', item_name: '', unit: 'Cái', location: '', quantity: '', import_date: todayLocal() });
               }} style={s.btn}>Hủy</button>
               <button onClick={handleSaveManualInput} style={{...s.btn, background:'#16a34a', color:'#fff'}}>
                 <Check size={14}/> Lưu
