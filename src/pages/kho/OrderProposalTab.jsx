@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { Loader2, RefreshCw, Download, Trash2, XCircle, ShoppingCart } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -42,10 +42,16 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
   const [filterTienDo, setFilterTienDo] = useState('all'); // 'all' | một giá trị trong TIEN_DO_OPTIONS
   const [sortCol, setSortCol] = useState(null); // cột đang sắp xếp (null = giữ thứ tự gốc)
   const [sortAsc, setSortAsc] = useState(true);
+  // Theo dõi các lệnh lưu đang bay (để Làm mới chờ chúng commit trước khi đọc lại DB)
+  const pendingRef = useRef(new Set());
+  // Hẹn giờ debounce cho ô gõ tay (SL Đặt / Ghi chú) theo từng dòng id
+  const debounceRef = useRef({});
 
   const fetchProposals = useCallback(async () => {
     setLoading(true);
     try {
+      // Chờ mọi lệnh lưu đang bay xong, tránh đọc dữ liệu cũ trước khi UPDATE commit
+      if (pendingRef.current.size) await Promise.allSettled([...pendingRef.current]);
       // Lấy tất cả đề xuất DLK
       const { data: proposals, error } = await db.from('purchase_proposals')
         .select('*')
@@ -105,23 +111,51 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
 
   useEffect(() => { fetchProposals(); }, [fetchProposals]);
 
-  const handleSaveRow = async (row) => {
+  // Lưu 1 dòng. `override` truyền thẳng giá trị vừa đổi để không phụ thuộc state đã/chưa cập nhật.
+  // Theo dõi promise trong pendingRef để Làm mới chờ trước khi đọc lại DB.
+  const handleSaveRow = useCallback((row, override = {}) => {
+    const merged = { ...row, ...override };
     setSaving(true);
-    try {
-      const { error } = await db.from('purchase_proposals').update({
-        actual_qty: Number(row.actual_qty) || 0,
-        ngay_du_kien: row.ngay_du_kien || null,
-        tien_do: row.tien_do,
-        trang_thai: row.auto_trang_thai,
-        note: row.note || '',
-      }).eq('id', row.id);
-      if (error) throw error;
-    } catch (e) {
-      alert('Lỗi lưu: ' + e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
+    const p = db.from('purchase_proposals').update({
+      actual_qty: Number(merged.actual_qty) || 0,
+      ngay_du_kien: merged.ngay_du_kien || null,
+      tien_do: merged.tien_do,
+      trang_thai: merged.auto_trang_thai,
+      note: merged.note || '',
+    }).eq('id', row.id).then(({ error }) => {
+      if (error) alert('Lỗi lưu: ' + error.message);
+    }).finally(() => {
+      pendingRef.current.delete(p);
+      if (pendingRef.current.size === 0) setSaving(false);
+    });
+    pendingRef.current.add(p);
+    return p;
+  }, []);
+
+  // Gõ tay (SL Đặt / Ghi chú): lưu sau 500ms ngừng gõ — không mất dữ liệu nếu reload trước khi blur, không spam DB mỗi phím.
+  const queueSave = useCallback((row, override) => {
+    const id = row.id;
+    if (debounceRef.current[id]) clearTimeout(debounceRef.current[id]);
+    debounceRef.current[id] = setTimeout(() => {
+      debounceRef.current[id] = null;
+      handleSaveRow(row, override);
+    }, 500);
+  }, [handleSaveRow]);
+
+  // Blur: huỷ debounce đang chờ rồi lưu ngay (tránh lưu 2 lần).
+  const flushSave = useCallback((row, override = {}) => {
+    const id = row.id;
+    if (debounceRef.current[id]) { clearTimeout(debounceRef.current[id]); debounceRef.current[id] = null; }
+    handleSaveRow(row, override);
+  }, [handleSaveRow]);
+
+  // Dọn các debounce còn treo khi unmount (chuyển tab) — lưu nốt phần đang chờ.
+  useEffect(() => {
+    const timers = debounceRef.current;
+    return () => Object.keys(timers).forEach(id => {
+      if (timers[id]) { clearTimeout(timers[id]); timers[id] = null; }
+    });
+  }, []);
 
   const handleUpdateRow = (id, field, value) => {
     setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
@@ -300,8 +334,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                       <td style={{...td,color:'#64748b',whiteSpace:'nowrap'}}>{row.ngay_de_xuat || '—'}</td>
                       <td style={{...td}}>
                         <input type="date" value={row.ngay_du_kien||''} disabled={isDone || !perms.edit}
-                          onChange={e=>handleUpdateRow(row.id,'ngay_du_kien',e.target.value)}
-                          onBlur={()=>handleSaveRow(row)}
+                          onChange={e=>{const v=e.target.value; handleUpdateRow(row.id,'ngay_du_kien',v); flushSave(row,{ngay_du_kien:v});}}
                           style={{...s.input,width:110,color: row.days_remaining!==null&&row.days_remaining<0?'#ef4444':'#334155'}}/>
                       </td>
                       <td style={{...td,whiteSpace:'nowrap',fontWeight:600,color: row.days_left!==null&&row.days_left<7?'#dc2626':'#475569'}}>
@@ -310,8 +343,8 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                       <td style={{...td,textAlign:'right',color:'#64748b'}}>{Number(row.calculated_qty).toLocaleString('vi-VN')}</td>
                       <td style={{...td,textAlign:'right'}}>
                         <input type="number" min="0" value={row.actual_qty} disabled={isDone || !perms.edit}
-                          onChange={e=>handleUpdateRow(row.id,'actual_qty',e.target.value)}
-                          onBlur={()=>handleSaveRow(row)}
+                          onChange={e=>{const v=e.target.value; handleUpdateRow(row.id,'actual_qty',v); queueSave(row,{actual_qty:v});}}
+                          onBlur={e=>flushSave(row,{actual_qty:e.target.value})}
                           style={{...s.input,width:60,textAlign:'right',fontWeight:700,color:'#0f172a'}}/>
                       </td>
                       <td style={{...td,textAlign:'right',fontWeight:700,color: row.received>0?'#059669':'#94a3b8'}}>
@@ -319,16 +352,15 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                       </td>
                       <td style={{...td}}>
                         <select value={row.tien_do||'Mới'} disabled={isDone || !perms.edit}
-                          onChange={e=>{handleUpdateRow(row.id,'tien_do',e.target.value);}}
-                          onBlur={()=>handleSaveRow(row)}
+                          onChange={e=>{const v=e.target.value; handleUpdateRow(row.id,'tien_do',v); flushSave(row,{tien_do:v});}}
                           style={{...s.input,minWidth:120,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`,fontWeight:700}}>
                           {TIEN_DO_OPTIONS.map(o=><option key={o} style={{background:'#fff',color:'#334155',fontWeight:600}}>{o}</option>)}
                         </select>
                       </td>
                       <td style={{...td}}>
                         <input type="text" value={row.note||''} placeholder="..." disabled={isDone || !perms.edit}
-                          onChange={e=>handleUpdateRow(row.id,'note',e.target.value)}
-                          onBlur={()=>handleSaveRow(row)}
+                          onChange={e=>{const v=e.target.value; handleUpdateRow(row.id,'note',v); queueSave(row,{note:v});}}
+                          onBlur={e=>flushSave(row,{note:e.target.value})}
                           style={{...s.input,width:100}}/>
                       </td>
                       <td style={{...td}}>
