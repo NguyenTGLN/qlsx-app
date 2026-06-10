@@ -1,0 +1,26 @@
+HƯỚNG DẪN DEPLOY NETLIFY (kéo - thả)
+=====================================
+
+Thư mục này LÀ bản build sẵn (production). Env Supabase đã được nhúng vào
+lúc build, nên kéo-thả là chạy ngay, không cần nhập gì thêm.
+
+CÁCH DEPLOY LẦN ĐẦU:
+1. Vào https://app.netlify.com  (đăng nhập).
+2. Vào tab "Sites" -> "Add new site" -> "Deploy manually"
+   (hoặc kéo thẳng vào ô "Drag and drop your site output folder here").
+3. KÉO TOÀN BỘ thư mục "deploy-netlify" này thả vào ô đó.
+4. Đợi ~10 giây -> Netlify cho ra link dạng https://<ten-ngau-nhien>.netlify.app
+
+CẬP NHẬT (deploy bản mới):
+1. Sửa code xong, chạy lại:  npm run build
+2. Copy lại dist -> deploy-netlify (hoặc chạy lệnh đóng gói).
+3. Vào site cũ trên Netlify -> tab "Deploys" -> kéo-thả lại thư mục mới.
+   (Link giữ nguyên, chỉ thay nội dung.)
+
+LƯU Ý:
+- File "_redirects" trong này BẮT BUỘC phải có -> để các route /kho, /cskh...
+  không bị lỗi 404 khi F5. Đừng xoá.
+- Vì env nhúng lúc build, nếu đổi VITE_SUPABASE_URL / ANON_KEY trong .env
+  thì phải build lại, không sửa được trên Netlify.
+- Nếu muốn auto-deploy mỗi khi push Git (khỏi kéo-thả thủ công), bảo tôi
+  tạo netlify.toml + kết nối repo.

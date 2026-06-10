@@ -1,0 +1,1 @@
+var e=300*1e3,t=new Map,n={get(n,r=e){let i=t.get(n);return i?Date.now()-i.timestamp>r?(t.delete(n),null):i.data:null},set(e,n){t.set(e,{data:n,timestamp:Date.now()})},invalidate(e){t.delete(e)},clear(){t.clear()},isValid(n,r=e){let i=t.get(n);return i?Date.now()-i.timestamp<=r:!1}};export{n as t};
