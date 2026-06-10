@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase as db } from '../../lib/supabase';
-import { Search, Loader2, Play, Printer, AlertCircle, CheckCircle, Package, Upload, Check, Download, RefreshCw } from 'lucide-react';
+import { Search, Loader2, Play, Printer, AlertCircle, CheckCircle, Package, Upload, Check, Download, RefreshCw, Edit3 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
-import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1 } from '../../lib/productionAlloc';
+import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1, compareLocations, sortStockForFIFO, sortResultByLocation } from '../../lib/productionAlloc';
 
 // Làm tròn số lượng hiển thị tới 1 chữ số thập phân (khử nhiễu dấu phẩy động của mã dây, vd 284.30000000000007 → 284.3)
 const fmtQty = round1;
@@ -16,6 +16,10 @@ const emptyManualRow = () => ({ id: ++__manualRowSeq, code: '', name: '', qty: '
 // id ổn định cho từng dòng thành phẩm SX — giữ focus khi xoá dòng giữa (React key)
 let __prodRowSeq = 0;
 const emptyProdRow = () => ({ id: ++__prodRowSeq, code: '', name: '', qty: 1 });
+
+// id ổn định cho từng dòng đơn hàng nhập tay
+let __manualOrderRowSeq = 0;
+const emptyManualOrderRow = (orderCode = '') => ({ id: ++__manualOrderRowSeq, orderCode, code: '', name: '', qty: '', unit: '' });
 
 const s = {
   btn: { display:'flex',alignItems:'center',gap:5,padding:'0.5rem 1rem',borderRadius:7,border:'none',background:'#0891b2',cursor:'pointer',fontSize:'0.85rem',fontWeight:600,color:'#fff',transition:'all 0.15s' },
@@ -105,7 +109,8 @@ const SearchableSelect = ({ options, value, onChange, placeholder }) => {
 // Popup "Sửa phân bổ": cho phép sửa tay vị trí & SL lấy của 1 linh kiện,
 // tách 1 mã ra nhiều vị trí. Chỉ chọn được vị trí có tồn thật (từ poolRows).
 const EditAllocationModal = ({ comp, poolRows, onSave, onClose }) => {
-  const rows = (poolRows || []).filter(p => p.quantity > 0);
+  const rows = (poolRows || []).filter(p => p.quantity > 0)
+    .sort((a, b) => compareLocations(a.location, b.location));
   const [lines, setLines] = useState(
     (comp.allocations || []).map(a => ({ location: a.location, taken: String(a.taken) }))
   );
@@ -148,7 +153,7 @@ const EditAllocationModal = ({ comp, poolRows, onSave, onClose }) => {
       before: li.row.quantity,
       taken: li.takenNum,
       remaining: li.row.quantity - li.takenNum
-    }));
+    })).sort((a, b) => compareLocations(a.location, b.location));
     onSave(newAllocations);
   };
 
@@ -273,6 +278,11 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const [manualRows, setManualRows] = useState([emptyManualRow()]);
   const [recentOrders, setRecentOrders] = useState([]);
   const [stockItems, setStockItems] = useState([]);
+
+  // States for Manual Order Entry — nhập đơn hàng tay (thay cho file Excel), nhiều đơn / nhiều dòng
+  const [showDeliveryChoiceModal, setShowDeliveryChoiceModal] = useState(false);
+  const [showManualOrderModal, setShowManualOrderModal] = useState(false);
+  const [manualOrderRows, setManualOrderRows] = useState([emptyManualOrderRow()]);
 
   // States for Disassemble Modal
   const [showDisassembleModal, setShowDisassembleModal] = useState(false);
@@ -416,13 +426,12 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       const componentsRequired = aggregateComponentDemand(rows, bomByProduct);
       const compCodes = componentsRequired.map(c => c.code);
 
-      // 3. Lấy tồn kho (FIFO: import_date asc, quantity asc)
-      const { data: stockData, error: stockErr } = await db.from('inventory_stock')
+      // 3. Lấy tồn kho (FIFO: import_date asc, cùng ngày thì vị trí A→Z, 1→20)
+      const { data: stockRaw, error: stockErr } = await db.from('inventory_stock')
         .select('*')
-        .in('item_code', compCodes)
-        .order('import_date', { ascending: true })
-        .order('quantity', { ascending: true });
+        .in('item_code', compCodes);
       if (stockErr) throw stockErr;
+      const stockData = sortStockForFIFO(stockRaw);
 
       // Lưu tồn gốc theo item_code cho popup "Sửa phân bổ"
       const pool = {};
@@ -437,7 +446,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
         priorityVTSX, phieuCode: generatedCode,
       });
 
-      setAllocations(result);
+      // Sắp các dòng phiếu theo lộ trình lấy hàng (vị trí dãy→tầng→ô, đặc biệt/hết hàng xuống cuối)
+      setAllocations(sortResultByLocation(result));
       setIsShortage(hasShortage);
     } catch (e) {
       console.error(e);
@@ -512,37 +522,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
         if (parsedItems.length === 0) return alert('Không có dữ liệu hợp lệ (hoặc tất cả là DLD).');
 
-        // KIỂM TRA TRÙNG LẶP MÃ ĐƠN HÀNG TRONG LUU_XUAT
-        const uniqueOrderCodes = [...new Set(parsedItems.map(item => item.orderCode))];
-        const checkDuplicates = async () => {
-          setLoading(true);
-          try {
-            const { data: existingOrders, error: checkErr } = await db.from('luu_xuat')
-              .select('ma_don_hang')
-              .in('ma_don_hang', uniqueOrderCodes);
-            
-            if (checkErr) throw checkErr;
-            
-            const existingSet = new Set((existingOrders || []).map(r => String(r.ma_don_hang).trim()));
-            const duplicates = [...existingSet];
-            
-            if (duplicates.length > 0) {
-              setDuplicateOrders(duplicates);
-              setPendingParsedItems(parsedItems);
-              setShowDuplicateModal(true);
-            } else {
-              setMode('delivery');
-              setOrderItems(parsedItems);
-              setTimeout(() => handleCalculateDelivery(parsedItems), 100);
-            }
-          } catch (error) {
-             alert('Lỗi kiểm tra trùng lặp: ' + error.message);
-          } finally {
-             setLoading(false);
-          }
-        };
-        
-        checkDuplicates();
+        checkDuplicatesAndCalculate(parsedItems);
 
       } catch (err) {
         alert('Lỗi đọc file: ' + err.message);
@@ -550,6 +530,36 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       e.target.value = '';
     };
     reader.readAsArrayBuffer(f);
+  };
+
+  // Kiểm tra trùng mã đơn hàng trong luu_xuat rồi vào luồng tính toán xuất đơn (dùng chung Excel + nhập tay)
+  const checkDuplicatesAndCalculate = async (parsedItems) => {
+    const uniqueOrderCodes = [...new Set(parsedItems.map(item => item.orderCode))];
+    setLoading(true);
+    try {
+      const { data: existingOrders, error: checkErr } = await db.from('luu_xuat')
+        .select('ma_don_hang')
+        .in('ma_don_hang', uniqueOrderCodes);
+
+      if (checkErr) throw checkErr;
+
+      const existingSet = new Set((existingOrders || []).map(r => String(r.ma_don_hang).trim()));
+      const duplicates = [...existingSet];
+
+      if (duplicates.length > 0) {
+        setDuplicateOrders(duplicates);
+        setPendingParsedItems(parsedItems);
+        setShowDuplicateModal(true);
+      } else {
+        setMode('delivery');
+        setOrderItems(parsedItems);
+        setTimeout(() => handleCalculateDelivery(parsedItems), 100);
+      }
+    } catch (error) {
+      alert('Lỗi kiểm tra trùng lặp: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleProceedWithoutDuplicates = () => {
@@ -600,13 +610,13 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       const componentsRequired = Object.values(demandMap);
       const compCodes = componentsRequired.map(c => c.code);
 
-      const { data: stockData, error: stockErr } = await db.from('inventory_stock')
+      // FIFO theo import_date, cùng ngày thì vị trí A→Z, 1→20
+      const { data: stockRaw, error: stockErr } = await db.from('inventory_stock')
         .select('*')
-        .in('item_code', compCodes)
-        .order('import_date', { ascending: true })
-        .order('quantity', { ascending: true });
+        .in('item_code', compCodes);
 
       if (stockErr) throw stockErr;
+      const stockData = sortStockForFIFO(stockRaw);
 
       // Lưu tồn gốc theo item_code để popup Sửa phân bổ tra cứu/validate
       const pool = {};
@@ -636,10 +646,13 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
           });
         }
         if (qtyNeeded > 0) hasShortage = true;
+        // Vị trí trong 1 dòng sắp theo dãy→tầng→ô cho dễ đi lấy hàng
+        compAllocations.sort((x, y) => compareLocations(x.location, y.location));
         result.push({ ...comp, allocations: compAllocations, missing: qtyNeeded, isShortage: qtyNeeded > 0 });
       });
 
-      setAllocations(result);
+      // Sắp các dòng phiếu theo lộ trình lấy hàng (vị trí dãy→tầng→ô, đặc biệt/hết hàng xuống cuối)
+      setAllocations(sortResultByLocation(result));
       setIsShortage(hasShortage);
     } catch (e) {
       console.error(e);
@@ -664,17 +677,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     XLSX.writeFile(wb, "Mau_Nhap_Don_Hang.xlsx");
   };
 
-  const handleOpenManualExport = async () => {
-    setShowManualExportModal(true);
-    setManualRows([emptyManualRow()]);
-    const { data: orderData } = await db.from('production_orders')
-      .select('order_code')
-      .in('status', ['pending', 'in_progress'])
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (orderData) setRecentOrders(orderData.map(d => d.order_code));
-
-    // Lấy danh sách hàng hoá đang có tồn kho > 0 (phân trang để lấy hết)
+  // Lấy danh sách hàng hoá đang có tồn kho > 0 (phân trang để lấy hết) cho autosuggest mã SP
+  const loadStockItems = async () => {
     let allStockData = [];
     let stockPage = 0;
     while (true) {
@@ -686,7 +690,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       if (!stockChunk || stockChunk.length < 1000) break;
       stockPage++;
     }
-    
+
     const uniqueItemsMap = new Map();
     allStockData.forEach(item => {
        if (!uniqueItemsMap.has(item.item_code)) {
@@ -695,6 +699,58 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     });
     const uniqueItemsList = Array.from(uniqueItemsMap.values()).sort((a,b) => a.code.localeCompare(b.code));
     setStockItems(uniqueItemsList);
+  };
+
+  const handleOpenManualExport = async () => {
+    setShowManualExportModal(true);
+    setManualRows([emptyManualRow()]);
+    const { data: orderData } = await db.from('production_orders')
+      .select('order_code')
+      .in('status', ['pending', 'in_progress'])
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (orderData) setRecentOrders(orderData.map(d => d.order_code));
+
+    await loadStockItems();
+  };
+
+  const handleOpenManualOrder = () => {
+    setShowDeliveryChoiceModal(false);
+    setShowManualOrderModal(true);
+    setManualOrderRows([emptyManualOrderRow()]);
+    loadStockItems();
+  };
+
+  // Dòng mới mặc định lấy mã đơn hàng của dòng trên — nhập 1 đơn nhiều mã SP chỉ gõ mã ĐH 1 lần
+  const addManualOrderRow = () =>
+    setManualOrderRows(rs => [...rs, emptyManualOrderRow(rs[rs.length - 1]?.orderCode || '')]);
+
+  const handleCalculateManualOrder = () => {
+    // Fill-down mã đơn hàng như file Excel: dòng để trống dùng mã của dòng trên
+    let currentOrderCode = '';
+    const parsedItems = [];
+    for (let i = 0; i < manualOrderRows.length; i++) {
+      const r = manualOrderRows[i];
+      const typedOrderCode = String(r.orderCode || '').trim();
+      if (typedOrderCode) currentOrderCode = typedOrderCode;
+      const code = String(r.code || '').trim();
+      const qty = Number(r.qty);
+      if (!code && !String(r.qty || '').trim()) continue; // dòng trống — bỏ qua
+      if (!currentOrderCode) return alert(`Dòng ${i + 1}: thiếu Mã đơn hàng.`);
+      if (!code) return alert(`Dòng ${i + 1}: thiếu Mã sản phẩm.`);
+      if (isNaN(qty) || qty <= 0) return alert(`Dòng ${i + 1}: Số lượng phải lớn hơn 0.`);
+      parsedItems.push({
+        orderCode: currentOrderCode,
+        productCode: code,
+        productName: r.name || '',
+        qty,
+        unit: String(r.unit || '').trim(),
+      });
+    }
+    if (parsedItems.length === 0) return alert('Vui lòng nhập ít nhất 1 dòng có Mã đơn hàng, Mã sản phẩm và Số lượng hợp lệ!');
+
+    setShowManualOrderModal(false);
+    checkDuplicatesAndCalculate(parsedItems);
   };
 
   const handleCalculateManualExport = async () => {
@@ -725,14 +781,13 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       const generatedCode = `PXK-${todayStr}-${seq.toString().padStart(2, '0')}`;
       setOrderCode(generatedCode);
 
-      // Lấy tồn của tất cả mã được chọn (FIFO theo import_date)
+      // Lấy tồn của tất cả mã được chọn (FIFO theo import_date, cùng ngày thì vị trí A→Z, 1→20)
       const codes = [...new Set(rows.map(r => r.code))];
-      const { data: stockData, error: stockErr } = await db.from('inventory_stock')
+      const { data: stockRaw, error: stockErr } = await db.from('inventory_stock')
         .select('*')
-        .in('item_code', codes)
-        .order('import_date', { ascending: true })
-        .order('quantity', { ascending: true });
+        .in('item_code', codes);
       if (stockErr) throw stockErr;
+      const stockData = sortStockForFIFO(stockRaw);
 
       // Lưu tồn gốc theo item_code cho popup "Sửa phân bổ"
       const pool = {};
@@ -762,6 +817,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
           compAllocations.push({ stock_id: row.id, location: row.location, before: row.quantity + take, taken: take, remaining: row.quantity });
         }
         if (qtyNeeded > 0) hasShortage = true;
+        // Hiển thị vị trí trên phiếu theo thứ tự tự nhiên (A→Z, 1→20) cho dễ đi lấy hàng
+        compAllocations.sort((x, y) => compareLocations(x.location, y.location));
         result.push({
           code: r.code,
           name: r.name,
@@ -784,7 +841,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
         });
       }
 
-      setAllocations(result);
+      // Sắp các dòng phiếu theo lộ trình lấy hàng (vị trí dãy→tầng→ô, đặc biệt/hết hàng xuống cuối)
+      setAllocations(sortResultByLocation(result));
       setIsShortage(hasShortage);
       setOrderItems(orderItemsArr);
     } catch (e) {
@@ -1144,7 +1202,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
         .eq('item_code', val)
         .gt('quantity', 0);
       if (!error && data) {
-        setDisLocations(data);
+        setDisLocations([...data].sort((a, b) => compareLocations(a.location, b.location)));
       }
     } catch (err) {
       console.warn('Lỗi lấy vị trí tồn kho khi phân rã:', err);
@@ -1239,7 +1297,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
   const EXPORT_TYPES = [
     { id: 'production', label: 'Lệnh Sản Xuất', icon: Play, color: '#0891b2', desc: 'Tạo phiếu sản xuất từ BOM' },
-    { id: 'delivery', label: 'Nhập Đơn Hàng', icon: Upload, color: '#7c3aed', desc: 'Nhập file Excel đơn hàng' },
+    { id: 'delivery', label: 'Nhập Đơn Hàng', icon: Upload, color: '#7c3aed', desc: 'File Excel hoặc nhập tay' },
     { id: 'manual_export', label: 'Xuất Kho Thủ Công', icon: Package, color: '#0284c7', desc: 'Xuất kho đóng gói / bổ sung' },
     { id: 'disassemble', label: 'Phân Rã Sản Phẩm', icon: RefreshCw, color: '#f59e0b', desc: 'Tháo sản phẩm thành linh kiện' },
   ];
@@ -1250,7 +1308,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     if (typeId === 'production') {
       setShowProductionModal(true);
     } else if (typeId === 'delivery') {
-      fileInputRef.current?.click();
+      setShowDeliveryChoiceModal(true);
     } else if (typeId === 'manual_export') {
       handleOpenManualExport();
     } else if (typeId === 'disassemble') {
@@ -1281,7 +1339,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     const next = allocations.map((c, i) =>
       i === compIdx ? { ...c, allocations: newAllocations, missing: 0, isShortage: false } : c
     );
-    setAllocations(next);
+    // Vị trí đầu của dòng có thể đã đổi → sắp lại theo lộ trình lấy hàng
+    setAllocations(sortResultByLocation(next));
     setIsShortage(next.some(c => c.isShortage));
     setEditingCompIdx(null);
   };
@@ -1700,6 +1759,118 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       )}
 
       {/* Removed Confirm Modal */}
+
+      {/* Delivery Choice Modal — chọn cách nhập đơn hàng: Excel hoặc nhập tay */}
+      {showDeliveryChoiceModal && (
+        <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.6)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
+          <div style={{ background:'#fff', padding:'2rem', borderRadius:16, maxWidth:440, width:'100%', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)', animation:'fadeIn 0.2s ease-out' }}>
+            <h3 style={{ margin:'0 0 0.5rem 0', fontSize:'1.25rem', color:'#0f172a', display:'flex', alignItems:'center', gap:10, fontWeight:800 }}>
+              <Upload size={24} color="#7c3aed"/> Nhập Đơn Hàng
+            </h3>
+            <p style={{ margin:'0 0 1.25rem 0', fontSize:'0.85rem', color:'#64748b' }}>Chọn cách nhập dữ liệu đơn hàng:</p>
+
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <button
+                onClick={() => { setShowDeliveryChoiceModal(false); fileInputRef.current?.click(); }}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'0.9rem 1rem', borderRadius:12, border:'1px solid #ddd6fe', background:'#faf5ff', cursor:'pointer', textAlign:'left' }}
+              >
+                <div style={{ width:38, height:38, borderRadius:10, background:'#7c3aed', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Upload size={19}/></div>
+                <div>
+                  <div style={{ fontSize:'0.85rem', fontWeight:700, color:'#334155' }}>Tải file Excel</div>
+                  <div style={{ fontSize:'0.72rem', color:'#94a3b8' }}>Nhập danh sách đơn hàng từ file Excel theo mẫu</div>
+                </div>
+              </button>
+              <button
+                onClick={handleOpenManualOrder}
+                style={{ display:'flex', alignItems:'center', gap:12, padding:'0.9rem 1rem', borderRadius:12, border:'1px solid #bae6fd', background:'#f0f9ff', cursor:'pointer', textAlign:'left' }}
+              >
+                <div style={{ width:38, height:38, borderRadius:10, background:'#0284c7', color:'#fff', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Edit3 size={19}/></div>
+                <div>
+                  <div style={{ fontSize:'0.85rem', fontWeight:700, color:'#334155' }}>Nhập tay</div>
+                  <div style={{ fontSize:'0.72rem', color:'#94a3b8' }}>Gõ trực tiếp mã đơn hàng, mã sản phẩm, số lượng</div>
+                </div>
+              </button>
+            </div>
+
+            <div style={{ display:'flex', justifyContent:'flex-end', marginTop:'1.25rem' }}>
+              <button onClick={() => setShowDeliveryChoiceModal(false)} style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'1px solid #cbd5e1', background:'#fff', color:'#475569', fontWeight:600, cursor:'pointer' }}>
+                Hủy Bỏ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Order Entry Modal — nhập đơn hàng tay, nhiều đơn / nhiều dòng, đi luồng delivery như Excel */}
+      {showManualOrderModal && (
+        <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.6)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem' }}>
+          <div style={{ background:'#fff', padding:'2rem', borderRadius:16, maxWidth:920, width:'100%', maxHeight:'90vh', overflowY:'auto', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)', animation:'fadeIn 0.2s ease-out' }}>
+            <h3 style={{ margin:'0 0 0.5rem 0', fontSize:'1.25rem', color:'#0f172a', display:'flex', alignItems:'center', gap:10, fontWeight:800 }}>
+              <Edit3 size={24} color="#7c3aed"/> Nhập Đơn Hàng Tay
+            </h3>
+            <p style={{ margin:'0 0 1.25rem 0', fontSize:'0.8rem', color:'#64748b' }}>
+              Mỗi dòng là 1 mã sản phẩm của 1 đơn hàng. Dòng mới tự lấy Mã đơn hàng của dòng trên — gõ mã mới khi sang đơn khác.
+            </p>
+
+            {manualOrderRows.map((row, idx) => (
+              <div key={row.id} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:'0.9rem', marginBottom:12, background:'#f8fafc' }}>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1.4fr 1.4fr 0.6fr 0.55fr auto', gap:10, alignItems:'end' }}>
+                  <div>
+                    <label style={s.label}>Mã đơn hàng</label>
+                    <input type="text" style={s.input} value={row.orderCode}
+                      onChange={e => setManualOrderRows(rs => rs.map((r, i) => i === idx ? { ...r, orderCode: e.target.value } : r))}
+                      placeholder="VD: DH-001" />
+                  </div>
+                  <div>
+                    <label style={s.label}>Mã sản phẩm</label>
+                    <SearchableSelect
+                      options={stockItems.map(p => ({value: p.code, label: p.name}))}
+                      value={row.code}
+                      onChange={(val) => setManualOrderRows(rs => rs.map((r, i) => i === idx
+                        ? { ...r, code: val, name: stockItems.find(p => p.code === val)?.name || '' }
+                        : r))}
+                      placeholder="Tìm mã hoặc tên..."
+                    />
+                  </div>
+                  <div>
+                    <label style={s.label}>Tên</label>
+                    <input type="text" style={{...s.input, background:'#eef2f7', color:'#64748b'}} value={row.name} disabled />
+                  </div>
+                  <div>
+                    <label style={s.label}>Số lượng</label>
+                    <input type="number" min="1" step="any" style={s.input} value={row.qty}
+                      onChange={e => setManualOrderRows(rs => rs.map((r, i) => i === idx ? { ...r, qty: e.target.value } : r))}
+                      placeholder="SL..." />
+                  </div>
+                  <div>
+                    <label style={s.label}>Đơn vị</label>
+                    <input type="text" style={s.input} value={row.unit}
+                      onChange={e => setManualOrderRows(rs => rs.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))}
+                      placeholder="Cái" />
+                  </div>
+                  <button onClick={() => setManualOrderRows(rs => rs.length > 1 ? rs.filter((_, i) => i !== idx) : [emptyManualOrderRow()])}
+                    title="Xoá dòng"
+                    style={{ height:38, width:38, borderRadius:8, border:'1px solid #fecaca', background:'#fef2f2', color:'#dc2626', cursor:'pointer', fontWeight:700 }}>✕</button>
+                </div>
+              </div>
+            ))}
+
+            <button onClick={addManualOrderRow}
+              style={{ padding:'0.5rem 1rem', borderRadius:8, border:'1px dashed #7c3aed', background:'#faf5ff', color:'#7c3aed', fontWeight:700, cursor:'pointer', marginBottom:10 }}>
+              + Thêm dòng
+            </button>
+
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:'1rem', marginTop:15 }}>
+              <button onClick={() => setShowManualOrderModal(false)} style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'1px solid #cbd5e1', background:'#fff', color:'#475569', fontWeight:600, cursor:'pointer' }}>
+                Hủy Bỏ
+              </button>
+              <button onClick={handleCalculateManualOrder} style={{ padding:'0.6rem 1.2rem', borderRadius:8, border:'none', background:'#7c3aed', color:'#fff', fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:5 }}>
+                <Play size={16}/> Tính toán xuất kho
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Manual Export Modal */}
       {showManualExportModal && (
