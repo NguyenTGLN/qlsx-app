@@ -123,6 +123,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
   const updateBlock = (blockId, updater) => setBlocks(prev => prev.map(b => b.id === blockId ? updater(b) : b));
   const removeBlock = (blockId) => setBlocks(prev => prev.filter(b => b.id !== blockId));
   const addNccBlock = () => setBlocks(prev => [...prev, { id: newBlockId(), sourceType: 'ncc', sourceValue: '', dlkCode: '', items: [] }]);
+  const addNoneBlock = () => setBlocks(prev => [...prev, { id: newBlockId(), sourceType: 'none', sourceValue: '', dlkCode: '', orderCode: '', items: [] }]);
 
   // Gắn ĐVT + vị trí tồn kho hiện tại cho danh sách item (dùng cho dư SX & hoàn/hủy)
   const attachUnitsAndStock = async (newItems) => {
@@ -862,6 +863,17 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
                     style={{...s.btn, marginTop:'1rem', background:'#ecfdf5', color:'#059669', border:'1px dashed #6ee7b7', width:'100%', justifyContent:'center', padding:'10px'}}
                   >
                     <Plus size={16}/> Thêm nhà cung cấp
+                  </button>
+                )}
+
+                {/* Nút thêm mã đơn hàng (khối mới) cho Khác / Nhập mới */}
+                {(reason === 'Khác' || reason === 'Nhập mới') && (
+                  <button
+                    className="no-print"
+                    onClick={addNoneBlock}
+                    style={{...s.btn, marginTop:'1rem', background:'#ecfdf5', color:'#059669', border:'1px dashed #6ee7b7', width:'100%', justifyContent:'center', padding:'10px'}}
+                  >
+                    <Plus size={16}/> Thêm mã đơn hàng
                   </button>
                 )}
 
