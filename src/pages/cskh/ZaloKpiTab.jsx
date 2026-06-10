@@ -145,7 +145,7 @@ const KpiCard = ({ icon, label, value, color, sub, onClick, isActive }) => (
 );
 
 // ── Main Tab Component ─────────────────────────────────────────────────────
-const ZaloKpiTab = () => {
+const ZaloKpiTab = ({ dateRange }) => {
   // Quyền tab (tab-level perms)
   const p = useTabPerm('cskh', 'zalo_kpi');
   const canMarkDone = p.edit;    // Đánh dấu đã xử lý
@@ -157,7 +157,6 @@ const ZaloKpiTab = () => {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [timeFilter, setTimeFilter] = useState('all_time');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showFilters, setShowFilters] = useState(false);
   const [searchCustomerName, setSearchCustomerName] = useState('');
@@ -192,59 +191,50 @@ const ZaloKpiTab = () => {
   const fetchRecords = useCallback(async () => {
     setLoading(true);
     try {
-      let query = db.from('zalo_conversations').select('*').order('first_message_ts', { ascending: false }).limit(500);
-
-      if (timeFilter !== 'all_time') {
-        const now = new Date();
-        let startTs = 0;
-        let endTs = 0;
-        
-        if (timeFilter === 'today') {
-          const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          startTs = start.getTime();
-          endTs = startTs + 86400000;
-        } else if (timeFilter === 'yesterday') {
-          const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-          startTs = start.getTime();
-          endTs = startTs + 86400000;
-        } else if (timeFilter === 'this_week') {
-          const day = now.getDay() || 7;
-          const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + 1);
-          startTs = start.getTime();
-          endTs = now.getTime() + 86400000; // Future buffer
-        } else if (timeFilter === 'last_week') {
-          const day = now.getDay() || 7;
-          const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day - 6);
-          startTs = start.getTime();
-          endTs = startTs + 7 * 86400000;
-        } else if (timeFilter === 'this_month') {
-          const start = new Date(now.getFullYear(), now.getMonth(), 1);
-          startTs = start.getTime();
-          endTs = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
-        } else if (timeFilter === 'last_month') {
-          const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-          const end = new Date(now.getFullYear(), now.getMonth(), 1);
-          startTs = start.getTime();
-          endTs = end.getTime();
-        }
-        
-        if (startTs > 0) {
-          query = query.gte('first_message_ts', startTs).lt('first_message_ts', endTs);
-        }
+      // Khoảng ngày lấy từ bộ chọn ở header (DateRangeDropdown): from/to là 'YYYY-MM-DD' giờ local.
+      // first_message_ts là BIGINT mili-giây epoch → quy đổi sang mốc đầu/cuối ngày local.
+      let startTs = null;
+      let endTs = null;
+      if (dateRange && dateRange.preset && dateRange.preset !== 'Tất cả') {
+        if (dateRange.from) startTs = new Date(`${dateRange.from}T00:00:00`).getTime();
+        if (dateRange.to)   endTs   = new Date(`${dateRange.to}T23:59:59.999`).getTime();
       }
 
-      const { data, error } = await query;
+      // Áp khoảng ngày cho mọi truy vấn (đếm + tải trang)
+      const withRange = (q) => {
+        if (startTs != null) q = q.gte('first_message_ts', startTs);
+        if (endTs != null)   q = q.lte('first_message_ts', endTs);
+        return q;
+      };
 
-      if (error) {
-        console.error('[ZaloKPI] Fetch error:', error);
-      } else {
-        setRecords(data || []);
-        setLastUpdated(new Date());
+      // 1) Đếm CHÍNH XÁC tổng số hội thoại trong khoảng (không bị cắt ở 500)
+      const { count, error: countErr } = await withRange(
+        db.from('zalo_conversations').select('*', { count: 'exact', head: true })
+      );
+      if (countErr) {
+        console.error('[ZaloKPI] Count error:', countErr);
+        setRecords([]);
+        return;
       }
+
+      // 2) Tải toàn bộ bản ghi theo trang 1000 dòng (KPI tính client-side trên dữ liệu đầy đủ)
+      const step = 1000;
+      const pages = Math.max(1, Math.ceil((count || 0) / step));
+      const promises = Array.from({ length: pages }, (_, i) =>
+        withRange(db.from('zalo_conversations').select('*'))
+          .order('first_message_ts', { ascending: false })
+          .range(i * step, (i + 1) * step - 1)
+      );
+      const results = await Promise.all(promises);
+      const firstErr = results.find(r => r.error)?.error;
+      if (firstErr) console.error('[ZaloKPI] Fetch error:', firstErr);
+
+      setRecords(results.flatMap(r => r.data || []));
+      setLastUpdated(new Date());
     } finally {
       setLoading(false);
     }
-  }, [timeFilter]);
+  }, [dateRange]);
 
   const handleMarkAsResponded = async (id, currentResponses = []) => {
     try {
@@ -417,19 +407,10 @@ const ZaloKpiTab = () => {
   const totalPending = records.filter(r => !r.is_responded).length;
   const totalResolved = records.filter(r => r.is_responded && !isIgnored(r)).length;
   
-  // Calculate average response time (bao gồm cả tin chưa trả lời với thời gian tạm tính)
-  const now = Date.now();
-  const recordsForAvg = records.filter(r => !isIgnored(r));
-  const avgResponseTimeMs = recordsForAvg.length > 0 
-    ? recordsForAvg.reduce((acc, r) => {
-        if (r.is_responded && r.response_time_ms > 0) {
-          return acc + r.response_time_ms;
-        } else if (!r.is_responded && r.first_message_ts) {
-          // Chưa trả lời → tạm tính = now - thời điểm khách nhắn
-          return acc + (now - r.first_message_ts);
-        }
-        return acc;
-      }, 0) / recordsForAvg.length 
+  // Tốc độ phản hồi TB — CHỈ tính hội thoại đã thực sự trả lời (loại tin chưa trả lời & "Không cần trả lời")
+  const recordsForAvg = records.filter(r => r.is_responded && !isIgnored(r) && r.response_time_ms > 0);
+  const avgResponseTimeMs = recordsForAvg.length > 0
+    ? recordsForAvg.reduce((acc, r) => acc + r.response_time_ms, 0) / recordsForAvg.length
     : 0;
 
   // Apply client-side filters (status + search + group)
@@ -582,7 +563,7 @@ const ZaloKpiTab = () => {
         <KpiCard icon={<CheckCircle color="#16a34a" />} label="Đã xử lý xong" value={totalResolved} color="#16a34a" 
                  sub="Nhân viên đã trả lời" onClick={() => setStatusFilter('responded')} isActive={statusFilter === 'responded'} />
         <KpiCard icon={<Clock color="#f59e0b" />} label="Tốc độ phản hồi (TB)" value={fmtDuration(avgResponseTimeMs)} color="#f59e0b"
-                 sub="Thời gian NV phản hồi khách" />
+                 sub={`Chỉ tính ${recordsForAvg.length} hội thoại đã trả lời`} />
       </div>
 
       {/* ── Filter Bar (không cần quyền — chỉ lọc/xem) ──────────────── */}
@@ -840,24 +821,6 @@ const ZaloKpiTab = () => {
                 Cập nhật: {lastUpdated.toLocaleTimeString('vi-VN')}
               </span>
             )}
-            <select
-              value={timeFilter}
-              onChange={(e) => setTimeFilter(e.target.value)}
-              style={{
-                padding: '0.3rem 0.6rem', borderRadius: '7px',
-                border: '1px solid #e2e8f0', background: '#fff',
-                fontSize: '0.78rem', fontWeight: 600, color: '#475569',
-                cursor: 'pointer', outline: 'none'
-              }}
-            >
-              <option value="all_time">Tất cả thời gian</option>
-              <option value="today">Hôm nay</option>
-              <option value="yesterday">Hôm qua</option>
-              <option value="this_week">Tuần này</option>
-              <option value="last_week">Tuần trước</option>
-              <option value="this_month">Tháng này</option>
-              <option value="last_month">Tháng trước</option>
-            </select>
             <button
               onClick={fetchRecords}
               disabled={loading}

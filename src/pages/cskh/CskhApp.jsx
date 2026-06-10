@@ -271,8 +271,8 @@ const CskhApp = () => {
             />
           )
         ) : activeTab === 'zalo_kpi' ? (
-          /* KPI Zalo tự quản lý dữ liệu riêng → render ngay */
-          <ZaloKpiTab />
+          /* KPI Zalo tự quản lý dữ liệu riêng → render ngay (nhận khoảng ngày từ header) */
+          <ZaloKpiTab dateRange={dateRange} />
         ) : activeTab === 'zalo_report' ? (
           <ZaloReportTab refreshTrigger={zaloRefresh} />
         ) : null}

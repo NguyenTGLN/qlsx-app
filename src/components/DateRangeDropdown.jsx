@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Calendar, ChevronDown } from 'lucide-react';
 
 /**
@@ -48,11 +49,17 @@ function calcPresetRange(p) {
 export default function DateRangeDropdown({ label = 'Ngày', value, onChange, alignRight = false }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+  const panelRef = useRef(null);  // overlay modal (render qua portal, NẰM NGOÀI wrapRef)
 
-  // Click outside → close
+  // Click outside → close. Modal được portal ra body nên phải loại trừ cả panelRef,
+  // nếu không mousedown trên chip sẽ bị coi là "click ngoài" và đóng modal trước khi onClick chạy.
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const handler = (e) => {
+      if (wrapRef.current && wrapRef.current.contains(e.target)) return;
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
@@ -98,9 +105,11 @@ export default function DateRangeDropdown({ label = 'Ngày', value, onChange, al
         <ChevronDown size={13} color="#64748b" style={{ transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }} />
       </div>
 
-      {/* Dropdown Panel - Fixed Modal cho Mobile/Desktop để chống tràn */}
-      {open && (
-        <div style={{
+      {/* Dropdown Panel - Fixed Modal cho Mobile/Desktop để chống tràn.
+          Render qua Portal ra document.body để KHÔNG bị kẹt trong containing-block
+          của header (header có backdrop-filter → vô hiệu hoá position:fixed). */}
+      {open && createPortal((
+        <div ref={panelRef} style={{
           position: 'fixed',
           inset: 0,
           zIndex: 99999,
@@ -215,7 +224,7 @@ export default function DateRangeDropdown({ label = 'Ngày', value, onChange, al
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }
