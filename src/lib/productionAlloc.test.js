@@ -1,5 +1,47 @@
 import { describe, it, expect } from 'vitest';
-import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1 } from './productionAlloc';
+import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1, sortStockForFIFO, sortResultByLocation } from './productionAlloc';
+
+describe('sortResultByLocation', () => {
+  it('các dòng phiếu sắp theo vị trí lấy đầu tiên (dãy→tầng→ô); đặc biệt rồi hết hàng xuống cuối', () => {
+    const result = [
+      { code: 'LK1', allocations: [{ location: 'HH4' }] },
+      { code: 'LK2', allocations: [] },                       // hết hàng
+      { code: 'LK3', allocations: [{ location: 'EB1' }] },
+      { code: 'LK4', allocations: [{ location: 'VP6T2' }] },  // đặc biệt
+      { code: 'LK5', allocations: [{ location: 'EM11' }] },
+    ];
+    const out = sortResultByLocation(result);
+    expect(out.map(r => r.code)).toEqual(['LK5', 'LK3', 'LK1', 'LK4', 'LK2']);
+  });
+
+  it('không mutate mảng gốc', () => {
+    const src = [
+      { code: 'B', allocations: [{ location: 'HH2' }] },
+      { code: 'A', allocations: [{ location: 'HH1' }] },
+    ];
+    sortResultByLocation(src);
+    expect(src[0].code).toBe('B');
+  });
+});
+
+describe('sortStockForFIFO', () => {
+  it('ngày nhập cũ trước; cùng ngày thì vị trí (dãy/tầng/ô); chưa có ngày xếp cuối', () => {
+    const out = sortStockForFIFO([
+      { location: 'HH10', import_date: '2026-06-01' },
+      { location: 'BH1', import_date: '2026-05-01' },
+      { location: 'HH2', import_date: '2026-06-01' },
+      { location: 'CH1', import_date: null },
+    ]);
+    // BH1 nhập cũ nhất → đầu; cùng ngày 06-01: HH2 < HH10; CH1 chưa có ngày → cuối
+    expect(out.map(r => r.location)).toEqual(['BH1', 'HH2', 'HH10', 'CH1']);
+  });
+
+  it('không mutate mảng gốc', () => {
+    const src = [{ location: 'HH2' }, { location: 'HH1' }];
+    sortStockForFIFO(src);
+    expect(src[0].location).toBe('HH2');
+  });
+});
 
 describe('round1', () => {
   it('khử nhiễu dấu phẩy động, làm tròn 1 số thập phân', () => {
@@ -67,6 +109,15 @@ describe('allocateFIFO', () => {
     expect(isShortage).toBe(true);
     expect(result[0].isShortage).toBe(true);
     expect(result[0].missing).toBe(60);
+  });
+
+  it('vị trí trên phiếu được sắp theo dãy/tầng/ô dù thứ tự lấy FIFO khác', () => {
+    const s = [
+      { id: 1, item_code: 'A', location: 'HH10', quantity: 5 }, // FIFO lấy trước (đứng đầu mảng)
+      { id: 2, item_code: 'A', location: 'HH2', quantity: 5 },
+    ];
+    const { result } = allocateFIFO([{ code: 'A', name: 'a', unit: '', requiredQty: 8 }], s, {});
+    expect(result[0].allocations.map(a => a.location)).toEqual(['HH2', 'HH10']);
   });
 
   it('không mutate stockData gốc', () => {

@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { todayLocal, parseImportDate } from '../../lib/dateUtils';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import { ColumnToggleModal, shortDate } from '../../components/WarehouseSharedUI';
+import { compareLocations } from '../../lib/locationSort';
 
 const INVENTORY_COLS = ['san_pham','dvt','location','import_date','quantity'];
 const INVENTORY_LABELS = { san_pham:'Sản phẩm', dvt:'ĐVT', location:'Vị trí', import_date:'Ngày nhập', quantity:'Tồn kho' };
@@ -103,7 +104,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
         page++;
       }
       const unique = [...new Set(allLocs.map(d => d.location).filter(Boolean))];
-      setLocations(unique.sort());
+      setLocations(unique.sort(compareLocations));
     };
     fetchLocs();
   }, []);
@@ -160,27 +161,9 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
         let valB = b[sortCol] == null ? '' : b[sortCol];
         
         if (sortCol === 'location') {
-          const strA = String(valA).toUpperCase();
-          const strB = String(valB).toUpperCase();
-          
-          const parseLoc = (loc) => {
-            const m = loc.match(/^([A-Z]+)(M|H|B|T)(\d+)$/);
-            if (m) {
-              const weight = { 'M': 1, 'H': 2, 'B': 3, 'T': 4 }[m[2]];
-              return { match: true, day: m[1], weight, num: parseInt(m[3], 10) };
-            }
-            return { match: false, orig: loc };
-          };
-          
-          const pA = parseLoc(strA);
-          const pB = parseLoc(strB);
-
-          if (pA.match && pB.match) {
-            if (pA.day !== pB.day) return sortAsc ? pA.day.localeCompare(pB.day) : pB.day.localeCompare(pA.day);
-            if (pA.weight !== pB.weight) return sortAsc ? pA.weight - pB.weight : pB.weight - pA.weight;
-            if (pA.num !== pB.num) return sortAsc ? pA.num - pB.num : pB.num - pA.num;
-            return 0;
-          }
+          // Dãy A→Z, tầng M-H-B-T-N-S, ô 1→20 (hàm chung locationSort)
+          const comp = compareLocations(valA, valB);
+          return sortAsc ? comp : -comp;
         }
 
         if (typeof valA === 'number' && typeof valB === 'number') {

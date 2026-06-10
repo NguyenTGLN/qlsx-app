@@ -1,6 +1,10 @@
 // Logic thuần cho "Lệnh Sản Xuất nhiều mã / 1 phiếu".
 // Tách khỏi ProductionOrderTab.jsx để unit-test (vitest).
 
+import { compareLocations } from './locationSort';
+// Re-export để các nơi đang import compareLocations từ productionAlloc vẫn chạy.
+export { compareLocations };
+
 // Làm tròn tới tối đa 1 chữ số thập phân, khử nhiễu dấu phẩy động
 // (vd: 284.30000000000007 → 284.3, 30.699999999999932 → 30.7, 35 → 35).
 export function round1(n) {
@@ -25,6 +29,35 @@ export function aggregateComponentDemand(rows, bomByProduct) {
     }
   }
   return Object.values(demandMap).map(c => ({ ...c, requiredQty: round1(c.requiredQty) }));
+}
+
+// Sắp xếp tồn kho trước khi phân bổ: FIFO theo ngày nhập (cũ trước, chưa có ngày xếp cuối),
+// cùng ngày nhập thì lấy theo vị trí (dãy A→Z, tầng M-H-B-T-N-S, ô 1→20).
+export function sortStockForFIFO(stockData) {
+  return [...(stockData || [])].sort((a, b) => {
+    const da = a.import_date || '', db = b.import_date || '';
+    if (da !== db) {
+      if (!da) return 1;
+      if (!db) return -1;
+      return da < db ? -1 : 1;
+    }
+    return compareLocations(a.location, b.location);
+  });
+}
+
+// Sắp các DÒNG linh kiện trên phiếu theo lộ trình đi lấy hàng: theo vị trí lấy
+// đầu tiên của mỗi dòng (dãy A→Z, tầng M-H-B-T-N-S, ô 1→20). Dòng chỉ có vị trí
+// đặc biệt (VP…, PBH…, SX9-…) xếp sau vị trí chuẩn; dòng hết hàng (không có
+// vị trí nào) xếp cuối cùng.
+export function sortResultByLocation(result) {
+  return [...(result || [])].sort((a, b) => {
+    const la = (a.allocations && a.allocations[0]) ? a.allocations[0].location : '';
+    const lb = (b.allocations && b.allocations[0]) ? b.allocations[0].location : '';
+    if (!la && !lb) return 0;
+    if (!la) return 1;
+    if (!lb) return -1;
+    return compareLocations(la, lb);
+  });
 }
 
 // Phân bổ FIFO. stockData nên đã sort sẵn (import_date asc, quantity asc).
@@ -72,6 +105,8 @@ export function allocateFIFO(componentsRequired, stockData, opts = {}) {
     }
 
     if (qtyNeeded > 0) isShortage = true;
+    // Hiển thị vị trí trên phiếu theo thứ tự tự nhiên (A→Z, 1→20) cho dễ đi lấy hàng
+    compAllocations.sort((x, y) => compareLocations(x.location, y.location));
     result.push({ ...comp, allocations: compAllocations, missing: qtyNeeded, isShortage: qtyNeeded > 0 });
   }
 
