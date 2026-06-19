@@ -8,4 +8,6 @@ export default defineConfig({
     tailwindcss(),
     react()
   ],
+  // Honor PORT env (dùng cho preview/tooling tự gán cổng); để trống → Vite tự chọn mặc định
+  server: process.env.PORT ? { port: Number(process.env.PORT) } : undefined,
 })
