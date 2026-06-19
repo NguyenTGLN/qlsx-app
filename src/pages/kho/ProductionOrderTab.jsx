@@ -677,14 +677,15 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     XLSX.writeFile(wb, "Mau_Nhap_Don_Hang.xlsx");
   };
 
-  // Lấy danh sách hàng hoá đang có tồn kho > 0 (phân trang để lấy hết) cho autosuggest mã SP
+  // Lấy TOÀN BỘ danh mục hàng hóa (inventory_items, phân trang để lấy hết) cho autosuggest mã SP.
+  // Dùng cả danh mục (không lọc theo tồn) để tìm được mọi mã kể cả tồn = 0 (vd BCCTV);
+  // bước "Tính toán" vẫn kiểm tra tồn và cảnh báo "thiếu linh kiện" nếu không đủ.
   const loadStockItems = async () => {
     let allStockData = [];
     let stockPage = 0;
     while (true) {
-      const { data: stockChunk } = await db.from('inventory_stock')
+      const { data: stockChunk } = await db.from('inventory_items')
         .select('item_code, item_name')
-        .gt('quantity', 0)
         .range(stockPage * 1000, (stockPage + 1) * 1000 - 1);
       if (stockChunk) allStockData = allStockData.concat(stockChunk);
       if (!stockChunk || stockChunk.length < 1000) break;
