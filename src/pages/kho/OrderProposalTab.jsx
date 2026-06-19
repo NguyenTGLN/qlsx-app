@@ -4,6 +4,12 @@ import { Loader2, RefreshCw, Download, Trash2, XCircle, ShoppingCart } from 'luc
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { computeNeededDates } from '../../lib/dksxEngine';
+import { usePersistedState } from '../../lib/usePersistedState';
+import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
+
+// Các cột data có thể ẩn/hiện (cột "#" và "Thao tác" luôn hiện)
+const TABLE_COLS = ['urgency','dlk_code','san_pham','unit','ngay_de_xuat','ngay_du_kien','needed_ts','calculated_qty','actual_qty','received','tien_do','note'];
+const COL_LABELS_MAP = { urgency:'Khẩn cấp', dlk_code:'Mã DLK', san_pham:'Sản phẩm', unit:'ĐVT', ngay_de_xuat:'Ngày ĐX', ngay_du_kien:'Dự kiến về', needed_ts:'Ngày cần về', calculated_qty:'SL ĐX', actual_qty:'SL Đặt', received:'Đã nhập', tien_do:'Tiến độ', note:'Ghi chú' };
 
 const TIEN_DO_OPTIONS = ['Mới','Chờ duyệt','Đã đặt','Đang vận chuyển','Đã về kho'];
 // Mỗi tiến độ một màu riêng (dùng cho dropdown + bộ lọc)
@@ -42,6 +48,8 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
   const [filterTienDo, setFilterTienDo] = useState('all'); // 'all' | một giá trị trong TIEN_DO_OPTIONS
   const [sortCol, setSortCol] = useState(null); // cột đang sắp xếp (null = giữ thứ tự gốc)
   const [sortAsc, setSortAsc] = useState(true);
+  // Ẩn/hiện cột — lưu localStorage, mặc định hiện hết
+  const [hiddenCols, setHiddenCols] = usePersistedState('orderProposal_hiddenCols', new Set());
   // Theo dõi các lệnh lưu đang bay (để Làm mới chờ chúng commit trước khi đọc lại DB)
   const pendingRef = useRef(new Set());
   // Hẹn giờ debounce cho ô gõ tay (SL Đặt / Ghi chú) theo từng dòng id
@@ -222,6 +230,10 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
       default: return r[col];
     }
   };
+  // Ẩn/hiện cột: vis(col) = cột đang hiện; visCount = số ô <td> mỗi dòng (cột data hiện + # + Thao tác)
+  const vis = (col) => !hiddenCols.has(col);
+  const visCount = TABLE_COLS.filter(vis).length + 2;
+
   const visibleRows = sortCol
     ? [...filteredRows].sort((a, b) => {
         let va = sortVal(a, sortCol), vb = sortVal(b, sortCol);
@@ -275,6 +287,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
           <RefreshCw size={15} style={{animation:loading?'spin 1s linear infinite':'none',color:'#7c3aed'}}/>
         </button>
         <button onClick={handleExport} disabled={rows.length===0} style={{...s.btn,color:'#059669',flexShrink:0}}><Download size={14}/>Excel</button>
+        <ColumnToggleModal columns={TABLE_COLS} labels={COL_LABELS_MAP} hiddenCols={hiddenCols} setHiddenCols={setHiddenCols} />
       </div>
 
       <main style={{flex:1,overflow:'hidden',background:'#fff'}}>
@@ -289,24 +302,24 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
               <thead>
                 <tr style={{background:'#faf5ff',position:'sticky',top:0,zIndex:1}}>
                   <th style={th}>#</th>
-                  <th onClick={()=>handleSort('urgency')} style={sortTh(sortCol==='urgency')}>Khẩn cấp{sortInd('urgency')}</th>
-                  <th onClick={()=>handleSort('dlk_code')} style={sortTh(sortCol==='dlk_code')}>Mã DLK{sortInd('dlk_code')}</th>
-                  <th onClick={()=>handleSort('item_code')} style={{...sortTh(sortCol==='item_code'),textAlign:'left'}}>Sản phẩm{sortInd('item_code')}</th>
-                  <th onClick={()=>handleSort('unit')} style={sortTh(sortCol==='unit')}>ĐVT{sortInd('unit')}</th>
-                  <th onClick={()=>handleSort('ngay_de_xuat')} style={sortTh(sortCol==='ngay_de_xuat')}>Ngày ĐX{sortInd('ngay_de_xuat')}</th>
-                  <th onClick={()=>handleSort('ngay_du_kien')} style={sortTh(sortCol==='ngay_du_kien')}>Dự kiến về{sortInd('ngay_du_kien')}</th>
-                  <th onClick={()=>handleSort('needed_ts')} style={sortTh(sortCol==='needed_ts')}>Ngày cần về{sortInd('needed_ts')}</th>
-                  <th onClick={()=>handleSort('calculated_qty')} style={{...sortTh(sortCol==='calculated_qty'),textAlign:'right'}}>SL ĐX{sortInd('calculated_qty')}</th>
-                  <th onClick={()=>handleSort('actual_qty')} style={{...sortTh(sortCol==='actual_qty'),textAlign:'right'}}>SL Đặt{sortInd('actual_qty')}</th>
-                  <th onClick={()=>handleSort('received')} style={{...sortTh(sortCol==='received'),textAlign:'right'}}>Đã nhập{sortInd('received')}</th>
-                  <th onClick={()=>handleSort('tien_do')} style={sortTh(sortCol==='tien_do')}>Tiến độ{sortInd('tien_do')}</th>
-                  <th style={th}>Ghi chú</th>
+                  {vis('urgency') && <th onClick={()=>handleSort('urgency')} style={sortTh(sortCol==='urgency')}>Khẩn cấp{sortInd('urgency')}</th>}
+                  {vis('dlk_code') && <th onClick={()=>handleSort('dlk_code')} style={sortTh(sortCol==='dlk_code')}>Mã DLK{sortInd('dlk_code')}</th>}
+                  {vis('san_pham') && <th onClick={()=>handleSort('item_code')} style={{...sortTh(sortCol==='item_code'),textAlign:'left'}}>Sản phẩm{sortInd('item_code')}</th>}
+                  {vis('unit') && <th onClick={()=>handleSort('unit')} style={sortTh(sortCol==='unit')}>ĐVT{sortInd('unit')}</th>}
+                  {vis('ngay_de_xuat') && <th onClick={()=>handleSort('ngay_de_xuat')} style={sortTh(sortCol==='ngay_de_xuat')}>Ngày ĐX{sortInd('ngay_de_xuat')}</th>}
+                  {vis('ngay_du_kien') && <th onClick={()=>handleSort('ngay_du_kien')} style={sortTh(sortCol==='ngay_du_kien')}>Dự kiến về{sortInd('ngay_du_kien')}</th>}
+                  {vis('needed_ts') && <th onClick={()=>handleSort('needed_ts')} style={sortTh(sortCol==='needed_ts')}>Ngày cần về{sortInd('needed_ts')}</th>}
+                  {vis('calculated_qty') && <th onClick={()=>handleSort('calculated_qty')} style={{...sortTh(sortCol==='calculated_qty'),textAlign:'right'}}>SL ĐX{sortInd('calculated_qty')}</th>}
+                  {vis('actual_qty') && <th onClick={()=>handleSort('actual_qty')} style={{...sortTh(sortCol==='actual_qty'),textAlign:'right'}}>SL Đặt{sortInd('actual_qty')}</th>}
+                  {vis('received') && <th onClick={()=>handleSort('received')} style={{...sortTh(sortCol==='received'),textAlign:'right'}}>Đã nhập{sortInd('received')}</th>}
+                  {vis('tien_do') && <th onClick={()=>handleSort('tien_do')} style={sortTh(sortCol==='tien_do')}>Tiến độ{sortInd('tien_do')}</th>}
+                  {vis('note') && <th style={th}>Ghi chú</th>}
                   <th style={th}>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
                 {visibleRows.length === 0 ? (
-                  <tr><td colSpan={14} style={{padding:'2.5rem',textAlign:'center',color:'#94a3b8',fontWeight:600}}>
+                  <tr><td colSpan={visCount} style={{padding:'2.5rem',textAlign:'center',color:'#94a3b8',fontWeight:600}}>
                     {filterTienDo!=='all' ? `Không có đề xuất nào ở tiến độ "${filterTienDo}"` : filterStatus==='active' ? 'Không có đề xuất nào đang mở — vào tab Tồn HH để gửi đề xuất mới' : 'Không có dữ liệu'}
                   </td></tr>
                 ) : visibleRows.map((row, i) => {
@@ -315,7 +328,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                   return (
                     <tr key={row.id} style={{borderBottom:'1px solid #f1f5f9',opacity:isDone?0.65:1}} onMouseEnter={e=>e.currentTarget.style.background='#faf5ff'} onMouseLeave={e=>e.currentTarget.style.background=''}>
                       <td style={{...td,color:'#94a3b8'}}>{i+1}</td>
-                      <td style={{...td}}>
+                      {vis('urgency') && <td style={{...td}}>
                         {(() => {
                           const u = urgencyOf(row.days_left);
                           return u ? (
@@ -324,45 +337,45 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                             </span>
                           ) : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>;
                         })()}
-                      </td>
-                      <td style={{...td,fontWeight:700,color:'#7c3aed',whiteSpace:'nowrap'}}>{row.dlk_code}</td>
-                      <td style={{...td,textAlign:'left'}}>
+                      </td>}
+                      {vis('dlk_code') && <td style={{...td,fontWeight:700,color:'#7c3aed',whiteSpace:'nowrap'}}>{row.dlk_code}</td>}
+                      {vis('san_pham') && <td style={{...td,textAlign:'left'}}>
                         <div style={{fontWeight:600,color:'#0284c7'}}>{row.item_code}</div>
                         <div style={{fontSize:'0.66rem',color:'#64748b',fontStyle:'italic'}}>{row.item_name}</div>
-                      </td>
-                      <td style={{...td,color:'#64748b'}}>{row.unit}</td>
-                      <td style={{...td,color:'#64748b',whiteSpace:'nowrap'}}>{row.ngay_de_xuat || '—'}</td>
-                      <td style={{...td}}>
+                      </td>}
+                      {vis('unit') && <td style={{...td,color:'#64748b'}}>{row.unit}</td>}
+                      {vis('ngay_de_xuat') && <td style={{...td,color:'#64748b',whiteSpace:'nowrap'}}>{row.ngay_de_xuat || '—'}</td>}
+                      {vis('ngay_du_kien') && <td style={{...td}}>
                         <input type="date" value={row.ngay_du_kien||''} disabled={isDone || !perms.edit}
                           onChange={e=>{const v=e.target.value; handleUpdateRow(row.id,'ngay_du_kien',v); flushSave(row,{ngay_du_kien:v});}}
                           style={{...s.input,width:110,color: row.days_remaining!==null&&row.days_remaining<0?'#ef4444':'#334155'}}/>
-                      </td>
-                      <td style={{...td,whiteSpace:'nowrap',fontWeight:600,color: row.days_left!==null&&row.days_left<7?'#dc2626':'#475569'}}>
+                      </td>}
+                      {vis('needed_ts') && <td style={{...td,whiteSpace:'nowrap',fontWeight:600,color: row.days_left!==null&&row.days_left<7?'#dc2626':'#475569'}}>
                         {row.needed_ts ? new Date(row.needed_ts).toLocaleDateString('vi-VN') : '—'}
-                      </td>
-                      <td style={{...td,textAlign:'right',color:'#64748b'}}>{Number(row.calculated_qty).toLocaleString('vi-VN')}</td>
-                      <td style={{...td,textAlign:'right'}}>
+                      </td>}
+                      {vis('calculated_qty') && <td style={{...td,textAlign:'right',color:'#64748b'}}>{Number(row.calculated_qty).toLocaleString('vi-VN')}</td>}
+                      {vis('actual_qty') && <td style={{...td,textAlign:'right'}}>
                         <input type="number" min="0" value={row.actual_qty} disabled={isDone || !perms.edit}
                           onChange={e=>{const v=e.target.value; handleUpdateRow(row.id,'actual_qty',v); queueSave(row,{actual_qty:v});}}
                           onBlur={e=>flushSave(row,{actual_qty:e.target.value})}
                           style={{...s.input,width:60,textAlign:'right',fontWeight:700,color:'#0f172a'}}/>
-                      </td>
-                      <td style={{...td,textAlign:'right',fontWeight:700,color: row.received>0?'#059669':'#94a3b8'}}>
+                      </td>}
+                      {vis('received') && <td style={{...td,textAlign:'right',fontWeight:700,color: row.received>0?'#059669':'#94a3b8'}}>
                         {row.received > 0 ? row.received.toLocaleString('vi-VN') : '—'}
-                      </td>
-                      <td style={{...td}}>
+                      </td>}
+                      {vis('tien_do') && <td style={{...td}}>
                         <select value={row.tien_do||'Mới'} disabled={isDone || !perms.edit}
                           onChange={e=>{const v=e.target.value; handleUpdateRow(row.id,'tien_do',v); flushSave(row,{tien_do:v});}}
                           style={{...s.input,minWidth:120,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`,fontWeight:700}}>
                           {TIEN_DO_OPTIONS.map(o=><option key={o} style={{background:'#fff',color:'#334155',fontWeight:600}}>{o}</option>)}
                         </select>
-                      </td>
-                      <td style={{...td}}>
+                      </td>}
+                      {vis('note') && <td style={{...td}}>
                         <input type="text" value={row.note||''} placeholder="..." disabled={isDone || !perms.edit}
                           onChange={e=>{const v=e.target.value; handleUpdateRow(row.id,'note',v); queueSave(row,{note:v});}}
                           onBlur={e=>flushSave(row,{note:e.target.value})}
                           style={{...s.input,width:100}}/>
-                      </td>
+                      </td>}
                       <td style={{...td}}>
                         <div style={{display:'flex',gap:4,justifyContent:'center'}}>
                           {perms.create && !isDone && (
