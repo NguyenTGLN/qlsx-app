@@ -33,7 +33,7 @@ const chipPalette = (done, urg) => {
 function StepChips({ row, perm, onToggle }) {
   const steps = getEffectiveSteps(row['các_bước']);
   return (
-    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '3px', alignItems: 'center' }}>
+    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', alignItems: 'stretch' }}>
       {steps.map((s, i) => {
         const done = s['trạng_thái'] === 'xong';
         const name = s['tên'] || `Bước ${i + 1}`;
@@ -46,13 +46,18 @@ function StepChips({ row, perm, onToggle }) {
             onClick={(e) => { e.stopPropagation(); if (perm.edit) onToggle(row, i, steps); }}
             title={name + (dl ? ` · hạn ${dl}` : '') + (done ? ' — đã xong' : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong')}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: '2px', padding: '1px 6px',
-              borderRadius: '8px', fontSize: '0.6rem', fontWeight: 600, whiteSpace: 'nowrap',
-              userSelect: 'none', cursor: perm.edit ? 'pointer' : 'default', flex: '0 0 auto',
+              display: 'inline-flex', flexDirection: 'column', justifyContent: 'center', gap: '1px',
+              width: 104, padding: '2px 6px', borderRadius: '8px', fontSize: '0.6rem', fontWeight: 600,
+              lineHeight: 1.15, userSelect: 'none', cursor: perm.edit ? 'pointer' : 'default', flex: '0 0 auto',
               ...chipPalette(done, urg),
             }}
           >
-            {done ? '✓' : ''}{name}{dl ? ` · ${dl}` : ''}
+            {/* 2 dòng đầu: nội dung bước (tự cắt nếu dài) */}
+            <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+              {done ? '✓ ' : ''}{name}
+            </span>
+            {/* dòng cuối: thời hạn */}
+            {dl && <span style={{ fontSize: '0.54rem', fontWeight: 700, whiteSpace: 'nowrap', opacity: 0.9 }}>{dl}</span>}
           </span>
         );
       })}
