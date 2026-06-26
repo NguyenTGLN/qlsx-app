@@ -49,6 +49,24 @@ export function getEffectiveSteps(cacBuoc) {
   return WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong' }));
 }
 
+// Mức khẩn của 1 bước theo hạn xử lý (so với 'now' truyền vào cho dễ test). Coi hạn là
+// CUỐI NGÀY của ngày đó. Chỉ áp cho bước CHƯA xong & có hạn.
+//  - 'red'    : quá hạn hoặc còn < 1 ngày  → nhấp nháy đỏ
+//  - 'yellow' : còn 1–3 ngày               → nhấp nháy vàng
+//  - null     : đã xong / chưa đặt hạn / còn xa
+export function stepUrgency(step, now = Date.now()) {
+  if (!step || step['trạng_thái'] === 'xong') return null;
+  const han = step['hạn_xử_lý'];
+  if (!han) return null;
+  const d = new Date(han);
+  if (isNaN(d.getTime())) return null;
+  const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+  const days = (end - now) / 86400000;
+  if (days < 1) return 'red';
+  if (days <= 3) return 'yellow';
+  return null;
+}
+
 export function computeTotalCost(parts) {
   if (!Array.isArray(parts)) return 0;
   return parts.reduce((sum, p) => {

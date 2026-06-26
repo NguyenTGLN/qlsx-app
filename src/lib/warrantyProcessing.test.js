@@ -1,7 +1,7 @@
 import { test, expect, describe } from 'vitest';
 import {
   PROCESSING_STATUSES, PROCESSING_CATEGORIES, WORKFLOW_STEPS_MAU,
-  isQualifyingTicket, computeTotalCost, getEffectiveSteps, TRANG_THAI_XU_LY,
+  isQualifyingTicket, computeTotalCost, getEffectiveSteps, stepUrgency, TRANG_THAI_XU_LY,
 } from './warrantyProcessing';
 
 describe('isQualifyingTicket', () => {
@@ -70,5 +70,26 @@ describe('getEffectiveSteps', () => {
   });
   test('mảng rỗng → workflow chuẩn', () => {
     expect(getEffectiveSteps([]).length).toBe(WORKFLOW_STEPS_MAU.length);
+  });
+});
+
+describe('stepUrgency', () => {
+  // Dùng hạn dạng ISO-local (có giờ) để test ổn định theo múi giờ.
+  const now = new Date(2026, 5, 20, 9, 0, 0).getTime(); // 20/06/2026 09:00 local
+
+  test('quá hạn hoặc còn < 1 ngày → red', () => {
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-20T12:00:00' }, now)).toBe('red'); // cùng ngày
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-18T12:00:00' }, now)).toBe('red'); // đã quá hạn
+  });
+  test('còn 1–3 ngày → yellow', () => {
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-22T12:00:00' }, now)).toBe('yellow');
+  });
+  test('còn xa → null', () => {
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-07-10T12:00:00' }, now)).toBe(null);
+  });
+  test('đã xong / không có hạn → null', () => {
+    expect(stepUrgency({ 'trạng_thái': 'xong', 'hạn_xử_lý': '2026-06-18T12:00:00' }, now)).toBe(null);
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong' }, now)).toBe(null);
+    expect(stepUrgency(null, now)).toBe(null);
   });
 });

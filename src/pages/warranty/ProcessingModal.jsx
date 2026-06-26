@@ -34,7 +34,7 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
   const [steps, setSteps] = useState(() =>
     (Array.isArray(row['các_bước']) && row['các_bước'].length)
       ? row['các_bước']
-      : WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong', 'người_làm': '', 'ghi_chú': '' }))
+      : WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong', 'người_làm': '', 'ghi_chú': '', 'hạn_xử_lý': '' }))
   );
   const [parts, setParts] = useState(() => Array.isArray(row['linh_kiện_thay']) ? row['linh_kiện_thay'] : []);
   const [history] = useState(() => Array.isArray(row['lịch_sử_thao_tác']) ? row['lịch_sử_thao_tác'] : []);
@@ -45,7 +45,7 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
   const totalCost = useMemo(() => computeTotalCost(parts), [parts]);
 
   // ── Các bước tùy biến ──
-  const addStep = () => setSteps(prev => [...prev, { 'tên': '', 'trạng_thái': 'chưa_xong', 'người_làm': '', 'ghi_chú': '' }]);
+  const addStep = () => setSteps(prev => [...prev, { 'tên': '', 'trạng_thái': 'chưa_xong', 'người_làm': '', 'ghi_chú': '', 'hạn_xử_lý': '' }]);
   const updateStep = (i, k, v) => setSteps(prev => prev.map((st, idx) => idx === i ? { ...st, [k]: v } : st));
   const toggleStep = (i) => setSteps(prev => prev.map((st, idx) => idx === i ? { ...st, 'trạng_thái': st['trạng_thái'] === 'xong' ? 'chưa_xong' : 'xong' } : st));
   const removeStep = (i) => setSteps(prev => prev.filter((_, idx) => idx !== i));
@@ -139,12 +139,13 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
             <button onClick={addStep} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', padding: '0.3rem 0.6rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}><Plus size={14} /> Thêm bước</button>
           </div>
           {steps.length === 0 ? <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Chưa có bước nào.</p> : steps.map((st, i) => (
-            <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
               <button onClick={() => toggleStep(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: st['trạng_thái'] === 'xong' ? '#15803d' : '#cbd5e1' }}>
                 {st['trạng_thái'] === 'xong' ? <CheckCircle2 size={20} /> : <Circle size={20} />}
               </button>
-              <input style={{ ...s.input, flex: 2 }} placeholder="Tên bước" value={st['tên'] || ''} onChange={e => updateStep(i, 'tên', e.target.value)} />
-              <input style={{ ...s.input, flex: 1 }} placeholder="Người làm" value={st['người_làm'] || ''} onChange={e => updateStep(i, 'người_làm', e.target.value)} />
+              <input style={{ ...s.input, flex: '2 1 140px' }} placeholder="Tên bước" value={st['tên'] || ''} onChange={e => updateStep(i, 'tên', e.target.value)} />
+              <input style={{ ...s.input, flex: '1 1 100px' }} placeholder="Người làm" value={st['người_làm'] || ''} onChange={e => updateStep(i, 'người_làm', e.target.value)} />
+              <input type="date" title="Hạn xử lý" style={{ ...s.input, flex: '0 1 150px', minWidth: 130 }} value={st['hạn_xử_lý'] ? String(st['hạn_xử_lý']).substring(0, 10) : ''} onChange={e => updateStep(i, 'hạn_xử_lý', e.target.value)} />
               <button onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>
             </div>
           ))}

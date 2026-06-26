@@ -107,6 +107,19 @@ input, select, textarea {
   animation: fadeIn var(--transition-normal) forwards;
 }
 
+/* Nhấp nháy cảnh báo hạn xử lý cho bước WF (tab Xử lý phiếu bảo hành).
+   Vàng = gần hạn (1–3 ngày); Đỏ = quá hạn hoặc còn < 1 ngày. */
+@keyframes wfBlinkYellow {
+  0%, 100% { background: #fde047; border-color: #eab308; box-shadow: none; }
+  50% { background: #fef9c3; border-color: #facc15; box-shadow: 0 0 0 2px rgba(250, 204, 21, 0.5); }
+}
+@keyframes wfBlinkRed {
+  0%, 100% { background: #fde047; border-color: #eab308; box-shadow: none; }
+  50% { background: #ef4444; border-color: #b91c1c; box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.5); }
+}
+.wf-blink-yellow { animation: wfBlinkYellow 1.1s ease-in-out infinite; }
+.wf-blink-red { animation: wfBlinkRed 0.85s ease-in-out infinite; }
+
 .glass-panel {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);

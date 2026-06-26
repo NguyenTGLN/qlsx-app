@@ -3,7 +3,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency } from '../../lib/warrantyProcessing';
 import ProcessingModal from './ProcessingModal';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
@@ -12,6 +12,12 @@ const badge = (color, label) => <span style={{ background: color + '22', color, 
 
 // Cột workflow: dãy "đèn" các bước. Vàng SÁNG = chưa xong, vàng NHẠT (tắt đèn) = đã xong.
 // Bấm 1 đèn để bật/tắt xong ngay trên danh sách (cần quyền sửa). Không mở popup khi bấm đèn.
+const shortDate = (v) => {
+  if (!v) return '';
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? '' : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
 function StepChips({ row, perm, onToggle }) {
   const steps = getEffectiveSteps(row['các_bước']);
   return (
@@ -19,11 +25,15 @@ function StepChips({ row, perm, onToggle }) {
       {steps.map((s, i) => {
         const done = s['trạng_thái'] === 'xong';
         const name = s['tên'] || `Bước ${i + 1}`;
+        const dl = shortDate(s['hạn_xử_lý']);
+        const urg = stepUrgency(s); // 'red' | 'yellow' | null (chỉ khi chưa xong + có hạn)
+        const blinkClass = urg === 'red' ? 'wf-blink-red' : urg === 'yellow' ? 'wf-blink-yellow' : undefined;
         return (
           <span
             key={i}
+            className={blinkClass}
             onClick={(e) => { e.stopPropagation(); if (perm.edit) onToggle(row, i, steps); }}
-            title={name + (done ? ' — đã xong' : ' — chưa xong')}
+            title={name + (dl ? ` · hạn ${dl}` : '') + (done ? ' — đã xong' : urg ? ' — gần/quá hạn!' : ' — chưa xong')}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '2px', padding: '1px 6px',
               borderRadius: '8px', fontSize: '0.6rem', fontWeight: 600, whiteSpace: 'nowrap',
@@ -33,7 +43,7 @@ function StepChips({ row, perm, onToggle }) {
                 : { background: '#fde047', color: '#713f12', border: '1px solid #eab308' }),
             }}
           >
-            {done ? '✓' : ''}{name}
+            {done ? '✓' : ''}{name}{dl ? ` · ${dl}` : ''}
           </span>
         );
       })}
