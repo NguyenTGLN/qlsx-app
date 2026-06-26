@@ -114,6 +114,10 @@ input, select, textarea {
 }
 .wf-blink { animation: wfBlink 0.8s ease-in-out infinite; }
 
+/* Bước WF dạng card nổi: có đổ bóng + nhấc nhẹ khi rê chuột. */
+.wf-card { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14); transition: transform 0.12s ease, box-shadow 0.12s ease; }
+.wf-card:hover { transform: translateY(-2px); box-shadow: 0 5px 10px rgba(0, 0, 0, 0.2); }
+
 .glass-panel {
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);

@@ -42,14 +42,19 @@ function StepChips({ row, perm, onToggle }) {
         return (
           <span
             key={i}
-            className={urg === 'blink' ? 'wf-blink' : undefined}
-            onClick={(e) => { e.stopPropagation(); if (perm.edit) onToggle(row, i, steps); }}
+            className={`wf-card${urg === 'blink' ? ' wf-blink' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!perm.edit) return;
+              const msg = done ? `Bỏ đánh dấu hoàn thành bước "${name}"?` : `Xác nhận ĐÃ HOÀN THÀNH bước "${name}"?`;
+              if (window.confirm(msg)) onToggle(row, i, steps);
+            }}
             title={name + (dl ? ` · hạn ${dl}` : '') + (done
               ? ` — ✓ xong${s['hoàn_thành_lúc'] ? ' lúc ' + fmtDeadline(s['hoàn_thành_lúc']) : ''}${s['người_hoàn_thành'] ? ' bởi ' + s['người_hoàn_thành'] : ''}`
               : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong')}
             style={{
               display: 'inline-flex', flexDirection: 'column', justifyContent: 'center', gap: '1px',
-              width: 104, padding: '2px 6px', borderRadius: '8px', fontSize: '0.6rem', fontWeight: 600,
+              width: 106, padding: '3px 8px', borderRadius: '10px', fontSize: '0.6rem', fontWeight: 600,
               lineHeight: 1.15, userSelect: 'none', cursor: perm.edit ? 'pointer' : 'default', flex: '0 0 auto',
               ...chipPalette(done, urg),
             }}
