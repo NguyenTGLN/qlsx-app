@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
-import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
 import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, toggleStepStatus } from '../../lib/warrantyProcessing';
 import ProcessingModal from './ProcessingModal';
@@ -72,6 +72,26 @@ function StepChips({ row, perm, onToggle }) {
   );
 }
 
+// Ô cột "Đồng bộ": badge trạng thái + nút đẩy nhanh phiếu về Caresoft ngay từ danh sách.
+function SyncCell({ row, perm, onSync }) {
+  const st = row['trạng_thái_đồng_bộ'];
+  const m = TRANG_THAI_DONG_BO[st] || TRANG_THAI_DONG_BO['nháp'];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+      {badge(m.color, m.label)}
+      {perm.io && st !== 'pending' && (
+        <button
+          className="wf-card"
+          onClick={(e) => { e.stopPropagation(); onSync(row); }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 8px', borderRadius: '8px', border: '1px solid #6ee7b7', background: '#ecfdf5', color: '#047857', cursor: 'pointer', fontWeight: 700, fontSize: '0.62rem', whiteSpace: 'nowrap' }}
+        >
+          <Send size={11} /> Đồng bộ
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Đăng ký cột danh sách. Thứ tự hiển thị = thứ tự ở đây. Người dùng bật/tắt qua nút "Ẩn/Hiện cột".
 const LIST_COLUMNS = [
   { key: 'phiếu_ghi', label: 'Phiếu ghi', render: r => <span style={{ fontWeight: 600, color: '#1e293b' }}>{r['phiếu_ghi'] || r['id_phiếu_ghi']}</span> },
@@ -90,7 +110,7 @@ const LIST_COLUMNS = [
   { key: 'kết_quả_xử_lý', label: 'Kết quả', render: r => r['kết_quả_xử_lý'] || '-' },
   { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
   { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onToggle={ctx.onToggleStep} /> },
-  { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: r => { const m = TRANG_THAI_DONG_BO[r['trạng_thái_đồng_bộ']] || TRANG_THAI_DONG_BO['nháp']; return badge(m.color, m.label); } },
+  { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
 const DEFAULT_VISIBLE = ['phiếu_ghi', 'mã_đơn_hàng', 'mã_sản_phẩm', 'số_điện_thoại_khách_hàng', 'chi_tiết_lỗi', 'người_phụ_trách', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ'];
@@ -181,6 +201,17 @@ export default function WarrantyProcessing() {
     if (error) { alert('Lỗi cập nhật bước: ' + error.message); await fetchRows(); }
   };
 
+  // Đẩy nhanh 1 phiếu về Caresoft ngay từ danh sách (đặt cờ pending → webhook n8n xử lý).
+  const quickSync = async (row) => {
+    const label = row['phiếu_ghi'] || row['id_phiếu_ghi'];
+    if (!window.confirm(`Đẩy phiếu ${label} về Caresoft?`)) return;
+    const operator = (user && (user.name || user.id)) || '';
+    setRows(prev => prev.map(x => x.id === row.id ? { ...x, 'trạng_thái_đồng_bộ': 'pending' } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh')
+      .update({ 'trạng_thái_đồng_bộ': 'pending', 'lỗi_đồng_bộ': null, 'người_cập_nhật': operator }).eq('id', row.id);
+    if (error) { alert('Lỗi đồng bộ: ' + error.message); await fetchRows(); }
+  };
+
   if (loading && rows.length === 0) {
     return <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}><RefreshCw size={36} className="spin" color="#6366f1" /></div>;
   }
@@ -246,7 +277,7 @@ export default function WarrantyProcessing() {
                       textOverflow: isSteps ? 'clip' : 'ellipsis',
                       whiteSpace: 'nowrap',
                     }}>
-                      {c.render(r, { perm, onToggleStep: toggleStepDone })}
+                      {c.render(r, { perm, onToggleStep: toggleStepDone, onQuickSync: quickSync })}
                     </td>
                   );
                 })}
