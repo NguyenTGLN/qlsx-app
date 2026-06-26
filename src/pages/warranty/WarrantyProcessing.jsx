@@ -2,18 +2,20 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, PenTool } from 'lucide-react';
-import { useTabPerm } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO } from '../../lib/warrantyProcessing';
+import { useTabPerm, useAuth } from '../../lib/AuthContext';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket } from '../../lib/warrantyProcessing';
 import ProcessingModal from './ProcessingModal';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
 
 export default function WarrantyProcessing() {
   const perm = useTabPerm('warranty', 'xuLy');
+  const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = usePersistedState('wproc_search', '');
   const [statusFilter, setStatusFilter] = usePersistedState('wproc_statusFilter', 'all');
+  const [showClosed, setShowClosed] = usePersistedState('wproc_showClosed', false);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = usePersistedState('wproc_rowsPerPage', 50);
   const [editing, setEditing] = useState(null);
@@ -43,6 +45,9 @@ export default function WarrantyProcessing() {
 
   const filtered = useMemo(() => {
     let r = rows;
+    // Mặc định chỉ hiện phiếu CÒN MỞ (new/open/pending + Bảo hành/CSKH). Phiếu đã đóng
+    // ở Caresoft vẫn giữ bản ghi xử lý nhưng ẩn khỏi tab, trừ khi bật "Hiện cả phiếu đã đóng".
+    if (!showClosed) r = r.filter(isQualifyingTicket);
     if (statusFilter !== 'all') r = r.filter(x => (x['trạng_thái_xử_lý'] || 'chưa_xử_lý') === statusFilter);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -50,7 +55,7 @@ export default function WarrantyProcessing() {
         .some(k => String(x[k] || '').toLowerCase().includes(q)));
     }
     return r;
-  }, [rows, statusFilter, search]);
+  }, [rows, statusFilter, search, showClosed]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const pageRows = filtered.slice((page - 1) * rowsPerPage, page * rowsPerPage);
@@ -90,6 +95,9 @@ export default function WarrantyProcessing() {
           {TRANG_THAI_XU_LY.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
         <button onClick={fetchRows} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#475569' }}><RefreshCw size={15} /> Làm mới</button>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#475569', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <input type="checkbox" checked={showClosed} onChange={e => { setShowClosed(e.target.checked); setPage(1); }} /> Hiện cả phiếu đã đóng
+        </label>
       </div>
 
       {/* Bảng */}
@@ -140,7 +148,7 @@ export default function WarrantyProcessing() {
         </div>
       </div>
 
-      {editing && <ProcessingModal row={editing} perm={perm} onClose={() => setEditing(null)} onSave={handleSave} onSync={handleSync} />}
+      {editing && <ProcessingModal row={editing} perm={perm} currentUser={user} onClose={() => setEditing(null)} onSave={handleSave} onSync={handleSync} />}
     </div>
   );
 }

@@ -15,7 +15,7 @@ const s = {
 // Field Phần A cho phép sửa (ghi vào bảng xử lý). Field Caresoft-only để chỉ đọc.
 const EDITABLE_A = ['mã_đơn_hàng', 'mã_sản_phẩm', 'nhóm_sản_phẩm', 'ngày_lắp_đặt', 'linh_kiện', 'chi_tiết_lỗi'];
 
-export default function ProcessingModal({ row, perm, onClose, onSave, onSync }) {
+export default function ProcessingModal({ row, perm, currentUser, onClose, onSave, onSync }) {
   const [form, setForm] = useState(() => ({
     // Phần A (editable)
     'mã_đơn_hàng': row['mã_đơn_hàng'] || '',
@@ -55,8 +55,9 @@ export default function ProcessingModal({ row, perm, onClose, onSave, onSync }) 
   const buildPayload = () => {
     const editedA = {};
     EDITABLE_A.forEach(k => { editedA[k] = form[k]; });
+    const operator = (currentUser && (currentUser.name || currentUser.id)) || '';
     const nextHistory = newNote.trim()
-      ? [...history, { 'thời_gian': new Date().toISOString(), 'người': row['người_phụ_trách'] || '', 'nội_dung': newNote.trim() }]
+      ? [...history, { 'thời_gian': new Date().toISOString(), 'người': operator, 'nội_dung': newNote.trim() }]
       : history;
     return {
       ...editedA,
@@ -69,6 +70,8 @@ export default function ProcessingModal({ row, perm, onClose, onSave, onSync }) 
       'linh_kiện_thay': parts,
       'tổng_chi_phí': totalCost,
       'lịch_sử_thao_tác': nextHistory,
+      'người_cập_nhật': operator,
+      'người_tạo': row['người_tạo'] || operator,
     };
   };
 
@@ -183,7 +186,7 @@ export default function ProcessingModal({ row, perm, onClose, onSave, onSync }) 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
           <button onClick={onClose} style={{ padding: '0.6rem 1.2rem', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 600, color: '#475569', cursor: 'pointer' }}>Đóng</button>
           {perm.edit && <button onClick={handleSave} disabled={saving} style={{ padding: '0.6rem 1.2rem', borderRadius: '8px', border: 'none', background: '#3b82f6', fontWeight: 600, color: '#fff', cursor: 'pointer', opacity: saving ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Save size={16} /> Lưu</button>}
-          {perm.edit && <button onClick={handleSync} disabled={saving} style={{ padding: '0.6rem 1.2rem', borderRadius: '8px', border: 'none', background: '#10b981', fontWeight: 600, color: '#fff', cursor: 'pointer', opacity: saving ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Send size={16} /> Hoàn tất & Đồng bộ Caresoft</button>}
+          {perm.io && <button onClick={handleSync} disabled={saving} style={{ padding: '0.6rem 1.2rem', borderRadius: '8px', border: 'none', background: '#10b981', fontWeight: 600, color: '#fff', cursor: 'pointer', opacity: saving ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: '0.4rem' }}><Send size={16} /> Hoàn tất & Đồng bộ Caresoft</button>}
         </div>
       </div>
     </div>
