@@ -197,7 +197,7 @@ export default function WarrantyProcessing() {
           <option value="all">Tất cả trạng thái xử lý</option>
           {TRANG_THAI_XU_LY.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
-        <button onClick={fetchRows} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#475569' }}><RefreshCw size={15} /> Làm mới</button>
+        <button onClick={fetchRows} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', cursor: loading ? 'wait' : 'pointer', fontWeight: 600, color: '#475569', opacity: loading ? 0.65 : 1 }}><RefreshCw size={15} className={loading ? 'spin' : undefined} /> {loading ? 'Đang tải...' : 'Làm mới'}</button>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#475569', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           <input type="checkbox" checked={showClosed} onChange={e => { setShowClosed(e.target.checked); setPage(1); }} /> Hiện cả phiếu đã đóng
         </label>
