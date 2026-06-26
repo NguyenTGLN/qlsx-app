@@ -6,13 +6,15 @@ import {
 
 describe('isQualifyingTicket', () => {
   test('đúng khi status + phân loại đều khớp', () => {
-    expect(isQualifyingTicket({ 'trạng_thái_phiếu_ghi': 'open', 'phân_loại_công_việc': 'Bảo hành' })).toBe(true);
-    expect(isQualifyingTicket({ 'trạng_thái_phiếu_ghi': 'new', 'phân_loại_công_việc': 'Chăm sóc khách hàng' })).toBe(true);
+    expect(isQualifyingTicket({ 'trạng_thái_phiếu_ghi': 'open', 'phân_loại_công_việc': 'Bảo hành và Chăm sóc khách hàng' })).toBe(true);
+    expect(isQualifyingTicket({ 'trạng_thái_phiếu_ghi': 'new', 'phân_loại_công_việc': 'Bảo hành và Chăm sóc khách hàng' })).toBe(true);
   });
-  test('sai khi status không thuộc danh sách', () => {
-    expect(isQualifyingTicket({ 'trạng_thái_phiếu_ghi': 'closed', 'phân_loại_công_việc': 'Bảo hành' })).toBe(false);
+  test('sai khi status không thuộc danh sách (closed/solved)', () => {
+    expect(isQualifyingTicket({ 'trạng_thái_phiếu_ghi': 'closed', 'phân_loại_công_việc': 'Bảo hành và Chăm sóc khách hàng' })).toBe(false);
+    expect(isQualifyingTicket({ 'trạng_thái_phiếu_ghi': 'solved', 'phân_loại_công_việc': 'Bảo hành và Chăm sóc khách hàng' })).toBe(false);
   });
-  test('sai khi phân loại không thuộc danh sách', () => {
+  test('sai khi phân loại không khớp giá trị gộp', () => {
+    expect(isQualifyingTicket({ 'trạng_thái_phiếu_ghi': 'open', 'phân_loại_công_việc': 'Bảo hành' })).toBe(false);
     expect(isQualifyingTicket({ 'trạng_thái_phiếu_ghi': 'open', 'phân_loại_công_việc': 'Kỹ thuật' })).toBe(false);
   });
   test('sai khi null/undefined', () => {
@@ -46,7 +48,7 @@ describe('computeTotalCost', () => {
 describe('hằng số', () => {
   test('danh sách trạng thái/phân loại đúng', () => {
     expect(PROCESSING_STATUSES).toEqual(['new', 'open', 'pending']);
-    expect(PROCESSING_CATEGORIES).toEqual(['Bảo hành', 'Chăm sóc khách hàng']);
+    expect(PROCESSING_CATEGORIES).toEqual(['Bảo hành và Chăm sóc khách hàng']);
   });
   test('TRANG_THAI_XU_LY có id chưa_xử_lý và hoàn_tất', () => {
     const ids = TRANG_THAI_XU_LY.map(s => s.id);

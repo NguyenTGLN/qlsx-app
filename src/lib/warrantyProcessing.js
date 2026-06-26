@@ -1,9 +1,12 @@
 // Helper thuần cho tab "Xử lý phiếu bảo hành".
-// ⚠️ PROCESSING_STATUSES / PROCESSING_CATEGORIES phải KHỚP danh sách IN(...) trong
+// ⚠️ PROCESSING_STATUSES / PROCESSING_CATEGORIES phải KHỚP điều kiện lọc trong
 //    sql/setup_xu_ly_phieu_bao_hanh.sql (trigger + backfill).
+//    Giá trị thật xác nhận qua SELECT DISTINCT (2026-06-26):
+//    - trạng_thái_phiếu_ghi: new/open/pending (mở), closed/solved (đóng).
+//    - phân_loại_công_việc: MỘT giá trị gộp duy nhất, KHÔNG phải 2 loại tách rời.
 
 export const PROCESSING_STATUSES = ['new', 'open', 'pending'];
-export const PROCESSING_CATEGORIES = ['Bảo hành', 'Chăm sóc khách hàng'];
+export const PROCESSING_CATEGORIES = ['Bảo hành và Chăm sóc khách hàng'];
 
 export const TRANG_THAI_XU_LY = [
   { id: 'chưa_xử_lý',    label: 'Chưa xử lý',    color: '#64748b' },

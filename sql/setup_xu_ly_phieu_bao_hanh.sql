@@ -70,7 +70,7 @@ RETURNS TRIGGER AS $$
 DECLARE
   qualifies BOOLEAN := (
     NEW."trạng_thái_phiếu_ghi" IN ('new','open','pending')
-    AND NEW."phân_loại_công_việc" IN ('Bảo hành','Chăm sóc khách hàng')
+    AND NEW."phân_loại_công_việc" = 'Bảo hành và Chăm sóc khách hàng'
   );
 BEGIN
   IF TG_OP = 'UPDATE' THEN
@@ -166,7 +166,7 @@ SELECT
   p."id_phiếu_ghi", to_jsonb(p)
 FROM public.phieu_bao_hanh p
 WHERE p."trạng_thái_phiếu_ghi" IN ('new','open','pending')
-  AND p."phân_loại_công_việc" IN ('Bảo hành','Chăm sóc khách hàng')
+  AND p."phân_loại_công_việc" = 'Bảo hành và Chăm sóc khách hàng'
 ON CONFLICT ("id_phiếu_ghi") DO NOTHING;
 
 -- ============================================================
