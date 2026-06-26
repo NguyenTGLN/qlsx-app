@@ -1,12 +1,36 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
-import { Search, RefreshCw, ChevronLeft, ChevronRight, PenTool } from 'lucide-react';
+import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
 import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket } from '../../lib/warrantyProcessing';
 import ProcessingModal from './ProcessingModal';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
+const fmtDateTime = (v) => v ? new Date(String(v).replace(/Z$/i, '')).toLocaleString('vi-VN') : '-';
+const badge = (color, label) => <span style={{ background: color + '22', color, padding: '3px 9px', borderRadius: '12px', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>{label}</span>;
+
+// Đăng ký cột danh sách. Thứ tự hiển thị = thứ tự ở đây. Người dùng bật/tắt qua nút "Ẩn/Hiện cột".
+const LIST_COLUMNS = [
+  { key: 'phiếu_ghi', label: 'Phiếu ghi', render: r => <span style={{ fontWeight: 600, color: '#1e293b' }}>{r['phiếu_ghi'] || r['id_phiếu_ghi']}</span> },
+  { key: 'mã_đơn_hàng', label: 'Mã ĐH', render: r => r['mã_đơn_hàng'] || '-' },
+  { key: 'mã_sản_phẩm', label: 'Mã SP', render: r => r['mã_sản_phẩm'] || '-' },
+  { key: 'nhóm_sản_phẩm', label: 'Nhóm SP', render: r => r['nhóm_sản_phẩm'] || '-' },
+  { key: 'số_điện_thoại_khách_hàng', label: 'SĐT', render: r => <span style={{ color: '#3b82f6' }}>{r['số_điện_thoại_khách_hàng'] || '-'}</span> },
+  { key: 'chi_tiết_lỗi', label: 'Chi tiết lỗi', render: r => r['chi_tiết_lỗi'] || '-' },
+  { key: 'linh_kiện', label: 'Linh kiện lỗi', render: r => r['linh_kiện'] || '-' },
+  { key: 'ngày_lắp_đặt', label: 'Ngày lắp', render: r => r['ngày_lắp_đặt'] || '-' },
+  { key: 'thời_điểm_tạo', label: 'Ngày tạo', render: r => r['thời_điểm_tạo'] || '-' },
+  { key: 'trạng_thái_phiếu_ghi', label: 'TT phiếu (CS)', render: r => r['trạng_thái_phiếu_ghi'] || '-' },
+  { key: 'người_phụ_trách', label: 'Người phụ trách', render: r => r['người_phụ_trách'] || <span style={{ color: '#cbd5e1' }}>Chưa giao</span> },
+  { key: 'ngày_hẹn', label: 'Ngày hẹn', render: r => r['ngày_hẹn'] ? fmtDateTime(r['ngày_hẹn']) : '-' },
+  { key: 'tổng_chi_phí', label: 'Chi phí', render: r => (Number(r['tổng_chi_phí']) || 0).toLocaleString('vi-VN') + ' đ' },
+  { key: 'kết_quả_xử_lý', label: 'Kết quả', render: r => r['kết_quả_xử_lý'] || '-' },
+  { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
+  { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: r => { const m = TRANG_THAI_DONG_BO[r['trạng_thái_đồng_bộ']] || TRANG_THAI_DONG_BO['nháp']; return badge(m.color, m.label); } },
+];
+const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
+const DEFAULT_VISIBLE = ['phiếu_ghi', 'mã_đơn_hàng', 'mã_sản_phẩm', 'số_điện_thoại_khách_hàng', 'chi_tiết_lỗi', 'người_phụ_trách', 'trạng_thái_xử_lý', 'trạng_thái_đồng_bộ'];
 
 export default function WarrantyProcessing() {
   const perm = useTabPerm('warranty', 'xuLy');
@@ -16,9 +40,15 @@ export default function WarrantyProcessing() {
   const [search, setSearch] = usePersistedState('wproc_search', '');
   const [statusFilter, setStatusFilter] = usePersistedState('wproc_statusFilter', 'all');
   const [showClosed, setShowClosed] = usePersistedState('wproc_showClosed', false);
+  const [visibleCols, setVisibleCols] = usePersistedState('wproc_visibleCols', DEFAULT_VISIBLE);
+  const [showColMenu, setShowColMenu] = useState(false);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = usePersistedState('wproc_rowsPerPage', 50);
   const [editing, setEditing] = useState(null);
+
+  // Cột đang hiện (giữ thứ tự đăng ký, bỏ qua key lạ trong localStorage cũ).
+  const cols = LIST_COLUMNS.filter(c => visibleCols.includes(c.key));
+  const toggleCol = (key) => setVisibleCols(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
 
   const fetchRows = async () => {
     setLoading(true);
@@ -45,8 +75,8 @@ export default function WarrantyProcessing() {
 
   const filtered = useMemo(() => {
     let r = rows;
-    // Mặc định chỉ hiện phiếu CÒN MỞ (new/open/pending + Bảo hành/CSKH). Phiếu đã đóng
-    // ở Caresoft vẫn giữ bản ghi xử lý nhưng ẩn khỏi tab, trừ khi bật "Hiện cả phiếu đã đóng".
+    // Mặc định chỉ hiện phiếu CÒN MỞ (new/open/pending + đúng phân loại). Phiếu đã đóng ở
+    // Caresoft vẫn giữ bản ghi xử lý nhưng ẩn khỏi tab, trừ khi bật "Hiện cả phiếu đã đóng".
     if (!showClosed) r = r.filter(isQualifyingTicket);
     if (statusFilter !== 'all') r = r.filter(x => (x['trạng_thái_xử_lý'] || 'chưa_xử_lý') === statusFilter);
     if (search.trim()) {
@@ -98,37 +128,47 @@ export default function WarrantyProcessing() {
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#475569', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           <input type="checkbox" checked={showClosed} onChange={e => { setShowClosed(e.target.checked); setPage(1); }} /> Hiện cả phiếu đã đóng
         </label>
+
+        {/* Ẩn / Hiện cột */}
+        <div style={{ position: 'relative' }}>
+          <button onClick={() => setShowColMenu(s => !s)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#475569' }}><Filter size={15} /> Ẩn / Hiện cột</button>
+          {showColMenu && (
+            <div className="responsive-pop" style={{ position: 'absolute', top: '110%', right: 0, zIndex: 100, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', width: '230px', maxHeight: '360px', overflowY: 'auto', padding: '0.8rem' }}>
+              <h4 style={{ margin: '0 0 0.6rem 0', fontSize: '0.8rem', color: '#64748b', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.4rem' }}>Cột hiển thị</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {LIST_COLUMNS.map(c => (
+                  <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={visibleCols.includes(c.key)} onChange={() => toggleCol(c.key)} /> {c.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Bảng */}
       <div style={{ width: '100%', overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '900px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: Math.max(600, cols.length * 130) }}>
           <thead style={{ background: '#f1f5f9' }}>
             <tr>
-              {['Phiếu ghi', 'Mã ĐH', 'Mã SP', 'SĐT', 'Chi tiết lỗi', 'Người phụ trách', 'Trạng thái xử lý', 'Đồng bộ'].map(h => (
-                <th key={h} style={{ padding: '0.8rem 0.5rem', borderBottom: '2px solid #e2e8f0', fontWeight: 600, fontSize: '0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{h}</th>
+              {cols.map(c => (
+                <th key={c.key} style={{ padding: '0.8rem 0.5rem', borderBottom: '2px solid #e2e8f0', fontWeight: 600, fontSize: '0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{c.label}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {pageRows.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Không có phiếu cần xử lý.</td></tr>
-            ) : pageRows.map((r, idx) => {
-              const sm = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý');
-              const dm = TRANG_THAI_DONG_BO[r['trạng_thái_đồng_bộ']] || TRANG_THAI_DONG_BO['nháp'];
-              return (
-                <tr key={r.id} onClick={() => setEditing(r)} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 ? '#f8fafc' : '#fff', cursor: 'pointer' }}>
-                  <td style={{ padding: '0.6rem 0.5rem', fontSize: '0.78rem', fontWeight: 600, color: '#1e293b' }}>{r['phiếu_ghi'] || r['id_phiếu_ghi']}</td>
-                  <td style={{ padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#475569' }}>{r['mã_đơn_hàng'] || '-'}</td>
-                  <td style={{ padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#475569' }}>{r['mã_sản_phẩm'] || '-'}</td>
-                  <td style={{ padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#3b82f6' }}>{r['số_điện_thoại_khách_hàng'] || '-'}</td>
-                  <td style={{ padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#334155', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r['chi_tiết_lỗi'] || '-'}</td>
-                  <td style={{ padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#475569' }}>{r['người_phụ_trách'] || <span style={{ color: '#cbd5e1' }}>Chưa giao</span>}</td>
-                  <td style={{ padding: '0.6rem 0.5rem' }}><span style={{ background: sm.color + '22', color: sm.color, padding: '3px 9px', borderRadius: '12px', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>{sm.label}</span></td>
-                  <td style={{ padding: '0.6rem 0.5rem' }}><span style={{ background: dm.color + '22', color: dm.color, padding: '3px 9px', borderRadius: '12px', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>{dm.label}</span></td>
-                </tr>
-              );
-            })}
+              <tr><td colSpan={Math.max(1, cols.length)} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Không có phiếu cần xử lý.</td></tr>
+            ) : pageRows.map((r, idx) => (
+              <tr key={r.id} onClick={() => setEditing(r)} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 ? '#f8fafc' : '#fff', cursor: 'pointer' }}>
+                {cols.map(c => (
+                  <td key={c.key} style={{ padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#334155', maxWidth: TRUNCATE_KEYS.includes(c.key) ? '220px' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {c.render(r)}
+                  </td>
+                ))}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
