@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { X, Save, Send, Plus, Trash2, CheckCircle2, Circle } from 'lucide-react';
-import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU, toggleStepStatus } from '../../lib/warrantyProcessing';
 
 const s = {
   inputGroup: { display: 'flex', flexDirection: 'column', gap: '0.4rem' },
@@ -47,7 +47,7 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
   // ── Các bước tùy biến ──
   const addStep = () => setSteps(prev => [...prev, { 'tên': '', 'trạng_thái': 'chưa_xong', 'người_làm': '', 'ghi_chú': '', 'hạn_xử_lý': '' }]);
   const updateStep = (i, k, v) => setSteps(prev => prev.map((st, idx) => idx === i ? { ...st, [k]: v } : st));
-  const toggleStep = (i) => setSteps(prev => prev.map((st, idx) => idx === i ? { ...st, 'trạng_thái': st['trạng_thái'] === 'xong' ? 'chưa_xong' : 'xong' } : st));
+  const toggleStep = (i) => setSteps(prev => prev.map((st, idx) => idx === i ? toggleStepStatus(st, (currentUser && (currentUser.name || currentUser.id)) || '') : st));
   const removeStep = (i) => setSteps(prev => prev.filter((_, idx) => idx !== i));
 
   // ── Linh kiện thay ──
@@ -139,7 +139,8 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
             {perm.edit && <button onClick={addStep} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', padding: '0.3rem 0.6rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}><Plus size={14} /> Thêm bước</button>}
           </div>
           {steps.length === 0 ? <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Chưa có bước nào.</p> : steps.map((st, i) => (
-            <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+            <React.Fragment key={i}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
               <button onClick={() => toggleStep(i)} disabled={!perm.edit} style={{ background: 'none', border: 'none', cursor: perm.edit ? 'pointer' : 'default', color: st['trạng_thái'] === 'xong' ? '#15803d' : '#cbd5e1' }}>
                 {st['trạng_thái'] === 'xong' ? <CheckCircle2 size={20} /> : <Circle size={20} />}
               </button>
@@ -148,6 +149,12 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
               <input type="datetime-local" title="Hạn xử lý (ngày + giờ)" style={{ ...s.input, flex: '0 1 200px', minWidth: 180 }} value={st['hạn_xử_lý'] ? String(st['hạn_xử_lý']).substring(0, 16) : ''} disabled={!perm.edit} onChange={e => updateStep(i, 'hạn_xử_lý', e.target.value)} />
               {perm.edit && <button onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>}
             </div>
+            {st['trạng_thái'] === 'xong' && st['hoàn_thành_lúc'] && (
+              <div style={{ fontSize: '0.72rem', color: '#15803d', margin: '-0.2rem 0 0.55rem 1.9rem' }}>
+                ✓ Xong lúc {new Date(st['hoàn_thành_lúc']).toLocaleString('vi-VN')}{st['người_hoàn_thành'] ? ` · ${st['người_hoàn_thành']}` : ''}
+              </div>
+            )}
+            </React.Fragment>
           ))}
         </div>
 

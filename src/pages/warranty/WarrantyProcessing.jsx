@@ -3,7 +3,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, toggleStepStatus } from '../../lib/warrantyProcessing';
 import ProcessingModal from './ProcessingModal';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
@@ -44,7 +44,9 @@ function StepChips({ row, perm, onToggle }) {
             key={i}
             className={urg === 'blink' ? 'wf-blink' : undefined}
             onClick={(e) => { e.stopPropagation(); if (perm.edit) onToggle(row, i, steps); }}
-            title={name + (dl ? ` · hạn ${dl}` : '') + (done ? ' — đã xong' : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong')}
+            title={name + (dl ? ` · hạn ${dl}` : '') + (done
+              ? ` — ✓ xong${s['hoàn_thành_lúc'] ? ' lúc ' + fmtDeadline(s['hoàn_thành_lúc']) : ''}${s['người_hoàn_thành'] ? ' bởi ' + s['người_hoàn_thành'] : ''}`
+              : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong')}
             style={{
               display: 'inline-flex', flexDirection: 'column', justifyContent: 'center', gap: '1px',
               width: 104, padding: '2px 6px', borderRadius: '8px', fontSize: '0.6rem', fontWeight: 600,
@@ -167,11 +169,10 @@ export default function WarrantyProcessing() {
   // Tick 1 bước ngay trên danh sách: lật trạng_thái rồi lưu các_bước (vật chất hóa
   // workflow chuẩn vào phiếu nếu trước đó phiếu chưa có bước). Cập nhật lạc quan UI.
   const toggleStepDone = async (row, index, steps) => {
-    const next = steps.map((s, i) => i === index
-      ? { ...s, 'trạng_thái': s['trạng_thái'] === 'xong' ? 'chưa_xong' : 'xong' }
-      : s);
+    const operator = (user && (user.name || user.id)) || '';
+    const next = steps.map((s, i) => i === index ? toggleStepStatus(s, operator) : s);
     setRows(prev => prev.map(x => x.id === row.id ? { ...x, 'các_bước': next } : x));
-    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update({ 'các_bước': next }).eq('id', row.id);
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update({ 'các_bước': next, 'người_cập_nhật': operator }).eq('id', row.id);
     if (error) { alert('Lỗi cập nhật bước: ' + error.message); await fetchRows(); }
   };
 

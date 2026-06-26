@@ -49,6 +49,18 @@ export function getEffectiveSteps(cacBuoc) {
   return WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong' }));
 }
 
+// Lật trạng thái 1 bước. Khi chuyển sang 'xong' → tự ghi giờ hoàn thành (ISO) + người tick;
+// khi bỏ tick → xóa 2 trường đó. (nowIso truyền vào cho dễ test.)
+export function toggleStepStatus(step, operator = '', nowIso = new Date().toISOString()) {
+  const willDone = step['trạng_thái'] !== 'xong';
+  return {
+    ...step,
+    'trạng_thái': willDone ? 'xong' : 'chưa_xong',
+    'hoàn_thành_lúc': willDone ? nowIso : null,
+    'người_hoàn_thành': willDone ? operator : null,
+  };
+}
+
 // Mức khẩn của 1 bước theo hạn xử lý ngày+giờ (so với 'now' truyền vào cho dễ test).
 // Chỉ áp cho bước CHƯA xong & có hạn.
 //  - 'blink'  : quá hạn hoặc còn ≤ 1 giờ          → nhấp nháy cam↔đỏ

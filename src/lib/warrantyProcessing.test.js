@@ -1,7 +1,7 @@
 import { test, expect, describe } from 'vitest';
 import {
   PROCESSING_STATUSES, PROCESSING_CATEGORIES, WORKFLOW_STEPS_MAU,
-  isQualifyingTicket, computeTotalCost, getEffectiveSteps, stepUrgency, TRANG_THAI_XU_LY,
+  isQualifyingTicket, computeTotalCost, getEffectiveSteps, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
 } from './warrantyProcessing';
 
 describe('isQualifyingTicket', () => {
@@ -92,5 +92,21 @@ describe('stepUrgency', () => {
     expect(stepUrgency({ 'trạng_thái': 'xong', 'hạn_xử_lý': '2026-06-19T12:00:00' }, now)).toBe(null);
     expect(stepUrgency({ 'trạng_thái': 'chưa_xong' }, now)).toBe(null);
     expect(stepUrgency(null, now)).toBe(null);
+  });
+});
+
+describe('toggleStepStatus', () => {
+  test('chưa_xong → xong: ghi giờ + người', () => {
+    const out = toggleStepStatus({ 'tên': 'A', 'trạng_thái': 'chưa_xong' }, 'Nguyên', '2026-06-26T10:00:00.000Z');
+    expect(out['trạng_thái']).toBe('xong');
+    expect(out['hoàn_thành_lúc']).toBe('2026-06-26T10:00:00.000Z');
+    expect(out['người_hoàn_thành']).toBe('Nguyên');
+    expect(out['tên']).toBe('A'); // giữ các trường khác
+  });
+  test('xong → chưa_xong: xóa giờ + người', () => {
+    const out = toggleStepStatus({ 'tên': 'A', 'trạng_thái': 'xong', 'hoàn_thành_lúc': 'x', 'người_hoàn_thành': 'Y' }, 'Z');
+    expect(out['trạng_thái']).toBe('chưa_xong');
+    expect(out['hoàn_thành_lúc']).toBe(null);
+    expect(out['người_hoàn_thành']).toBe(null);
   });
 });
