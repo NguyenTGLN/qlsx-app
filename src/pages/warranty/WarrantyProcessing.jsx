@@ -12,10 +12,22 @@ const badge = (color, label) => <span style={{ background: color + '22', color, 
 
 // Cột workflow: dãy "đèn" các bước. Vàng SÁNG = chưa xong, vàng NHẠT (tắt đèn) = đã xong.
 // Bấm 1 đèn để bật/tắt xong ngay trên danh sách (cần quyền sửa). Không mở popup khi bấm đèn.
-const shortDate = (v) => {
+const fmtDeadline = (v) => {
   if (!v) return '';
   const d = new Date(v);
-  return isNaN(d.getTime()) ? '' : `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  if (isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  if (!String(v).includes('T')) return `${dd}/${mm}`;
+  return `${dd}/${mm} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+// Màu chip theo (đã xong, mức khẩn). xanh = ngày sau · cam = hôm nay · nháy cam↔đỏ = ≤1h/quá hạn.
+const chipPalette = (done, urg) => {
+  if (done) return { background: '#fefce8', color: '#a8a29e', border: '1px solid #fde68a', textDecoration: 'line-through' };
+  if (urg === 'green') return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' };
+  if (urg === 'orange' || urg === 'blink') return { background: '#fed7aa', color: '#9a3412', border: '1px solid #fb923c' };
+  return { background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1' }; // chưa đặt hạn
 };
 
 function StepChips({ row, perm, onToggle }) {
@@ -25,22 +37,19 @@ function StepChips({ row, perm, onToggle }) {
       {steps.map((s, i) => {
         const done = s['trạng_thái'] === 'xong';
         const name = s['tên'] || `Bước ${i + 1}`;
-        const dl = shortDate(s['hạn_xử_lý']);
-        const urg = stepUrgency(s); // 'red' | 'yellow' | null (chỉ khi chưa xong + có hạn)
-        const blinkClass = urg === 'red' ? 'wf-blink-red' : urg === 'yellow' ? 'wf-blink-yellow' : undefined;
+        const dl = fmtDeadline(s['hạn_xử_lý']);
+        const urg = stepUrgency(s); // 'green' | 'orange' | 'blink' | null
         return (
           <span
             key={i}
-            className={blinkClass}
+            className={urg === 'blink' ? 'wf-blink' : undefined}
             onClick={(e) => { e.stopPropagation(); if (perm.edit) onToggle(row, i, steps); }}
-            title={name + (dl ? ` · hạn ${dl}` : '') + (done ? ' — đã xong' : urg ? ' — gần/quá hạn!' : ' — chưa xong')}
+            title={name + (dl ? ` · hạn ${dl}` : '') + (done ? ' — đã xong' : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong')}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '2px', padding: '1px 6px',
               borderRadius: '8px', fontSize: '0.6rem', fontWeight: 600, whiteSpace: 'nowrap',
               userSelect: 'none', cursor: perm.edit ? 'pointer' : 'default', flex: '0 0 auto',
-              ...(done
-                ? { background: '#fefce8', color: '#a8a29e', border: '1px solid #fde68a', textDecoration: 'line-through' }
-                : { background: '#fde047', color: '#713f12', border: '1px solid #eab308' }),
+              ...chipPalette(done, urg),
             }}
           >
             {done ? '✓' : ''}{name}{dl ? ` · ${dl}` : ''}

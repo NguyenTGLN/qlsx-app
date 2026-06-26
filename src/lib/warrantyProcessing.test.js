@@ -77,18 +77,19 @@ describe('stepUrgency', () => {
   // Dùng hạn dạng ISO-local (có giờ) để test ổn định theo múi giờ.
   const now = new Date(2026, 5, 20, 9, 0, 0).getTime(); // 20/06/2026 09:00 local
 
-  test('quá hạn hoặc còn < 1 ngày → red', () => {
-    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-20T12:00:00' }, now)).toBe('red'); // cùng ngày
-    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-18T12:00:00' }, now)).toBe('red'); // đã quá hạn
+  test('quá hạn hoặc còn ≤ 1 giờ → blink', () => {
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-20T09:30:00' }, now)).toBe('blink'); // còn 30 phút
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-19T12:00:00' }, now)).toBe('blink'); // đã quá hạn
   });
-  test('còn 1–3 ngày → yellow', () => {
-    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-22T12:00:00' }, now)).toBe('yellow');
+  test('hạn trong hôm nay (còn > 1 giờ) → orange', () => {
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-20T18:00:00' }, now)).toBe('orange');
   });
-  test('còn xa → null', () => {
-    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-07-10T12:00:00' }, now)).toBe(null);
+  test('hạn ngày sau → green', () => {
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-21T08:00:00' }, now)).toBe('green'); // mai
+    expect(stepUrgency({ 'trạng_thái': 'chưa_xong', 'hạn_xử_lý': '2026-06-25T09:00:00' }, now)).toBe('green');
   });
   test('đã xong / không có hạn → null', () => {
-    expect(stepUrgency({ 'trạng_thái': 'xong', 'hạn_xử_lý': '2026-06-18T12:00:00' }, now)).toBe(null);
+    expect(stepUrgency({ 'trạng_thái': 'xong', 'hạn_xử_lý': '2026-06-19T12:00:00' }, now)).toBe(null);
     expect(stepUrgency({ 'trạng_thái': 'chưa_xong' }, now)).toBe(null);
     expect(stepUrgency(null, now)).toBe(null);
   });
