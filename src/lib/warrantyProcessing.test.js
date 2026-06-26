@@ -1,7 +1,7 @@
 import { test, expect, describe } from 'vitest';
 import {
-  PROCESSING_STATUSES, PROCESSING_CATEGORIES,
-  isQualifyingTicket, computeTotalCost, TRANG_THAI_XU_LY,
+  PROCESSING_STATUSES, PROCESSING_CATEGORIES, WORKFLOW_STEPS_MAU,
+  isQualifyingTicket, computeTotalCost, getEffectiveSteps, TRANG_THAI_XU_LY,
 } from './warrantyProcessing';
 
 describe('isQualifyingTicket', () => {
@@ -54,5 +54,21 @@ describe('hằng số', () => {
     const ids = TRANG_THAI_XU_LY.map(s => s.id);
     expect(ids).toContain('chưa_xử_lý');
     expect(ids).toContain('hoàn_tất');
+  });
+});
+
+describe('getEffectiveSteps', () => {
+  test('phiếu chưa có bước → trả workflow chuẩn, tất cả chưa_xong', () => {
+    const steps = getEffectiveSteps(null);
+    expect(steps.length).toBe(WORKFLOW_STEPS_MAU.length);
+    expect(steps.every(s => s['trạng_thái'] === 'chưa_xong')).toBe(true);
+    expect(steps[0]['tên']).toBe(WORKFLOW_STEPS_MAU[0]);
+  });
+  test('phiếu đã có bước tùy biến → giữ nguyên', () => {
+    const custom = [{ 'tên': 'Bước A', 'trạng_thái': 'xong' }];
+    expect(getEffectiveSteps(custom)).toBe(custom);
+  });
+  test('mảng rỗng → workflow chuẩn', () => {
+    expect(getEffectiveSteps([]).length).toBe(WORKFLOW_STEPS_MAU.length);
   });
 });

@@ -3,12 +3,42 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps } from '../../lib/warrantyProcessing';
 import ProcessingModal from './ProcessingModal';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
 const fmtDateTime = (v) => v ? new Date(String(v).replace(/Z$/i, '')).toLocaleString('vi-VN') : '-';
 const badge = (color, label) => <span style={{ background: color + '22', color, padding: '3px 9px', borderRadius: '12px', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>{label}</span>;
+
+// Cột workflow: dãy "đèn" các bước. Vàng SÁNG = chưa xong, vàng NHẠT (tắt đèn) = đã xong.
+// Bấm 1 đèn để bật/tắt xong ngay trên danh sách (cần quyền sửa). Không mở popup khi bấm đèn.
+function StepChips({ row, perm, onToggle }) {
+  const steps = getEffectiveSteps(row['các_bước']);
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+      {steps.map((s, i) => {
+        const done = s['trạng_thái'] === 'xong';
+        return (
+          <span
+            key={i}
+            onClick={(e) => { e.stopPropagation(); if (perm.edit) onToggle(row, i, steps); }}
+            title={(s['tên'] || '') + (done ? ' — đã xong' : ' — chưa xong')}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 7px',
+              borderRadius: '10px', fontSize: '0.68rem', fontWeight: 600, whiteSpace: 'nowrap',
+              userSelect: 'none', cursor: perm.edit ? 'pointer' : 'default',
+              ...(done
+                ? { background: '#fefce8', color: '#a8a29e', border: '1px solid #fde68a', textDecoration: 'line-through' }
+                : { background: '#fde047', color: '#713f12', border: '1px solid #eab308' }),
+            }}
+          >
+            {done ? '✓ ' : ''}{s['tên']}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 // Đăng ký cột danh sách. Thứ tự hiển thị = thứ tự ở đây. Người dùng bật/tắt qua nút "Ẩn/Hiện cột".
 const LIST_COLUMNS = [
@@ -27,10 +57,11 @@ const LIST_COLUMNS = [
   { key: 'tổng_chi_phí', label: 'Chi phí', render: r => (Number(r['tổng_chi_phí']) || 0).toLocaleString('vi-VN') + ' đ' },
   { key: 'kết_quả_xử_lý', label: 'Kết quả', render: r => r['kết_quả_xử_lý'] || '-' },
   { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
+  { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onToggle={ctx.onToggleStep} /> },
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: r => { const m = TRANG_THAI_DONG_BO[r['trạng_thái_đồng_bộ']] || TRANG_THAI_DONG_BO['nháp']; return badge(m.color, m.label); } },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
-const DEFAULT_VISIBLE = ['phiếu_ghi', 'mã_đơn_hàng', 'mã_sản_phẩm', 'số_điện_thoại_khách_hàng', 'chi_tiết_lỗi', 'người_phụ_trách', 'trạng_thái_xử_lý', 'trạng_thái_đồng_bộ'];
+const DEFAULT_VISIBLE = ['phiếu_ghi', 'mã_đơn_hàng', 'mã_sản_phẩm', 'số_điện_thoại_khách_hàng', 'chi_tiết_lỗi', 'người_phụ_trách', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ'];
 
 export default function WarrantyProcessing() {
   const perm = useTabPerm('warranty', 'xuLy');
@@ -108,6 +139,17 @@ export default function WarrantyProcessing() {
     await fetchRows();
   };
 
+  // Tick 1 bước ngay trên danh sách: lật trạng_thái rồi lưu các_bước (vật chất hóa
+  // workflow chuẩn vào phiếu nếu trước đó phiếu chưa có bước). Cập nhật lạc quan UI.
+  const toggleStepDone = async (row, index, steps) => {
+    const next = steps.map((s, i) => i === index
+      ? { ...s, 'trạng_thái': s['trạng_thái'] === 'xong' ? 'chưa_xong' : 'xong' }
+      : s);
+    setRows(prev => prev.map(x => x.id === row.id ? { ...x, 'các_bước': next } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update({ 'các_bước': next }).eq('id', row.id);
+    if (error) { alert('Lỗi cập nhật bước: ' + error.message); await fetchRows(); }
+  };
+
   if (loading && rows.length === 0) {
     return <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}><RefreshCw size={36} className="spin" color="#6366f1" /></div>;
   }
@@ -162,11 +204,21 @@ export default function WarrantyProcessing() {
               <tr><td colSpan={Math.max(1, cols.length)} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Không có phiếu cần xử lý.</td></tr>
             ) : pageRows.map((r, idx) => (
               <tr key={r.id} onClick={() => setEditing(r)} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 ? '#f8fafc' : '#fff', cursor: 'pointer' }}>
-                {cols.map(c => (
-                  <td key={c.key} style={{ padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#334155', maxWidth: TRUNCATE_KEYS.includes(c.key) ? '220px' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {c.render(r)}
-                  </td>
-                ))}
+                {cols.map(c => {
+                  const isSteps = c.key === 'các_bước';
+                  return (
+                    <td key={c.key} style={{
+                      padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#334155',
+                      maxWidth: isSteps ? 'none' : (TRUNCATE_KEYS.includes(c.key) ? '220px' : 'none'),
+                      minWidth: isSteps ? 260 : undefined,
+                      overflow: isSteps ? 'visible' : 'hidden',
+                      textOverflow: isSteps ? 'clip' : 'ellipsis',
+                      whiteSpace: isSteps ? 'normal' : 'nowrap',
+                    }}>
+                      {c.render(r, { perm, onToggleStep: toggleStepDone })}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

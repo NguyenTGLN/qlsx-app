@@ -8,6 +8,18 @@
 export const PROCESSING_STATUSES = ['new', 'open', 'pending'];
 export const PROCESSING_CATEGORIES = ['Bảo hành và Chăm sóc khách hàng'];
 
+// Workflow CHUẨN áp cho mọi phiếu (đổi danh sách này nếu muốn quy trình khác). Mỗi phiếu
+// khởi đầu hiển thị các bước này; khi tick xong sẽ "vật chất hóa" vào cột các_bước của phiếu.
+// Vẫn có thể thêm/bớt bước RIÊNG cho từng phiếu trong popup.
+export const WORKFLOW_STEPS_MAU = [
+  'Liên hệ KH',
+  'Hẹn lịch',
+  'Kiểm tra / Chẩn đoán',
+  'Sửa chữa / Thay linh kiện',
+  'Nghiệm thu',
+  'Đóng phiếu',
+];
+
 export const TRANG_THAI_XU_LY = [
   { id: 'chưa_xử_lý',    label: 'Chưa xử lý',    color: '#64748b' },
   { id: 'đang_liên_hệ',  label: 'Đang liên hệ',  color: '#0284c7' },
@@ -28,6 +40,13 @@ export function isQualifyingTicket(t) {
   if (!t) return false;
   return PROCESSING_STATUSES.includes(t['trạng_thái_phiếu_ghi'])
     && PROCESSING_CATEGORIES.includes(t['phân_loại_công_việc']);
+}
+
+// Danh sách bước hiệu lực của 1 phiếu: dùng bước tùy biến đã lưu nếu có,
+// nếu chưa có thì trả về workflow chuẩn (tất cả 'chưa_xong').
+export function getEffectiveSteps(cacBuoc) {
+  if (Array.isArray(cacBuoc) && cacBuoc.length > 0) return cacBuoc;
+  return WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong' }));
 }
 
 export function computeTotalCost(parts) {

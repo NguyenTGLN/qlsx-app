@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { X, Save, Send, Plus, Trash2, CheckCircle2, Circle } from 'lucide-react';
-import { TRANG_THAI_XU_LY, computeTotalCost } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU } from '../../lib/warrantyProcessing';
 
 const s = {
   inputGroup: { display: 'flex', flexDirection: 'column', gap: '0.4rem' },
@@ -31,7 +31,11 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
     'kết_quả_xử_lý': row['kết_quả_xử_lý'] || '',
     'trạng_thái_caresoft_muốn_set': row['trạng_thái_caresoft_muốn_set'] || '',
   }));
-  const [steps, setSteps] = useState(() => Array.isArray(row['các_bước']) ? row['các_bước'] : []);
+  const [steps, setSteps] = useState(() =>
+    (Array.isArray(row['các_bước']) && row['các_bước'].length)
+      ? row['các_bước']
+      : WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong', 'người_làm': '', 'ghi_chú': '' }))
+  );
   const [parts, setParts] = useState(() => Array.isArray(row['linh_kiện_thay']) ? row['linh_kiện_thay'] : []);
   const [history] = useState(() => Array.isArray(row['lịch_sử_thao_tác']) ? row['lịch_sử_thao_tác'] : []);
   const [newNote, setNewNote] = useState('');
@@ -139,8 +143,8 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
               <button onClick={() => toggleStep(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: st['trạng_thái'] === 'xong' ? '#15803d' : '#cbd5e1' }}>
                 {st['trạng_thái'] === 'xong' ? <CheckCircle2 size={20} /> : <Circle size={20} />}
               </button>
-              <input style={{ ...s.input, flex: 2 }} placeholder="Tên bước" value={st['tên']} onChange={e => updateStep(i, 'tên', e.target.value)} />
-              <input style={{ ...s.input, flex: 1 }} placeholder="Người làm" value={st['người_làm']} onChange={e => updateStep(i, 'người_làm', e.target.value)} />
+              <input style={{ ...s.input, flex: 2 }} placeholder="Tên bước" value={st['tên'] || ''} onChange={e => updateStep(i, 'tên', e.target.value)} />
+              <input style={{ ...s.input, flex: 1 }} placeholder="Người làm" value={st['người_làm'] || ''} onChange={e => updateStep(i, 'người_làm', e.target.value)} />
               <button onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>
             </div>
           ))}
