@@ -15,24 +15,25 @@ const badge = (color, label) => <span style={{ background: color + '22', color, 
 function StepChips({ row, perm, onToggle }) {
   const steps = getEffectiveSteps(row['các_bước']);
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '3px', alignItems: 'center' }}>
       {steps.map((s, i) => {
         const done = s['trạng_thái'] === 'xong';
+        const name = s['tên'] || `Bước ${i + 1}`;
         return (
           <span
             key={i}
             onClick={(e) => { e.stopPropagation(); if (perm.edit) onToggle(row, i, steps); }}
-            title={(s['tên'] || '') + (done ? ' — đã xong' : ' — chưa xong')}
+            title={name + (done ? ' — đã xong' : ' — chưa xong')}
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 7px',
-              borderRadius: '10px', fontSize: '0.68rem', fontWeight: 600, whiteSpace: 'nowrap',
-              userSelect: 'none', cursor: perm.edit ? 'pointer' : 'default',
+              display: 'inline-flex', alignItems: 'center', gap: '2px', padding: '1px 6px',
+              borderRadius: '8px', fontSize: '0.6rem', fontWeight: 600, whiteSpace: 'nowrap',
+              userSelect: 'none', cursor: perm.edit ? 'pointer' : 'default', flex: '0 0 auto',
               ...(done
                 ? { background: '#fefce8', color: '#a8a29e', border: '1px solid #fde68a', textDecoration: 'line-through' }
                 : { background: '#fde047', color: '#713f12', border: '1px solid #eab308' }),
             }}
           >
-            {done ? '✓ ' : ''}{s['tên']}
+            {done ? '✓' : ''}{name}
           </span>
         );
       })}
@@ -213,7 +214,7 @@ export default function WarrantyProcessing() {
                       minWidth: isSteps ? 260 : undefined,
                       overflow: isSteps ? 'visible' : 'hidden',
                       textOverflow: isSteps ? 'clip' : 'ellipsis',
-                      whiteSpace: isSteps ? 'normal' : 'nowrap',
+                      whiteSpace: 'nowrap',
                     }}>
                       {c.render(r, { perm, onToggleStep: toggleStepDone })}
                     </td>
