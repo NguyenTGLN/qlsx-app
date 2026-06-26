@@ -3,9 +3,9 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { useNavigate } from 'react-router-dom';
 import { taskDb } from '../../lib/task_supabase';
 import { dataCache } from '../../lib/dataCache';
-import { 
-  ArrowLeft, Calendar as CalendarIcon, ShieldAlert, BarChart2, 
-  Activity, Layers, AlertTriangle, PenTool, RefreshCw
+import {
+  ArrowLeft, Calendar as CalendarIcon, ShieldAlert, BarChart2,
+  Activity, Layers, AlertTriangle, PenTool, RefreshCw, Wrench
 } from 'lucide-react';
 import ModuleShell, { TabButton } from '../../components/ModuleShell';
 import DateRangeDropdown from '../../components/DateRangeDropdown';
@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import BatchAnalytics from './BatchAnalytics';
 import WarrantyDataManager from './WarrantyDataManager';
+import WarrantyProcessing from './WarrantyProcessing';
 import { useAuth, canSeeTab } from '../../lib/AuthContext';
 
 // Nếu dùng supabase của taskDb (ẩn danh)
@@ -121,6 +122,7 @@ const WarrantyApp = () => {
   // Định nghĩa các tab + lọc theo quyền xem (view) của user hiện tại
   const ALL_TABS = [
     { id: 'history', label: 'Lịch Sử Phiếu', icon: Layers },
+    { id: 'xuLy', label: 'Xử Lý Phiếu', icon: Wrench },
     { id: 'batchAnalytics', label: 'Phân Tích Lỗi', icon: BarChart2 },
     { id: 'dataManager', label: 'QL Dữ Liệu', icon: PenTool }
   ];
@@ -484,6 +486,10 @@ const WarrantyApp = () => {
              <DeepAnalytics filteredData={filtered} />
           </>
         )}
+        </div>
+
+        <div style={{ display: viewMode === 'xuLy' ? 'block' : 'none' }}>
+          {viewMode === 'xuLy' && <WarrantyProcessing />}
         </div>
 
         <div style={{ display: viewMode === 'batchAnalytics' ? 'block' : 'none' }}>
