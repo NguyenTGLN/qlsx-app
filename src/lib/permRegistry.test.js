@@ -102,3 +102,13 @@ describe('emptyTabPerms', () => {
     expect(emptyTabPerms()).toEqual({ view: false, create: false, edit: false, delete: false, io: false });
   });
 });
+
+describe('tab xuLy của Bảo Hành', () => {
+  test('module warranty có tab xuLy với đủ 5 cap', () => {
+    const warranty = PERM_REGISTRY.find(m => m.module === 'warranty');
+    const xuLy = warranty.tabs.find(t => t.id === 'xuLy');
+    expect(xuLy).toBeTruthy();
+    expect(xuLy.label).toBe('Xử Lý Phiếu');
+    expect(xuLy.caps).toEqual(['view', 'create', 'edit', 'delete', 'io']);
+  });
+});

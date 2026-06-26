@@ -43,6 +43,7 @@ export const PERM_REGISTRY = [
     module: 'warranty', label: 'Bảo Hành', icon: '🛡️', legacyAccess: 'access_warranty',
     tabs: [
       { id: 'history',        label: 'Lịch Sử Phiếu', caps: ['view'] }, // nội dung chỉ-đọc (thẻ + biểu đồ)
+      { id: 'xuLy',           label: 'Xử Lý Phiếu',   caps: ['view', 'create', 'edit', 'delete', 'io'] }, // xử lý phiếu đang mở + đồng bộ Caresoft
       { id: 'batchAnalytics', label: 'Phân Tích Lỗi', caps: ['view'] }, // chỉ-đọc
       { id: 'dataManager',    label: 'QL Dữ Liệu',    caps: ['view', 'edit', 'delete', 'io'] }, // bản ghi vào qua import, không có nút Thêm tay
     ],
