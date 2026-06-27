@@ -81,6 +81,7 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
       'trạng_thái_caresoft_muốn_set': form['trạng_thái_caresoft_muốn_set'] || null,
       'các_bước': finalSteps,
       ...(closingDone ? { 'trạng_thái_phiếu_ghi': 'solved' } : {}),
+      ...(form['trạng_thái_caresoft_muốn_set'] ? { 'trạng_thái_phiếu_ghi': form['trạng_thái_caresoft_muốn_set'] } : {}),
       'linh_kiện_thay': parts,
       'tổng_chi_phí': totalCost,
       'lịch_sử_thao_tác': nextHistory,
@@ -139,7 +140,20 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
               </select>
             </div>
             <div style={s.inputGroup}><label style={s.label}>Ngày hẹn</label><input type="datetime-local" style={s.input} value={form['ngày_hẹn']} onChange={e => set('ngày_hẹn', e.target.value)} /></div>
-            <div style={s.inputGroup}><label style={s.label}>Trạng thái Caresoft muốn set</label><input style={s.input} placeholder="vd: solved" value={form['trạng_thái_caresoft_muốn_set']} onChange={e => set('trạng_thái_caresoft_muốn_set', e.target.value)} /></div>
+            <div style={s.inputGroup}>
+              <label style={s.label}>Trạng thái Caresoft</label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <select style={{ ...s.input, flex: 1 }} value={form['trạng_thái_caresoft_muốn_set']} disabled={!perm.edit} onChange={e => set('trạng_thái_caresoft_muốn_set', e.target.value)}>
+                  <option value="">(— không đổi —)</option>
+                  <option value="new">new</option>
+                  <option value="open">open</option>
+                  <option value="pending">pending</option>
+                  <option value="solved">solved</option>
+                  <option value="closed">closed</option>
+                </select>
+                {perm.io && <button onClick={handleSync} disabled={saving} title="Lưu lựa chọn & đẩy trạng thái về Caresoft" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0 0.7rem', borderRadius: '8px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, cursor: saving ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: saving ? 0.6 : 1 }}><Send size={14} /> Đồng bộ</button>}
+              </div>
+            </div>
           </div>
         </div>
 
