@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS public.xu_ly_phieu_bao_hanh (
   updated_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- Thông tin bổ sung (ĐLĐ + khách hàng) do app nhập/sửa, đẩy về Caresoft khi đồng bộ.
+-- Part B (app làm chủ); trigger Phần A KHÔNG đụng. Prefill modal đọc cột này trước, rồi tới phiếu_gốc_json.
+ALTER TABLE public.xu_ly_phieu_bao_hanh
+  ADD COLUMN IF NOT EXISTS "thông_tin_bổ_sung" JSONB DEFAULT '{}'::jsonb;
+
 CREATE INDEX IF NOT EXISTS idx_xlbh_id_phieu       ON public.xu_ly_phieu_bao_hanh("id_phiếu_ghi");
 CREATE INDEX IF NOT EXISTS idx_xlbh_trang_thai_xl  ON public.xu_ly_phieu_bao_hanh("trạng_thái_xử_lý");
 CREATE INDEX IF NOT EXISTS idx_xlbh_dong_bo        ON public.xu_ly_phieu_bao_hanh("trạng_thái_đồng_bộ");
