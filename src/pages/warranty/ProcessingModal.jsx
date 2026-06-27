@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { X, Save, Send, Plus, Trash2, CheckCircle2, Circle } from 'lucide-react';
-import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU, toggleStepStatus } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU, applyStepToggle, ensureClosingStep, CLOSING_STEP } from '../../lib/warrantyProcessing';
 
 const s = {
   inputGroup: { display: 'flex', flexDirection: 'column', gap: '0.4rem' },
@@ -31,11 +31,11 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
     'kết_quả_xử_lý': row['kết_quả_xử_lý'] || '',
     'trạng_thái_caresoft_muốn_set': row['trạng_thái_caresoft_muốn_set'] || '',
   }));
-  const [steps, setSteps] = useState(() =>
+  const [steps, setSteps] = useState(() => ensureClosingStep(
     (Array.isArray(row['các_bước']) && row['các_bước'].length)
       ? row['các_bước']
       : WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong', 'người_làm': '', 'ghi_chú': '', 'hạn_xử_lý': '' }))
-  );
+  ));
   const [parts, setParts] = useState(() => Array.isArray(row['linh_kiện_thay']) ? row['linh_kiện_thay'] : []);
   const [history] = useState(() => Array.isArray(row['lịch_sử_thao_tác']) ? row['lịch_sử_thao_tác'] : []);
   const [newNote, setNewNote] = useState('');
@@ -47,7 +47,11 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
   // ── Các bước tùy biến ──
   const addStep = () => setSteps(prev => [...prev, { 'tên': '', 'trạng_thái': 'chưa_xong', 'người_làm': '', 'ghi_chú': '', 'hạn_xử_lý': '' }]);
   const updateStep = (i, k, v) => setSteps(prev => prev.map((st, idx) => idx === i ? { ...st, [k]: v } : st));
-  const toggleStep = (i) => setSteps(prev => prev.map((st, idx) => idx === i ? toggleStepStatus(st, (currentUser && (currentUser.name || currentUser.id)) || '') : st));
+  const toggleStep = (i) => setSteps(prev => {
+    const { steps: next, error } = applyStepToggle(prev, i, (currentUser && (currentUser.name || currentUser.id)) || '');
+    if (error) { alert(error); return prev; }
+    return next;
+  });
   const removeStep = (i) => setSteps(prev => prev.filter((_, idx) => idx !== i));
 
   // ── Linh kiện thay ──
@@ -63,6 +67,9 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
     const nextHistory = newNote.trim()
       ? [...history, { 'thời_gian': new Date().toISOString(), 'người': operator, 'nội_dung': newNote.trim() }]
       : history;
+    // Luôn đảm bảo bước cuối là "Đóng phiếu". Nếu bước đó đã xong → đóng phiếu (solved).
+    const finalSteps = ensureClosingStep(steps);
+    const closingDone = String(finalSteps.at(-1)?.['tên'] || '').trim() === CLOSING_STEP && finalSteps.at(-1)['trạng_thái'] === 'xong';
     return {
       ...editedA,
       'người_phụ_trách': form['người_phụ_trách'],
@@ -70,7 +77,8 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
       'ngày_hẹn': form['ngày_hẹn'] || null,
       'kết_quả_xử_lý': form['kết_quả_xử_lý'],
       'trạng_thái_caresoft_muốn_set': form['trạng_thái_caresoft_muốn_set'] || null,
-      'các_bước': steps,
+      'các_bước': finalSteps,
+      ...(closingDone ? { 'trạng_thái_phiếu_ghi': 'solved' } : {}),
       'linh_kiện_thay': parts,
       'tổng_chi_phí': totalCost,
       'lịch_sử_thao_tác': nextHistory,

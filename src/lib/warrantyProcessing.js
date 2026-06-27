@@ -42,11 +42,27 @@ export function isQualifyingTicket(t) {
     && PROCESSING_CATEGORIES.includes(t['phân_loại_công_việc']);
 }
 
+// Bước cuối CHUẨN của mọi phiếu. App luôn đảm bảo workflow kết thúc bằng bước này.
+export const CLOSING_STEP = 'Đóng phiếu';
+
+// Đảm bảo danh sách bước LUÔN kết thúc bằng "Đóng phiếu":
+//  - chưa có → thêm vào cuối; đã có nhưng không ở cuối → dời xuống cuối (giữ trạng thái cũ).
+// Idempotent: gọi nhiều lần không đổi kết quả.
+export function ensureClosingStep(steps) {
+  const arr = Array.isArray(steps) ? steps.slice() : [];
+  const idx = arr.findIndex(s => s && String(s['tên'] || '').trim() === CLOSING_STEP);
+  if (idx === -1) arr.push({ 'tên': CLOSING_STEP, 'trạng_thái': 'chưa_xong' });
+  else if (idx !== arr.length - 1) { const [s] = arr.splice(idx, 1); arr.push(s); }
+  return arr;
+}
+
 // Danh sách bước hiệu lực của 1 phiếu: dùng bước tùy biến đã lưu nếu có,
-// nếu chưa có thì trả về workflow chuẩn (tất cả 'chưa_xong').
+// nếu chưa có thì workflow chuẩn (tất cả 'chưa_xong'). Luôn kết thúc bằng "Đóng phiếu".
 export function getEffectiveSteps(cacBuoc) {
-  if (Array.isArray(cacBuoc) && cacBuoc.length > 0) return cacBuoc;
-  return WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong' }));
+  const base = (Array.isArray(cacBuoc) && cacBuoc.length > 0)
+    ? cacBuoc
+    : WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong' }));
+  return ensureClosingStep(base);
 }
 
 // Lật trạng thái 1 bước. Khi chuyển sang 'xong' → tự ghi giờ hoàn thành (ISO) + người tick;
@@ -59,6 +75,26 @@ export function toggleStepStatus(step, operator = '', nowIso = new Date().toISOS
     'hoàn_thành_lúc': willDone ? nowIso : null,
     'người_hoàn_thành': willDone ? operator : null,
   };
+}
+
+// Tick/bỏ tick 1 bước theo quy tắc tuần tự:
+//  - Hoàn tất bước i CHỈ khi mọi bước trước (0..i-1) đã 'xong'. Chưa đủ → trả error, không đổi.
+//  - Mở lại bước i → mở lại luôn TẤT CẢ bước sau (i..hết) đang 'xong' (cascade).
+// Trả { steps, error }. nowIso truyền vào cho dễ test.
+export function applyStepToggle(steps, index, operator = '', nowIso = new Date().toISOString()) {
+  if (!Array.isArray(steps) || index < 0 || index >= steps.length) return { steps, error: null };
+  const arr = steps.map(s => ({ ...s }));
+  const goingDone = arr[index]['trạng_thái'] !== 'xong';
+  if (goingDone) {
+    const prevAllDone = arr.slice(0, index).every(s => s['trạng_thái'] === 'xong');
+    if (!prevAllDone) return { steps, error: 'Phải hoàn thành các bước trước đó trước khi hoàn tất bước này.' };
+    arr[index] = toggleStepStatus(arr[index], operator, nowIso); // → xong
+  } else {
+    for (let i = index; i < arr.length; i++) {
+      if (arr[i]['trạng_thái'] === 'xong') arr[i] = toggleStepStatus(arr[i], operator, nowIso); // → chưa_xong
+    }
+  }
+  return { steps: arr, error: null };
 }
 
 // Mức khẩn của 1 bước theo hạn xử lý ngày+giờ (so với 'now' truyền vào cho dễ test).

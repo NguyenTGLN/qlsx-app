@@ -1,14 +1,179 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
-import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send } from 'lucide-react';
+import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send, Download, CheckCircle2, RotateCcw, Calendar } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, toggleStepStatus } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, CLOSING_STEP } from '../../lib/warrantyProcessing';
 import ProcessingModal from './ProcessingModal';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
 const fmtDateTime = (v) => v ? new Date(String(v).replace(/Z$/i, '')).toLocaleString('vi-VN') : '-';
+
+// Chuẩn hóa chuỗi ngày (YYYY-MM-DD, YYYY/MM/DD, hoặc ISO kèm giờ) về 'YYYY-MM-DD' để lọc/so sánh.
+const toISODate = (v) => {
+  if (!v) return '';
+  const m = String(v).trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+// Hiển thị ngày dạng DD/MM/YYYY (bỏ giờ). Không parse được → trả nguyên gốc.
+const fmtDateOnly = (v) => {
+  const iso = toISODate(v);
+  if (!iso) return v ? String(v) : '-';
+  const [y, mo, d] = iso.split('-');
+  return `${d}/${mo}/${y}`;
+};
+// Giá trị ngày có nằm trong [from, to] không (from/to dạng YYYY-MM-DD; rỗng = bỏ qua cận đó).
+const dateInRange = (v, from, to) => {
+  if (!from && !to) return true;
+  const d = toISODate(v);
+  if (!d) return false;
+  if (from && d < from) return false;
+  if (to && d > to) return false;
+  return true;
+};
+
+// Trạng thái phiếu phía Caresoft (trạng_thái_phiếu_ghi) cho bộ lọc.
+const CS_STATUS_OPTIONS = [
+  { id: 'new', label: 'Mới (new)' },
+  { id: 'open', label: 'Đang xử lý (open)' },
+  { id: 'pending', label: 'Chờ (pending)' },
+  { id: 'solved', label: 'Đã giải quyết (solved)' },
+  { id: 'closed', label: 'Đã đóng (closed)' },
+];
 const badge = (color, label) => <span style={{ background: color + '22', color, padding: '3px 9px', borderRadius: '12px', fontWeight: 600, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>{label}</span>;
+
+// Tóm tắt các bước WF thành 1 chuỗi để xuất Excel (✓ = đã xong).
+const summarizeSteps = (raw) => getEffectiveSteps(raw)
+  .map(s => `${s['trạng_thái'] === 'xong' ? '✓ ' : ''}${s['tên'] || ''}`).filter(Boolean).join(' | ');
+
+// ── Bộ lọc khoảng ngày: preset lọc nhanh + tiến/lùi theo kỳ + nhập tay dd/mm/yyyy ──
+const dateInputStyle = { border: '1px solid #cbd5e1', borderRadius: '6px', padding: '0.35rem 0.4rem', fontSize: '0.8rem', color: '#334155' };
+
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const startOfWeek = (d) => { const x = new Date(d); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }; // thứ 2 đầu tuần
+
+const DATE_PRESETS = [
+  { id: 'all', label: 'Tất cả' },
+  { id: 'today', label: 'Hôm nay' },
+  { id: 'yesterday', label: 'Hôm qua' },
+  { id: 'thisWeek', label: 'Tuần này' },
+  { id: 'lastWeek', label: 'Tuần trước' },
+  { id: 'thisMonth', label: 'Tháng này' },
+  { id: 'lastMonth', label: 'Tháng trước' },
+  { id: 'thisYear', label: 'Năm nay' },
+  { id: 'lastYear', label: 'Năm trước' },
+  { id: 'custom', label: 'Tùy chọn' },
+];
+const presetGranularity = (p) => (
+  ['today', 'yesterday'].includes(p) ? 'day'
+    : ['thisWeek', 'lastWeek'].includes(p) ? 'week'
+      : ['thisMonth', 'lastMonth'].includes(p) ? 'month'
+        : ['thisYear', 'lastYear'].includes(p) ? 'year' : null
+);
+// Khoảng [from,to] (YYYY-MM-DD) cho 1 preset, mốc theo hôm nay. all/custom → null.
+const presetToRange = (p) => {
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  switch (p) {
+    case 'today': return { from: ymd(now), to: ymd(now) };
+    case 'yesterday': { const d = new Date(now); d.setDate(d.getDate() - 1); return { from: ymd(d), to: ymd(d) }; }
+    case 'thisWeek': { const s = startOfWeek(now); const e = new Date(s); e.setDate(s.getDate() + 6); return { from: ymd(s), to: ymd(e) }; }
+    case 'lastWeek': { const s = startOfWeek(now); s.setDate(s.getDate() - 7); const e = new Date(s); e.setDate(s.getDate() + 6); return { from: ymd(s), to: ymd(e) }; }
+    case 'thisMonth': return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to: ymd(new Date(now.getFullYear(), now.getMonth() + 1, 0)) };
+    case 'lastMonth': return { from: ymd(new Date(now.getFullYear(), now.getMonth() - 1, 1)), to: ymd(new Date(now.getFullYear(), now.getMonth(), 0)) };
+    case 'thisYear': return { from: `${now.getFullYear()}-01-01`, to: `${now.getFullYear()}-12-31` };
+    case 'lastYear': return { from: `${now.getFullYear() - 1}-01-01`, to: `${now.getFullYear() - 1}-12-31` };
+    default: return null;
+  }
+};
+// Dời khoảng theo ±1 đơn vị granularity (dựa trên 'from' hiện tại).
+const stepRange = (gran, from, dir) => {
+  const f = new Date(from + 'T00:00:00');
+  if (gran === 'day') { f.setDate(f.getDate() + dir); return { from: ymd(f), to: ymd(f) }; }
+  if (gran === 'week') { const s = new Date(from + 'T00:00:00'); s.setDate(s.getDate() + 7 * dir); const e = new Date(s); e.setDate(s.getDate() + 6); return { from: ymd(s), to: ymd(e) }; }
+  if (gran === 'month') return { from: ymd(new Date(f.getFullYear(), f.getMonth() + dir, 1)), to: ymd(new Date(f.getFullYear(), f.getMonth() + dir + 1, 0)) };
+  if (gran === 'year') { const y = f.getFullYear() + dir; return { from: `${y}-01-01`, to: `${y}-12-31` }; }
+  return { from, to: from };
+};
+
+// Ô nhập 1 ngày dạng dd/mm/yyyy (gõ tay) + nút lịch (input date ẩn chồng lên icon).
+const SmartDateInput = ({ value, onChange }) => {
+  const display = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? (() => { const [y, m, d] = value.split('-'); return `${d}/${m}/${y}`; })() : '';
+  const [text, setText] = useState(display);
+  useEffect(() => { setText(display); }, [display]);
+  const commit = (s) => {
+    const t = s.trim();
+    if (t === '') { onChange(''); return; }
+    const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) onChange(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
+    else setText(display); // không hợp lệ → trả lại giá trị cũ
+  };
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }}>
+      <input
+        type="text" value={text} placeholder="dd/mm/yyyy"
+        onChange={e => setText(e.target.value)}
+        onBlur={e => commit(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') commit(e.currentTarget.value); }}
+        style={{ ...dateInputStyle, width: 104, paddingRight: 24 }}
+      />
+      <input
+        type="date" value={value || ''} onChange={e => onChange(e.target.value)}
+        title="Chọn từ lịch"
+        style={{ position: 'absolute', top: 0, right: 0, height: '100%', width: 26, opacity: 0, cursor: 'pointer' }}
+      />
+      <Calendar size={14} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#94a3b8' }} />
+    </span>
+  );
+};
+
+// Bộ lọc 1 trường ngày: preset + tiến/lùi + 2 ô dd/mm/yyyy. onChange nhận {preset, from, to}.
+const QuickDateRange = ({ label, preset, from, to, onChange }) => {
+  const gran = presetGranularity(preset);
+  const canStep = !!gran && !!from;
+  const setPreset = (p) => {
+    if (p === 'all') onChange({ preset: 'all', from: '', to: '' });
+    else if (p === 'custom') onChange({ preset: 'custom', from, to });
+    else onChange({ preset: p, ...presetToRange(p) });
+  };
+  const step = (dir) => { if (canStep) onChange({ preset, ...stepRange(gran, from, dir) }); };
+  const arrowStyle = (on) => ({ display: 'flex', alignItems: 'center', padding: '0.3rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#fff', cursor: on ? 'pointer' : 'not-allowed', color: on ? '#475569' : '#cbd5e1' });
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+      <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+        <select value={preset} onChange={e => setPreset(e.target.value)} style={{ ...dateInputStyle, padding: '0.35rem 0.3rem' }}>
+          {DATE_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+        <button onClick={() => step(-1)} disabled={!canStep} title="Kỳ trước" style={arrowStyle(canStep)}><ChevronLeft size={15} /></button>
+        <SmartDateInput value={from} onChange={v => onChange({ preset: 'custom', from: v, to })} />
+        <span style={{ color: '#94a3b8' }}>→</span>
+        <SmartDateInput value={to} onChange={v => onChange({ preset: 'custom', from, to: v })} />
+        <button onClick={() => step(1)} disabled={!canStep} title="Kỳ sau" style={arrowStyle(canStep)}><ChevronRight size={15} /></button>
+      </div>
+    </div>
+  );
+};
+
+// Thẻ số liệu trên bảng dashboard tổng quan.
+const DashCard = ({ label, value, color }) => (
+  <div style={{
+    flex: '1 1 130px', minWidth: 120, background: color + '0d',
+    border: `1.5px solid ${color}33`, borderRadius: 12, padding: '0.65rem 0.85rem',
+  }}>
+    <div style={{ fontSize: '1.55rem', fontWeight: 800, color, lineHeight: 1 }}>{value}</div>
+    <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: 5, fontWeight: 600 }}>{label}</div>
+  </div>
+);
+
+// Tên khách hàng — mirror chỉ lưu ~15 cột Phần A nên KHÔNG có cột tên_người_yêu_cầu riêng;
+// đọc từ phiếu_gốc_json (đầy đủ phiếu gốc). Ưu tiên cột thật nếu sau này promote lên bảng.
+const tenKhachHang = (r) => {
+  const g = (r && r['phiếu_gốc_json']) || {};
+  return r['tên_người_yêu_cầu'] || r['tên_khách_hàng'] || g['tên_người_yêu_cầu'] || g['tên_khách_hàng'] || '';
+};
 
 // Cột workflow: dãy "đèn" các bước. Vàng SÁNG = chưa xong, vàng NHẠT (tắt đèn) = đã xong.
 // Bấm 1 đèn để bật/tắt xong ngay trên danh sách (cần quyền sửa). Không mở popup khi bấm đèn.
@@ -27,13 +192,13 @@ const chipPalette = (done, urg) => {
   if (done) return { background: '#fefce8', color: '#a8a29e', border: '1px solid #fde68a', textDecoration: 'line-through' };
   if (urg === 'green') return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' };
   if (urg === 'orange' || urg === 'blink') return { background: '#fed7aa', color: '#9a3412', border: '1px solid #fb923c' };
-  return { background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1' }; // chưa đặt hạn
+  return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }; // chưa đặt hạn → xanh (bước bình thường)
 };
 
 function StepChips({ row, perm, onToggle }) {
   const steps = getEffectiveSteps(row['các_bước']);
   return (
-    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', alignItems: 'stretch' }}>
+    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', alignItems: 'stretch', height: '100%' }}>
       {steps.map((s, i) => {
         const done = s['trạng_thái'] === 'xong';
         const name = s['tên'] || `Bước ${i + 1}`;
@@ -46,15 +211,15 @@ function StepChips({ row, perm, onToggle }) {
             onClick={(e) => {
               e.stopPropagation();
               if (!perm.edit) return;
-              const msg = done ? `Bỏ đánh dấu hoàn thành bước "${name}"?` : `Xác nhận ĐÃ HOÀN THÀNH bước "${name}"?`;
+              const msg = done ? `Mở lại bước "${name}"?\n(Các bước SAU nếu đã xong cũng sẽ được mở lại)` : `Xác nhận ĐÃ HOÀN THÀNH bước "${name}"?`;
               if (window.confirm(msg)) onToggle(row, i, steps);
             }}
             title={name + (dl ? ` · hạn ${dl}` : '') + (done
               ? ` — ✓ xong${s['hoàn_thành_lúc'] ? ' lúc ' + fmtDeadline(s['hoàn_thành_lúc']) : ''}${s['người_hoàn_thành'] ? ' bởi ' + s['người_hoàn_thành'] : ''}`
               : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong')}
             style={{
-              display: 'inline-flex', flexDirection: 'column', justifyContent: 'center', gap: '1px',
-              width: 106, padding: '3px 8px', borderRadius: '10px', fontSize: '0.6rem', fontWeight: 600,
+              display: 'inline-flex', flexDirection: 'column', justifyContent: 'space-between', gap: '3px',
+              width: 106, minHeight: 44, padding: '6px 8px', borderRadius: '10px', fontSize: '0.6rem', fontWeight: 600,
               lineHeight: 1.15, userSelect: 'none', cursor: perm.edit ? 'pointer' : 'default', flex: '0 0 auto',
               ...chipPalette(done, urg),
             }}
@@ -94,15 +259,45 @@ function SyncCell({ row, perm, onSync }) {
 
 // Đăng ký cột danh sách. Thứ tự hiển thị = thứ tự ở đây. Người dùng bật/tắt qua nút "Ẩn/Hiện cột".
 const LIST_COLUMNS = [
-  { key: 'phiếu_ghi', label: 'Phiếu ghi', render: r => <span style={{ fontWeight: 600, color: '#1e293b' }}>{r['phiếu_ghi'] || r['id_phiếu_ghi']}</span> },
+  {
+    key: 'phiếu_ghi', label: 'Phiếu ghi', render: r => {
+      const id = r['id_phiếu_ghi'];
+      const label = r['phiếu_ghi'] || id || '-';
+      // Bấm số phiếu → mở ticket trên Caresoft (tab mới); không mở popup xử lý.
+      return id ? (
+        <a
+          href={`https://web.caresoft.vn/EUROMADE/ticket/${id}`}
+          target="_blank" rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          title="Mở phiếu trên Caresoft"
+          style={{ fontWeight: 700, color: '#2563eb', textDecoration: 'underline', textUnderlineOffset: 2 }}
+        >{label}</a>
+      ) : <span style={{ fontWeight: 600, color: '#1e293b' }}>{label}</span>;
+    }
+  },
+  // Ô gộp gọn: Mã SP · Chi tiết lỗi · Ngày lắp · Mã ĐH · Tên KH · SĐT (xếp dọc, đúng thứ tự yêu cầu).
+  {
+    key: 'thông_tin', label: 'Thông tin phiếu', render: r => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: '0.74rem', lineHeight: 1.35 }}>
+        <span style={{ fontWeight: 700, color: '#1e293b' }}>{r['mã_sản_phẩm'] || '-'}</span>
+        <span style={{ color: '#475569' }}>{r['chi_tiết_lỗi'] || '-'}</span>
+        <span style={{ color: '#64748b' }}>Lắp: {fmtDateOnly(r['ngày_lắp_đặt'])}</span>
+        <span style={{ color: '#64748b' }}>ĐH: {r['mã_đơn_hàng'] || '-'}</span>
+        <span style={{ color: '#334155' }}>{tenKhachHang(r) || '-'}</span>
+        <span style={{ color: '#3b82f6' }}>{r['số_điện_thoại_khách_hàng'] || '-'}</span>
+      </div>
+    )
+  },
   { key: 'mã_đơn_hàng', label: 'Mã ĐH', render: r => r['mã_đơn_hàng'] || '-' },
   { key: 'mã_sản_phẩm', label: 'Mã SP', render: r => r['mã_sản_phẩm'] || '-' },
   { key: 'nhóm_sản_phẩm', label: 'Nhóm SP', render: r => r['nhóm_sản_phẩm'] || '-' },
+  { key: 'tên_khách_hàng', label: 'Tên KH', render: r => tenKhachHang(r) || '-' },
   { key: 'số_điện_thoại_khách_hàng', label: 'SĐT', render: r => <span style={{ color: '#3b82f6' }}>{r['số_điện_thoại_khách_hàng'] || '-'}</span> },
   { key: 'chi_tiết_lỗi', label: 'Chi tiết lỗi', render: r => r['chi_tiết_lỗi'] || '-' },
   { key: 'linh_kiện', label: 'Linh kiện lỗi', render: r => r['linh_kiện'] || '-' },
-  { key: 'ngày_lắp_đặt', label: 'Ngày lắp', render: r => r['ngày_lắp_đặt'] || '-' },
-  { key: 'thời_điểm_tạo', label: 'Ngày tạo', render: r => r['thời_điểm_tạo'] || '-' },
+  { key: 'ngày_lắp_đặt', label: 'Ngày lắp', render: r => fmtDateOnly(r['ngày_lắp_đặt']) },
+  { key: 'thời_điểm_tạo', label: 'Ngày tạo', render: r => fmtDateOnly(r['thời_điểm_tạo']) },
+  { key: 'thời_điểm_cập_nhật', label: 'Ngày cập nhật', render: r => fmtDateOnly(r['thời_điểm_cập_nhật']) },
   { key: 'trạng_thái_phiếu_ghi', label: 'TT phiếu (CS)', render: r => r['trạng_thái_phiếu_ghi'] || '-' },
   { key: 'người_phụ_trách', label: 'Người phụ trách', render: r => r['người_phụ_trách'] || <span style={{ color: '#cbd5e1' }}>Chưa giao</span> },
   { key: 'ngày_hẹn', label: 'Ngày hẹn', render: r => r['ngày_hẹn'] ? fmtDateTime(r['ngày_hẹn']) : '-' },
@@ -113,7 +308,7 @@ const LIST_COLUMNS = [
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
-const DEFAULT_VISIBLE = ['phiếu_ghi', 'mã_đơn_hàng', 'mã_sản_phẩm', 'số_điện_thoại_khách_hàng', 'chi_tiết_lỗi', 'người_phụ_trách', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ'];
+const DEFAULT_VISIBLE = ['phiếu_ghi', 'thông_tin', 'người_phụ_trách', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ'];
 
 export default function WarrantyProcessing() {
   const perm = useTabPerm('warranty', 'xuLy');
@@ -122,12 +317,24 @@ export default function WarrantyProcessing() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = usePersistedState('wproc_search', '');
   const [statusFilter, setStatusFilter] = usePersistedState('wproc_statusFilter', 'all');
+  const [csStatusFilter, setCsStatusFilter] = usePersistedState('wproc_csStatusFilter', 'all'); // lọc trạng_thái_phiếu_ghi (CS)
+  const [createdPreset, setCreatedPreset] = usePersistedState('wproc_createdPreset', 'all');
+  const [createdFrom, setCreatedFrom] = usePersistedState('wproc_createdFrom', '');
+  const [createdTo, setCreatedTo] = usePersistedState('wproc_createdTo', '');
+  const [installPreset, setInstallPreset] = usePersistedState('wproc_installPreset', 'all');
+  const [installFrom, setInstallFrom] = usePersistedState('wproc_installFrom', '');
+  const [installTo, setInstallTo] = usePersistedState('wproc_installTo', '');
+  const [updatedPreset, setUpdatedPreset] = usePersistedState('wproc_updatedPreset', 'all');
+  const [updatedFrom, setUpdatedFrom] = usePersistedState('wproc_updatedFrom', '');
+  const [updatedTo, setUpdatedTo] = usePersistedState('wproc_updatedTo', '');
+  const [showAdvFilter, setShowAdvFilter] = useState(false);
   const [showClosed, setShowClosed] = usePersistedState('wproc_showClosed', false);
-  const [visibleCols, setVisibleCols] = usePersistedState('wproc_visibleCols', DEFAULT_VISIBLE);
+  const [visibleCols, setVisibleCols] = usePersistedState('wproc_visibleCols2', DEFAULT_VISIBLE);
   const [showColMenu, setShowColMenu] = useState(false);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = usePersistedState('wproc_rowsPerPage', 50);
   const [editing, setEditing] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set()); // tick chọn phiếu để tải Excel / cập nhật hàng loạt (giữ qua các trang)
 
   // Cột đang hiện (giữ thứ tự đăng ký, bỏ qua key lạ trong localStorage cũ).
   const cols = LIST_COLUMNS.filter(c => visibleCols.includes(c.key));
@@ -156,22 +363,59 @@ export default function WarrantyProcessing() {
 
   useEffect(() => { fetchRows(); }, []);
 
+  // Số liệu dashboard — đếm theo trạng thái Caresoft (trạng_thái_phiếu_ghi) trên CHÍNH bảng
+  // xử lý (rows). Đếm từ rows (không phải bảng nguồn) để khi đóng/mở phiếu là số đổi ngay.
+  const stats = useMemo(() => {
+    const s = { total: rows.length, new: 0, open: 0, pending: 0, done: 0 };
+    for (const r of rows) {
+      const st = String(r['trạng_thái_phiếu_ghi'] || '').toLowerCase().trim();
+      if (st === 'new') s.new++;
+      else if (st === 'open' || st === 'processing') s.open++;
+      else if (st === 'pending') s.pending++;
+      else if (st === 'closed' || st === 'close' || st === 'solved') s.done++;
+    }
+    return s;
+  }, [rows]);
+
   const filtered = useMemo(() => {
     let r = rows;
-    // Mặc định chỉ hiện phiếu CÒN MỞ (new/open/pending + đúng phân loại). Phiếu đã đóng ở
-    // Caresoft vẫn giữ bản ghi xử lý nhưng ẩn khỏi tab, trừ khi bật "Hiện cả phiếu đã đóng".
-    if (!showClosed) r = r.filter(isQualifyingTicket);
+    // Lọc trạng thái phiếu (CS): nếu chọn cụ thể → hiện đúng nhóm đó (kể cả đã đóng).
+    // Ngược lại, mặc định chỉ hiện phiếu CÒN MỞ, trừ khi bật "Hiện cả phiếu đã đóng".
+    if (csStatusFilter !== 'all') r = r.filter(x => String(x['trạng_thái_phiếu_ghi'] || '').toLowerCase() === csStatusFilter);
+    else if (!showClosed) r = r.filter(isQualifyingTicket);
     if (statusFilter !== 'all') r = r.filter(x => (x['trạng_thái_xử_lý'] || 'chưa_xử_lý') === statusFilter);
+    // Lọc theo các khoảng ngày (ngày tạo / lắp đặt / cập nhật).
+    if (createdFrom || createdTo) r = r.filter(x => dateInRange(x['thời_điểm_tạo'], createdFrom, createdTo));
+    if (installFrom || installTo) r = r.filter(x => dateInRange(x['ngày_lắp_đặt'], installFrom, installTo));
+    if (updatedFrom || updatedTo) r = r.filter(x => dateInRange(x['thời_điểm_cập_nhật'], updatedFrom, updatedTo));
     if (search.trim()) {
-      const q = search.toLowerCase();
-      r = r.filter(x => ['phiếu_ghi', 'mã_đơn_hàng', 'mã_sản_phẩm', 'số_điện_thoại_khách_hàng', 'chi_tiết_lỗi', 'người_phụ_trách']
-        .some(k => String(x[k] || '').toLowerCase().includes(q)));
+      // Tách nhiều từ khóa theo dấu cách → tìm HOẶC: 1 dòng khớp nếu chứa BẤT KỲ từ khóa nào
+      // (cho phép dán nhiều mã ticket 1 lần, vd "11721 13514 21398").
+      const tokens = search.toLowerCase().split(/\s+/).filter(Boolean);
+      const fields = ['phiếu_ghi', 'id_phiếu_ghi', 'mã_đơn_hàng', 'mã_sản_phẩm', 'số_điện_thoại_khách_hàng', 'chi_tiết_lỗi', 'người_phụ_trách'];
+      r = r.filter(x => {
+        const hay = fields.map(k => String(x[k] || '').toLowerCase());
+        hay.push(tenKhachHang(x).toLowerCase()); // tìm cả theo tên khách hàng (từ phiếu_gốc_json)
+        return tokens.some(tok => hay.some(h => h.includes(tok)));
+      });
     }
     return r;
-  }, [rows, statusFilter, search, showClosed]);
+  }, [rows, statusFilter, csStatusFilter, search, showClosed, createdFrom, createdTo, installFrom, installTo, updatedFrom, updatedTo]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
-  const pageRows = filtered.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+  // Đếm số bộ lọc nâng cao đang bật (cho badge trên nút).
+  const advActiveCount = [csStatusFilter !== 'all', createdFrom || createdTo, installFrom || installTo, updatedFrom || updatedTo].filter(Boolean).length;
+  const clearAdvFilters = () => {
+    setCsStatusFilter('all');
+    setCreatedPreset('all'); setCreatedFrom(''); setCreatedTo('');
+    setInstallPreset('all'); setInstallFrom(''); setInstallTo('');
+    setUpdatedPreset('all'); setUpdatedFrom(''); setUpdatedTo('');
+    setPage(1);
+  };
+
+  // rowsPerPage có thể là số hoặc 'all' (hiện tất cả). 'all' → 1 trang chứa toàn bộ.
+  const pageSize = rowsPerPage === 'all' ? (filtered.length || 1) : Number(rowsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageRows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   // Lưu (giữ trạng_thái_đồng_bộ hiện tại, không đẩy)
   const handleSave = async (id, payload) => {
@@ -195,9 +439,15 @@ export default function WarrantyProcessing() {
   // workflow chuẩn vào phiếu nếu trước đó phiếu chưa có bước). Cập nhật lạc quan UI.
   const toggleStepDone = async (row, index, steps) => {
     const operator = (user && (user.name || user.id)) || '';
-    const next = steps.map((s, i) => i === index ? toggleStepStatus(s, operator) : s);
-    setRows(prev => prev.map(x => x.id === row.id ? { ...x, 'các_bước': next } : x));
-    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update({ 'các_bước': next, 'người_cập_nhật': operator }).eq('id', row.id);
+    const { steps: next, error: gateErr } = applyStepToggle(steps, index, operator);
+    if (gateErr) { alert(gateErr); return; } // chưa đủ điều kiện hoàn tất (bước trước chưa xong)
+    const patch = { 'các_bước': next, 'người_cập_nhật': operator };
+    // Đồng bộ trạng thái phiếu khi bước "Đóng phiếu" đổi trạng thái xong↔chưa (kể cả do cascade mở lại).
+    const closeOf = (arr) => arr.find(s => String(s['tên'] || '').trim() === CLOSING_STEP)?.['trạng_thái'] === 'xong';
+    const before = closeOf(steps), after = closeOf(next);
+    if (before !== after) patch['trạng_thái_phiếu_ghi'] = after ? 'solved' : 'open';
+    setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
     if (error) { alert('Lỗi cập nhật bước: ' + error.message); await fetchRows(); }
   };
 
@@ -212,17 +462,88 @@ export default function WarrantyProcessing() {
     if (error) { alert('Lỗi đồng bộ: ' + error.message); await fetchRows(); }
   };
 
+  // ── Tick chọn phiếu để tải Excel ──
+  const toggleSelect = (id) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const pageAllSelected = pageRows.length > 0 && pageRows.every(r => selectedIds.has(r.id));
+  const togglePageAll = () => setSelectedIds(prev => {
+    const next = new Set(prev);
+    if (pageAllSelected) pageRows.forEach(r => next.delete(r.id));
+    else pageRows.forEach(r => next.add(r.id));
+    return next;
+  });
+  const clearSelection = () => setSelectedIds(new Set());
+
+  // Đóng (solved) / Mở lại (open) phiếu — áp cho TẤT CẢ phiếu đã tick (1 hoặc nhiều).
+  // Cập nhật trạng_thái_phiếu_ghi trong bảng xử lý + người_cập_nhật. Cập nhật lạc quan UI.
+  const bulkSetStatus = async (status) => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) { alert('Vui lòng tick chọn ít nhất 1 phiếu!'); return; }
+    const verb = status === 'solved' ? 'ĐÓNG' : 'MỞ LẠI';
+    if (!window.confirm(`${verb} ${ids.length} phiếu đã chọn?`)) return;
+    const operator = (user && (user.name || user.id)) || '';
+    setRows(prev => prev.map(x => selectedIds.has(x.id) ? { ...x, 'trạng_thái_phiếu_ghi': status } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh')
+      .update({ 'trạng_thái_phiếu_ghi': status, 'người_cập_nhật': operator }).in('id', ids);
+    if (error) { alert('Lỗi cập nhật trạng thái: ' + error.message); await fetchRows(); return; }
+    clearSelection();
+  };
+
+  // Tải các phiếu đã tick ra file .xlsx (giữ thứ tự cột theo bảng).
+  const exportToExcel = () => {
+    const chosen = filtered.filter(r => selectedIds.has(r.id));
+    if (chosen.length === 0) { alert('Vui lòng tick chọn ít nhất 1 phiếu để tải Excel!'); return; }
+    const data = chosen.map(r => ({
+      'Phiếu ghi': r['phiếu_ghi'] || r['id_phiếu_ghi'] || '',
+      'Mã ĐH': r['mã_đơn_hàng'] || '',
+      'Mã SP': r['mã_sản_phẩm'] || '',
+      'Nhóm SP': r['nhóm_sản_phẩm'] || '',
+      'Tên KH': tenKhachHang(r),
+      'SĐT': r['số_điện_thoại_khách_hàng'] || '',
+      'Chi tiết lỗi': r['chi_tiết_lỗi'] || '',
+      'Linh kiện lỗi': r['linh_kiện'] || '',
+      'Ngày lắp đặt': fmtDateOnly(r['ngày_lắp_đặt']),
+      'Ngày tạo': fmtDateOnly(r['thời_điểm_tạo']),
+      'Ngày cập nhật': fmtDateOnly(r['thời_điểm_cập_nhật']),
+      'TT phiếu (CS)': r['trạng_thái_phiếu_ghi'] || '',
+      'Người phụ trách': r['người_phụ_trách'] || '',
+      'Ngày hẹn': r['ngày_hẹn'] ? fmtDateTime(r['ngày_hẹn']) : '',
+      'Tổng chi phí': Number(r['tổng_chi_phí']) || 0,
+      'Kết quả xử lý': r['kết_quả_xử_lý'] || '',
+      'Trạng thái xử lý': statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý').label,
+      'Các bước (WF)': summarizeSteps(r['các_bước']),
+      'Trạng thái đồng bộ': (TRANG_THAI_DONG_BO[r['trạng_thái_đồng_bộ']] || TRANG_THAI_DONG_BO['nháp']).label,
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'XuLyPhieu');
+    XLSX.writeFile(wb, `XuLyPhieu_${new Date().getTime()}.xlsx`);
+  };
+
   if (loading && rows.length === 0) {
     return <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}><RefreshCw size={36} className="spin" color="#6366f1" /></div>;
   }
 
   return (
     <div style={{ background: '#fff', borderRadius: '12px', padding: '1rem 0.5rem', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+      {/* Dashboard tổng quan — đếm theo trạng thái ticket Caresoft, lấy trực tiếp từ bảng
+          nguồn phieu_bao_hanh nên gồm cả phiếu đã đóng (không có trong tab xử lý). */}
+      <div style={{ display: 'flex', gap: '0.7rem', flexWrap: 'wrap', margin: '0 0.5rem 1rem' }}>
+        <DashCard label="Tổng phiếu" value={stats.total} color="#6366f1" />
+        <DashCard label="Mới (new)" value={stats.new} color="#0ea5e9" />
+        <DashCard label="Đang xử lý (open)" value={stats.open} color="#f59e0b" />
+        <DashCard label="Chờ đẩy (pending)" value={stats.pending} color="#d97706" />
+        <DashCard label="Đã xử lý (closed/solved)" value={stats.done} color="#16a34a" />
+      </div>
+
       {/* Bộ lọc */}
       <div className="filter-bar" style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '1rem', padding: '0 0.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.4rem 0.6rem', flex: '1 1 240px' }}>
           <Search size={16} color="#94a3b8" />
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Tìm phiếu, mã ĐH, SP, SĐT, lỗi, người phụ trách..." style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.85rem' }} />
+          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Tìm phiếu, mã ĐH, SP, SĐT, lỗi... (nhiều mã cách nhau bằng dấu cách)" style={{ border: 'none', outline: 'none', width: '100%', fontSize: '0.85rem' }} />
         </div>
         <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} style={{ padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.85rem' }}>
           <option value="all">Tất cả trạng thái xử lý</option>
@@ -249,13 +570,91 @@ export default function WarrantyProcessing() {
             </div>
           )}
         </div>
+
+        {/* Bật/tắt panel lọc nâng cao (trạng thái phiếu CS + các khoảng ngày) */}
+        <button onClick={() => setShowAdvFilter(s => !s)} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: `1px solid ${advActiveCount ? '#6366f1' : '#e2e8f0'}`, borderRadius: '8px', background: advActiveCount ? '#eef2ff' : '#fff', cursor: 'pointer', fontWeight: 600, color: advActiveCount ? '#4f46e5' : '#475569' }}>
+          <Filter size={15} /> Lọc nâng cao{advActiveCount ? ` (${advActiveCount})` : ''}
+        </button>
+
+        {/* Hành động trên phiếu đã tick: đổi trạng thái hàng loạt (quyền Sửa) + tải Excel (quyền N/X) */}
+        {(perm.edit || perm.io) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto', flexWrap: 'wrap' }}>
+            {selectedIds.size > 0 && (
+              <span style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>Đã chọn {selectedIds.size}</span>
+            )}
+            {perm.edit && selectedIds.size > 0 && (
+              <>
+                <button
+                  onClick={() => bulkSetStatus('solved')}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.9rem', border: 'none', borderRadius: '8px', background: '#16a34a', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', boxShadow: '0 2px 4px rgba(22,163,74,0.25)' }}
+                >
+                  <CheckCircle2 size={15} /> Đóng phiếu
+                </button>
+                <button
+                  onClick={() => bulkSetStatus('open')}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.9rem', border: '1px solid #f59e0b', borderRadius: '8px', background: '#fffbeb', color: '#b45309', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  <RotateCcw size={15} /> Mở lại
+                </button>
+              </>
+            )}
+            {selectedIds.size > 0 && (
+              <button onClick={clearSelection} style={{ padding: '0.5rem 0.7rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', cursor: 'pointer', fontWeight: 600, color: '#64748b', fontSize: '0.82rem' }}>Bỏ chọn</button>
+            )}
+            {perm.io && (
+              <button
+                onClick={exportToExcel}
+                disabled={selectedIds.size === 0}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.9rem', border: 'none', borderRadius: '8px', background: selectedIds.size === 0 ? '#cbd5e1' : '#10b981', color: '#fff', cursor: selectedIds.size === 0 ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: '0.85rem', boxShadow: selectedIds.size === 0 ? 'none' : '0 2px 4px rgba(16,185,129,0.25)' }}
+              >
+                <Download size={15} /> Tải Excel{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Panel lọc nâng cao */}
+      {showAdvFilter && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', margin: '0 0.5rem 1rem', padding: '0.9rem 1rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+          <div style={{ display: 'flex', gap: '1.2rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+              <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 600 }}>Trạng thái phiếu (CS)</span>
+              <select value={csStatusFilter} onChange={e => { setCsStatusFilter(e.target.value); setPage(1); }} style={{ ...dateInputStyle, padding: '0.35rem 0.4rem' }}>
+                <option value="all">Tất cả</option>
+                {CS_STATUS_OPTIONS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+            </div>
+            {advActiveCount > 0 && (
+              <button onClick={clearAdvFilters} style={{ padding: '0.45rem 0.8rem', border: '1px solid #fca5a5', borderRadius: '8px', background: '#fef2f2', color: '#b91c1c', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}>Xóa lọc</button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+            <QuickDateRange label="Ngày tạo" preset={createdPreset} from={createdFrom} to={createdTo}
+              onChange={({ preset, from, to }) => { setCreatedPreset(preset); setCreatedFrom(from); setCreatedTo(to); setPage(1); }} />
+            <QuickDateRange label="Ngày lắp đặt" preset={installPreset} from={installFrom} to={installTo}
+              onChange={({ preset, from, to }) => { setInstallPreset(preset); setInstallFrom(from); setInstallTo(to); setPage(1); }} />
+            <QuickDateRange label="Ngày cập nhật" preset={updatedPreset} from={updatedFrom} to={updatedTo}
+              onChange={({ preset, from, to }) => { setUpdatedPreset(preset); setUpdatedFrom(from); setUpdatedTo(to); setPage(1); }} />
+          </div>
+        </div>
+      )}
 
       {/* Bảng */}
       <div style={{ width: '100%', overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: Math.max(600, cols.length * 130) }}>
           <thead style={{ background: '#f1f5f9' }}>
             <tr>
+              <th style={{ padding: '0.8rem 0.5rem', borderBottom: '2px solid #e2e8f0', width: 36, textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={pageAllSelected}
+                  ref={el => { if (el) el.indeterminate = !pageAllSelected && pageRows.some(r => selectedIds.has(r.id)); }}
+                  onChange={togglePageAll}
+                  title="Chọn/bỏ chọn cả trang"
+                  style={{ cursor: 'pointer' }}
+                />
+              </th>
               {cols.map(c => (
                 <th key={c.key} style={{ padding: '0.8rem 0.5rem', borderBottom: '2px solid #e2e8f0', fontWeight: 600, fontSize: '0.75rem', color: '#475569', whiteSpace: 'nowrap' }}>{c.label}</th>
               ))}
@@ -263,19 +662,23 @@ export default function WarrantyProcessing() {
           </thead>
           <tbody>
             {pageRows.length === 0 ? (
-              <tr><td colSpan={Math.max(1, cols.length)} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Không có phiếu cần xử lý.</td></tr>
+              <tr><td colSpan={Math.max(1, cols.length) + 1} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Không có phiếu cần xử lý.</td></tr>
             ) : pageRows.map((r, idx) => (
-              <tr key={r.id} onClick={() => setEditing(r)} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 ? '#f8fafc' : '#fff', cursor: 'pointer' }}>
+              <tr key={r.id} onClick={() => setEditing(r)} style={{ borderBottom: '1px solid #f1f5f9', background: selectedIds.has(r.id) ? '#eef2ff' : (idx % 2 ? '#f8fafc' : '#fff'), cursor: 'pointer' }}>
+                <td onClick={e => e.stopPropagation()} style={{ padding: '0.6rem 0.5rem', textAlign: 'center' }}>
+                  <input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} style={{ cursor: 'pointer' }} />
+                </td>
                 {cols.map(c => {
                   const isSteps = c.key === 'các_bước';
+                  const isInfo = c.key === 'thông_tin';
                   return (
                     <td key={c.key} style={{
-                      padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#334155',
-                      maxWidth: isSteps ? 'none' : (TRUNCATE_KEYS.includes(c.key) ? '220px' : 'none'),
-                      minWidth: isSteps ? 260 : undefined,
-                      overflow: isSteps ? 'visible' : 'hidden',
-                      textOverflow: isSteps ? 'clip' : 'ellipsis',
-                      whiteSpace: 'nowrap',
+                      padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#334155', verticalAlign: 'top',
+                      maxWidth: isSteps ? 'none' : isInfo ? 300 : (TRUNCATE_KEYS.includes(c.key) ? '220px' : 'none'),
+                      minWidth: isSteps ? 260 : isInfo ? 210 : undefined,
+                      overflow: (isSteps || isInfo) ? 'visible' : 'hidden',
+                      textOverflow: (isSteps || isInfo) ? 'clip' : 'ellipsis',
+                      whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
                       {c.render(r, { perm, onToggleStep: toggleStepDone, onQuickSync: quickSync })}
                     </td>
@@ -291,8 +694,9 @@ export default function WarrantyProcessing() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
         <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Tổng <b>{filtered.length}</b> phiếu</span>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <select value={rowsPerPage} onChange={e => { setRowsPerPage(Number(e.target.value)); setPage(1); }} style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '2px 4px' }}>
+          <select value={rowsPerPage} onChange={e => { const v = e.target.value; setRowsPerPage(v === 'all' ? 'all' : Number(v)); setPage(1); }} style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '2px 4px' }}>
             <option value={20}>20 dòng</option><option value={50}>50 dòng</option><option value={100}>100 dòng</option>
+            <option value={500}>500 dòng</option><option value={1000}>1000 dòng</option><option value="all">Tất cả</option>
           </select>
           <div style={{ display: 'flex', gap: '0.2rem', alignItems: 'center' }}>
             <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} style={{ padding: '0.4rem', border: '1px solid #e2e8f0', borderRadius: '6px', background: '#fff', cursor: page <= 1 ? 'not-allowed' : 'pointer' }}><ChevronLeft size={16} /></button>

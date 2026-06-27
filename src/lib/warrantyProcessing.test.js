@@ -1,8 +1,29 @@
 import { test, expect, describe } from 'vitest';
 import {
   PROCESSING_STATUSES, PROCESSING_CATEGORIES, WORKFLOW_STEPS_MAU,
-  isQualifyingTicket, computeTotalCost, getEffectiveSteps, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
+  isQualifyingTicket, computeTotalCost, getEffectiveSteps, ensureClosingStep, applyStepToggle, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
 } from './warrantyProcessing';
+
+const mkSteps = (...states) => states.map((st, i) => ({ 'tên': `B${i}`, 'trạng_thái': st }));
+
+describe('applyStepToggle', () => {
+  const ISO = '2026-06-27T10:00:00.000Z';
+  test('chặn hoàn tất khi bước trước chưa xong', () => {
+    const { steps, error } = applyStepToggle(mkSteps('chưa_xong', 'chưa_xong'), 1, 'u', ISO);
+    expect(error).toBeTruthy();
+    expect(steps[1]['trạng_thái']).toBe('chưa_xong'); // không đổi
+  });
+  test('cho hoàn tất khi mọi bước trước đã xong', () => {
+    const { steps, error } = applyStepToggle(mkSteps('xong', 'chưa_xong'), 1, 'u', ISO);
+    expect(error).toBeNull();
+    expect(steps[1]['trạng_thái']).toBe('xong');
+    expect(steps[1]['người_hoàn_thành']).toBe('u');
+  });
+  test('mở lại 1 bước → cascade mở lại mọi bước sau đang xong', () => {
+    const { steps } = applyStepToggle(mkSteps('xong', 'xong', 'xong'), 1, 'u', ISO);
+    expect(steps.map(s => s['trạng_thái'])).toEqual(['xong', 'chưa_xong', 'chưa_xong']);
+  });
+});
 
 describe('isQualifyingTicket', () => {
   test('đúng khi status + phân loại đều khớp', () => {
@@ -64,12 +85,38 @@ describe('getEffectiveSteps', () => {
     expect(steps.every(s => s['trạng_thái'] === 'chưa_xong')).toBe(true);
     expect(steps[0]['tên']).toBe(WORKFLOW_STEPS_MAU[0]);
   });
-  test('phiếu đã có bước tùy biến → giữ nguyên', () => {
+  test('phiếu đã có bước tùy biến → giữ nguyên + ép "Đóng phiếu" ở cuối', () => {
     const custom = [{ 'tên': 'Bước A', 'trạng_thái': 'xong' }];
-    expect(getEffectiveSteps(custom)).toBe(custom);
+    const out = getEffectiveSteps(custom);
+    expect(out.length).toBe(2);
+    expect(out[0]).toEqual({ 'tên': 'Bước A', 'trạng_thái': 'xong' });
+    expect(out[out.length - 1]['tên']).toBe('Đóng phiếu');
   });
   test('mảng rỗng → workflow chuẩn', () => {
     expect(getEffectiveSteps([]).length).toBe(WORKFLOW_STEPS_MAU.length);
+  });
+  test('workflow luôn kết thúc bằng "Đóng phiếu"', () => {
+    expect(getEffectiveSteps(null).at(-1)['tên']).toBe('Đóng phiếu');
+    expect(getEffectiveSteps([{ 'tên': 'X', 'trạng_thái': 'chưa_xong' }]).at(-1)['tên']).toBe('Đóng phiếu');
+  });
+});
+
+describe('ensureClosingStep', () => {
+  test('thêm "Đóng phiếu" nếu chưa có', () => {
+    const out = ensureClosingStep([{ 'tên': 'A', 'trạng_thái': 'chưa_xong' }]);
+    expect(out.map(s => s['tên'])).toEqual(['A', 'Đóng phiếu']);
+  });
+  test('dời "Đóng phiếu" xuống cuối nếu đang ở giữa, giữ trạng thái', () => {
+    const out = ensureClosingStep([
+      { 'tên': 'Đóng phiếu', 'trạng_thái': 'xong' },
+      { 'tên': 'B', 'trạng_thái': 'chưa_xong' },
+    ]);
+    expect(out.map(s => s['tên'])).toEqual(['B', 'Đóng phiếu']);
+    expect(out.at(-1)['trạng_thái']).toBe('xong');
+  });
+  test('không nhân đôi khi đã ở cuối', () => {
+    const out = ensureClosingStep([{ 'tên': 'A', 'trạng_thái': 'chưa_xong' }, { 'tên': 'Đóng phiếu', 'trạng_thái': 'chưa_xong' }]);
+    expect(out.filter(s => s['tên'] === 'Đóng phiếu').length).toBe(1);
   });
 });
 
