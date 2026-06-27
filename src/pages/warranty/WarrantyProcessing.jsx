@@ -195,44 +195,75 @@ const chipPalette = (done, urg) => {
   return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }; // chưa đặt hạn → xanh (bước bình thường)
 };
 
-function StepChips({ row, perm, onToggle }) {
+// Dãy chip bước WF. Bấm 1 chip → mở popover: nhập "đã thực hiện gì" (ghi_chú), đánh dấu xong/mở lại,
+// Lưu (ghi DB) hoặc Đồng bộ (đẩy ghi chú bước làm comment Caresoft). Popover position:fixed (không bị cắt).
+function StepChips({ row, perm, onToggle, onSaveNote }) {
   const steps = getEffectiveSteps(row['các_bước']);
+  const [open, setOpen] = useState(null); // { index, top, left }
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const cur = open != null ? steps[open.index] : null;
+  const curDone = cur ? cur['trạng_thái'] === 'xong' : false;
+
+  const openPop = (e, i) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    setDraft(steps[i]?.['ghi_chú'] || '');
+    setOpen({ index: i, top: Math.min(r.bottom + 6, window.innerHeight - 220), left: Math.max(8, Math.min(r.left, window.innerWidth - 320)) });
+  };
+  const close = () => setOpen(null);
+  const doSave = async (sync) => {
+    setBusy(true);
+    try { await onSaveNote(row, open.index, steps, draft, sync); close(); } finally { setBusy(false); }
+  };
+  const doToggle = () => { const i = open.index; close(); onToggle(row, i, steps); };
+
   return (
     <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', alignItems: 'stretch', height: '100%' }}>
-      {steps.map((s, i) => {
-        const done = s['trạng_thái'] === 'xong';
-        const name = s['tên'] || `Bước ${i + 1}`;
-        const dl = fmtDeadline(s['hạn_xử_lý']);
-        const urg = stepUrgency(s); // 'green' | 'orange' | 'blink' | null
+      {steps.map((st, i) => {
+        const done = st['trạng_thái'] === 'xong';
+        const name = st['tên'] || `Bước ${i + 1}`;
+        const dl = fmtDeadline(st['hạn_xử_lý']);
+        const urg = stepUrgency(st); // 'green' | 'orange' | 'blink' | null
         return (
           <span
             key={i}
             className={`wf-card${urg === 'blink' ? ' wf-blink' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!perm.edit) return;
-              const msg = done ? `Mở lại bước "${name}"?\n(Các bước SAU nếu đã xong cũng sẽ được mở lại)` : `Xác nhận ĐÃ HOÀN THÀNH bước "${name}"?`;
-              if (window.confirm(msg)) onToggle(row, i, steps);
-            }}
+            onClick={(e) => openPop(e, i)}
             title={name + (dl ? ` · hạn ${dl}` : '') + (done
-              ? ` — ✓ xong${s['hoàn_thành_lúc'] ? ' lúc ' + fmtDeadline(s['hoàn_thành_lúc']) : ''}${s['người_hoàn_thành'] ? ' bởi ' + s['người_hoàn_thành'] : ''}`
-              : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong')}
+              ? ` — ✓ xong${st['hoàn_thành_lúc'] ? ' lúc ' + fmtDeadline(st['hoàn_thành_lúc']) : ''}${st['người_hoàn_thành'] ? ' bởi ' + st['người_hoàn_thành'] : ''}`
+              : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong') + ' · bấm để ghi chú / cập nhật'}
             style={{
               display: 'inline-flex', flexDirection: 'column', justifyContent: 'space-between', gap: '3px',
               width: 106, minHeight: 44, padding: '6px 8px', borderRadius: '10px', fontSize: '0.6rem', fontWeight: 600,
-              lineHeight: 1.15, userSelect: 'none', cursor: perm.edit ? 'pointer' : 'default', flex: '0 0 auto',
+              lineHeight: 1.15, userSelect: 'none', cursor: 'pointer', flex: '0 0 auto',
               ...chipPalette(done, urg),
             }}
           >
-            {/* 2 dòng đầu: nội dung bước (tự cắt nếu dài) */}
+            {/* 2 dòng đầu: nội dung bước (tự cắt nếu dài; 📝 = đã có ghi chú) */}
             <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-              {done ? '✓ ' : ''}{name}
+              {done ? '✓ ' : ''}{name}{st['ghi_chú'] ? ' 📝' : ''}
             </span>
             {/* dòng cuối: thời hạn */}
             {dl && <span style={{ fontSize: '0.54rem', fontWeight: 700, whiteSpace: 'nowrap', opacity: 0.9 }}>{dl}</span>}
           </span>
         );
       })}
+      {open != null && (
+        <>
+          <div onClick={(e) => { e.stopPropagation(); close(); }} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: open.top, left: open.left, zIndex: 1001, width: 300, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: '0.8rem' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1e293b', marginBottom: '0.5rem' }}>{cur?.['tên'] || 'Bước'}</div>
+            <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Đã thực hiện gì... (vd: đã liên hệ chị A, khách hài lòng)" rows={3} style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.5rem', fontSize: '0.82rem', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
+            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
+              {perm.edit && <button disabled={busy} onClick={doToggle} style={{ padding: '0.35rem 0.6rem', borderRadius: '7px', border: '1px solid ' + (curDone ? '#f59e0b' : '#86efac'), background: curDone ? '#fffbeb' : '#dcfce7', color: curDone ? '#b45309' : '#166534', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer' }}>{curDone ? 'Mở lại' : 'Đánh dấu xong'}</button>}
+              {perm.edit && <button disabled={busy} onClick={() => doSave(false)} style={{ padding: '0.35rem 0.6rem', borderRadius: '7px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 600, fontSize: '0.78rem', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>Lưu</button>}
+              {perm.io && <button disabled={busy} onClick={() => doSave(true)} style={{ padding: '0.35rem 0.6rem', borderRadius: '7px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.78rem', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>Đồng bộ</button>}
+              <button disabled={busy} onClick={close} style={{ padding: '0.35rem 0.6rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer' }}>Đóng</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -304,7 +335,7 @@ const LIST_COLUMNS = [
   { key: 'tổng_chi_phí', label: 'Chi phí', render: r => (Number(r['tổng_chi_phí']) || 0).toLocaleString('vi-VN') + ' đ' },
   { key: 'kết_quả_xử_lý', label: 'Kết quả', render: r => r['kết_quả_xử_lý'] || '-' },
   { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
-  { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onToggle={ctx.onToggleStep} /> },
+  { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onToggle={ctx.onToggleStep} onSaveNote={ctx.onSaveStepNote} /> },
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
@@ -449,6 +480,24 @@ export default function WarrantyProcessing() {
     setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
     const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
     if (error) { alert('Lỗi cập nhật bước: ' + error.message); await fetchRows(); }
+  };
+
+  // Lưu ghi chú "đã thực hiện" của 1 bước (vật chất hóa workflow). doSync=true → đặt comment đồng bộ
+  // = ghi chú bước rồi cờ pending (n8n đẩy ghi chú bước này làm comment Caresoft thay tóm tắt chung).
+  const saveStepNote = async (row, index, steps, note, doSync) => {
+    const operator = (user && (user.name || user.id)) || '';
+    const nextSteps = steps.map((st, i) => i === index ? { ...st, 'ghi_chú': note } : st);
+    const patch = { 'các_bước': nextSteps, 'người_cập_nhật': operator };
+    if (doSync) {
+      const stepName = String(steps[index]?.['tên'] || `Bước ${index + 1}`).trim();
+      const tt = { ...(row['thông_tin_bổ_sung'] || {}), 'ghi_chú_đồng_bộ': `[Cập nhật từ Webapp QLSX]\n${stepName}: ${note}` };
+      patch['thông_tin_bổ_sung'] = tt;
+      patch['trạng_thái_đồng_bộ'] = 'pending';
+      patch['lỗi_đồng_bộ'] = null;
+    }
+    setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
+    if (error) { alert('Lỗi lưu ghi chú bước: ' + error.message); await fetchRows(); }
   };
 
   // Đẩy nhanh 1 phiếu về Caresoft ngay từ danh sách (đặt cờ pending → webhook n8n xử lý).
@@ -680,7 +729,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isSteps || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onToggleStep: toggleStepDone, onQuickSync: quickSync })}
+                      {c.render(r, { perm, onToggleStep: toggleStepDone, onQuickSync: quickSync, onSaveStepNote: saveStepNote })}
                     </td>
                   );
                 })}
