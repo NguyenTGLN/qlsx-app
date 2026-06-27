@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { X, Save, Send, Plus, Trash2, CheckCircle2, Circle } from 'lucide-react';
 import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU, applyStepToggle, ensureClosingStep, CLOSING_STEP, getThongTinBoSung } from '../../lib/warrantyProcessing';
 
@@ -12,19 +12,48 @@ const s = {
   readonlyLbl: { fontSize: '0.75rem', color: '#64748b' },
 };
 
-// Field Phần A cho phép sửa (ghi vào bảng xử lý). Field Caresoft-only để chỉ đọc.
-const EDITABLE_A = ['mã_đơn_hàng', 'mã_sản_phẩm', 'nhóm_sản_phẩm', 'ngày_lắp_đặt', 'linh_kiện', 'chi_tiết_lỗi'];
+// Ô sửa từng-trường: bấm để mở sửa; có nút Lưu (lưu DB) + Đồng bộ (lưu + đẩy CS) + Hủy.
+//  - editable=false → chỉ hiển thị giá trị (trường option chỉ-đọc).
+//  - canSync=false → ẩn nút Đồng bộ (không có quyền N/X).
+function EditableField({ label, value, editable, canSync, saving, onSave, onSync, full }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || '');
+  useEffect(() => { if (!editing) setDraft(value || ''); }, [value, editing]);
+  const wrap = full ? { ...s.inputGroup, gridColumn: 'span 2' } : s.inputGroup;
+  if (!editable) {
+    return (
+      <div style={wrap}>
+        <label style={s.label}>{label}</label>
+        <div style={{ ...s.readonlyVal, padding: '0.55rem 0', minHeight: '1.2em' }}>{value || <span style={{ color: '#cbd5e1', fontWeight: 400 }}>—</span>}</div>
+      </div>
+    );
+  }
+  if (!editing) {
+    return (
+      <div style={wrap}>
+        <label style={s.label}>{label}</label>
+        <div onClick={() => setEditing(true)} title="Bấm để sửa" style={{ ...s.input, cursor: 'pointer', background: '#f8fafc', minHeight: '1.2em', display: 'flex', alignItems: 'center' }}>
+          {value || <span style={{ color: '#94a3b8' }}>(bấm để nhập)</span>}
+        </div>
+      </div>
+    );
+  }
+  const btn = (bg) => ({ padding: '0.35rem 0.7rem', borderRadius: '7px', border: 'none', background: bg, color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.6 : 1, display: 'flex', alignItems: 'center', gap: '0.25rem' });
+  return (
+    <div style={wrap}>
+      <label style={s.label}>{label}</label>
+      <input autoFocus style={s.input} value={draft} onChange={e => setDraft(e.target.value)} />
+      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.35rem', flexWrap: 'wrap' }}>
+        <button disabled={saving} onClick={async () => { await onSave(draft); setEditing(false); }} style={btn('#3b82f6')}><Save size={13} /> Lưu</button>
+        {canSync && <button disabled={saving} onClick={async () => { await onSync(draft); setEditing(false); }} style={btn('#10b981')}><Send size={13} /> Đồng bộ</button>}
+        <button disabled={saving} onClick={() => { setDraft(value || ''); setEditing(false); }} style={{ padding: '0.35rem 0.7rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>Hủy</button>
+      </div>
+    </div>
+  );
+}
 
 export default function ProcessingModal({ row, perm, currentUser, onClose, onSave, onSync }) {
   const [form, setForm] = useState(() => ({
-    // Phần A (editable)
-    'mã_đơn_hàng': row['mã_đơn_hàng'] || '',
-    'mã_sản_phẩm': row['mã_sản_phẩm'] || '',
-    'nhóm_sản_phẩm': row['nhóm_sản_phẩm'] || '',
-    'ngày_lắp_đặt': row['ngày_lắp_đặt'] || '',
-    'linh_kiện': row['linh_kiện'] || '',
-    'chi_tiết_lỗi': row['chi_tiết_lỗi'] || '',
-    // Phần B
     'người_phụ_trách': row['người_phụ_trách'] || '',
     'trạng_thái_xử_lý': row['trạng_thái_xử_lý'] || 'chưa_xử_lý',
     'ngày_hẹn': row['ngày_hẹn'] ? String(row['ngày_hẹn']).substring(0, 16) : '',
@@ -40,7 +69,6 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
   const [history] = useState(() => Array.isArray(row['lịch_sử_thao_tác']) ? row['lịch_sử_thao_tác'] : []);
   const [newNote, setNewNote] = useState('');
   const [tinBoSung, setTinBoSung] = useState(() => getThongTinBoSung(row));
-  const setTin = (k, v) => setTinBoSung(prev => ({ ...prev, [k]: v }));
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
@@ -61,10 +89,8 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
   const updatePart = (i, k, v) => setParts(prev => prev.map((p, idx) => idx === i ? { ...p, [k]: v } : p));
   const removePart = (i) => setParts(prev => prev.filter((_, idx) => idx !== i));
 
-  // Gom dữ liệu để lưu. Note mới (nếu có) append vào lịch sử.
-  const buildPayload = () => {
-    const editedA = {};
-    EDITABLE_A.forEach(k => { editedA[k] = form[k]; });
+  // Gom dữ liệu để lưu. tinOverride: dùng khi sửa-từng-ô (tránh state cũ). Note mới append vào lịch sử.
+  const buildPayload = (tinOverride) => {
     const operator = (currentUser && (currentUser.name || currentUser.id)) || '';
     const nextHistory = newNote.trim()
       ? [...history, { 'thời_gian': new Date().toISOString(), 'người': operator, 'nội_dung': newNote.trim() }]
@@ -73,7 +99,6 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
     const finalSteps = ensureClosingStep(steps);
     const closingDone = String(finalSteps.at(-1)?.['tên'] || '').trim() === CLOSING_STEP && finalSteps.at(-1)['trạng_thái'] === 'xong';
     return {
-      ...editedA,
       'người_phụ_trách': form['người_phụ_trách'],
       'trạng_thái_xử_lý': form['trạng_thái_xử_lý'],
       'ngày_hẹn': form['ngày_hẹn'] || null,
@@ -87,7 +112,7 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
       'lịch_sử_thao_tác': nextHistory,
       'người_cập_nhật': operator,
       'người_tạo': row['người_tạo'] || operator,
-      'thông_tin_bổ_sung': tinBoSung,
+      'thông_tin_bổ_sung': tinOverride || tinBoSung,
     };
   };
 
@@ -100,6 +125,25 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
     try { await onSync(row.id, buildPayload()); } finally { setSaving(false); }
   };
 
+  // Sửa-từng-ô: cập nhật 1 khóa của thông_tin_bổ_sung rồi Lưu/Đồng bộ ngay (dùng giá trị mới, không chờ state).
+  const onSaveField = async (key, value) => {
+    const next = { ...tinBoSung, [key]: value };
+    setTinBoSung(next);
+    setSaving(true);
+    try { await onSave(row.id, buildPayload(next)); } finally { setSaving(false); }
+  };
+  const onSyncField = async (key, value) => {
+    const next = { ...tinBoSung, [key]: value };
+    setTinBoSung(next);
+    setSaving(true);
+    try { await onSync(row.id, buildPayload(next)); } finally { setSaving(false); }
+  };
+  // EditableField cho 1 khóa thông_tin_bổ_sung (gọn ở JSX).
+  const tinField = (label, key, full) => (
+    <EditableField label={label} value={tinBoSung[key]} editable={perm.edit} canSync={perm.io} saving={saving}
+      onSave={v => onSaveField(key, v)} onSync={v => onSyncField(key, v)} full={full} />
+  );
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
       <div className="modal-card" style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '720px', padding: '1.25rem', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
@@ -108,24 +152,46 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={24} /></button>
         </div>
 
-        {/* Thông tin Caresoft-only (chỉ đọc) */}
+        {/* Nhóm 1: Thông tin phiếu (chỉ đọc) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', background: '#f8fafc', padding: '0.75rem', borderRadius: '10px' }}>
-          <div><div style={s.readonlyLbl}>SĐT khách</div><div style={s.readonlyVal}>{row['số_điện_thoại_khách_hàng'] || '-'}</div></div>
+          <div><div style={s.readonlyLbl}>Phiếu ghi</div><div style={s.readonlyVal}>{row['phiếu_ghi'] || row['id_phiếu_ghi'] || '-'}</div></div>
+          <div><div style={s.readonlyLbl}>Mã đơn hàng</div><div style={s.readonlyVal}>{row['mã_đơn_hàng'] || '-'}</div></div>
           <div><div style={s.readonlyLbl}>Ngày tạo</div><div style={s.readonlyVal}>{row['thời_điểm_tạo'] || '-'}</div></div>
           <div><div style={s.readonlyLbl}>Trạng thái phiếu (Caresoft)</div><div style={s.readonlyVal}>{row['trạng_thái_phiếu_ghi'] || '-'}</div></div>
           <div><div style={s.readonlyLbl}>Phân loại</div><div style={s.readonlyVal}>{row['phân_loại_công_việc'] || '-'}</div></div>
         </div>
 
-        {/* Phần A: thông tin phiếu (sửa được) */}
+        {/* Nhóm 2: Thông tin sản phẩm (4 trường option chỉ-đọc + ngày lắp/tình trạng sửa được) */}
         <div style={s.section}>
-          <h3 style={s.sectionTitle}>Thông tin phiếu</h3>
+          <h3 style={s.sectionTitle}>Thông tin sản phẩm</h3>
           <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            <div style={s.inputGroup}><label style={s.label}>Mã đơn hàng</label><input style={s.input} value={form['mã_đơn_hàng']} onChange={e => set('mã_đơn_hàng', e.target.value)} /></div>
-            <div style={s.inputGroup}><label style={s.label}>Mã sản phẩm</label><input style={s.input} value={form['mã_sản_phẩm']} onChange={e => set('mã_sản_phẩm', e.target.value)} /></div>
-            <div style={s.inputGroup}><label style={s.label}>Nhóm sản phẩm</label><input style={s.input} value={form['nhóm_sản_phẩm']} onChange={e => set('nhóm_sản_phẩm', e.target.value)} /></div>
-            <div style={s.inputGroup}><label style={s.label}>Ngày lắp đặt</label><input type="date" style={s.input} value={form['ngày_lắp_đặt'] ? String(form['ngày_lắp_đặt']).substring(0, 10) : ''} onChange={e => set('ngày_lắp_đặt', e.target.value)} /></div>
-            <div style={{ ...s.inputGroup, gridColumn: 'span 2' }}><label style={s.label}>Linh kiện lỗi</label><input style={s.input} value={form['linh_kiện']} onChange={e => set('linh_kiện', e.target.value)} /></div>
-            <div style={{ ...s.inputGroup, gridColumn: 'span 2' }}><label style={s.label}>Chi tiết lỗi</label><textarea rows={2} style={{ ...s.input, resize: 'vertical' }} value={form['chi_tiết_lỗi']} onChange={e => set('chi_tiết_lỗi', e.target.value)} /></div>
+            <EditableField label="Mã sản phẩm" value={row['mã_sản_phẩm']} editable={false} />
+            <EditableField label="Nhóm sản phẩm" value={row['nhóm_sản_phẩm']} editable={false} />
+            <EditableField label="Chi tiết lỗi" value={row['chi_tiết_lỗi']} editable={false} full />
+            <EditableField label="Linh kiện lỗi" value={row['linh_kiện']} editable={false} full />
+            {tinField('Ngày lắp đặt', 'ngày_lắp_đặt')}
+            {tinField('Tình trạng', 'tình_trạng')}
+          </div>
+        </div>
+
+        {/* Nhóm 3: Thông tin KTV (ĐLĐ) */}
+        <div style={s.section}>
+          <h3 style={s.sectionTitle}>Thông tin KTV (ĐLĐ)</h3>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            {tinField('Mã ĐLĐ', 'mã_đlđ')}
+            {tinField('Tên ĐLĐ', 'tên_đlđ')}
+            {tinField('SĐT ĐLĐ', 'sđt_đlđ')}
+            {tinField('Khoảng cách', 'khoảng_cách')}
+          </div>
+        </div>
+
+        {/* Nhóm 4: Thông tin khách hàng */}
+        <div style={s.section}>
+          <h3 style={s.sectionTitle}>Thông tin khách hàng</h3>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            {tinField('Tên khách hàng', 'tên_khách_hàng')}
+            {tinField('SĐT khách hàng', 'số_điện_thoại_khách_hàng')}
+            {tinField('Địa chỉ nhận hàng', 'địa_chỉ_nhận_hàng', true)}
           </div>
         </div>
 
@@ -154,19 +220,6 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
                 {perm.io && <button onClick={handleSync} disabled={saving} title="Lưu lựa chọn & đẩy trạng thái về Caresoft" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0 0.7rem', borderRadius: '8px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, cursor: saving ? 'wait' : 'pointer', whiteSpace: 'nowrap', opacity: saving ? 0.6 : 1 }}><Send size={14} /> Đồng bộ</button>}
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Thông tin Caresoft (đẩy khi đồng bộ) */}
-        <div style={s.section}>
-          <h3 style={s.sectionTitle}>Thông tin Caresoft (đẩy khi đồng bộ)</h3>
-          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            <div style={s.inputGroup}><label style={s.label}>Mã ĐLĐ</label><input style={s.input} value={tinBoSung['mã_đlđ']} disabled={!perm.edit} onChange={e => setTin('mã_đlđ', e.target.value)} /></div>
-            <div style={s.inputGroup}><label style={s.label}>Tên ĐLĐ</label><input style={s.input} value={tinBoSung['tên_đlđ']} disabled={!perm.edit} onChange={e => setTin('tên_đlđ', e.target.value)} /></div>
-            <div style={s.inputGroup}><label style={s.label}>SĐT ĐLĐ</label><input style={s.input} value={tinBoSung['sđt_đlđ']} disabled={!perm.edit} onChange={e => setTin('sđt_đlđ', e.target.value)} /></div>
-            <div style={s.inputGroup}><label style={s.label}>Tên khách hàng</label><input style={s.input} value={tinBoSung['tên_khách_hàng']} disabled={!perm.edit} onChange={e => setTin('tên_khách_hàng', e.target.value)} /></div>
-            <div style={s.inputGroup}><label style={s.label}>SĐT khách hàng</label><input style={s.input} value={tinBoSung['số_điện_thoại_khách_hàng']} disabled={!perm.edit} onChange={e => setTin('số_điện_thoại_khách_hàng', e.target.value)} /></div>
-            <div style={{ ...s.inputGroup, gridColumn: 'span 2' }}><label style={s.label}>Địa chỉ nhận hàng</label><input style={s.input} value={tinBoSung['địa_chỉ_nhận_hàng']} disabled={!perm.edit} onChange={e => setTin('địa_chỉ_nhận_hàng', e.target.value)} /></div>
           </div>
         </div>
 
