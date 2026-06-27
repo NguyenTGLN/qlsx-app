@@ -322,14 +322,15 @@ function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
     const d = {};
     fields.forEach(f => { if (!f.readOnly) d[f.key] = tin[f.key] || ''; });
     setDraft(d);
-    setOpen({ top: Math.min(r.bottom + 6, window.innerHeight - 300), left: Math.max(8, Math.min(r.left, window.innerWidth - 340)) });
+    const top = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 160));
+    setOpen({ top, left: Math.max(8, Math.min(r.left, window.innerWidth - 340)), maxH: window.innerHeight - top - 12 });
   };
   const close = () => setOpen(null);
   const save = async (sync) => { setBusy(true); try { await onSaveGroup(row, draft, sync); close(); } finally { setBusy(false); } };
 
   return (
-    <div>
-      <div onClick={openPop} className="wf-card" title="Bấm để xem / sửa" style={{ cursor: 'pointer', minWidth: 150, maxWidth: 230, padding: '7px 9px', borderRadius: '10px', border: `1px solid ${accent}55`, background: `${accent}0d`, display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <div style={{ height: '100%' }}>
+      <div onClick={openPop} className="wf-card" title="Bấm để xem / sửa" style={{ cursor: 'pointer', height: '100%', minHeight: 150, boxSizing: 'border-box', minWidth: 150, maxWidth: 230, padding: '7px 9px', borderRadius: '10px', border: `1px solid ${accent}55`, background: `${accent}0d`, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <div style={{ fontWeight: 700, fontSize: '0.66rem', color: accent, marginBottom: 2 }}>{title}</div>
         {fields.map(f => (
           <div key={f.key} style={{ fontSize: '0.68rem', color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -340,7 +341,7 @@ function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
       {open && (
         <>
           <div onClick={(e) => { e.stopPropagation(); close(); }} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: open.top, left: open.left, zIndex: 1001, width: 320, maxHeight: '70vh', overflowY: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: '0.85rem' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: open.top, left: open.left, zIndex: 1001, width: 320, maxHeight: open.maxH, overflowY: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: '0.85rem' }}>
             <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1e293b', marginBottom: '0.6rem' }}>{title}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
               {fields.map(f => (
