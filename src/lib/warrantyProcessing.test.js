@@ -188,4 +188,14 @@ describe('getThongTinBoSung', () => {
     const r = getThongTinBoSung({ 'phiếu_gốc_json': { 'số_điện_thoại_khách_hàng': 123 } });
     expect(r['số_điện_thoại_khách_hàng']).toBe('123');
   });
+  test('có đủ 9 khóa gồm 3 khóa GĐ2 (khoảng_cách, tình_trạng, ngày_lắp_đặt)', () => {
+    expect(THONG_TIN_BO_SUNG_KEYS).toHaveLength(9);
+    ['khoảng_cách', 'tình_trạng', 'ngày_lắp_đặt'].forEach(k => expect(THONG_TIN_BO_SUNG_KEYS).toContain(k));
+  });
+  test('prefill tình_trạng & ngày_lắp_đặt từ phiếu gốc; khoảng_cách trống', () => {
+    const r = getThongTinBoSung({ 'phiếu_gốc_json': { 'tình_trạng': 'thay lõi', 'ngày_lắp_đặt': '2024/06/14' } });
+    expect(r['tình_trạng']).toBe('thay lõi');
+    expect(r['ngày_lắp_đặt']).toBe('2024/06/14');
+    expect(r['khoảng_cách']).toBe('');
+  });
 });

@@ -128,8 +128,9 @@ export function computeTotalCost(parts) {
 
 // 6 trường thông tin đẩy về Caresoft. KEY = tên cột trong phieu_bao_hanh (để prefill từ phiếu_gốc_json).
 export const THONG_TIN_BO_SUNG_KEYS = [
-  'mã_đlđ', 'tên_đlđ', 'sđt_đlđ',
+  'mã_đlđ', 'tên_đlđ', 'sđt_đlđ', 'khoảng_cách',
   'tên_khách_hàng', 'số_điện_thoại_khách_hàng', 'địa_chỉ_nhận_hàng',
+  'tình_trạng', 'ngày_lắp_đặt',
 ];
 
 // Object 6 khóa cho modal. Ưu tiên: bản app đã sửa (thông_tin_bổ_sung) → phiếu gốc (phiếu_gốc_json) → ''.
