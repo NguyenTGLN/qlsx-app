@@ -125,3 +125,23 @@ export function computeTotalCost(parts) {
     return sum + qty * price;
   }, 0);
 }
+
+// 6 trường thông tin đẩy về Caresoft. KEY = tên cột trong phieu_bao_hanh (để prefill từ phiếu_gốc_json).
+export const THONG_TIN_BO_SUNG_KEYS = [
+  'mã_đlđ', 'tên_đlđ', 'sđt_đlđ',
+  'tên_khách_hàng', 'số_điện_thoại_khách_hàng', 'địa_chỉ_nhận_hàng',
+];
+
+// Object 6 khóa cho modal. Ưu tiên: bản app đã sửa (thông_tin_bổ_sung) → phiếu gốc (phiếu_gốc_json) → ''.
+// Giá trị luôn là chuỗi (ép từ số). Chịu được row/phiếu_gốc_json null.
+export function getThongTinBoSung(row) {
+  const saved = (row && row['thông_tin_bổ_sung']) || {};
+  const goc = (row && row['phiếu_gốc_json']) || {};
+  const out = {};
+  for (const k of THONG_TIN_BO_SUNG_KEYS) {
+    const v = saved[k];
+    if (v !== undefined && v !== null && v !== '') out[k] = String(v);
+    else out[k] = goc[k] != null ? String(goc[k]) : '';
+  }
+  return out;
+}

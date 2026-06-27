@@ -2,6 +2,7 @@ import { test, expect, describe } from 'vitest';
 import {
   PROCESSING_STATUSES, PROCESSING_CATEGORIES, WORKFLOW_STEPS_MAU,
   isQualifyingTicket, computeTotalCost, getEffectiveSteps, ensureClosingStep, applyStepToggle, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
+  THONG_TIN_BO_SUNG_KEYS, getThongTinBoSung,
 } from './warrantyProcessing';
 
 const mkSteps = (...states) => states.map((st, i) => ({ 'tên': `B${i}`, 'trạng_thái': st }));
@@ -155,5 +156,36 @@ describe('toggleStepStatus', () => {
     expect(out['trạng_thái']).toBe('chưa_xong');
     expect(out['hoàn_thành_lúc']).toBe(null);
     expect(out['người_hoàn_thành']).toBe(null);
+  });
+});
+
+describe('getThongTinBoSung', () => {
+  test('ưu tiên giá trị đã sửa (thông_tin_bổ_sung) hơn phiếu gốc', () => {
+    const row = {
+      'thông_tin_bổ_sung': { 'mã_đlđ': 'ĐL99' },
+      'phiếu_gốc_json': { 'mã_đlđ': 'ĐL18', 'tên_đlđ': 'A' },
+    };
+    const r = getThongTinBoSung(row);
+    expect(r['mã_đlđ']).toBe('ĐL99');
+    expect(r['tên_đlđ']).toBe('A');
+  });
+  test('ô sửa rỗng/null → fallback phiếu gốc', () => {
+    const row = { 'thông_tin_bổ_sung': { 'tên_đlđ': '', 'sđt_đlđ': null }, 'phiếu_gốc_json': { 'tên_đlđ': 'B', 'sđt_đlđ': '0123' } };
+    const r = getThongTinBoSung(row);
+    expect(r['tên_đlđ']).toBe('B');
+    expect(r['sđt_đlđ']).toBe('0123');
+  });
+  test('không có nguồn nào → chuỗi rỗng, đủ 6 khóa', () => {
+    const r = getThongTinBoSung({});
+    expect(Object.keys(r).sort()).toEqual([...THONG_TIN_BO_SUNG_KEYS].sort());
+    expect(r['địa_chỉ_nhận_hàng']).toBe('');
+  });
+  test('chịu được row null và phiếu_gốc_json null', () => {
+    expect(getThongTinBoSung(null)['mã_đlđ']).toBe('');
+    expect(getThongTinBoSung({ 'phiếu_gốc_json': null })['mã_đlđ']).toBe('');
+  });
+  test('ép số từ phiếu gốc thành chuỗi', () => {
+    const r = getThongTinBoSung({ 'phiếu_gốc_json': { 'số_điện_thoại_khách_hàng': 123 } });
+    expect(r['số_điện_thoại_khách_hàng']).toBe('123');
   });
 });
