@@ -4,7 +4,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send, Download, CheckCircle2, RotateCcw, Calendar } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, CLOSING_STEP } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, CLOSING_STEP, getThongTinBoSung } from '../../lib/warrantyProcessing';
 import ProcessingModal from './ProcessingModal';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
@@ -288,6 +288,84 @@ function SyncCell({ row, perm, onSync }) {
   );
 }
 
+// Khai báo trường cho từng card nhóm thông tin (ngoài danh sách). readOnly → chỉ hiển thị (đọc từ row mirror).
+const SP_FIELDS = [
+  { key: 'mã_sản_phẩm', label: 'Mã SP', readOnly: true },
+  { key: 'nhóm_sản_phẩm', label: 'Nhóm SP', readOnly: true },
+  { key: 'chi_tiết_lỗi', label: 'Chi tiết lỗi', readOnly: true },
+  { key: 'linh_kiện', label: 'Linh kiện lỗi', readOnly: true },
+  { key: 'ngày_lắp_đặt', label: 'Ngày lắp' },
+  { key: 'tình_trạng', label: 'Tình trạng' },
+];
+const KTV_FIELDS = [
+  { key: 'mã_đlđ', label: 'Mã ĐLĐ' }, { key: 'tên_đlđ', label: 'Tên ĐLĐ' },
+  { key: 'sđt_đlđ', label: 'SĐT ĐLĐ' }, { key: 'khoảng_cách', label: 'Khoảng cách' },
+];
+const KH_FIELDS = [
+  { key: 'tên_khách_hàng', label: 'Tên KH' }, { key: 'số_điện_thoại_khách_hàng', label: 'SĐT KH' },
+  { key: 'địa_chỉ_nhận_hàng', label: 'Địa chỉ' },
+];
+
+// Card 1 nhóm thông tin hiển thị NGAY trên danh sách. Bấm card → popover sửa các ô của nhóm đó
+// (readOnly đọc từ row; editable đọc/ghi thông_tin_bổ_sung) + Lưu / Đồng bộ (đặt cờ pending).
+function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
+  const [open, setOpen] = useState(null); // { top, left }
+  const [draft, setDraft] = useState({});
+  const [busy, setBusy] = useState(false);
+  const tin = getThongTinBoSung(row);
+  const valOf = (f) => (f.readOnly ? (row[f.key] || '') : (tin[f.key] || ''));
+  const hasEditable = fields.some(f => !f.readOnly);
+
+  const openPop = (e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    const d = {};
+    fields.forEach(f => { if (!f.readOnly) d[f.key] = tin[f.key] || ''; });
+    setDraft(d);
+    setOpen({ top: Math.min(r.bottom + 6, window.innerHeight - 300), left: Math.max(8, Math.min(r.left, window.innerWidth - 340)) });
+  };
+  const close = () => setOpen(null);
+  const save = async (sync) => { setBusy(true); try { await onSaveGroup(row, draft, sync); close(); } finally { setBusy(false); } };
+
+  return (
+    <div>
+      <div onClick={openPop} className="wf-card" title="Bấm để xem / sửa" style={{ cursor: 'pointer', minWidth: 150, maxWidth: 230, padding: '7px 9px', borderRadius: '10px', border: `1px solid ${accent}55`, background: `${accent}0d`, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ fontWeight: 700, fontSize: '0.66rem', color: accent, marginBottom: 2 }}>{title}</div>
+        {fields.map(f => (
+          <div key={f.key} style={{ fontSize: '0.68rem', color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ color: '#94a3b8' }}>{f.label}:</span> {valOf(f) || '—'}
+          </div>
+        ))}
+      </div>
+      {open && (
+        <>
+          <div onClick={(e) => { e.stopPropagation(); close(); }} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: open.top, left: open.left, zIndex: 1001, width: 320, maxHeight: '70vh', overflowY: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: '0.85rem' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1e293b', marginBottom: '0.6rem' }}>{title}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+              {fields.map(f => (
+                <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                  <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#475569' }}>{f.label}{f.readOnly ? ' (chỉ đọc)' : ''}</label>
+                  {f.readOnly
+                    ? <div style={{ fontSize: '0.82rem', color: '#0f172a', padding: '0.3rem 0' }}>{valOf(f) || '—'}</div>
+                    : <input value={draft[f.key] ?? ''} disabled={!perm.edit} onChange={(e) => { const v = e.target.value; setDraft(d => ({ ...d, [f.key]: v })); }} style={{ border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.4rem 0.5rem', fontSize: '0.84rem', outline: 'none' }} />}
+                </div>
+              ))}
+            </div>
+            {hasEditable && (
+              <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.7rem', flexWrap: 'wrap' }}>
+                {perm.edit && <button disabled={busy} onClick={() => save(false)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>Lưu</button>}
+                {perm.io && <button disabled={busy} onClick={() => save(true)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>Đồng bộ</button>}
+                <button disabled={busy} onClick={close} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>Đóng</button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Đăng ký cột danh sách. Thứ tự hiển thị = thứ tự ở đây. Người dùng bật/tắt qua nút "Ẩn/Hiện cột".
 const LIST_COLUMNS = [
   {
@@ -319,6 +397,9 @@ const LIST_COLUMNS = [
       </div>
     )
   },
+  { key: 'card_sp', label: 'Sản phẩm', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="Sản phẩm" accent="#0ea5e9" fields={SP_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
+  { key: 'card_ktv', label: 'KTV (ĐLĐ)', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="KTV (ĐLĐ)" accent="#8b5cf6" fields={KTV_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
+  { key: 'card_kh', label: 'Khách hàng', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="Khách hàng" accent="#16a34a" fields={KH_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
   { key: 'mã_đơn_hàng', label: 'Mã ĐH', render: r => r['mã_đơn_hàng'] || '-' },
   { key: 'mã_sản_phẩm', label: 'Mã SP', render: r => r['mã_sản_phẩm'] || '-' },
   { key: 'nhóm_sản_phẩm', label: 'Nhóm SP', render: r => r['nhóm_sản_phẩm'] || '-' },
@@ -339,7 +420,7 @@ const LIST_COLUMNS = [
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
-const DEFAULT_VISIBLE = ['phiếu_ghi', 'thông_tin', 'người_phụ_trách', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ'];
+const DEFAULT_VISIBLE = ['phiếu_ghi', 'card_sp', 'card_ktv', 'card_kh', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ'];
 
 export default function WarrantyProcessing() {
   const perm = useTabPerm('warranty', 'xuLy');
@@ -360,7 +441,7 @@ export default function WarrantyProcessing() {
   const [updatedTo, setUpdatedTo] = usePersistedState('wproc_updatedTo', '');
   const [showAdvFilter, setShowAdvFilter] = useState(false);
   const [showClosed, setShowClosed] = usePersistedState('wproc_showClosed', false);
-  const [visibleCols, setVisibleCols] = usePersistedState('wproc_visibleCols2', DEFAULT_VISIBLE);
+  const [visibleCols, setVisibleCols] = usePersistedState('wproc_visibleCols3', DEFAULT_VISIBLE);
   const [showColMenu, setShowColMenu] = useState(false);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = usePersistedState('wproc_rowsPerPage', 50);
@@ -498,6 +579,18 @@ export default function WarrantyProcessing() {
     setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
     const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
     if (error) { alert('Lỗi lưu ghi chú bước: ' + error.message); await fetchRows(); }
+  };
+
+  // Lưu 1 nhóm thông tin từ card ngoài danh sách: merge các ô sửa vào thông_tin_bổ_sung.
+  // doSync=true → đặt cờ pending (n8n đẩy custom_fields về Caresoft). Cập nhật lạc quan UI.
+  const saveInfoGroup = async (row, draft, doSync) => {
+    const operator = (user && (user.name || user.id)) || '';
+    const tt = { ...(row['thông_tin_bổ_sung'] || {}), ...draft };
+    const patch = { 'thông_tin_bổ_sung': tt, 'người_cập_nhật': operator };
+    if (doSync) { patch['trạng_thái_đồng_bộ'] = 'pending'; patch['lỗi_đồng_bộ'] = null; }
+    setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
+    if (error) { alert('Lỗi lưu nhóm thông tin: ' + error.message); await fetchRows(); }
   };
 
   // Đẩy nhanh 1 phiếu về Caresoft ngay từ danh sách (đặt cờ pending → webhook n8n xử lý).
@@ -729,7 +822,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isSteps || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onToggleStep: toggleStepDone, onQuickSync: quickSync, onSaveStepNote: saveStepNote })}
+                      {c.render(r, { perm, onToggleStep: toggleStepDone, onQuickSync: quickSync, onSaveStepNote: saveStepNote, onSaveGroup: saveInfoGroup })}
                     </td>
                   );
                 })}
