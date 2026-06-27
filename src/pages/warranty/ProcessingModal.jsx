@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { X, Save, Send, Plus, Trash2, CheckCircle2, Circle } from 'lucide-react';
-import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU, applyStepToggle, ensureClosingStep, CLOSING_STEP } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU, applyStepToggle, ensureClosingStep, CLOSING_STEP, getThongTinBoSung } from '../../lib/warrantyProcessing';
 
 const s = {
   inputGroup: { display: 'flex', flexDirection: 'column', gap: '0.4rem' },
@@ -39,6 +39,8 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
   const [parts, setParts] = useState(() => Array.isArray(row['linh_kiện_thay']) ? row['linh_kiện_thay'] : []);
   const [history] = useState(() => Array.isArray(row['lịch_sử_thao_tác']) ? row['lịch_sử_thao_tác'] : []);
   const [newNote, setNewNote] = useState('');
+  const [tinBoSung, setTinBoSung] = useState(() => getThongTinBoSung(row));
+  const setTin = (k, v) => setTinBoSung(prev => ({ ...prev, [k]: v }));
   const [saving, setSaving] = useState(false);
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
@@ -84,6 +86,7 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
       'lịch_sử_thao_tác': nextHistory,
       'người_cập_nhật': operator,
       'người_tạo': row['người_tạo'] || operator,
+      'thông_tin_bổ_sung': tinBoSung,
     };
   };
 
@@ -137,6 +140,19 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
             </div>
             <div style={s.inputGroup}><label style={s.label}>Ngày hẹn</label><input type="datetime-local" style={s.input} value={form['ngày_hẹn']} onChange={e => set('ngày_hẹn', e.target.value)} /></div>
             <div style={s.inputGroup}><label style={s.label}>Trạng thái Caresoft muốn set</label><input style={s.input} placeholder="vd: solved" value={form['trạng_thái_caresoft_muốn_set']} onChange={e => set('trạng_thái_caresoft_muốn_set', e.target.value)} /></div>
+          </div>
+        </div>
+
+        {/* Thông tin Caresoft (đẩy khi đồng bộ) */}
+        <div style={s.section}>
+          <h3 style={s.sectionTitle}>Thông tin Caresoft (đẩy khi đồng bộ)</h3>
+          <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div style={s.inputGroup}><label style={s.label}>Mã ĐLĐ</label><input style={s.input} value={tinBoSung['mã_đlđ']} disabled={!perm.edit} onChange={e => setTin('mã_đlđ', e.target.value)} /></div>
+            <div style={s.inputGroup}><label style={s.label}>Tên ĐLĐ</label><input style={s.input} value={tinBoSung['tên_đlđ']} disabled={!perm.edit} onChange={e => setTin('tên_đlđ', e.target.value)} /></div>
+            <div style={s.inputGroup}><label style={s.label}>SĐT ĐLĐ</label><input style={s.input} value={tinBoSung['sđt_đlđ']} disabled={!perm.edit} onChange={e => setTin('sđt_đlđ', e.target.value)} /></div>
+            <div style={s.inputGroup}><label style={s.label}>Tên khách hàng</label><input style={s.input} value={tinBoSung['tên_khách_hàng']} disabled={!perm.edit} onChange={e => setTin('tên_khách_hàng', e.target.value)} /></div>
+            <div style={s.inputGroup}><label style={s.label}>SĐT khách hàng</label><input style={s.input} value={tinBoSung['số_điện_thoại_khách_hàng']} disabled={!perm.edit} onChange={e => setTin('số_điện_thoại_khách_hàng', e.target.value)} /></div>
+            <div style={{ ...s.inputGroup, gridColumn: 'span 2' }}><label style={s.label}>Địa chỉ nhận hàng</label><input style={s.input} value={tinBoSung['địa_chỉ_nhận_hàng']} disabled={!perm.edit} onChange={e => setTin('địa_chỉ_nhận_hàng', e.target.value)} /></div>
           </div>
         </div>
 
