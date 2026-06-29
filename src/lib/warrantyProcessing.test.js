@@ -4,7 +4,7 @@ import {
   isQualifyingTicket, computeTotalCost, getEffectiveSteps, ensureClosingStep, applyStepToggle, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
   THONG_TIN_BO_SUNG_KEYS, getThongTinBoSung, isClosingStepDone, csStatusOnClosingToggle, CLOSING_STEP,
   OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, parseMultiIds, joinMultiIds,
-  buildKhaiBaoRecord, KB_TRANG_THAI_FORM, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT,
+  buildKhaiBaoRecord, normDateYmd, KB_TRANG_THAI_FORM, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT,
 } from './warrantyProcessing';
 
 const mkSteps = (...states) => states.map((st, i) => ({ 'tên': `B${i}`, 'trạng_thái': st }));
@@ -299,6 +299,21 @@ describe('resolveOptionIdByLabel', () => {
   });
 });
 
+describe('normDateYmd', () => {
+  test('mọi định dạng → yyyy-mm-dd (gạch ngang)', () => {
+    expect(normDateYmd('2026/06/22')).toBe('2026-06-22'); // yyyy/mm/dd → ngang
+    expect(normDateYmd('2026-06-22')).toBe('2026-06-22');
+    expect(normDateYmd('22/06/2026')).toBe('2026-06-22'); // dd/mm/yyyy
+    expect(normDateYmd('22-06-2026')).toBe('2026-06-22'); // dd-mm-yyyy
+    expect(normDateYmd('2026/6/2')).toBe('2026-06-02');   // pad
+  });
+  test('rỗng / không hợp lệ → ""', () => {
+    expect(normDateYmd('')).toBe('');
+    expect(normDateYmd(null)).toBe('');
+    expect(normDateYmd('linh tinh')).toBe('');
+  });
+});
+
 describe('buildKhaiBaoRecord', () => {
   // option_id 7 = mã SP "WT-4200-RO"; 42 = linh kiện "Phao điện # E-FS-4200".
   const FO = [
@@ -396,6 +411,11 @@ describe('buildKhaiBaoRecord', () => {
     const v = buildKhaiBaoRecord(row, FO).newValues;
     expect(v.Nguyen_Nhan).toBe('NN gốc');
     expect(v.Phuong_An_XL).toBe('PA gốc');
+  });
+
+  test('Ngay_Lap_Dat luôn chuẩn hóa về yyyy-mm-dd dù lưu kiểu khác', () => {
+    const row = { ...baseRow, 'ngày_lắp_đặt': '2026/06/22', 'thông_tin_bổ_sung': { 'ngày_lắp_đặt': '2026/06/22' } };
+    expect(buildKhaiBaoRecord(row, FO).newValues.Ngay_Lap_Dat).toBe('2026-06-22');
   });
 
   test('chịu được row tối thiểu (không phiếu_gốc_json)', () => {

@@ -225,6 +225,19 @@ export const KB_TRANG_THAI_FORM = 'Đã gửi form';
 export const KB_XAC_NHAN_ONLINE_INIT = 'Chưa gửi xác nhận online';
 export const KB_THANH_TOAN_INIT = 'Chưa thanh toán';
 
+// Chuẩn hóa ngày BẤT KỲ định dạng → 'YYYY-MM-DD' (gạch ngang) cho payload. Rỗng/không parse → ''.
+//  Nhận: yyyy-mm-dd, yyyy/mm/dd, dd-mm-yyyy, dd/mm/yyyy, ISO kèm giờ.
+export function normDateYmd(v) {
+  if (v == null || v === '') return '';
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);   // năm trước: yyyy-mm-dd | yyyy/mm/dd
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);       // ngày trước: dd-mm-yyyy | dd/mm/yyyy
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // Dựng record gửi sang DB trung gian CNV (key Pascal_Snake, action=CREATE).
 //  - Lấy GIÁ TRỊ HIỂN THỊ ở tab: ưu tiên thông_tin_bổ_sung (bản app đã sửa) → phiếu_gốc_json → mirror.
 //  - Trường option (mã SP / chi tiết lỗi / linh kiện / nguyên nhân) resolve NHÃN từ *_option_id(s).
@@ -252,7 +265,7 @@ export function buildKhaiBaoRecord(row, fieldOptions = []) {
       Phieu_Ghi:       s((row && (row['id_phiếu_ghi'] || row['phiếu_ghi']))),
       Ma_Don_Hang:     s((row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']),
       San_Pham:        s(optLabel('mã_sản_phẩm')),
-      Ngay_Lap_Dat:    s(tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),
+      Ngay_Lap_Dat:    normDateYmd(tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),
       Chi_Tiet_Loi:    s(optLabel('chi_tiết_lỗi')),
       Khach_Hang:      s(tin['tên_khách_hàng']),
       SDT_Khach:       s(tin['số_điện_thoại_khách_hàng'] || (row && row['số_điện_thoại_khách_hàng'])),

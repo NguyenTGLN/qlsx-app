@@ -19,12 +19,12 @@ const toISODate = (v) => {
   const d = new Date(v);
   return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-// Hiển thị ngày dạng DD-MM-YYYY (bỏ giờ). Không parse được → trả nguyên gốc.
+// Hiển thị ngày dạng DD/MM/YYYY (bỏ giờ). Không parse được → trả nguyên gốc.
 const fmtDateOnly = (v) => {
   const iso = toISODate(v);
   if (!iso) return v ? String(v) : '-';
   const [y, mo, d] = iso.split('-');
-  return `${d}-${mo}-${y}`;
+  return `${d}/${mo}/${y}`;
 };
 // Chuẩn hóa ngày về 'YYYY-MM-DD' cho input chọn ngày — nhận THÊM dd/mm/yyyy hoặc dd-mm-yyyy.
 const toISOForPicker = (v) => {
@@ -33,8 +33,8 @@ const toISOForPicker = (v) => {
   if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
   return toISODate(v); // yyyy-mm-dd, yyyy/mm/dd, ISO
 };
-// Định dạng ngày để LƯU & ĐẨY về Caresoft: 'YYYY-MM-DD' (gạch ngang).
-const toCsDate = (v) => toISOForPicker(v);
+// Định dạng ngày để LƯU & ĐẨY về Caresoft: 'YYYY/MM/DD' (gạch chéo) — CS nhận năm/tháng/ngày.
+const toCsDate = (v) => { const iso = toISOForPicker(v); return iso ? iso.replace(/-/g, '/') : ''; };
 // Giá trị ngày có nằm trong [from, to] không (from/to dạng YYYY-MM-DD; rỗng = bỏ qua cận đó).
 const dateInRange = (v, from, to) => {
   if (!from && !to) return true;
@@ -108,9 +108,9 @@ const stepRange = (gran, from, dir) => {
   return { from, to: from };
 };
 
-// Ô nhập 1 ngày dạng dd-mm-yyyy (gõ tay) + nút lịch (input date ẩn chồng lên icon).
+// Ô nhập 1 ngày dạng dd/mm/yyyy (gõ tay) + nút lịch (input date ẩn chồng lên icon).
 const SmartDateInput = ({ value, onChange }) => {
-  const display = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? (() => { const [y, m, d] = value.split('-'); return `${d}-${m}-${y}`; })() : '';
+  const display = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? (() => { const [y, m, d] = value.split('-'); return `${d}/${m}/${y}`; })() : '';
   const [text, setText] = useState(display);
   useEffect(() => { setText(display); }, [display]);
   const commit = (s) => {
@@ -123,7 +123,7 @@ const SmartDateInput = ({ value, onChange }) => {
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
       <input
-        type="text" value={text} placeholder="dd-mm-yyyy"
+        type="text" value={text} placeholder="dd/mm/yyyy"
         onChange={e => setText(e.target.value)}
         onBlur={e => commit(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') commit(e.currentTarget.value); }}
