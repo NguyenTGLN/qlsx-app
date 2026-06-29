@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
-import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send, Download, CheckCircle2, RotateCcw, Calendar } from 'lucide-react';
+import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send, Download, CheckCircle2, RotateCcw, Calendar, DownloadCloud } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, getThongTinBoSung, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, buildKhaiBaoRecord, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT } from '../../lib/warrantyProcessing';
 import fieldOptions from '../../data/caresoftFieldOptions.json';
 import ProcessingModal from './ProcessingModal';
 
@@ -26,6 +26,15 @@ const fmtDateOnly = (v) => {
   const [y, mo, d] = iso.split('-');
   return `${d}/${mo}/${y}`;
 };
+// Chuẩn hóa ngày về 'YYYY-MM-DD' cho input chọn ngày — nhận THÊM dd/mm/yyyy (toISODate không nhận).
+const toISOForPicker = (v) => {
+  if (!v) return '';
+  const dmy = String(v).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  return toISODate(v); // yyyy-mm-dd, yyyy/mm/dd, ISO
+};
+// Định dạng ngày để LƯU & ĐẨY về Caresoft: 'YYYY/MM/DD' (gạch chéo) — CS chỉ nhận năm/tháng/ngày.
+const toCsDate = (v) => { const iso = toISOForPicker(v); return iso ? iso.replace(/-/g, '/') : ''; };
 // Giá trị ngày có nằm trong [from, to] không (from/to dạng YYYY-MM-DD; rỗng = bỏ qua cận đó).
 const dateInRange = (v, from, to) => {
   if (!from && !to) return true;
@@ -294,6 +303,62 @@ function SyncCell({ row, perm, onSync }) {
   );
 }
 
+// Endpoint DB trung gian CNV (đổi ở ĐÂY nếu CNV dùng URL khác). App POST payload
+// { action:'CREATE', oldValues:null, newValues:{...} } trực tiếp từ trình duyệt (CORS đã thông).
+const KHAI_BAO_WEBHOOK = 'https://thegioilocnuoc.site/webhook/e652142b-1e04-43f4-91f1-feae495aacc0';
+
+// Màu badge theo giá trị 1 dòng trạng thái (xác nhận online / thanh toán).
+// "Chưa…" → xám · "Đã gửi…" → xanh dương · "Đã hoàn thành…/Đã thanh toán" → xanh lá.
+const kbStatusColor = (v) => {
+  const s = String(v || '');
+  if (/hoàn thành|đã thanh toán/i.test(s)) return '#15803d';
+  if (/^đã/i.test(s)) return '#2563eb';
+  return '#94a3b8';
+};
+
+// Ô cột "Form khai báo": chưa gửi → nút gửi; đã gửi → 3 dòng trạng thái + nút gửi lại.
+function KhaiBaoCell({ row, perm, onSend }) {
+  const [busy, setBusy] = useState(false);
+  const sentAt = row['thời_điểm_gửi_khai_báo'];
+  const sent = !!sentAt;
+  const send = async (e) => {
+    e.stopPropagation();
+    setBusy(true);
+    try { await onSend(row); } finally { setBusy(false); }
+  };
+  if (!sent) {
+    if (!perm.edit) return <span style={{ color: '#cbd5e1', fontSize: '0.72rem' }}>—</span>;
+    return (
+      <button
+        className="wf-card" disabled={busy} onClick={send}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 9px', borderRadius: '8px', border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', cursor: busy ? 'wait' : 'pointer', fontWeight: 700, fontSize: '0.68rem', whiteSpace: 'nowrap', opacity: busy ? 0.6 : 1 }}
+      >
+        <Send size={12} className={busy ? 'spin' : undefined} /> {busy ? 'Đang gửi...' : 'Gửi Form khai báo bảo hành'}
+      </button>
+    );
+  }
+  const onl = row['trạng_thái_xác_nhận_online'] || KB_XAC_NHAN_ONLINE_INIT;
+  const pay = row['trạng_thái_thanh_toán'] || KB_THANH_TOAN_INIT;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start', fontSize: '0.68rem' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#15803d', fontWeight: 700 }}>
+        <CheckCircle2 size={12} /> Đã gửi form khai báo bảo hành
+      </span>
+      <span style={{ color: '#94a3b8', fontSize: '0.62rem' }}>{fmtDateTime(sentAt)}</span>
+      <span style={{ color: kbStatusColor(onl), fontWeight: 600 }}>● {onl}</span>
+      <span style={{ color: kbStatusColor(pay), fontWeight: 600 }}>● {pay}</span>
+      {perm.edit && (
+        <button
+          disabled={busy} onClick={send}
+          style={{ marginTop: 2, padding: '2px 8px', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', cursor: busy ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.62rem', opacity: busy ? 0.6 : 1 }}
+        >
+          {busy ? 'Đang gửi...' : 'Gửi lại'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Khai báo trường cho từng card nhóm thông tin (ngoài danh sách).
 //  - kind:'option' → dropdown từ caresoftFieldOptions (cascade theo OPTION_FIELDS[fieldKey].parentKey).
 //  - readOnly → chỉ hiển thị (đọc từ row mirror); còn lại = ô text sửa thông_tin_bổ_sung.
@@ -303,7 +368,7 @@ const SP_FIELDS = [
   { key: 'chi_tiết_lỗi', label: 'Chi tiết lỗi', kind: 'option', fieldKey: 'chi_tiết_lỗi' },
   { key: 'mã_sản_phẩm', label: 'Mã SP', kind: 'option', fieldKey: 'mã_sản_phẩm' },
   { key: 'linh_kiện', label: 'Linh kiện lỗi', kind: 'option', fieldKey: 'linh_kiện' },
-  { key: 'ngày_lắp_đặt', label: 'Ngày lắp' },
+  { key: 'ngày_lắp_đặt', label: 'Ngày lắp', kind: 'date' },
   { key: 'tình_trạng', label: 'Tình trạng' },
 ];
 const KTV_FIELDS = [
@@ -314,6 +379,13 @@ const KH_FIELDS = [
   { key: 'tên_khách_hàng', label: 'Tên KH' }, { key: 'số_điện_thoại_khách_hàng', label: 'SĐT KH' },
   { key: 'địa_chỉ_nhận_hàng', label: 'Địa chỉ' },
 ];
+// Thông tin bảo hành (cập nhật từ CS, sửa được & đẩy ngược về CS):
+//  Tình trạng (text, CS 9671) · Nguyên nhân (multi option, CS 9722, cascade Nhóm SP) · Phương án xử lý (text, CS 9723).
+const BH_FIELDS = [
+  { key: 'tình_trạng', label: 'Tình trạng' },
+  { key: 'nguyên_nhân', label: 'Nguyên nhân', kind: 'option', fieldKey: 'nguyên_nhân' },
+  { key: 'phương_án_xử_lý', label: 'Phương án xử lý' },
+];
 
 // Card 1 nhóm thông tin hiển thị NGAY trên danh sách. Bấm card → popover sửa các ô của nhóm đó
 // (readOnly đọc từ row; editable đọc/ghi thông_tin_bổ_sung) + Lưu / Đồng bộ (đặt cờ pending).
@@ -321,20 +393,37 @@ function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
   const [open, setOpen] = useState(null); // { top, left }
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
-  const tin = getThongTinBoSung(row);
   const ttRaw = (row && row['thông_tin_bổ_sung']) || {}; // chứa *_option_id / linh_kiện_option_ids
+  const goc = (row && row['phiếu_gốc_json']) || {};
+  // Giá trị 1 ô text editable: ưu tiên bản app đã sửa (thông_tin_bổ_sung) → phiếu gốc → mirror.
+  // (Bao trùm cả ô ngoài 9 khóa của getThongTinBoSung, vd phương_án_xử_lý.)
+  const textVal = (key) => {
+    const sv = ttRaw[key];
+    if (sv !== undefined && sv !== null && sv !== '') return String(sv);
+    if (goc[key] != null && goc[key] !== '') return String(goc[key]);
+    return row[key] != null ? String(row[key]) : '';
+  };
+  // option_id của trường CHA cho cascade: ưu tiên đang sửa trong card → đã lưu → suy từ nhãn phiếu gốc.
+  // Cho phép trường cascade (vd Nguyên nhân theo Nhóm SP) chạy cả khi CHA không nằm trong card này.
+  const parentOptionId = (parentKey, draftOid) => {
+    if (!parentKey) return null;
+    if (draftOid != null && draftOid !== '') return draftOid;
+    return ttRaw[parentKey + '_option_id'] || resolveOptionIdByLabel(fieldOptions, parentKey, row[parentKey] || goc[parentKey]) || '';
+  };
 
-  // Hiển thị nhãn 1 ô. option-single: resolve theo *_option_id; option-multi: nối nhãn; fallback mirror row[key].
+  // Hiển thị nhãn 1 ô. option: resolve theo *_option_id; fallback nhãn phiếu gốc (mirror/goc).
   const valOf = (f) => {
     if (f.kind === 'option') {
       const meta = OPTION_FIELDS[f.fieldKey];
+      const fb = row[f.key] || goc[f.key] || '';
       if (meta.multi) {
         const ids = Array.isArray(ttRaw[f.key + '_option_ids']) ? ttRaw[f.key + '_option_ids'] : [];
-        return ids.map(id => resolveOptionLabel(fieldOptions, id)).filter(Boolean).join(', ') || (row[f.key] || '');
+        return ids.map(id => resolveOptionLabel(fieldOptions, id)).filter(Boolean).join(', ') || fb;
       }
-      return resolveOptionLabel(fieldOptions, ttRaw[f.key + '_option_id']) || (row[f.key] || '');
+      return resolveOptionLabel(fieldOptions, ttRaw[f.key + '_option_id']) || fb;
     }
-    return f.readOnly ? (row[f.key] || '') : (tin[f.key] || '');
+    if (f.kind === 'date') { const raw = f.readOnly ? row[f.key] : textVal(f.key); return raw ? fmtDateOnly(raw) : ''; }
+    return f.readOnly ? (row[f.key] || '') : textVal(f.key);
   };
   const hasEditable = fields.some(f => f.kind === 'option' || !f.readOnly);
 
@@ -342,11 +431,26 @@ function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
     const d = {};
+    const resolved = {}; // fieldKey → option_id đã xác định (để con cascade dùng làm cha)
     fields.forEach(f => {
       if (f.kind === 'option') {
-        if (OPTION_FIELDS[f.fieldKey].multi) d[f.key + '_option_ids'] = Array.isArray(ttRaw[f.key + '_option_ids']) ? [...ttRaw[f.key + '_option_ids']] : [];
-        else d[f.key + '_option_id'] = ttRaw[f.key + '_option_id'] || '';
-      } else if (!f.readOnly) d[f.key] = tin[f.key] || '';
+        const meta = OPTION_FIELDS[f.fieldKey];
+        const parentOid = parentOptionId(meta.parentKey, resolved[meta.parentKey]);
+        if (meta.multi) {
+          let ids = Array.isArray(ttRaw[f.key + '_option_ids']) ? [...ttRaw[f.key + '_option_ids']] : [];
+          if (ids.length === 0) {
+            // chưa lưu option_id → tự suy từ nhãn phiếu gốc (mirror/goc dạng "A, B"), lọc theo cha đã resolve
+            ids = String(row[f.key] || goc[f.key] || '').split(',').map(s => s.trim()).filter(Boolean)
+              .map(lb => resolveOptionIdByLabel(fieldOptions, f.fieldKey, lb, parentOid)).filter(Boolean);
+          }
+          d[f.key + '_option_ids'] = ids;
+        } else {
+          let oid = ttRaw[f.key + '_option_id'] || '';
+          if (!oid) oid = resolveOptionIdByLabel(fieldOptions, f.fieldKey, row[f.key] || goc[f.key], parentOid) || '';
+          d[f.key + '_option_id'] = oid;
+          resolved[f.fieldKey] = oid;
+        }
+      } else if (!f.readOnly) d[f.key] = f.kind === 'date' ? toCsDate(textVal(f.key)) : textVal(f.key);
     });
     setDraft(d);
     const top = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 160));
@@ -367,7 +471,7 @@ function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
 
   const renderEditor = (f) => {
     const meta = OPTION_FIELDS[f.fieldKey];
-    const parentOid = meta.parentKey ? (draft[meta.parentKey + '_option_id'] || '') : null;
+    const parentOid = parentOptionId(meta.parentKey, draft[meta.parentKey + '_option_id']);
     const opts = optionsFor(fieldOptions, f.fieldKey, meta.cascade ? parentOid : null);
     const blocked = meta.cascade && !parentOid;
     const parentLabel = meta.parentKey === 'mã_sản_phẩm' ? 'Mã SP' : 'Nhóm SP';
@@ -376,7 +480,7 @@ function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', maxHeight: 150, overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.35rem 0.5rem' }}>
           {blocked ? <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>(chọn {parentLabel} trước)</span>
-            : opts.length === 0 ? <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>(không có linh kiện cho máy này)</span>
+            : opts.length === 0 ? <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>(không có lựa chọn cho {parentLabel} này)</span>
             : opts.map(o => (
               <label key={o.option_id} style={{ display: 'flex', gap: '0.4rem', fontSize: '0.8rem', alignItems: 'flex-start' }}>
                 <input type="checkbox" disabled={!perm.edit} checked={sel.has(String(o.option_id))}
@@ -422,9 +526,13 @@ function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
                   <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#475569' }}>{f.label}{f.readOnly ? ' (chỉ đọc)' : ''}</label>
                   {f.kind === 'option'
                     ? renderEditor(f)
-                    : f.readOnly
-                      ? <div style={{ fontSize: '0.82rem', color: '#0f172a', padding: '0.3rem 0' }}>{valOf(f) || '—'}</div>
-                      : <input value={draft[f.key] ?? ''} disabled={!perm.edit} onChange={(e) => { const v = e.target.value; setDraft(d => ({ ...d, [f.key]: v })); }} style={{ border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.4rem 0.5rem', fontSize: '0.84rem', outline: 'none' }} />}
+                    : f.kind === 'date'
+                      ? (perm.edit
+                          ? <SmartDateInput value={toISOForPicker(draft[f.key])} onChange={(v) => setDraft(d => ({ ...d, [f.key]: toCsDate(v) }))} />
+                          : <div style={{ fontSize: '0.82rem', color: '#0f172a', padding: '0.3rem 0' }}>{valOf(f) || '—'}</div>)
+                      : f.readOnly
+                        ? <div style={{ fontSize: '0.82rem', color: '#0f172a', padding: '0.3rem 0' }}>{valOf(f) || '—'}</div>
+                        : <input value={draft[f.key] ?? ''} disabled={!perm.edit} onChange={(e) => { const v = e.target.value; setDraft(d => ({ ...d, [f.key]: v })); }} style={{ border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.4rem 0.5rem', fontSize: '0.84rem', outline: 'none' }} />}
                 </div>
               ))}
             </div>
@@ -476,6 +584,7 @@ const LIST_COLUMNS = [
   { key: 'card_sp', label: 'Sản phẩm', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="Sản phẩm" accent="#0ea5e9" fields={SP_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
   { key: 'card_ktv', label: 'KTV (ĐLĐ)', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="KTV (ĐLĐ)" accent="#8b5cf6" fields={KTV_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
   { key: 'card_kh', label: 'Khách hàng', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="Khách hàng" accent="#16a34a" fields={KH_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
+  { key: 'card_bh', label: 'Thông tin bảo hành', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="Thông tin bảo hành" accent="#e11d48" fields={BH_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
   { key: 'mã_đơn_hàng', label: 'Mã ĐH', render: r => r['mã_đơn_hàng'] || '-' },
   { key: 'mã_sản_phẩm', label: 'Mã SP', render: r => r['mã_sản_phẩm'] || '-' },
   { key: 'nhóm_sản_phẩm', label: 'Nhóm SP', render: r => r['nhóm_sản_phẩm'] || '-' },
@@ -494,15 +603,17 @@ const LIST_COLUMNS = [
   { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
   { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onCompleteSync={ctx.onCompleteSync} /> },
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
+  { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} onSend={ctx.onSendKhaiBao} /> },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
-const DEFAULT_VISIBLE = ['phiếu_ghi', 'card_sp', 'card_ktv', 'card_kh', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ'];
+const DEFAULT_VISIBLE = ['phiếu_ghi', 'card_sp', 'card_ktv', 'card_kh', 'card_bh', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ', 'khai_báo'];
 
 export default function WarrantyProcessing() {
   const perm = useTabPerm('warranty', 'xuLy');
   const { user } = useAuth();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [syncingCs, setSyncingCs] = useState(false); // đang gọi webhook tải dữ liệu từ Caresoft về app
   const [search, setSearch] = usePersistedState('wproc_search', '');
   const [statusFilter, setStatusFilter] = usePersistedState('wproc_statusFilter', 'all');
   const [csStatusFilter, setCsStatusFilter] = usePersistedState('wproc_csStatusFilter', 'all'); // lọc trạng_thái_phiếu_ghi (CS)
@@ -550,6 +661,42 @@ export default function WarrantyProcessing() {
   };
 
   useEffect(() => { fetchRows(); }, []);
+
+  // Cột mới (Form khai báo, Thông tin bảo hành): người đã dùng tab có visibleCols cũ nên
+  // DEFAULT_VISIBLE không tự áp. Bật 1 lần cho mỗi trình duyệt; nếu sau đó user tự ẩn thì tôn trọng.
+  useEffect(() => {
+    const FLAG = 'qlsx_wproc_newcols_seeded_v2';
+    if (localStorage.getItem(FLAG)) return;
+    setVisibleCols(prev => {
+      const next = [...prev];
+      for (const k of ['khai_báo', 'card_bh']) if (!next.includes(k)) next.push(k);
+      return next;
+    });
+    localStorage.setItem(FLAG, '1');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Đồng bộ CS → APP: gọi webhook n8n để tải dữ liệu bảo hành mới nhất từ Caresoft về DB,
+  // rồi tải lại danh sách. Webhook chạy bất đồng bộ nên đợi nó trả về xong mới fetch lại.
+  const CS_APP_SYNC_WEBHOOK = 'https://thegioilocnuoc.site/webhook/tai_du_lieu_bao_hanh_tu_caresoft_ve_database_cap_nhat_app';
+  const handleSyncCsApp = async () => {
+    if (syncingCs) return;
+    if (!window.confirm('Tải dữ liệu bảo hành mới nhất từ Caresoft về app?')) return;
+    setSyncingCs(true);
+    try {
+      const res = await fetch(CS_APP_SYNC_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'qlsx-app', action: 'sync_cs_app', người_yêu_cầu: (user && (user.name || user.id)) || '' }),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      await fetchRows();
+      alert('Đã đồng bộ dữ liệu từ Caresoft về app.');
+    } catch (e) {
+      alert('Lỗi đồng bộ CS-APP: ' + (e?.message || e));
+    } finally {
+      setSyncingCs(false);
+    }
+  };
 
   // Auto-refresh phiếu đang "pending": n8n đẩy về Caresoft rồi ghi 'đã_đồng_bộ'/'lỗi' vào DB BẤT ĐỒNG BỘ
   // (vài giây sau). Poll nhẹ trạng thái các phiếu pending để badge tự nhảy, khỏi phải bấm "Làm mới".
@@ -719,6 +866,36 @@ export default function WarrantyProcessing() {
     if (error) { alert('Lỗi đồng bộ: ' + error.message); await fetchRows(); }
   };
 
+  // Gửi Form khai báo bảo hành → POST payload (record CNV) tới DB trung gian, rồi đánh dấu
+  // đã gửi + khởi tạo 2 trạng thái (xác nhận online / thanh toán) nếu chưa có. Cho gửi lại.
+  const sendKhaiBao = async (row) => {
+    const label = row['phiếu_ghi'] || row['id_phiếu_ghi'];
+    const resend = !!row['thời_điểm_gửi_khai_báo'];
+    if (!window.confirm(resend ? `Gửi LẠI form khai báo bảo hành cho phiếu ${label}?` : `Gửi form khai báo bảo hành cho phiếu ${label}?`)) return;
+    const operator = (user && (user.name || user.id)) || '';
+    try {
+      const payload = buildKhaiBaoRecord(row, fieldOptions);
+      const res = await fetch(KHAI_BAO_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const patch = {
+        'thời_điểm_gửi_khai_báo': new Date().toISOString(),
+        'người_gửi_khai_báo': operator,
+        'trạng_thái_xác_nhận_online': row['trạng_thái_xác_nhận_online'] || KB_XAC_NHAN_ONLINE_INIT,
+        'trạng_thái_thanh_toán': row['trạng_thái_thanh_toán'] || KB_THANH_TOAN_INIT,
+        'người_cập_nhật': operator,
+      };
+      setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
+      const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
+      if (error) { alert('Đã gửi form nhưng lỗi lưu trạng thái: ' + error.message); await fetchRows(); }
+    } catch (e) {
+      alert('Lỗi gửi form khai báo: ' + (e?.message || e));
+    }
+  };
+
   // ── Tick chọn phiếu để tải Excel ──
   const toggleSelect = (id) => setSelectedIds(prev => {
     const next = new Set(prev);
@@ -811,6 +988,7 @@ export default function WarrantyProcessing() {
           {TRANG_THAI_XU_LY.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
         <button onClick={fetchRows} disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: '1px solid #e2e8f0', borderRadius: '8px', background: '#fff', cursor: loading ? 'wait' : 'pointer', fontWeight: 600, color: '#475569', opacity: loading ? 0.65 : 1 }}><RefreshCw size={15} className={loading ? 'spin' : undefined} /> {loading ? 'Đang tải...' : 'Làm mới'}</button>
+        <button onClick={handleSyncCsApp} disabled={syncingCs} title="Tải dữ liệu bảo hành mới nhất từ Caresoft về app" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: 'none', borderRadius: '8px', background: '#6366f1', cursor: syncingCs ? 'wait' : 'pointer', fontWeight: 600, color: '#fff', opacity: syncingCs ? 0.65 : 1 }}><DownloadCloud size={15} className={syncingCs ? 'spin' : undefined} /> {syncingCs ? 'Đang đồng bộ...' : 'Đồng bộ CS-APP'}</button>
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#475569', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           <input type="checkbox" checked={showClosed} onChange={e => { setShowClosed(e.target.checked); setPage(1); }} /> Hiện cả phiếu đã đóng
         </label>
@@ -941,7 +1119,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isSteps || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup })}
+                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSendKhaiBao: sendKhaiBao })}
                     </td>
                   );
                 })}

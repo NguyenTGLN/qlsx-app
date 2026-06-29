@@ -3,7 +3,8 @@ import {
   PROCESSING_STATUSES, PROCESSING_CATEGORIES, WORKFLOW_STEPS_MAU,
   isQualifyingTicket, computeTotalCost, getEffectiveSteps, ensureClosingStep, applyStepToggle, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
   THONG_TIN_BO_SUNG_KEYS, getThongTinBoSung, isClosingStepDone, csStatusOnClosingToggle, CLOSING_STEP,
-  OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, parseMultiIds, joinMultiIds,
+  OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, parseMultiIds, joinMultiIds,
+  buildKhaiBaoRecord, KB_TRANG_THAI_FORM, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT,
 } from './warrantyProcessing';
 
 const mkSteps = (...states) => states.map((st, i) => ({ 'tên': `B${i}`, 'trạng_thái': st }));
@@ -164,7 +165,8 @@ describe('GĐ4 option helpers', () => {
     expect(OPTION_FIELDS['chi_tiết_lỗi'].parentKey).toBe('nhóm_sản_phẩm');
     expect(OPTION_FIELDS['linh_kiện'].parentKey).toBe('mã_sản_phẩm');
     expect(OPTION_FIELDS['linh_kiện'].multi).toBe(true);
-    expect(OPTION_FIELD_KEYS.slice().sort()).toEqual(['chi_tiết_lỗi', 'linh_kiện', 'mã_sản_phẩm', 'nhóm_sản_phẩm']);
+    expect(OPTION_FIELDS['nguyên_nhân']).toEqual({ fieldId: 9722, multi: true, cascade: true, parentKey: 'nhóm_sản_phẩm' });
+    expect(OPTION_FIELD_KEYS.slice().sort()).toEqual(['chi_tiết_lỗi', 'linh_kiện', 'mã_sản_phẩm', 'nguyên_nhân', 'nhóm_sản_phẩm']);
   });
   test('field phẳng → mọi option của field', () => {
     expect(optionsFor(L, 'nhóm_sản_phẩm').map(o => o.option_id)).toEqual([148351, 148354]);
@@ -267,5 +269,139 @@ describe('getThongTinBoSung', () => {
     expect(r['tình_trạng']).toBe('thay lõi');
     expect(r['ngày_lắp_đặt']).toBe('2024/06/14');
     expect(r['khoảng_cách']).toBe('');
+  });
+});
+
+describe('resolveOptionIdByLabel', () => {
+  // nhóm 10 "MÁY NÓNG LẠNH"; "Bung nắp" trùng nhãn ở 2 nhóm (cha 10 và 20).
+  const FO = [
+    { option_id: 10, field_key: 'nhóm_sản_phẩm', label: 'MÁY NÓNG LẠNH', parent_option_id: null },
+    { option_id: 20, field_key: 'nhóm_sản_phẩm', label: 'MÁY LỌC', parent_option_id: null },
+    { option_id: 700, field_key: 'mã_sản_phẩm', label: 'WT-4200-RO', parent_option_id: null },
+    { option_id: 31, field_key: 'chi_tiết_lỗi', label: 'Bung nắp', parent_option_id: 10 },
+    { option_id: 32, field_key: 'chi_tiết_lỗi', label: 'Bung nắp', parent_option_id: 20 },
+    { option_id: 90, field_key: 'linh_kiện', label: 'Phao điện', parent_option_id: 700 },
+  ];
+  test('field không cascade: khớp nhãn duy nhất', () => {
+    expect(resolveOptionIdByLabel(FO, 'nhóm_sản_phẩm', 'MÁY NÓNG LẠNH')).toBe(10);
+    expect(resolveOptionIdByLabel(FO, 'mã_sản_phẩm', 'WT-4200-RO')).toBe(700);
+  });
+  test('field cascade: phân giải nhãn trùng theo cha', () => {
+    expect(resolveOptionIdByLabel(FO, 'chi_tiết_lỗi', 'Bung nắp', 10)).toBe(31);
+    expect(resolveOptionIdByLabel(FO, 'chi_tiết_lỗi', 'Bung nắp', 20)).toBe(32);
+  });
+  test('cascade không có cha → rỗng (không đoán bừa)', () => {
+    expect(resolveOptionIdByLabel(FO, 'chi_tiết_lỗi', 'Bung nắp', '')).toBe('');
+  });
+  test('nhãn không tồn tại / rỗng → rỗng', () => {
+    expect(resolveOptionIdByLabel(FO, 'nhóm_sản_phẩm', 'KHÔNG CÓ')).toBe('');
+    expect(resolveOptionIdByLabel(FO, 'nhóm_sản_phẩm', '')).toBe('');
+  });
+});
+
+describe('buildKhaiBaoRecord', () => {
+  // option_id 7 = mã SP "WT-4200-RO"; 42 = linh kiện "Phao điện # E-FS-4200".
+  const FO = [
+    { option_id: 7, field_key: 'mã_sản_phẩm', label: 'WT-4200-RO' },
+    { option_id: 88, field_key: 'chi_tiết_lỗi', label: 'Máy không ra nước' },
+    { option_id: 42, field_key: 'linh_kiện', label: 'Phao điện # E-FS-4200' },
+  ];
+  const baseRow = {
+    'id_phiếu_ghi': '229283',
+    'mã_đơn_hàng': 'VNA04002970223',
+    'mã_sản_phẩm': 'WT-4200-RO',
+    'số_điện_thoại_khách_hàng': '0945011809',
+    'ngày_lắp_đặt': '2025-06-25',
+    'phiếu_gốc_json': {
+      'tên_khách_hàng': 'Phạm Thị Mai',
+      'địa_chỉ_nhận_hàng': 'UBX Xã Diên Hoa Huyện Nghi Lộc Nghệ An',
+      'tình_trạng': 'không ra nước',
+      'nguyên_nhân': 'Phao điện không thông mạch',
+      'phương_án_xử_lý': 'Lên đơn gửi phao điện',
+      'tên_đlđ': 'TRẦN VĂN MẠNH',
+      'mã_đlđ': 'NA84',
+      'sđt_đlđ': '0984469066',
+      'linh_kiện': 'Phao điện # E-FS-4200',
+      'chi_tiết_lỗi': 'Máy không ra nước',
+    },
+  };
+
+  test('action=CREATE, oldValues=null, đủ 20 khóa newValues', () => {
+    const rec = buildKhaiBaoRecord(baseRow, FO);
+    expect(rec.action).toBe('CREATE');
+    expect(rec.oldValues).toBeNull();
+    expect(Object.keys(rec.newValues).sort()).toEqual([
+      'Chi_Tiet_Loi', 'Dia_Chi', 'Khach_Hang', 'Khoang_Cach', 'Linh_Kien', 'Ma_DLD',
+      'Ma_Don_Hang', 'Ngay_Lap_Dat', 'Nguyen_Nhan', 'Phan_Loai_CV', 'Phieu_Ghi',
+      'Phuong_An_XL', 'SDT_DLD', 'SDT_Khach', 'San_Pham', 'Tinh_Trang', 'Thanh_Toan',
+      'Trang_Thai', 'Ten_DLD', 'Xac_Nhan_Online',
+    ].sort());
+  });
+
+  test('map đúng giá trị từ mirror + phiếu_gốc_json; Ngay_Lap_Dat giữ nguyên format', () => {
+    const v = buildKhaiBaoRecord(baseRow, FO).newValues;
+    expect(v.Phieu_Ghi).toBe('229283');
+    expect(v.Ma_Don_Hang).toBe('VNA04002970223');
+    expect(v.San_Pham).toBe('WT-4200-RO');
+    expect(v.Ngay_Lap_Dat).toBe('2025-06-25');
+    expect(v.Khach_Hang).toBe('Phạm Thị Mai');
+    expect(v.SDT_Khach).toBe('0945011809');
+    expect(v.Ten_DLD).toBe('TRẦN VĂN MẠNH');
+    expect(v.SDT_DLD).toBe('0984469066');
+    expect(v.Linh_Kien).toBe('Phao điện # E-FS-4200');
+  });
+
+  test('3 trạng thái = hằng số; Phan_Loai_CV & Khoang_Cach rỗng khi app không có', () => {
+    const v = buildKhaiBaoRecord(baseRow, FO).newValues;
+    expect(v.Trang_Thai).toBe(KB_TRANG_THAI_FORM);
+    expect(v.Xac_Nhan_Online).toBe(KB_XAC_NHAN_ONLINE_INIT);
+    expect(v.Thanh_Toan).toBe(KB_THANH_TOAN_INIT);
+    expect(v.Phan_Loai_CV).toBe('');
+    expect(v.Khoang_Cach).toBe('');
+  });
+
+  test('ưu tiên giá trị app đã sửa (thông_tin_bổ_sung) cho KTV/KH & option', () => {
+    const row = {
+      ...baseRow,
+      'thông_tin_bổ_sung': {
+        'tên_đlđ': 'KTV Sửa Tay',
+        'khoảng_cách': '12',
+        'mã_sản_phẩm_option_id': 7,
+        'linh_kiện_option_ids': [42],
+      },
+    };
+    const v = buildKhaiBaoRecord(row, FO).newValues;
+    expect(v.Ten_DLD).toBe('KTV Sửa Tay');     // override app thắng phiếu gốc
+    expect(v.Khoang_Cach).toBe('12');
+    expect(v.San_Pham).toBe('WT-4200-RO');      // resolve NHÃN từ option_id, không phải id
+    expect(v.Linh_Kien).toBe('Phao điện # E-FS-4200');
+  });
+
+  test('Nguyên nhân & Phương án xử lý lấy bản app đã sửa (không chỉ phiếu gốc)', () => {
+    const FO2 = [...FO, { option_id: 555, field_key: 'nguyên_nhân', label: 'Phao điện không thông mạch', parent_option_id: 148352 }];
+    const row = {
+      ...baseRow,
+      'phiếu_gốc_json': { ...baseRow['phiếu_gốc_json'], 'nguyên_nhân': 'Lỗi gốc cũ', 'phương_án_xử_lý': 'PA gốc cũ' },
+      'thông_tin_bổ_sung': {
+        'nguyên_nhân_option_ids': [555],
+        'phương_án_xử_lý': 'Thay phao điện mới (app sửa)',
+      },
+    };
+    const v = buildKhaiBaoRecord(row, FO2).newValues;
+    expect(v.Nguyen_Nhan).toBe('Phao điện không thông mạch'); // nhãn option app chọn, không phải gốc cũ
+    expect(v.Phuong_An_XL).toBe('Thay phao điện mới (app sửa)');
+  });
+  test('Nguyên nhân & Phương án rơi về phiếu gốc khi app chưa sửa', () => {
+    const row = { ...baseRow, 'phiếu_gốc_json': { ...baseRow['phiếu_gốc_json'], 'nguyên_nhân': 'NN gốc', 'phương_án_xử_lý': 'PA gốc' } };
+    const v = buildKhaiBaoRecord(row, FO).newValues;
+    expect(v.Nguyen_Nhan).toBe('NN gốc');
+    expect(v.Phuong_An_XL).toBe('PA gốc');
+  });
+
+  test('chịu được row tối thiểu (không phiếu_gốc_json)', () => {
+    const v = buildKhaiBaoRecord({ 'id_phiếu_ghi': '1' }, FO).newValues;
+    expect(v.Phieu_Ghi).toBe('1');
+    expect(v.Nguyen_Nhan).toBe('');
+    expect(v.Trang_Thai).toBe(KB_TRANG_THAI_FORM);
   });
 });

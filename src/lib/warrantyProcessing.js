@@ -173,6 +173,8 @@ export const OPTION_FIELDS = {
   'mã_sản_phẩm':   { fieldId: 9720, multi: false, cascade: false, parentKey: null },
   'chi_tiết_lỗi':  { fieldId: 9852, multi: false, cascade: true,  parentKey: 'nhóm_sản_phẩm' },
   'linh_kiện':     { fieldId: 9719, multi: true,  cascade: true,  parentKey: 'mã_sản_phẩm' },
+  // Nguyên nhân (CS field 9722): multi-select, cascade theo Nhóm SP (giống Chi tiết lỗi).
+  'nguyên_nhân':   { fieldId: 9722, multi: true,  cascade: true,  parentKey: 'nhóm_sản_phẩm' },
 };
 export const OPTION_FIELD_KEYS = Object.keys(OPTION_FIELDS);
 
@@ -195,6 +197,18 @@ export function resolveOptionLabel(list, optionId) {
   return o ? o.label : '';
 }
 
+// Nhãn → option_id (chiều ngược của resolveOptionLabel), để chọn sẵn dropdown từ phiếu gốc
+// (Caresoft chỉ lưu CHỮ, không có option_id). Field cascade truyền parentOptionId để phân giải
+// đúng khi nhãn trùng ở nhiều nhóm (vd "Bung nắp" ở 2 nhóm). Không khớp → '' (không đoán bừa).
+export function resolveOptionIdByLabel(list, fieldKey, label, parentOptionId = null) {
+  const lbl = String(label == null ? '' : label).trim();
+  if (!lbl || !Array.isArray(list)) return '';
+  const meta = OPTION_FIELDS[fieldKey] || {};
+  const pool = optionsFor(list, fieldKey, meta.cascade ? parentOptionId : null);
+  const hit = pool.find(o => String(o.label).trim() === lbl);
+  return hit ? hit.option_id : '';
+}
+
 // Caresoft lưu multi-select dạng ",id,id," — parse ⇄ mảng số.
 export function parseMultiIds(v) {
   return String(v == null ? '' : v).split(',').map(s => s.trim()).filter(Boolean).map(Number);
@@ -202,4 +216,59 @@ export function parseMultiIds(v) {
 export function joinMultiIds(ids) {
   const a = (ids || []).filter(x => x != null && x !== '');
   return a.length ? ',' + a.join(',') + ',' : '';
+}
+
+// ── Gửi Form khai báo bảo hành → DB trung gian CNV ──
+// 3 trạng thái khởi tạo khi gửi form (CREATE). Luồng cập nhật về sau (đã gửi/đã hoàn thành
+// xác nhận online, đã thanh toán) ghi đè vào cùng cột — triển khai sau.
+export const KB_TRANG_THAI_FORM = 'Đã gửi form';
+export const KB_XAC_NHAN_ONLINE_INIT = 'Chưa gửi xác nhận online';
+export const KB_THANH_TOAN_INIT = 'Chưa thanh toán';
+
+// Dựng record gửi sang DB trung gian CNV (key Pascal_Snake, action=CREATE).
+//  - Lấy GIÁ TRỊ HIỂN THỊ ở tab: ưu tiên thông_tin_bổ_sung (bản app đã sửa) → phiếu_gốc_json → mirror.
+//  - Trường option (mã SP / chi tiết lỗi / linh kiện / nguyên nhân) resolve NHÃN từ *_option_id(s).
+//  - Trường app không lưu (Phan_Loai_CV) → ''. Trạng thái → hằng số khởi tạo.
+//  - fieldOptions = src/data/caresoftFieldOptions.json (để resolve nhãn option).
+export function buildKhaiBaoRecord(row, fieldOptions = []) {
+  const goc = (row && row['phiếu_gốc_json']) || {};
+  const tin = getThongTinBoSung(row); // 9 trường KTV/KH hiệu lực (app sửa → gốc)
+  const ttRaw = (row && row['thông_tin_bổ_sung']) || {};
+  // Nhãn hiệu lực 1 trường option: app sửa (*_option_id) → mirror row[key] → gốc.
+  const optLabel = (key) => {
+    const meta = OPTION_FIELDS[key] || {};
+    if (meta.multi) {
+      const ids = Array.isArray(ttRaw[key + '_option_ids']) ? ttRaw[key + '_option_ids'] : [];
+      const lbl = ids.map(id => resolveOptionLabel(fieldOptions, id)).filter(Boolean).join(', ');
+      return lbl || (row && row[key]) || goc[key] || '';
+    }
+    return resolveOptionLabel(fieldOptions, ttRaw[key + '_option_id']) || (row && row[key]) || goc[key] || '';
+  };
+  const s = (v) => (v === undefined || v === null) ? '' : String(v);
+  return {
+    action: 'CREATE',
+    oldValues: null,
+    newValues: {
+      Phieu_Ghi:       s((row && (row['id_phiếu_ghi'] || row['phiếu_ghi']))),
+      Ma_Don_Hang:     s((row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']),
+      San_Pham:        s(optLabel('mã_sản_phẩm')),
+      Ngay_Lap_Dat:    s(tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),
+      Chi_Tiet_Loi:    s(optLabel('chi_tiết_lỗi')),
+      Khach_Hang:      s(tin['tên_khách_hàng']),
+      SDT_Khach:       s(tin['số_điện_thoại_khách_hàng'] || (row && row['số_điện_thoại_khách_hàng'])),
+      Dia_Chi:         s(tin['địa_chỉ_nhận_hàng']),
+      Tinh_Trang:      s(tin['tình_trạng']),
+      Nguyen_Nhan:     s(optLabel('nguyên_nhân')),                                   // option (app sửa → gốc)
+      Phuong_An_XL:    s(ttRaw['phương_án_xử_lý'] || goc['phương_án_xử_lý']),         // text (app sửa → gốc)
+      Ten_DLD:         s(tin['tên_đlđ']),
+      Ma_DLD:          s(tin['mã_đlđ']),
+      SDT_DLD:         s(tin['sđt_đlđ']),
+      Khoang_Cach:     s(tin['khoảng_cách']),
+      Phan_Loai_CV:    '', // app không lưu trường này → để rỗng (theo quyết định)
+      Linh_Kien:       s(optLabel('linh_kiện')),
+      Trang_Thai:      KB_TRANG_THAI_FORM,
+      Xac_Nhan_Online: KB_XAC_NHAN_ONLINE_INIT,
+      Thanh_Toan:      KB_THANH_TOAN_INIT,
+    },
+  };
 }
