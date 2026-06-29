@@ -4,7 +4,7 @@ import {
   isQualifyingTicket, computeTotalCost, getEffectiveSteps, ensureClosingStep, applyStepToggle, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
   THONG_TIN_BO_SUNG_KEYS, getThongTinBoSung, isClosingStepDone, csStatusOnClosingToggle, CLOSING_STEP,
   OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, parseMultiIds, joinMultiIds,
-  buildKhaiBaoRecord, normDateYmd, KB_TRANG_THAI_FORM, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT,
+  buildKhaiBaoRecord, normDateYmd, deriveKhaiBaoStatuses, KB_TRANG_THAI_FORM, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT,
 } from './warrantyProcessing';
 
 const mkSteps = (...states) => states.map((st, i) => ({ 'tên': `B${i}`, 'trạng_thái': st }));
@@ -296,6 +296,33 @@ describe('resolveOptionIdByLabel', () => {
   test('nhãn không tồn tại / rỗng → rỗng', () => {
     expect(resolveOptionIdByLabel(FO, 'nhóm_sản_phẩm', 'KHÔNG CÓ')).toBe('');
     expect(resolveOptionIdByLabel(FO, 'nhóm_sản_phẩm', '')).toBe('');
+  });
+});
+
+describe('deriveKhaiBaoStatuses', () => {
+  test('không có dữ liệu external (null) → mặc định chưa', () => {
+    const r = deriveKhaiBaoStatuses(null);
+    expect(r.bienBan).toEqual({ text: 'Chưa gửi biên bản online', tone: 'red' });
+    expect(r.xacNhan).toEqual({ text: 'Chưa xác nhận', tone: 'amber' });
+    expect(r.thanhToan).toEqual({ text: 'Chưa thanh toán', tone: 'amber' });
+  });
+  test('biên bản online theo trang_thai', () => {
+    expect(deriveKhaiBaoStatuses({ trang_thai: 'Đã gửi biên bản xác nhận' }).bienBan).toEqual({ text: 'Đã gửi biên bản online', tone: 'green' });
+    expect(deriveKhaiBaoStatuses({ trang_thai: null }).bienBan.tone).toBe('red');
+  });
+  test('xác nhận: gộp "Đã hoàn thành" & "Đã hoàn thành xác nhận" → online (xanh)', () => {
+    expect(deriveKhaiBaoStatuses({ status: 'Đã hoàn thành' }).xacNhan).toEqual({ text: 'Đã hoàn thành xác nhận online', tone: 'green' });
+    expect(deriveKhaiBaoStatuses({ status: 'Đã hoàn thành xác nhận' }).xacNhan).toEqual({ text: 'Đã hoàn thành xác nhận online', tone: 'green' });
+  });
+  test('xác nhận: KH/KTV chưa xác nhận hiện nguyên (cam); Hủy (xám); null (Chưa xác nhận)', () => {
+    expect(deriveKhaiBaoStatuses({ status: 'KH chưa xác nhận' }).xacNhan).toEqual({ text: 'KH chưa xác nhận', tone: 'amber' });
+    expect(deriveKhaiBaoStatuses({ status: 'KTV chưa xác nhận' }).xacNhan).toEqual({ text: 'KTV chưa xác nhận', tone: 'amber' });
+    expect(deriveKhaiBaoStatuses({ status: 'Hủy' }).xacNhan).toEqual({ text: 'Hủy', tone: 'gray' });
+    expect(deriveKhaiBaoStatuses({ status: null }).xacNhan.text).toBe('Chưa xác nhận');
+  });
+  test('thanh toán theo payment_status', () => {
+    expect(deriveKhaiBaoStatuses({ payment_status: 'Chưa thanh toán' }).thanhToan).toEqual({ text: 'Chưa thanh toán', tone: 'amber' });
+    expect(deriveKhaiBaoStatuses({ payment_status: 'Đã thanh toán' }).thanhToan).toEqual({ text: 'Đã thanh toán', tone: 'green' });
   });
 });
 

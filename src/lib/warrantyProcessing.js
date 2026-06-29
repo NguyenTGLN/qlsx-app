@@ -225,6 +225,28 @@ export const KB_TRANG_THAI_FORM = 'Đã gửi form';
 export const KB_XAC_NHAN_ONLINE_INIT = 'Chưa gửi xác nhận online';
 export const KB_THANH_TOAN_INIT = 'Chưa thanh toán';
 
+// Suy 3 dòng trạng thái (biên bản online / xác nhận / thanh toán) từ 1 dòng du_lieu_khai_bao__bao_hanh
+// (đối chiếu external.id = phiếu_ghi). ext = { trang_thai, status, payment_status } hoặc null/undefined.
+// Trả { bienBan, xacNhan, thanhToan } mỗi cái { text, tone } (tone: green|red|amber|gray).
+export function deriveKhaiBaoStatuses(ext) {
+  const e = ext || {};
+  // Dòng 1: biên bản online (theo trang_thai). Có "Đã gửi biên bản xác nhận" = đã gửi; còn lại = chưa.
+  const bienBan = e['trang_thai'] === 'Đã gửi biên bản xác nhận'
+    ? { text: 'Đã gửi biên bản online', tone: 'green' }
+    : { text: 'Chưa gửi biên bản online', tone: 'red' };
+  // Dòng 2: xác nhận (theo status). null→Chưa xác nhận; hoàn thành (cả 2 dạng)→online; Hủy→xám; khác→nguyên văn.
+  const st = e['status'];
+  let xacNhan;
+  if (st == null || st === '') xacNhan = { text: 'Chưa xác nhận', tone: 'amber' };
+  else if (st === 'Đã hoàn thành' || st === 'Đã hoàn thành xác nhận') xacNhan = { text: 'Đã hoàn thành xác nhận online', tone: 'green' };
+  else if (st === 'Hủy') xacNhan = { text: 'Hủy', tone: 'gray' };
+  else xacNhan = { text: String(st), tone: 'amber' };
+  // Dòng 3: thanh toán (theo payment_status). "Đã thanh toán" → xanh; còn lại/null → cam "Chưa thanh toán".
+  const ps = (e['payment_status'] == null || e['payment_status'] === '') ? 'Chưa thanh toán' : String(e['payment_status']);
+  const thanhToan = { text: ps, tone: /đã thanh toán/i.test(ps) ? 'green' : 'amber' };
+  return { bienBan, xacNhan, thanhToan };
+}
+
 // Chuẩn hóa ngày BẤT KỲ định dạng → 'YYYY-MM-DD' (gạch ngang) cho payload. Rỗng/không parse → ''.
 //  Nhận: yyyy-mm-dd, yyyy/mm/dd, dd-mm-yyyy, dd/mm/yyyy, ISO kèm giờ.
 export function normDateYmd(v) {

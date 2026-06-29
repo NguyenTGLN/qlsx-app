@@ -4,7 +4,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send, Download, CheckCircle2, RotateCcw, Calendar, DownloadCloud } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, buildKhaiBaoRecord, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, buildKhaiBaoRecord, deriveKhaiBaoStatuses, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT } from '../../lib/warrantyProcessing';
 import fieldOptions from '../../data/caresoftFieldOptions.json';
 import ProcessingModal from './ProcessingModal';
 
@@ -307,20 +307,15 @@ function SyncCell({ row, perm, onSync }) {
 // { action:'CREATE', oldValues:null, newValues:{...} } trực tiếp từ trình duyệt (CORS đã thông).
 const KHAI_BAO_WEBHOOK = 'https://thegioilocnuoc.site/webhook/e652142b-1e04-43f4-91f1-feae495aacc0';
 
-// Màu badge theo giá trị 1 dòng trạng thái (xác nhận online / thanh toán).
-// "Chưa…" → xám · "Đã gửi…" → xanh dương · "Đã hoàn thành…/Đã thanh toán" → xanh lá.
-const kbStatusColor = (v) => {
-  const s = String(v || '');
-  if (/hoàn thành|đã thanh toán/i.test(s)) return '#15803d';
-  if (/^đã/i.test(s)) return '#2563eb';
-  return '#94a3b8';
-};
+// Màu chữ theo tone trạng thái: xanh=xong/đã gửi · đỏ=chưa gửi biên bản · cam=chờ/chưa · xám=Hủy.
+const KB_TONE = { green: '#15803d', red: '#dc2626', amber: '#d97706', gray: '#94a3b8' };
 
-// Ô cột "Form khai báo": chưa gửi → nút gửi; đã gửi → 3 dòng trạng thái + nút gửi lại.
-function KhaiBaoCell({ row, perm, onSend }) {
+// Ô cột "Form khai báo": chưa gửi → nút gửi; đã gửi → 4 dòng trạng thái + nút gửi lại.
+//  ext = dòng du_lieu_khai_bao__bao_hanh khớp phiếu_ghi (hoặc undefined); 3 dòng dưới suy từ ext (đối chiếu live).
+function KhaiBaoCell({ row, perm, onSend, ext }) {
   const [busy, setBusy] = useState(false);
   const sentAt = row['thời_điểm_gửi_khai_báo'];
-  const sent = !!sentAt;
+  const sent = !!sentAt || !!ext; // có dữ liệu trong CNV cũng coi như đã gửi
   const send = async (e) => {
     e.stopPropagation();
     setBusy(true);
@@ -337,16 +332,17 @@ function KhaiBaoCell({ row, perm, onSend }) {
       </button>
     );
   }
-  const onl = row['trạng_thái_xác_nhận_online'] || KB_XAC_NHAN_ONLINE_INIT;
-  const pay = row['trạng_thái_thanh_toán'] || KB_THANH_TOAN_INIT;
+  const { bienBan, xacNhan, thanhToan } = deriveKhaiBaoStatuses(ext);
+  const line = (s) => <span style={{ color: KB_TONE[s.tone] || '#64748b', fontWeight: 600 }}>● {s.text}</span>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start', fontSize: '0.68rem' }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#15803d', fontWeight: 700 }}>
         <CheckCircle2 size={12} /> Đã gửi form khai báo bảo hành
       </span>
-      <span style={{ color: '#94a3b8', fontSize: '0.62rem' }}>{fmtDateTime(sentAt)}</span>
-      <span style={{ color: kbStatusColor(onl), fontWeight: 600 }}>● {onl}</span>
-      <span style={{ color: kbStatusColor(pay), fontWeight: 600 }}>● {pay}</span>
+      {sentAt && <span style={{ color: '#94a3b8', fontSize: '0.62rem' }}>{fmtDateTime(sentAt)}</span>}
+      {line(bienBan)}
+      {line(xacNhan)}
+      {line(thanhToan)}
       {perm.edit && (
         <button
           disabled={busy} onClick={send}
@@ -603,7 +599,7 @@ const LIST_COLUMNS = [
   { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
   { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onCompleteSync={ctx.onCompleteSync} /> },
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
-  { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} onSend={ctx.onSendKhaiBao} /> },
+  { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} onSend={ctx.onSendKhaiBao} ext={ctx.khaiBaoExt && ctx.khaiBaoExt.get(String(r['phiếu_ghi']))} /> },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
 const DEFAULT_VISIBLE = ['phiếu_ghi', 'card_sp', 'card_ktv', 'card_kh', 'card_bh', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ', 'khai_báo'];
@@ -634,6 +630,7 @@ export default function WarrantyProcessing() {
   const [rowsPerPage, setRowsPerPage] = usePersistedState('wproc_rowsPerPage', 50);
   const [editing, setEditing] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set()); // tick chọn phiếu để tải Excel / cập nhật hàng loạt (giữ qua các trang)
+  const [khaiBaoExt, setKhaiBaoExt] = useState(() => new Map()); // map phiếu_ghi → dòng du_lieu_khai_bao__bao_hanh (trạng thái CNV)
 
   // Cột đang hiện (giữ thứ tự đăng ký, bỏ qua key lạ trong localStorage cũ).
   const cols = LIST_COLUMNS.filter(c => visibleCols.includes(c.key));
@@ -726,6 +723,33 @@ export default function WarrantyProcessing() {
     const timer = setInterval(poll, 5000);
     return () => clearInterval(timer);
   }, [pendingKey]);
+
+  // Đối chiếu LIVE với DB trung gian CNV: tra du_lieu_khai_bao__bao_hanh theo phiếu_ghi (= cột id ở đó)
+  // → map { trang_thai, status, payment_status } cho từng phiếu. KhaiBaoCell suy 3 dòng trạng thái từ map này.
+  // Chạy lại mỗi khi danh sách đổi (gồm "Làm mới"). Chỉ tra phiếu_ghi dạng số.
+  const phieuGhiKey = useMemo(
+    () => [...new Set(rows.map(r => String(r['phiếu_ghi'] || '')).filter(v => /^\d+$/.test(v)))].sort().join(','),
+    [rows]
+  );
+  useEffect(() => {
+    if (!phieuGhiKey) { setKhaiBaoExt(new Map()); return; }
+    let cancelled = false;
+    (async () => {
+      const ids = phieuGhiKey.split(',');
+      const map = new Map();
+      const step = 300;
+      for (let i = 0; i < ids.length; i += step) {
+        const { data, error } = await taskDb
+          .from('du_lieu_khai_bao__bao_hanh')
+          .select('id, trang_thai, status, payment_status')
+          .in('id', ids.slice(i, i + step));
+        if (error) { console.warn('[KhaiBao] đối chiếu CNV lỗi:', error.message); break; }
+        (data || []).forEach(d => map.set(String(d.id), d));
+      }
+      if (!cancelled) setKhaiBaoExt(map);
+    })();
+    return () => { cancelled = true; };
+  }, [phieuGhiKey]);
 
   // Số liệu dashboard — đếm theo trạng thái Caresoft (trạng_thái_phiếu_ghi) trên CHÍNH bảng
   // xử lý (rows). Đếm từ rows (không phải bảng nguồn) để khi đóng/mở phiếu là số đổi ngay.
@@ -1119,7 +1143,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isSteps || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSendKhaiBao: sendKhaiBao })}
+                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSendKhaiBao: sendKhaiBao, khaiBaoExt })}
                     </td>
                   );
                 })}
