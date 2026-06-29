@@ -247,6 +247,70 @@ export function deriveKhaiBaoStatuses(ext) {
   return { bienBan, xacNhan, thanhToan };
 }
 
+// ── Xử lý phiếu NHIỀU LẦN ──
+// id ghép gửi vào CNV cho 1 lần: lần 1 = số phiếu trần (tương thích dữ liệu CNV cũ), lần 2+ = "<số phiếu>-<lần>".
+export function cnvIdForLan(phieuGhi, lan) {
+  const p = String(phieuGhi == null ? '' : phieuGhi);
+  return Number(lan) <= 1 ? p : `${p}-${lan}`;
+}
+
+// Danh sách lần HIỆU LỰC của 1 phiếu: dùng cột các_lần đã lưu (đảm bảo có lần + cnv_id).
+// Nếu các_lần rỗng MÀ phiếu đã từng gửi form (thời_điểm_gửi_khai_báo) → 1 lần ảo "lần 1" (migration dữ liệu cũ).
+export function getEffectiveLan(row) {
+  const phieuGhi = (row && (row['phiếu_ghi'] || row['id_phiếu_ghi'])) || '';
+  const arr = Array.isArray(row && row['các_lần']) ? row['các_lần'] : [];
+  if (arr.length > 0) {
+    return arr.map((l, i) => {
+      const lan = l['lần'] || i + 1;
+      return { ...l, 'lần': lan, 'cnv_id': l['cnv_id'] || cnvIdForLan(phieuGhi, lan) };
+    });
+  }
+  if (row && row['thời_điểm_gửi_khai_báo']) {
+    return [{ 'lần': 1, 'cnv_id': cnvIdForLan(phieuGhi, 1), 'loại_nhiệm_vụ': '',
+      'thời_điểm_gửi': row['thời_điểm_gửi_khai_báo'], 'người_gửi': row['người_gửi_khai_báo'] || '' }];
+  }
+  return [];
+}
+
+// Dựng payload CNV cho 1 LẦN: shared (KH/SP/ĐH/ngày lắp) lấy từ row; per-lần lấy từ lan (loại nhiệm vụ
+// → Phan_Loai_CV; chi tiết lỗi/tình trạng/nguyên nhân/phương án/linh kiện/KTV-ĐLĐ/khoảng cách). Phieu_Ghi = cnv_id.
+export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
+  const goc = (row && row['phiếu_gốc_json']) || {};
+  const tin = getThongTinBoSung(row);
+  const ttRaw = (row && row['thông_tin_bổ_sung']) || {};
+  const s = (v) => (v === undefined || v === null) ? '' : String(v);
+  const sanPham = resolveOptionLabel(fieldOptions, ttRaw['mã_sản_phẩm_option_id']) || (row && row['mã_sản_phẩm']) || goc['mã_sản_phẩm'] || '';
+  const L = lan || {};
+  const phieuGhi = (row && (row['phiếu_ghi'] || row['id_phiếu_ghi'])) || '';
+  const cnvId = L['cnv_id'] || cnvIdForLan(phieuGhi, L['lần'] || 1);
+  return {
+    action: 'CREATE',
+    oldValues: null,
+    newValues: {
+      Phieu_Ghi:       s(cnvId),
+      Ma_Don_Hang:     s((row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']),
+      San_Pham:        s(sanPham),
+      Ngay_Lap_Dat:    normDateYmd(tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),
+      Khach_Hang:      s(tin['tên_khách_hàng']),
+      SDT_Khach:       s(tin['số_điện_thoại_khách_hàng'] || (row && row['số_điện_thoại_khách_hàng'])),
+      Dia_Chi:         s(tin['địa_chỉ_nhận_hàng']),
+      Chi_Tiet_Loi:    s(L['chi_tiết_lỗi']),
+      Tinh_Trang:      s(L['tình_trạng']),
+      Nguyen_Nhan:     s(L['nguyên_nhân']),
+      Phuong_An_XL:    s(L['phương_án_xử_lý']),
+      Ten_DLD:         s(L['tên_đlđ']),
+      Ma_DLD:          s(L['mã_đlđ']),
+      SDT_DLD:         s(L['sđt_đlđ']),
+      Khoang_Cach:     s(L['khoảng_cách']),
+      Phan_Loai_CV:    s(L['loại_nhiệm_vụ']),
+      Linh_Kien:       s(L['linh_kiện']),
+      Trang_Thai:      KB_TRANG_THAI_FORM,
+      Xac_Nhan_Online: KB_XAC_NHAN_ONLINE_INIT,
+      Thanh_Toan:      KB_THANH_TOAN_INIT,
+    },
+  };
+}
+
 // Chuẩn hóa ngày BẤT KỲ định dạng → 'YYYY-MM-DD' (gạch ngang) cho payload. Rỗng/không parse → ''.
 //  Nhận: yyyy-mm-dd, yyyy/mm/dd, dd-mm-yyyy, dd/mm/yyyy, ISO kèm giờ.
 export function normDateYmd(v) {

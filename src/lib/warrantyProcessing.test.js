@@ -4,7 +4,8 @@ import {
   isQualifyingTicket, computeTotalCost, getEffectiveSteps, ensureClosingStep, applyStepToggle, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
   THONG_TIN_BO_SUNG_KEYS, getThongTinBoSung, isClosingStepDone, csStatusOnClosingToggle, CLOSING_STEP,
   OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, parseMultiIds, joinMultiIds,
-  buildKhaiBaoRecord, normDateYmd, deriveKhaiBaoStatuses, KB_TRANG_THAI_FORM, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT,
+  buildKhaiBaoRecord, normDateYmd, deriveKhaiBaoStatuses, cnvIdForLan, getEffectiveLan, buildLanKhaiBaoRecord,
+  KB_TRANG_THAI_FORM, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT,
 } from './warrantyProcessing';
 
 const mkSteps = (...states) => states.map((st, i) => ({ 'tên': `B${i}`, 'trạng_thái': st }));
@@ -296,6 +297,48 @@ describe('resolveOptionIdByLabel', () => {
   test('nhãn không tồn tại / rỗng → rỗng', () => {
     expect(resolveOptionIdByLabel(FO, 'nhóm_sản_phẩm', 'KHÔNG CÓ')).toBe('');
     expect(resolveOptionIdByLabel(FO, 'nhóm_sản_phẩm', '')).toBe('');
+  });
+});
+
+describe('xử lý nhiều lần', () => {
+  test('cnvIdForLan: lần 1 trần, lần 2+ ghép', () => {
+    expect(cnvIdForLan('229545', 1)).toBe('229545');
+    expect(cnvIdForLan('229545', 2)).toBe('229545-2');
+    expect(cnvIdForLan('229545', 7)).toBe('229545-7');
+  });
+  test('getEffectiveLan: dùng các_lần đã lưu (bù lần + cnv_id)', () => {
+    const row = { 'phiếu_ghi': '229545', 'các_lần': [{ 'lần': 1, 'loại_nhiệm_vụ': 'Kiểm tra' }, { 'lần': 2, 'loại_nhiệm_vụ': 'Thay LK' }] };
+    const lans = getEffectiveLan(row);
+    expect(lans).toHaveLength(2);
+    expect(lans[0].cnv_id).toBe('229545');
+    expect(lans[1].cnv_id).toBe('229545-2');
+  });
+  test('getEffectiveLan: migration — phiếu đã gửi form cũ → lần 1 ảo', () => {
+    const row = { 'phiếu_ghi': '229545', 'các_lần': [], 'thời_điểm_gửi_khai_báo': '2026-06-29T10:00:00Z', 'người_gửi_khai_báo': 'Nguyên' };
+    const lans = getEffectiveLan(row);
+    expect(lans).toHaveLength(1);
+    expect(lans[0]).toMatchObject({ 'lần': 1, 'cnv_id': '229545', 'người_gửi': 'Nguyên' });
+  });
+  test('getEffectiveLan: phiếu chưa gì → rỗng', () => {
+    expect(getEffectiveLan({ 'phiếu_ghi': '229545' })).toEqual([]);
+  });
+  test('buildLanKhaiBaoRecord: Phieu_Ghi = cnv_id; per-lần từ lan; shared từ row', () => {
+    const row = {
+      'phiếu_ghi': '229545', 'mã_đơn_hàng': 'VNA01', 'mã_sản_phẩm': 'WT-4200-RO', 'ngày_lắp_đặt': '2026/06/18',
+      'phiếu_gốc_json': { 'tên_khách_hàng': 'A', 'số_điện_thoại_khách_hàng': '09', 'địa_chỉ_nhận_hàng': 'HN' },
+    };
+    const lan = { 'lần': 2, 'cnv_id': '229545-2', 'loại_nhiệm_vụ': 'Thay linh kiện', 'nguyên_nhân': 'Hỏng bơm', 'linh_kiện': 'Bơm', 'tên_đlđ': 'KTV B' };
+    const v = buildLanKhaiBaoRecord(row, lan, []).newValues;
+    expect(v.Phieu_Ghi).toBe('229545-2');
+    expect(v.Ma_Don_Hang).toBe('VNA01');           // shared
+    expect(v.San_Pham).toBe('WT-4200-RO');          // shared
+    expect(v.Ngay_Lap_Dat).toBe('2026-06-18');      // shared + chuẩn hóa
+    expect(v.Khach_Hang).toBe('A');                 // shared
+    expect(v.Phan_Loai_CV).toBe('Thay linh kiện');  // loại nhiệm vụ
+    expect(v.Nguyen_Nhan).toBe('Hỏng bơm');         // per-lần
+    expect(v.Linh_Kien).toBe('Bơm');                // per-lần
+    expect(v.Ten_DLD).toBe('KTV B');                // per-lần
+    expect(v.Trang_Thai).toBe(KB_TRANG_THAI_FORM);
   });
 });
 

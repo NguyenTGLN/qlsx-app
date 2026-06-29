@@ -4,7 +4,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send, Download, CheckCircle2, RotateCcw, Calendar, DownloadCloud } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, buildKhaiBaoRecord, deriveKhaiBaoStatuses, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, deriveKhaiBaoStatuses, cnvIdForLan, getEffectiveLan, buildLanKhaiBaoRecord } from '../../lib/warrantyProcessing';
 import fieldOptions from '../../data/caresoftFieldOptions.json';
 import ProcessingModal from './ProcessingModal';
 
@@ -310,45 +310,103 @@ const KHAI_BAO_WEBHOOK = 'https://thegioilocnuoc.site/webhook/e652142b-1e04-43f4
 // Màu chữ theo tone trạng thái: xanh=xong/đã gửi · đỏ=chưa gửi biên bản · cam=chờ/chưa · xám=Hủy.
 const KB_TONE = { green: '#15803d', red: '#dc2626', amber: '#d97706', gray: '#94a3b8' };
 
-// Ô cột "Form khai báo": chưa gửi → nút gửi; đã gửi → 4 dòng trạng thái + nút gửi lại.
-//  ext = dòng du_lieu_khai_bao__bao_hanh khớp phiếu_ghi (hoặc undefined); 3 dòng dưới suy từ ext (đối chiếu live).
-function KhaiBaoCell({ row, perm, onSend, ext }) {
+// Các trường nhập RIÊNG cho mỗi lần xử lý (free text). Loại nhiệm vụ → Phan_Loai_CV khi gửi CNV.
+const LAN_FIELDS = [
+  ['loại_nhiệm_vụ', 'Loại nhiệm vụ'], ['chi_tiết_lỗi', 'Chi tiết lỗi'], ['tình_trạng', 'Tình trạng'],
+  ['nguyên_nhân', 'Nguyên nhân'], ['phương_án_xử_lý', 'Phương án xử lý'], ['linh_kiện', 'Linh kiện'],
+  ['tên_đlđ', 'Tên KTV/ĐLĐ'], ['mã_đlđ', 'Mã ĐLĐ'], ['sđt_đlđ', 'SĐT ĐLĐ'], ['khoảng_cách', 'Khoảng cách'],
+];
+
+// 1 ô = 1 LẦN xử lý: "Lần N · loại nhiệm vụ" + 3 dòng trạng thái (suy từ CNV theo cnv_id) + nút Gửi/Gửi lại.
+// Bấm ô → popover sửa thông tin riêng của lần (LAN_FIELDS, free text) + Lưu / Gửi form / Đóng.
+function LanCard({ lan, perm, ext, onSave, onSend }) {
+  const [open, setOpen] = useState(null);
+  const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
-  const sentAt = row['thời_điểm_gửi_khai_báo'];
-  const sent = !!sentAt || !!ext; // có dữ liệu trong CNV cũng coi như đã gửi
-  const send = async (e) => {
-    e.stopPropagation();
-    setBusy(true);
-    try { await onSend(row); } finally { setBusy(false); }
-  };
-  if (!sent) {
-    if (!perm.edit) return <span style={{ color: '#cbd5e1', fontSize: '0.72rem' }}>—</span>;
-    return (
-      <button
-        className="wf-card" disabled={busy} onClick={send}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 9px', borderRadius: '8px', border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', cursor: busy ? 'wait' : 'pointer', fontWeight: 700, fontSize: '0.68rem', whiteSpace: 'nowrap', opacity: busy ? 0.6 : 1 }}
-      >
-        <Send size={12} className={busy ? 'spin' : undefined} /> {busy ? 'Đang gửi...' : 'Gửi Form khai báo bảo hành'}
-      </button>
-    );
-  }
+  const sent = !!lan['thời_điểm_gửi'] || !!ext;
   const { bienBan, xacNhan, thanhToan } = deriveKhaiBaoStatuses(ext);
-  const line = (s) => <span style={{ color: KB_TONE[s.tone] || '#64748b', fontWeight: 600 }}>● {s.text}</span>;
+  const line = (s) => <span style={{ color: KB_TONE[s.tone] || '#64748b', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>● {s.text}</span>;
+
+  const openPop = (e) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    const d = {}; LAN_FIELDS.forEach(([k]) => { d[k] = lan[k] || ''; });
+    setDraft(d);
+    const top = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 360));
+    setOpen({ top, left: Math.max(8, Math.min(r.left, window.innerWidth - 340)), maxH: window.innerHeight - top - 12 });
+  };
+  const close = () => setOpen(null);
+  const act = async (alsoSend) => { setBusy(true); try { await (alsoSend ? onSend : onSave)(lan, draft); close(); } finally { setBusy(false); } };
+  const quickSend = async (e) => { e.stopPropagation(); setBusy(true); try { await onSend(lan, null); } finally { setBusy(false); } };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start', fontSize: '0.68rem' }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#15803d', fontWeight: 700 }}>
-        <CheckCircle2 size={12} /> Đã gửi form khai báo bảo hành
-      </span>
-      {sentAt && <span style={{ color: '#94a3b8', fontSize: '0.62rem' }}>{fmtDateTime(sentAt)}</span>}
-      {line(bienBan)}
-      {line(xacNhan)}
-      {line(thanhToan)}
+    <div style={{ flex: '0 0 auto' }}>
+      <div onClick={openPop} className="wf-card" title="Bấm để sửa / xem lần này"
+        style={{ cursor: 'pointer', width: 172, minHeight: 116, boxSizing: 'border-box', padding: '7px 9px', borderRadius: '10px', border: '1px solid #e11d4855', background: '#e11d480d', display: 'flex', flexDirection: 'column', gap: 3, fontSize: '0.66rem' }}>
+        <div style={{ fontWeight: 700, fontSize: '0.7rem', color: '#be123c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Lần {lan['lần']}{lan['loại_nhiệm_vụ'] ? ` · ${lan['loại_nhiệm_vụ']}` : ''}</div>
+        {sent ? (
+          <>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#15803d', fontWeight: 700 }}><CheckCircle2 size={11} /> Đã gửi form</span>
+            {line(bienBan)}{line(xacNhan)}{line(thanhToan)}
+          </>
+        ) : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Chưa gửi · bấm để nhập</span>}
+        {perm.edit && (
+          <button disabled={busy} onClick={quickSend}
+            style={{ marginTop: 'auto', padding: '2px 8px', borderRadius: '7px', border: `1px solid ${sent ? '#cbd5e1' : '#93c5fd'}`, background: sent ? '#fff' : '#eff6ff', color: sent ? '#64748b' : '#1d4ed8', cursor: busy ? 'wait' : 'pointer', fontWeight: 700, fontSize: '0.62rem' }}>
+            {busy ? 'Đang gửi...' : (sent ? 'Gửi lại' : 'Gửi')}
+          </button>
+        )}
+      </div>
+      {open && (
+        <>
+          <div onClick={(e) => { e.stopPropagation(); close(); }} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: open.top, left: open.left, zIndex: 1001, width: 320, maxHeight: open.maxH, overflowY: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: '0.85rem' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1e293b', marginBottom: '0.6rem' }}>Lần {lan['lần']} — thông tin xử lý</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {LAN_FIELDS.map(([k, label]) => (
+                <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                  <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#475569' }}>{label}</label>
+                  <input value={draft[k] ?? ''} disabled={!perm.edit}
+                    onChange={(e) => { const v = e.target.value; setDraft(d => ({ ...d, [k]: v })); }}
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.4rem 0.5rem', fontSize: '0.84rem', outline: 'none' }} />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.7rem', flexWrap: 'wrap' }}>
+              {perm.edit && <button disabled={busy} onClick={() => act(false)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Lưu</button>}
+              {perm.edit && <button disabled={busy} onClick={() => act(true)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>{busy ? 'Đang gửi...' : 'Gửi form'}</button>}
+              <button disabled={busy} onClick={close} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>Đóng</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Ô cột "Form khai báo": hàng ngang các ô-lần + ô "+ Thêm lần".
+function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan }) {
+  const [busy, setBusy] = useState(false);
+  let lans = getEffectiveLan(row);
+  // Chưa có lần nào ở app nhưng CNV đã có bản ghi cho số phiếu trần → hiện lần 1 (đối chiếu CNV).
+  if (lans.length === 0) {
+    const bare = String(row['phiếu_ghi'] || row['id_phiếu_ghi'] || '');
+    if (bare && khaiBaoExt && khaiBaoExt.get(bare)) lans = [{ 'lần': 1, 'cnv_id': bare, 'loại_nhiệm_vụ': '' }];
+  }
+  const add = async (e) => { e.stopPropagation(); setBusy(true); try { await onAddLan(row); } finally { setBusy(false); } };
+  if (lans.length === 0 && !perm.edit) return <span style={{ color: '#cbd5e1', fontSize: '0.72rem' }}>—</span>;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '6px', alignItems: 'stretch' }}>
+      {lans.map((lan) => (
+        <LanCard key={lan['lần']} lan={lan} perm={perm}
+          ext={khaiBaoExt && khaiBaoExt.get(String(lan['cnv_id']))}
+          onSave={(l, draft) => onSaveLan(row, l, draft)}
+          onSend={(l, draft) => onSendLan(row, l, draft)} />
+      ))}
       {perm.edit && (
-        <button
-          disabled={busy} onClick={send}
-          style={{ marginTop: 2, padding: '2px 8px', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', cursor: busy ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.62rem', opacity: busy ? 0.6 : 1 }}
-        >
-          {busy ? 'Đang gửi...' : 'Gửi lại'}
+        <button disabled={busy} onClick={add} className="wf-card"
+          style={{ flex: '0 0 auto', width: 96, minHeight: 116, borderRadius: '10px', border: '1px dashed #93c5fd', background: '#eff6ff', color: '#1d4ed8', cursor: busy ? 'wait' : 'pointer', fontWeight: 700, fontSize: '0.72rem' }}>
+          {busy ? '...' : '+ Thêm lần'}
         </button>
       )}
     </div>
@@ -599,7 +657,7 @@ const LIST_COLUMNS = [
   { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
   { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onCompleteSync={ctx.onCompleteSync} /> },
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
-  { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} onSend={ctx.onSendKhaiBao} ext={ctx.khaiBaoExt && ctx.khaiBaoExt.get(String(r['phiếu_ghi']))} /> },
+  { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} khaiBaoExt={ctx.khaiBaoExt} onSaveLan={ctx.onSaveLan} onSendLan={ctx.onSendLan} onAddLan={ctx.onAddLan} /> },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
 const DEFAULT_VISIBLE = ['phiếu_ghi', 'card_sp', 'card_ktv', 'card_kh', 'card_bh', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ', 'khai_báo'];
@@ -724,32 +782,44 @@ export default function WarrantyProcessing() {
     return () => clearInterval(timer);
   }, [pendingKey]);
 
-  // Đối chiếu LIVE với DB trung gian CNV: tra du_lieu_khai_bao__bao_hanh theo phiếu_ghi (= cột id ở đó)
-  // → map { trang_thai, status, payment_status } cho từng phiếu. KhaiBaoCell suy 3 dòng trạng thái từ map này.
-  // Chạy lại mỗi khi danh sách đổi (gồm "Làm mới"). Chỉ tra phiếu_ghi dạng số.
-  const phieuGhiKey = useMemo(
-    () => [...new Set(rows.map(r => String(r['phiếu_ghi'] || '')).filter(v => /^\d+$/.test(v)))].sort().join(','),
-    [rows]
-  );
+  // Đối chiếu LIVE với DB trung gian CNV: gom MỌI cnv_id của mọi LẦN trên các phiếu đang hiển thị
+  // (lần 1 = số phiếu trần, lần 2+ = "229545-2") → tra du_lieu_khai_bao__bao_hanh.id → Map<cnv_id, row>.
+  // LanCard suy 3 dòng trạng thái từ map này. Chạy lại mỗi khi danh sách đổi (gồm "Làm mới").
+  const cnvIdKey = useMemo(() => {
+    const ids = new Set();
+    for (const r of rows) {
+      const bare = String(r['phiếu_ghi'] || '');
+      if (/^\d+$/.test(bare)) ids.add(bare); // luôn tra số phiếu trần (lần 1 / đối chiếu CNV)
+      for (const l of getEffectiveLan(r)) if (l['cnv_id']) ids.add(String(l['cnv_id']));
+    }
+    return [...ids].sort().join('||');
+  }, [rows]);
   useEffect(() => {
-    if (!phieuGhiKey) { setKhaiBaoExt(new Map()); return; }
+    if (!cnvIdKey) { setKhaiBaoExt(new Map()); return; }
     let cancelled = false;
     (async () => {
-      const ids = phieuGhiKey.split(',');
+      const all = cnvIdKey.split('||').filter(Boolean);
+      const numeric = all.filter(x => /^\d+$/.test(x));        // lần 1 — khớp id (số) hiện có
+      const composite = all.filter(x => !/^\d+$/.test(x));     // lần 2+ "229545-2" — chỉ khớp khi CNV id là text
       const map = new Map();
-      const step = 300;
-      for (let i = 0; i < ids.length; i += step) {
-        const { data, error } = await taskDb
-          .from('du_lieu_khai_bao__bao_hanh')
-          .select('id, trang_thai, status, payment_status')
-          .in('id', ids.slice(i, i + step));
-        if (error) { console.warn('[KhaiBao] đối chiếu CNV lỗi:', error.message); break; }
-        (data || []).forEach(d => map.set(String(d.id), d));
-      }
+      const fetchChunked = async (list) => {
+        for (let i = 0; i < list.length; i += 300) {
+          const { data, error } = await taskDb
+            .from('du_lieu_khai_bao__bao_hanh')
+            .select('id, trang_thai, status, payment_status')
+            .in('id', list.slice(i, i + 300));
+          if (error) return error;
+          (data || []).forEach(d => map.set(String(d.id), d));
+        }
+        return null;
+      };
+      const e1 = await fetchChunked(numeric);
+      if (e1) console.warn('[KhaiBao] đối chiếu CNV (số) lỗi:', e1.message);
+      if (composite.length) { const e2 = await fetchChunked(composite); if (e2) console.warn('[KhaiBao] CNV chưa hỗ trợ id ghép (lần 2+):', e2.message); }
       if (!cancelled) setKhaiBaoExt(map);
     })();
     return () => { cancelled = true; };
-  }, [phieuGhiKey]);
+  }, [cnvIdKey]);
 
   // Số liệu dashboard — đếm theo trạng thái Caresoft (trạng_thái_phiếu_ghi) trên CHÍNH bảng
   // xử lý (rows). Đếm từ rows (không phải bảng nguồn) để khi đóng/mở phiếu là số đổi ngay.
@@ -892,29 +962,43 @@ export default function WarrantyProcessing() {
 
   // Gửi Form khai báo bảo hành → POST payload (record CNV) tới DB trung gian, rồi đánh dấu
   // đã gửi + khởi tạo 2 trạng thái (xác nhận online / thanh toán) nếu chưa có. Cho gửi lại.
-  const sendKhaiBao = async (row) => {
-    const label = row['phiếu_ghi'] || row['id_phiếu_ghi'];
-    const resend = !!row['thời_điểm_gửi_khai_báo'];
-    if (!window.confirm(resend ? `Gửi LẠI form khai báo bảo hành cho phiếu ${label}?` : `Gửi form khai báo bảo hành cho phiếu ${label}?`)) return;
+  // ── Xử lý phiếu NHIỀU LẦN (cột Form khai báo) ──
+  // Ghi cột các_lần (lạc quan + DB). operator = user đăng nhập.
+  const persistLans = async (row, newLans) => {
+    const operator = (user && (user.name || user.id)) || '';
+    setRows(prev => prev.map(x => x.id === row.id ? { ...x, 'các_lần': newLans, 'người_cập_nhật': operator } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update({ 'các_lần': newLans, 'người_cập_nhật': operator }).eq('id', row.id);
+    if (error) { alert('Lỗi lưu các lần: ' + error.message); await fetchRows(); }
+  };
+  // Thêm 1 lần mới (lần = max+1). Materialize cả lần ảo (migration) nếu có.
+  const addLan = async (row) => {
+    const lans = getEffectiveLan(row);
+    const nextNo = lans.reduce((m, l) => Math.max(m, l['lần'] || 0), 0) + 1;
+    const phieuGhi = row['phiếu_ghi'] || row['id_phiếu_ghi'];
+    await persistLans(row, [...lans, { 'lần': nextNo, 'cnv_id': cnvIdForLan(phieuGhi, nextNo), 'loại_nhiệm_vụ': '', 'thời_điểm_gửi': null }]);
+  };
+  // Lưu thông tin 1 lần (không gửi).
+  const saveLan = async (row, lan, draft) => {
+    const lans = getEffectiveLan(row).map(l => l['lần'] === lan['lần'] ? { ...l, ...(draft || {}) } : l);
+    await persistLans(row, lans);
+  };
+  // Gửi form 1 lần → POST payload CNV (id ghép) → đánh dấu thời_điểm_gửi + lưu các_lần. draft = sửa kèm (nếu có).
+  const sendLan = async (row, lan, draft) => {
+    let lans = getEffectiveLan(row);
+    let target = lans.find(l => l['lần'] === lan['lần']) || { ...lan };
+    if (draft) target = { ...target, ...draft };
+    const label = `${row['phiếu_ghi'] || row['id_phiếu_ghi']} · lần ${target['lần']}`;
+    if (!window.confirm(`Gửi form khai báo cho phiếu ${label}?`)) return;
     const operator = (user && (user.name || user.id)) || '';
     try {
-      const payload = buildKhaiBaoRecord(row, fieldOptions);
-      const res = await fetch(KHAI_BAO_WEBHOOK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const payload = buildLanKhaiBaoRecord(row, target, fieldOptions);
+      const res = await fetch(KHAI_BAO_WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      const patch = {
-        'thời_điểm_gửi_khai_báo': new Date().toISOString(),
-        'người_gửi_khai_báo': operator,
-        'trạng_thái_xác_nhận_online': row['trạng_thái_xác_nhận_online'] || KB_XAC_NHAN_ONLINE_INIT,
-        'trạng_thái_thanh_toán': row['trạng_thái_thanh_toán'] || KB_THANH_TOAN_INIT,
-        'người_cập_nhật': operator,
-      };
-      setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
-      const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
-      if (error) { alert('Đã gửi form nhưng lỗi lưu trạng thái: ' + error.message); await fetchRows(); }
+      const sentLan = { ...target, 'thời_điểm_gửi': new Date().toISOString(), 'người_gửi': operator };
+      let found = false;
+      const newLans = lans.map(l => { if (l['lần'] === target['lần']) { found = true; return sentLan; } return l; });
+      if (!found) newLans.push(sentLan);
+      await persistLans(row, newLans);
     } catch (e) {
       alert('Lỗi gửi form khai báo: ' + (e?.message || e));
     }
@@ -1134,16 +1218,17 @@ export default function WarrantyProcessing() {
                 {cols.map(c => {
                   const isSteps = c.key === 'các_bước';
                   const isInfo = c.key === 'thông_tin';
+                  const isWide = isSteps || c.key === 'khai_báo'; // dãy ô ngang (bước WF / các lần)
                   return (
                     <td key={c.key} style={{
                       padding: '0.6rem 0.5rem', fontSize: '0.78rem', color: '#334155', verticalAlign: 'top',
-                      maxWidth: isSteps ? 'none' : isInfo ? 300 : (TRUNCATE_KEYS.includes(c.key) ? '220px' : 'none'),
-                      minWidth: isSteps ? 260 : isInfo ? 210 : undefined,
-                      overflow: (isSteps || isInfo) ? 'visible' : 'hidden',
-                      textOverflow: (isSteps || isInfo) ? 'clip' : 'ellipsis',
+                      maxWidth: isWide ? 'none' : isInfo ? 300 : (TRUNCATE_KEYS.includes(c.key) ? '220px' : 'none'),
+                      minWidth: isWide ? 260 : isInfo ? 210 : undefined,
+                      overflow: (isWide || isInfo) ? 'visible' : 'hidden',
+                      textOverflow: (isWide || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSendKhaiBao: sendKhaiBao, khaiBaoExt })}
+                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, khaiBaoExt })}
                     </td>
                   );
                 })}
