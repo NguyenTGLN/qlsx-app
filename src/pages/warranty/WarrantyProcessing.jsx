@@ -33,8 +33,8 @@ const toISOForPicker = (v) => {
   if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
   return toISODate(v); // yyyy-mm-dd, yyyy/mm/dd, ISO
 };
-// Định dạng ngày để LƯU & ĐẨY về Caresoft: 'YYYY/MM/DD' (gạch chéo) — CS chỉ nhận năm/tháng/ngày.
-const toCsDate = (v) => { const iso = toISOForPicker(v); return iso ? iso.replace(/-/g, '/') : ''; };
+// Định dạng ngày để LƯU & ĐẨY về Caresoft: 'YYYY-MM-DD' (gạch ngang).
+const toCsDate = (v) => toISOForPicker(v);
 // Giá trị ngày có nằm trong [from, to] không (from/to dạng YYYY-MM-DD; rỗng = bỏ qua cận đó).
 const dateInRange = (v, from, to) => {
   if (!from && !to) return true;
