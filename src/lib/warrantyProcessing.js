@@ -262,7 +262,7 @@ export function buildKhaiBaoRecord(row, fieldOptions = []) {
     action: 'CREATE',
     oldValues: null,
     newValues: {
-      Phieu_Ghi:       s((row && (row['id_phiếu_ghi'] || row['phiếu_ghi']))),
+      Phieu_Ghi:       s((row && (row['phiếu_ghi'] || row['id_phiếu_ghi']))), // số phiếu hiển thị, fallback id nội bộ
       Ma_Don_Hang:     s((row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']),
       San_Pham:        s(optLabel('mã_sản_phẩm')),
       Ngay_Lap_Dat:    normDateYmd(tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),

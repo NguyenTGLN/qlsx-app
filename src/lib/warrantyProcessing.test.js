@@ -413,6 +413,11 @@ describe('buildKhaiBaoRecord', () => {
     expect(v.Phuong_An_XL).toBe('PA gốc');
   });
 
+  test('Phieu_Ghi ưu tiên số phiếu hiển thị (phiếu_ghi), fallback id nội bộ', () => {
+    expect(buildKhaiBaoRecord({ 'phiếu_ghi': '229545', 'id_phiếu_ghi': '697297382' }, FO).newValues.Phieu_Ghi).toBe('229545');
+    expect(buildKhaiBaoRecord({ 'id_phiếu_ghi': '697297382' }, FO).newValues.Phieu_Ghi).toBe('697297382');
+  });
+
   test('Ngay_Lap_Dat luôn chuẩn hóa về yyyy-mm-dd dù lưu kiểu khác', () => {
     const row = { ...baseRow, 'ngày_lắp_đặt': '2026/06/22', 'thông_tin_bổ_sung': { 'ngày_lắp_đặt': '2026/06/22' } };
     expect(buildKhaiBaoRecord(row, FO).newValues.Ngay_Lap_Dat).toBe('2026-06-22');
