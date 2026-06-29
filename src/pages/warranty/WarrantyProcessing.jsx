@@ -19,17 +19,17 @@ const toISODate = (v) => {
   const d = new Date(v);
   return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-// Hiển thị ngày dạng DD/MM/YYYY (bỏ giờ). Không parse được → trả nguyên gốc.
+// Hiển thị ngày dạng DD-MM-YYYY (bỏ giờ). Không parse được → trả nguyên gốc.
 const fmtDateOnly = (v) => {
   const iso = toISODate(v);
   if (!iso) return v ? String(v) : '-';
   const [y, mo, d] = iso.split('-');
-  return `${d}/${mo}/${y}`;
+  return `${d}-${mo}-${y}`;
 };
-// Chuẩn hóa ngày về 'YYYY-MM-DD' cho input chọn ngày — nhận THÊM dd/mm/yyyy (toISODate không nhận).
+// Chuẩn hóa ngày về 'YYYY-MM-DD' cho input chọn ngày — nhận THÊM dd/mm/yyyy hoặc dd-mm-yyyy.
 const toISOForPicker = (v) => {
   if (!v) return '';
-  const dmy = String(v).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const dmy = String(v).trim().match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
   if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
   return toISODate(v); // yyyy-mm-dd, yyyy/mm/dd, ISO
 };
@@ -108,22 +108,22 @@ const stepRange = (gran, from, dir) => {
   return { from, to: from };
 };
 
-// Ô nhập 1 ngày dạng dd/mm/yyyy (gõ tay) + nút lịch (input date ẩn chồng lên icon).
+// Ô nhập 1 ngày dạng dd-mm-yyyy (gõ tay) + nút lịch (input date ẩn chồng lên icon).
 const SmartDateInput = ({ value, onChange }) => {
-  const display = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? (() => { const [y, m, d] = value.split('-'); return `${d}/${m}/${y}`; })() : '';
+  const display = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? (() => { const [y, m, d] = value.split('-'); return `${d}-${m}-${y}`; })() : '';
   const [text, setText] = useState(display);
   useEffect(() => { setText(display); }, [display]);
   const commit = (s) => {
     const t = s.trim();
     if (t === '') { onChange(''); return; }
-    const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const m = t.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/); // nhận cả - và /
     if (m) onChange(`${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`);
     else setText(display); // không hợp lệ → trả lại giá trị cũ
   };
   return (
     <span style={{ position: 'relative', display: 'inline-block' }}>
       <input
-        type="text" value={text} placeholder="dd/mm/yyyy"
+        type="text" value={text} placeholder="dd-mm-yyyy"
         onChange={e => setText(e.target.value)}
         onBlur={e => commit(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') commit(e.currentTarget.value); }}
