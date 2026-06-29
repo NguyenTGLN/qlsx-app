@@ -1,0 +1,5902 @@
+[
+    {
+        "key": "pipeline_deals.stage_id",
+        "description": "LBL_DEAL_PIPELINE_STAGE",
+        "type": 3,
+        "object_type": [
+            "1",
+            "2"
+        ],
+        "data_from": 1,
+        "table": "sfa.pipeline_stage",
+        "table_value": "id",
+        "table_description": "stage_name",
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": "",
+        "field_type": "STATIC_FIELD",
+        "parent_id": 1000000000000,
+        "id": "LBL_DEAL_PIPELINE_STAGE",
+        "data": []
+    },
+    {
+        "key": "pipeline_deals.lost_reasons",
+        "description": "LBL_DEAL_LOST_REASON",
+        "type": 3,
+        "object_type": [
+            "2"
+        ],
+        "data_from": 1,
+        "table": "sfa.deal_lost_reason",
+        "table_value": "id",
+        "table_description": "label",
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": " and deleted_at is null",
+        "field_type": "STATIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "pipeline_deals.deal_unqualified_reasons",
+        "description": "LBL_UNQUALIFY_REASON",
+        "type": 3,
+        "object_type": [
+            "2"
+        ],
+        "data_from": 1,
+        "table": "sfa.unqualified_reason",
+        "table_value": "id",
+        "table_description": "label",
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": " and active=1 and type = 2 and deleted_at is null",
+        "field_type": "STATIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "pipeline_deals.lead_unqualified_reasons",
+        "description": "LBL_LEAD_UNQUALIFY_REASON",
+        "type": 3,
+        "object_type": [
+            "1"
+        ],
+        "data_from": 1,
+        "table": "sfa.unqualified_reason",
+        "table_value": "id",
+        "table_description": "label",
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": " and active=1 and type = 1 and deleted_at is null",
+        "field_type": "STATIC_FIELD",
+        "data": [
+            {
+                "value": 588,
+                "description": "Hoàn thành"
+            }
+        ]
+    },
+    {
+        "key": "pipeline_deals.convert_type",
+        "description": "LBL_LEAD_CONVERT_TYPE",
+        "type": 3,
+        "object_type": [
+            "1"
+        ],
+        "data_from": 0,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD",
+        "data": [
+            {
+                "value": "1",
+                "description": "LBL_CONVERTED_TO_DEAL"
+            },
+            {
+                "value": "2",
+                "description": "LBL_UNQUALIFIED"
+            }
+        ]
+    },
+    {
+        "key": "pipeline_deals.closed_type",
+        "description": "LBL_DEAL_CLOSE_TYPE",
+        "type": 3,
+        "object_type": [
+            "2"
+        ],
+        "data_from": 0,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD",
+        "data": [
+            {
+                "value": "1",
+                "description": "LBL_WON"
+            },
+            {
+                "value": "2",
+                "description": "LBL_LOST"
+            },
+            {
+                "value": "3",
+                "description": "LBL_UNQUALIFIED"
+            }
+        ]
+    },
+    {
+        "key": "member_status",
+        "description": "LBL_CAMPAIGN_MEMBER_STATUS_NAME",
+        "type": 0,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": null,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "pipeline_deals.dealLabel",
+        "description": "LBL_DEAL_LABEL",
+        "type": 4,
+        "object_type": [
+            "2"
+        ],
+        "data_from": 1,
+        "table": "sfa.labels",
+        "table_value": "id",
+        "table_description": "label",
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": "",
+        "field_type": "STATIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "expectedCloseDate",
+        "description": "LBL_DEAL_ESTIMATED_CLOSED_DATE",
+        "type": 2,
+        "object_type": [
+            "1"
+        ],
+        "data_from": null,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "pipeline_deals.probability",
+        "description": "LBL_DEAL_PROBABILITY",
+        "type": 0,
+        "object_type": [
+            "2"
+        ],
+        "data_from": null,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "pipeline_deals.lead_status_id",
+        "description": "LBL_LEAD_STATUS",
+        "type": 3,
+        "object_type": [
+            "1"
+        ],
+        "data_from": 1,
+        "table": "sfa.lead_status",
+        "table_value": "id",
+        "table_description": "label",
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "pipeline_deals.leadLabel",
+        "description": "LBL_LEAD_LABEL",
+        "type": 4,
+        "object_type": [
+            "1"
+        ],
+        "data_from": 1,
+        "table": "sfa.labels",
+        "table_value": "id",
+        "table_description": "label",
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": "",
+        "field_type": "STATIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "pipeline_deals.value",
+        "description": "LBL_DEAL_AMOUNT",
+        "type": 0,
+        "object_type": [
+            "2"
+        ],
+        "data_from": 0,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "pipeline_deals.pipeline_id",
+        "description": "LBL_DEAL_PIPELINE",
+        "type": 3,
+        "object_type": [
+            "1",
+            "2"
+        ],
+        "data_from": 1,
+        "table": "sfa.pipeline",
+        "table_value": "id",
+        "table_description": "name",
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD",
+        "id": 1000000000000,
+        "data": []
+    },
+    {
+        "key": "ticket_subject",
+        "description": "LBL_TICKET_SUBJECT",
+        "type": 0,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": null,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "comment",
+        "description": "LBL_TICKET_DESCRIPTION",
+        "type": 6,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": null,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "group_id",
+        "description": "LBL_GROUP",
+        "type": 3,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": 1,
+        "table": "`groups`",
+        "table_value": "group_id",
+        "table_description": "group_name",
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD",
+        "data": [
+            {
+                "value": 15007,
+                "description": "Kế toán"
+            },
+            {
+                "value": 15008,
+                "description": "Sale Admin"
+            },
+            {
+                "value": 15009,
+                "description": "Bảo hành và CSKH"
+            },
+            {
+                "value": 15010,
+                "description": "Hỗ trợ tư vấn"
+            }
+        ]
+    },
+    {
+        "key": "assignee_id",
+        "description": "LBL_ASSIGNEE",
+        "type": 5,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": null,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 1,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "ticket_priority",
+        "description": "LBL_TICKET_PRIORITY",
+        "type": 3,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": 1,
+        "table": "ticket_priority",
+        "table_value": "ticket_priority",
+        "table_description": "ticket_priority",
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD",
+        "data": [
+            {
+                "value": "Low",
+                "description": "Low"
+            },
+            {
+                "value": "Normal",
+                "description": "Normal"
+            },
+            {
+                "value": "High",
+                "description": "High"
+            },
+            {
+                "value": "Urgent",
+                "description": "Urgent"
+            }
+        ]
+    },
+    {
+        "key": "ticket_status",
+        "description": "LBL_TICKET_STATUS",
+        "type": 3,
+        "object_type": [
+            "0"
+        ],
+        "data_from": 0,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": "open",
+                "description": "TICKET_STATUS_OPEN"
+            },
+            {
+                "value": "solved",
+                "description": "TICKET_STATUS_SOLVED"
+            },
+            {
+                "value": "pending",
+                "description": "TICKET_STATUS_PENDING"
+            }
+        ]
+    },
+    {
+        "key": "ccs",
+        "description": "LBL_CCS",
+        "type": 5,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": null,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 1,
+        "multiple_value": 1,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "follows",
+        "description": "LBL_FOLLOWS",
+        "type": 5,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": null,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 1,
+        "multiple_value": 1,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "tags",
+        "description": "LBL_TAGS",
+        "type": 0,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": null,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 1,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD"
+    },
+    {
+        "key": "isPublic",
+        "description": "LBL_REPLY_PUBLIC",
+        "type": 3,
+        "object_type": [
+            "0",
+            "1",
+            "2"
+        ],
+        "data_from": 0,
+        "table": null,
+        "table_value": null,
+        "table_description": null,
+        "table_account": 0,
+        "multiple_value": 0,
+        "extra_info_sql": null,
+        "field_type": "STATIC_FIELD",
+        "data": [
+            {
+                "value": "1",
+                "description": "REPLY_PUBLIC"
+            },
+            {
+                "value": "0",
+                "description": "REPLY_PRIVATE"
+            }
+        ]
+    },
+    {
+        "key": "addition_field1",
+        "description": "Phân loại công việc",
+        "type": 3,
+        "id": 9662,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 146272,
+                "description": "Hỗ trợ tư vấn",
+                "field_value_id": -1
+            },
+            {
+                "value": 146273,
+                "description": "Bảo hành và Chăm sóc khách hàng",
+                "field_value_id": -1
+            },
+            {
+                "value": 146274,
+                "description": "Cuộc gọi xác nhận điểm lắp đặt",
+                "field_value_id": -1
+            },
+            {
+                "value": 146646,
+                "description": "Thủ tục thanh toán",
+                "field_value_id": -1
+            },
+            {
+                "value": 146880,
+                "description": "Tra cứu thông tin đơn hàng",
+                "field_value_id": -1
+            },
+            {
+                "value": 147057,
+                "description": "Xác nhận thanh toán CPLĐ",
+                "field_value_id": -1
+            },
+            {
+                "value": 148214,
+                "description": "Xác nhận đơn hàng",
+                "field_value_id": -1
+            },
+            {
+                "value": 148215,
+                "description": "Xác nhận kỹ thuật lắp đặt",
+                "field_value_id": -1
+            },
+            {
+                "value": 148357,
+                "description": "CSKH sau bán hàng - ĐLĐ",
+                "field_value_id": -1
+            },
+            {
+                "value": 154852,
+                "description": "CSKH - Đại Lý",
+                "field_value_id": -1
+            },
+            {
+                "value": 162625,
+                "description": "CSKH sau bán hàng - Đại lý",
+                "field_value_id": -1
+            },
+            {
+                "value": 162628,
+                "description": "CSKH sau bán hàng",
+                "field_value_id": -1
+            },
+            {
+                "value": 162774,
+                "description": "CSKH sau 3 ngày",
+                "field_value_id": -1
+            },
+            {
+                "value": 163648,
+                "description": "Gọi đại lý mới T12",
+                "field_value_id": -1
+            },
+            {
+                "value": 164796,
+                "description": "GỌI ĐLĐ T2",
+                "field_value_id": -1
+            },
+            {
+                "value": 172718,
+                "description": "CNV phân công lắp đặt",
+                "field_value_id": -1
+            },
+            {
+                "value": 187222,
+                "description": "ĐLĐ kiểm tra máy",
+                "field_value_id": -1
+            },
+            {
+                "value": 187223,
+                "description": "ĐLĐ thay thế sửa chữa",
+                "field_value_id": -1
+            },
+            {
+                "value": 187224,
+                "description": "ĐLĐ tháo máy gửi bảo hành",
+                "field_value_id": -1
+            },
+            {
+                "value": 187225,
+                "description": "ĐLĐ lắp trả máy",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field2",
+        "description": "Chi tiết công việc",
+        "type": 4,
+        "id": 9663,
+        "parent_id": 9662,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 146276,
+                "description": "- Hỗ trợ sửa chữa bảo hành từ xa",
+                "field_value_id": 146273
+            },
+            {
+                "value": 146277,
+                "description": "- Hỗ trợ lắp đặt từ xa",
+                "field_value_id": 146273
+            },
+            {
+                "value": 146278,
+                "description": "- Yêu cầu kỹ thuật tới bảo hành trực tiếp",
+                "field_value_id": 146273
+            },
+            {
+                "value": 146279,
+                "description": "- Yêu cầu dịch vụ lắp đặt sửa chữa trả phí",
+                "field_value_id": 146273
+            },
+            {
+                "value": 146280,
+                "description": "- Điều chỉnh - sắp xếp kỹ thuật lắp đặt",
+                "field_value_id": 146273
+            },
+            {
+                "value": 146858,
+                "description": "- Đề xuất thanh toán lắp đặt",
+                "field_value_id": 146646
+            },
+            {
+                "value": 146859,
+                "description": "- Đề xuất thanh toán lắp đặt đối với KH hoặc đại lý tự lắp",
+                "field_value_id": 146646
+            },
+            {
+                "value": 146862,
+                "description": "- Từ chối",
+                "field_value_id": 146274
+            },
+            {
+                "value": 146863,
+                "description": "- Gọi không nghe máy/thuê bao",
+                "field_value_id": 146274
+            },
+            {
+                "value": 146865,
+                "description": "- Xác nhận",
+                "field_value_id": 146274
+            },
+            {
+                "value": 147073,
+                "description": "- Chuyển nhánh SA",
+                "field_value_id": 146273
+            },
+            {
+                "value": 147074,
+                "description": "- Chuyển nhánh Sales",
+                "field_value_id": 146273
+            },
+            {
+                "value": 147162,
+                "description": "- Giải đáp thông số KTSP",
+                "field_value_id": 146273
+            },
+            {
+                "value": 147327,
+                "description": "- Xử lý máy tại TTBH",
+                "field_value_id": 146273
+            },
+            {
+                "value": 148361,
+                "description": "- Khách lẻ máy Pi cũ",
+                "field_value_id": 162628
+            },
+            {
+                "value": 148362,
+                "description": "- Đại lý dữ liệu trước 2024",
+                "field_value_id": 162628
+            },
+            {
+                "value": 148363,
+                "description": "- Khách hàng không phải đại lý",
+                "field_value_id": 162628
+            },
+            {
+                "value": 148364,
+                "description": "- Đại lý",
+                "field_value_id": 162628
+            },
+            {
+                "value": 148393,
+                "description": "- Khách hàng đặt biệt (Không gọi)",
+                "field_value_id": 162628
+            },
+            {
+                "value": 148394,
+                "description": "- Đơn hàng mới phát sinh",
+                "field_value_id": 162628
+            },
+            {
+                "value": 149607,
+                "description": "- Gửi linh kiện thay thế từ TTBH",
+                "field_value_id": 146273
+            },
+            {
+                "value": 149723,
+                "description": "- CSKH đại lý",
+                "field_value_id": 162628
+            },
+            {
+                "value": 155397,
+                "description": "- Khiếu nại / Góp ý",
+                "field_value_id": 146273
+            },
+            {
+                "value": 159428,
+                "description": "- Danh sách khách hàng đã nhận",
+                "field_value_id": 162628
+            },
+            {
+                "value": 161278,
+                "description": "- Xác nhận thông tin ĐLĐ",
+                "field_value_id": 146646
+            },
+            {
+                "value": 162633,
+                "description": "- Đơn hàng mới - ĐLĐ chưa lắp",
+                "field_value_id": 162628
+            },
+            {
+                "value": 162634,
+                "description": "- Đơn hàng mới - Đại lý chưa lắp",
+                "field_value_id": 162628
+            },
+            {
+                "value": 162690,
+                "description": "- CSKH SAU BÁN - ĐẠI LÝ",
+                "field_value_id": 162628
+            },
+            {
+                "value": 162830,
+                "description": "CSKH MENTOR 1 SAO",
+                "field_value_id": 154852
+            },
+            {
+                "value": 163170,
+                "description": "-Khách lẻ máy PI cũ",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163171,
+                "description": "-Đại lý dữ liệu trước năm 2024",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163172,
+                "description": "-Khách hàng không phải đại lý",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163173,
+                "description": "-Đại lý",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163174,
+                "description": "-Khách hàng đặc biệt(không gọi)",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163175,
+                "description": "-CSKH Đại lý",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163176,
+                "description": "-Danh sách khách hàng đã nhận",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163177,
+                "description": "-Đơn hàng mới - ĐLĐ chưa lắp",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163178,
+                "description": "-Đơn hàng mới - Đại lý chưa lắp",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163179,
+                "description": "-CSKH SAU BÁN - ĐẠI LÝ",
+                "field_value_id": 162774
+            },
+            {
+                "value": 163213,
+                "description": "CSKH ĐL PHÁT SINH DOANH SỐ",
+                "field_value_id": 154852
+            },
+            {
+                "value": 163649,
+                "description": "Chăm sóc đại lý mới",
+                "field_value_id": 163648
+            },
+            {
+                "value": 164797,
+                "description": "Gọi xác nhận ĐLĐ T2",
+                "field_value_id": 164796
+            },
+            {
+                "value": 165155,
+                "description": "- TRẢ HÀNG HOÀN TIỀN",
+                "field_value_id": 146273
+            },
+            {
+                "value": 167739,
+                "description": "MENTOR 3S TRỞ LÊN",
+                "field_value_id": 154852
+            },
+            {
+                "value": 167740,
+                "description": "COACH 3S TRỞ LÊN",
+                "field_value_id": 154852
+            },
+            {
+                "value": 168510,
+                "description": "- CNV phân công lắp đặt",
+                "field_value_id": 162628
+            },
+            {
+                "value": 171284,
+                "description": "- Test CS",
+                "field_value_id": 162628
+            },
+            {
+                "value": 171360,
+                "description": "- Gọi menter 1S- BÁO KM",
+                "field_value_id": 162628
+            },
+            {
+                "value": 172711,
+                "description": "- Chăm Sóc 100 top Best Seller",
+                "field_value_id": 162628
+            },
+            {
+                "value": 172758,
+                "description": "- ĐẤU TRƯỜNG 24",
+                "field_value_id": 162628
+            },
+            {
+                "value": 175087,
+                "description": "Best",
+                "field_value_id": 154852
+            },
+            {
+                "value": 175097,
+                "description": "- CS 100 top Best Seller T6",
+                "field_value_id": 162628
+            },
+            {
+                "value": 175098,
+                "description": "- CS C3S T6.2025",
+                "field_value_id": 162628
+            },
+            {
+                "value": 175099,
+                "description": "- CS M1S T6.2025",
+                "field_value_id": 162628
+            },
+            {
+                "value": 175121,
+                "description": "-CD DIAMOND",
+                "field_value_id": 162628
+            },
+            {
+                "value": 178252,
+                "description": "CSDL Bán Máy INON KIỀM",
+                "field_value_id": 154852
+            },
+            {
+                "value": 182700,
+                "description": "CSKH máy Pi Hà Nội 2022-2023 New",
+                "field_value_id": 162628
+            },
+            {
+                "value": 182712,
+                "description": "CSKH máy Pi từ 2023 về trước New",
+                "field_value_id": 162628
+            },
+            {
+                "value": 182753,
+                "description": "CSKH máy Pi Hà Nội 2022-2023",
+                "field_value_id": 162628
+            },
+            {
+                "value": 183349,
+                "description": "CS - 100 top Best Seller - T6",
+                "field_value_id": 154852
+            },
+            {
+                "value": 183350,
+                "description": "CHẮM SÓC C3S - T6/2025",
+                "field_value_id": 154852
+            }
+        ]
+    },
+    {
+        "key": "addition_field3",
+        "description": "Mã ĐLĐ",
+        "type": 0,
+        "id": 9665,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field4",
+        "description": "Dữ liệu lắp đặt",
+        "type": 0,
+        "id": 9666,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field5",
+        "description": "Hình ảnh lắp đặt",
+        "type": 0,
+        "id": 9667,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field6",
+        "description": "Tên ngân hàng",
+        "type": 0,
+        "id": 9668,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field7",
+        "description": "Mã đơn hàng",
+        "type": 0,
+        "id": 9669,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field8",
+        "description": "Số lượng máy lắp, hoặc số combo lõi",
+        "type": 0,
+        "id": 9670,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field9",
+        "description": "Tình trạng",
+        "type": 6,
+        "id": 9671,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field10",
+        "description": "KTV xác nhận",
+        "type": 0,
+        "id": 9691,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field11",
+        "description": "Trạng thái cuộc gọi",
+        "type": 4,
+        "id": 9692,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 183008,
+                "description": "Khách hàng hài lòng",
+                "field_value_id": -1
+            },
+            {
+                "value": 191238,
+                "description": "Khách không hài lòng",
+                "field_value_id": -1
+            },
+            {
+                "value": 191239,
+                "description": "Khách hàng không nghe máy",
+                "field_value_id": -1
+            },
+            {
+                "value": 191240,
+                "description": "Máy cần bảo hành",
+                "field_value_id": -1
+            },
+            {
+                "value": 191250,
+                "description": "Chưa lắp đặt",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field12",
+        "description": "Đối tượng nhận linh kiện",
+        "type": 3,
+        "id": 9693,
+        "parent_id": 9662,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 168275,
+                "description": "Điểm Lắp Đặt",
+                "field_value_id": 146273
+            },
+            {
+                "value": 168276,
+                "description": "Khách hàng",
+                "field_value_id": 146273
+            },
+            {
+                "value": 168277,
+                "description": "Đại lý",
+                "field_value_id": 146273
+            }
+        ]
+    },
+    {
+        "key": "addition_field13",
+        "description": "Địa chỉ nhận hàng",
+        "type": 0,
+        "id": 9694,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field14",
+        "description": "Số điện thoại đại lý",
+        "type": 1,
+        "id": 9695,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field15",
+        "description": "Số căn cước công dân",
+        "type": 0,
+        "id": 9696,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field16",
+        "description": "Danh mục hình ảnh, video kiểm tra tại TTBH",
+        "type": 0,
+        "id": 9697,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field17",
+        "description": "Nơi cấp căn cước công dân",
+        "type": 0,
+        "id": 9698,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field18",
+        "description": "Mã số thuế (Nếu có)",
+        "type": 0,
+        "id": 9699,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field19",
+        "description": "Đánh giá của khách hàng",
+        "type": 0,
+        "id": 9700,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field20",
+        "description": "Tiến trình thanh toán",
+        "type": 3,
+        "id": 9701,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 146866,
+                "description": "Yêu cầu mới",
+                "field_value_id": -1
+            },
+            {
+                "value": 146867,
+                "description": "Đang xử lý",
+                "field_value_id": -1
+            },
+            {
+                "value": 146868,
+                "description": "Hoàn thành",
+                "field_value_id": -1
+            },
+            {
+                "value": 146869,
+                "description": "Từ chối thanh toán",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field21",
+        "description": "Chi tiết thanh toán",
+        "type": 3,
+        "id": 9702,
+        "parent_id": 9701,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 146916,
+                "description": "Quá hạn thanh toán",
+                "field_value_id": 146869
+            },
+            {
+                "value": 146917,
+                "description": "Sai thông tin",
+                "field_value_id": 146869
+            },
+            {
+                "value": 146918,
+                "description": "Chưa đầy đủ thông tin",
+                "field_value_id": 146869
+            },
+            {
+                "value": 146919,
+                "description": "Thiếu CCCD/CMT",
+                "field_value_id": 146869
+            },
+            {
+                "value": 146920,
+                "description": "Thiếu hợp đồng bản cứng",
+                "field_value_id": 146869
+            }
+        ]
+    },
+    {
+        "key": "addition_field22",
+        "description": "Khoảng cách",
+        "type": 0,
+        "id": 9703,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field23",
+        "description": "Ngày dự kiến giao hàng",
+        "type": 2,
+        "id": 9704,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field24",
+        "description": "Số điện thoại khách hàng",
+        "type": 0,
+        "id": 9705,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field25",
+        "description": "Tên khách hàng",
+        "type": 0,
+        "id": 9706,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field26",
+        "description": "Gửi linh kiện",
+        "type": 4,
+        "id": 9707,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 149897,
+                "description": "- Yêu cầu gửi linh kiện",
+                "field_value_id": -1
+            },
+            {
+                "value": 149898,
+                "description": "- Đã gửi linh kiện",
+                "field_value_id": -1
+            },
+            {
+                "value": 149899,
+                "description": "- Đã nhận linh kiện",
+                "field_value_id": -1
+            },
+            {
+                "value": 149900,
+                "description": "- Đã thay thế lắp đặt",
+                "field_value_id": -1
+            },
+            {
+                "value": 164481,
+                "description": "- Đang cho thu hồi về TTBH",
+                "field_value_id": -1
+            },
+            {
+                "value": 164482,
+                "description": "- Đã về bàn giao KT",
+                "field_value_id": -1
+            },
+            {
+                "value": 164483,
+                "description": "- Đang sửa chữa linh kiện",
+                "field_value_id": -1
+            },
+            {
+                "value": 164484,
+                "description": "- Đang thay mới linh kiện",
+                "field_value_id": -1
+            },
+            {
+                "value": 164485,
+                "description": "- Đang theo dõi",
+                "field_value_id": -1
+            },
+            {
+                "value": 164486,
+                "description": "- Đã gửi trả máy",
+                "field_value_id": -1
+            },
+            {
+                "value": 164529,
+                "description": "- Đã gửi máy mới (BH)",
+                "field_value_id": -1
+            },
+            {
+                "value": 164531,
+                "description": "- Đã nhận máy (BH)",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field27",
+        "description": "Phân loại điểm lắp đặt",
+        "type": 3,
+        "id": 9710,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 146921,
+                "description": "Đã có hợp đồng (đầy đủ chứng từ)",
+                "field_value_id": -1
+            },
+            {
+                "value": 146922,
+                "description": "Đã có hợp đồng (thiếu cccd/cmt)",
+                "field_value_id": -1
+            },
+            {
+                "value": 146923,
+                "description": "Chưa có hợp đồng",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field28",
+        "description": "Ngày lắp đặt",
+        "type": 2,
+        "id": 9711,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field29",
+        "description": "Linh Kiện",
+        "type": 4,
+        "id": 9719,
+        "parent_id": 9720,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 147442,
+                "description": "Van Từ # E-V-SV-D-WT",
+                "field_value_id": 147036
+            },
+            {
+                "value": 147443,
+                "description": "Biến áp # E-AD-2412",
+                "field_value_id": 147036
+            },
+            {
+                "value": 147444,
+                "description": "Phao điện # E-FS-Q",
+                "field_value_id": 147036
+            },
+            {
+                "value": 147687,
+                "description": "Phao cơ # PHAOCOHB640",
+                "field_value_id": 147036
+            },
+            {
+                "value": 147688,
+                "description": "Bơm # E-P50",
+                "field_value_id": 147036
+            },
+            {
+                "value": 147689,
+                "description": "Van áp thấp nhanh # E-LPS-Q0404",
+                "field_value_id": 147036
+            },
+            {
+                "value": 147690,
+                "description": "Van áp cao nhanh # E-HPS-Q0404",
+                "field_value_id": 147036
+            },
+            {
+                "value": 147691,
+                "description": "Van từ # E-V-SV-D",
+                "field_value_id": 147035
+            },
+            {
+                "value": 147692,
+                "description": "Biến áp # E-AD-2412",
+                "field_value_id": 147035
+            },
+            {
+                "value": 147693,
+                "description": "Phao điện # E-FS-Q",
+                "field_value_id": 147035
+            },
+            {
+                "value": 147694,
+                "description": "Phao cơ # PHAOCOHB640",
+                "field_value_id": 147035
+            },
+            {
+                "value": 147695,
+                "description": "Bơm # E-P50",
+                "field_value_id": 147035
+            },
+            {
+                "value": 147696,
+                "description": "Van áp thấp nhanh # E-LPS-Q0404",
+                "field_value_id": 147035
+            },
+            {
+                "value": 147697,
+                "description": "Van áp cao nhanh # E-LPS-Q0404",
+                "field_value_id": 147035
+            },
+            {
+                "value": 147698,
+                "description": "Biến áp # E-AD-24V",
+                "field_value_id": 147033
+            },
+            {
+                "value": 147699,
+                "description": "PCB # BHM-PCB-4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 147700,
+                "description": "Phao điện # E-FS-4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 147701,
+                "description": "Bơm # BHM-E-P50-4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 147702,
+                "description": "Gía đỡ lõi # BHM-GN-4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 147703,
+                "description": "Vòi lạnh # V-IS-WT4200-C",
+                "field_value_id": 147033
+            },
+            {
+                "value": 147704,
+                "description": "Vòi nóng # V-IS-WT4200-H",
+                "field_value_id": 147033
+            },
+            {
+                "value": 147705,
+                "description": "Van từ # BHM-E-V-SV-4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 147706,
+                "description": "Biến áp # E-AD-24V",
+                "field_value_id": 147034
+            },
+            {
+                "value": 147707,
+                "description": "PCB # BHM-PCB-4200-UF",
+                "field_value_id": 147034
+            },
+            {
+                "value": 147708,
+                "description": "Phao điện # E-FS-030S( cùng mã 030S)",
+                "field_value_id": 147034
+            },
+            {
+                "value": 147709,
+                "description": "Bơm # BHM-PCB-4200",
+                "field_value_id": 147034
+            },
+            {
+                "value": 147710,
+                "description": "Vòi lạnh # V-IS-WT4200-C",
+                "field_value_id": 147034
+            },
+            {
+                "value": 147711,
+                "description": "Vòi nóng # V-IS-WT4200-H",
+                "field_value_id": 147034
+            },
+            {
+                "value": 147712,
+                "description": "Van từ # BHM-E-V-SV-4200",
+                "field_value_id": 147034
+            },
+            {
+                "value": 147713,
+                "description": "Bơm # E-P50",
+                "field_value_id": 147026
+            },
+            {
+                "value": 147714,
+                "description": "Biến áp # E-AD-2412",
+                "field_value_id": 147026
+            },
+            {
+                "value": 147715,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 147026
+            },
+            {
+                "value": 147716,
+                "description": "Bình áp # B-PRO-32P-K",
+                "field_value_id": 147026
+            },
+            {
+                "value": 147717,
+                "description": "Bơm # E-P50",
+                "field_value_id": 147027
+            },
+            {
+                "value": 147718,
+                "description": "Biến áp # E-AD-2412",
+                "field_value_id": 147027
+            },
+            {
+                "value": 147719,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 147027
+            },
+            {
+                "value": 147720,
+                "description": "Bình áp # B-PRO-32P-K",
+                "field_value_id": 147027
+            },
+            {
+                "value": 147724,
+                "description": "Phao điện # E-FS-030S",
+                "field_value_id": 147032
+            },
+            {
+                "value": 147731,
+                "description": "Vòi lấy nước # V-IS-030S",
+                "field_value_id": 147032
+            },
+            {
+                "value": 147732,
+                "description": "Bơm # E-P50-12V-WB",
+                "field_value_id": 147032
+            },
+            {
+                "value": 147733,
+                "description": "PCB máy # E-BTH-PCB-101T",
+                "field_value_id": 147005
+            },
+            {
+                "value": 147734,
+                "description": "Cổng sạc nam châm # BHM-BTH-SAC",
+                "field_value_id": 147005
+            },
+            {
+                "value": 147735,
+                "description": "Dây sac # BTH-CABLE",
+                "field_value_id": 147005
+            },
+            {
+                "value": 147736,
+                "description": "Màng RO # FK-RO50",
+                "field_value_id": 147028
+            },
+            {
+                "value": 147746,
+                "description": "Lõi UF # F-BF106-UF",
+                "field_value_id": 147016
+            },
+            {
+                "value": 147882,
+                "description": "Lõi UF # F-BF108-UF",
+                "field_value_id": 147015
+            },
+            {
+                "value": 148057,
+                "description": "Bình áp # B-PRO-32P-K",
+                "field_value_id": 147028
+            },
+            {
+                "value": 148340,
+                "description": "Van từ # E-V-SV-D-WT",
+                "field_value_id": 147028
+            },
+            {
+                "value": 148341,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 147028
+            },
+            {
+                "value": 148342,
+                "description": "Biến áp # E-AD-2412-WT",
+                "field_value_id": 147028
+            },
+            {
+                "value": 148343,
+                "description": "Bơm # E-P50-WT",
+                "field_value_id": 147028
+            },
+            {
+                "value": 148344,
+                "description": "Van 1 chiều # V-CV-Q-1544",
+                "field_value_id": 147028
+            },
+            {
+                "value": 148345,
+                "description": "Mặt kính # C-LUX-100UF-MK",
+                "field_value_id": 147028
+            },
+            {
+                "value": 148346,
+                "description": "Lõi UF # FK-UF-HQ9",
+                "field_value_id": 147027
+            },
+            {
+                "value": 149620,
+                "description": "Lõi ECOMAC # FK-HQ9-1E",
+                "field_value_id": 147027
+            },
+            {
+                "value": 149663,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 147033
+            },
+            {
+                "value": 149887,
+                "description": "Vòi lạnh # V-IS-HB640-C",
+                "field_value_id": 147036
+            },
+            {
+                "value": 149888,
+                "description": "Khung inox # FR-WH-AS-INOX",
+                "field_value_id": 147018
+            },
+            {
+                "value": 149904,
+                "description": "FK-RO50-CSM",
+                "field_value_id": 149903
+            },
+            {
+                "value": 149905,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 147024
+            },
+            {
+                "value": 149930,
+                "description": "PCB máy # PCB-HB640",
+                "field_value_id": 147035
+            },
+            {
+                "value": 149931,
+                "description": "Cầu chì # E-HB640-FUSE",
+                "field_value_id": 147035
+            },
+            {
+                "value": 149951,
+                "description": "Van áp thấp nhanh # E-LPS-Q0404",
+                "field_value_id": 147028
+            },
+            {
+                "value": 149952,
+                "description": "Ống thoát hơi bình nóng # T-DM-H-WT4200",
+                "field_value_id": 147034
+            },
+            {
+                "value": 149957,
+                "description": "Van điều chỉnh lưu lượng thứ cấp # BHM-V-FS-BTM-105DN",
+                "field_value_id": 147012
+            },
+            {
+                "value": 150082,
+                "description": "Buồng điện giải 7 bản cực # E-BTM-EB-7P",
+                "field_value_id": 147015
+            },
+            {
+                "value": 150085,
+                "description": "Vòi inox 304 # V-F304-AQ6",
+                "field_value_id": 147028
+            },
+            {
+                "value": 150088,
+                "description": "Block lạnh # BHM-BLOCK-C-HB640",
+                "field_value_id": 147036
+            },
+            {
+                "value": 150089,
+                "description": "Block nóng # BHM-BLOCK-H-HB640",
+                "field_value_id": 147036
+            },
+            {
+                "value": 150090,
+                "description": "Block lạnh # BHM-BLOCK-C-HB640",
+                "field_value_id": 147035
+            },
+            {
+                "value": 150116,
+                "description": "Lõi PRE CACBON # FK-PRC11",
+                "field_value_id": 147033
+            },
+            {
+                "value": 150315,
+                "description": "Bơm # E-P50",
+                "field_value_id": 147037
+            },
+            {
+                "value": 150316,
+                "description": "Biến áp # E-AD-2412",
+                "field_value_id": 147037
+            },
+            {
+                "value": 150344,
+                "description": "Van từ # E-V-SV-D",
+                "field_value_id": 147026
+            },
+            {
+                "value": 150638,
+                "description": "Nắp ecomac # GS-HQ9-1E",
+                "field_value_id": 147026
+            },
+            {
+                "value": 151647,
+                "description": "Lõi ECOMAC # FK-HQ9-1E",
+                "field_value_id": 147026
+            },
+            {
+                "value": 151743,
+                "description": "Vòi nóng # V-IS-HB640-H",
+                "field_value_id": 147036
+            },
+            {
+                "value": 151749,
+                "description": "Van bình áp # V-BV-Z2544",
+                "field_value_id": 147026
+            },
+            {
+                "value": 151750,
+                "description": "Van bình áp # V-BV-Z2544",
+                "field_value_id": 147028
+            },
+            {
+                "value": 151772,
+                "description": "Lõi lượng diệt khuẩn lượng tử # OF-QD10",
+                "field_value_id": 147024
+            },
+            {
+                "value": 151798,
+                "description": "Công tắc lạnh # E-SW-HB640-H",
+                "field_value_id": 147036
+            },
+            {
+                "value": 151851,
+                "description": "Lỗi Kiềm # FK - HYDRO11",
+                "field_value_id": 147036
+            },
+            {
+                "value": 152144,
+                "description": "Vỏ máy 4200 UF không lõi # OWT-4200-UF",
+                "field_value_id": 147034
+            },
+            {
+                "value": 152910,
+                "description": "Ống mềm thoát hơi bình nóng # T-DM-H-WT4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 152961,
+                "description": "NAPCOC-20G",
+                "field_value_id": 152960
+            },
+            {
+                "value": 152963,
+                "description": "3IN1 WATEK # WT-45",
+                "field_value_id": 152962
+            },
+            {
+                "value": 152964,
+                "description": "Bình chứa # BTH-BOTTLE-101T",
+                "field_value_id": 147005
+            },
+            {
+                "value": 153052,
+                "description": "Lõi cacbon # F-BF106-CB",
+                "field_value_id": 147017
+            },
+            {
+                "value": 154221,
+                "description": "Bút đo hydrogen # D-H2",
+                "field_value_id": 154220
+            },
+            {
+                "value": 154641,
+                "description": "Van áp cao nhanh # E-HPS-Q0404",
+                "field_value_id": 147028
+            },
+            {
+                "value": 154764,
+                "description": "Khay hấng nước # BHM-TRAY-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 154800,
+                "description": "Màn hình hiển thị # BHM-SC-BTM505N-DP",
+                "field_value_id": 147016
+            },
+            {
+                "value": 154846,
+                "description": "Màng RO # FK-RO50",
+                "field_value_id": 147024
+            },
+            {
+                "value": 155182,
+                "description": "Van từ nhanh # E-V-SV-D",
+                "field_value_id": 147037
+            },
+            {
+                "value": 155184,
+                "description": "FK-R050",
+                "field_value_id": 155183
+            },
+            {
+                "value": 155186,
+                "description": "Bình áp # B-PRO-3.2P-K",
+                "field_value_id": 155185
+            },
+            {
+                "value": 155195,
+                "description": "Màng lọc RO CSM # FK-RO50-CSM",
+                "field_value_id": 155194
+            },
+            {
+                "value": 155241,
+                "description": "Bơm WT # E-P50",
+                "field_value_id": 155240
+            },
+            {
+                "value": 155600,
+                "description": "Bình đựng nước # BT1000",
+                "field_value_id": 155599
+            },
+            {
+                "value": 155673,
+                "description": "Lõi post cacbon # FK-PC11",
+                "field_value_id": 155672
+            },
+            {
+                "value": 155684,
+                "description": "Máy mới # WT-3C-RO",
+                "field_value_id": 154763
+            },
+            {
+                "value": 155685,
+                "description": "Van áp thấp #E-LPS-Wonbong",
+                "field_value_id": 147033
+            },
+            {
+                "value": 155686,
+                "description": "Nút khóa trẻ em # KHOA-WT-4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 155737,
+                "description": "Gioang lõi # GIOANG-LOI-WT45",
+                "field_value_id": 152962
+            },
+            {
+                "value": 155738,
+                "description": "Nắp trên bình # Up-Cover-WT45",
+                "field_value_id": 152962
+            },
+            {
+                "value": 155739,
+                "description": "Nắp dưới bình # L-Cover-WT45",
+                "field_value_id": 152962
+            },
+            {
+                "value": 155830,
+                "description": "Lõi lọc Sendiment # FK-PP11",
+                "field_value_id": 147028
+            },
+            {
+                "value": 155833,
+                "description": "E-BTM-WFS # Bộ đo lưu lượng nước BTM (áp thấp)",
+                "field_value_id": 147014
+            },
+            {
+                "value": 156178,
+                "description": "Màng CSM # FK-RO50-CSM",
+                "field_value_id": 156177
+            },
+            {
+                "value": 156179,
+                "description": "Thành bên trái + phải # BHM-4200-SIDEPANEL",
+                "field_value_id": 147033
+            },
+            {
+                "value": 156181,
+                "description": "Máy mới # LUX 200RO",
+                "field_value_id": 147028
+            },
+            {
+                "value": 156203,
+                "description": "Nắp che trụ # NAPCHETRU105DN",
+                "field_value_id": 147012
+            },
+            {
+                "value": 156461,
+                "description": "Đầu kết nối dây nước vào ra # B-C-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 156587,
+                "description": "Trụ giắc to # BTM-105DN-TR-GT",
+                "field_value_id": 147012
+            },
+            {
+                "value": 156710,
+                "description": "Vòi nóng # V-IS-HB640-H",
+                "field_value_id": 147035
+            },
+            {
+                "value": 156711,
+                "description": "Vòi lạnh # V-IS-HB640-C",
+                "field_value_id": 147035
+            },
+            {
+                "value": 156716,
+                "description": "Buồng điện giải 7 bản cực # E-BTM-EB-7P",
+                "field_value_id": 147012
+            },
+            {
+                "value": 156806,
+                "description": "Rắc nối trụ BTM 105 # BHM-E-BTM-C-105",
+                "field_value_id": 147012
+            },
+            {
+                "value": 156807,
+                "description": "PCB máy 105DN # BHM-E-BTM-PCB-105DN",
+                "field_value_id": 147012
+            },
+            {
+                "value": 156810,
+                "description": "Van từ # E-V-SV-D",
+                "field_value_id": 147033
+            },
+            {
+                "value": 156831,
+                "description": "Lõi lọc UF # F-BF108-UF",
+                "field_value_id": 147013
+            },
+            {
+                "value": 156950,
+                "description": "PCB máy 207 # BH-E-BTM-PCB-207",
+                "field_value_id": 147013
+            },
+            {
+                "value": 157016,
+                "description": "PCB đèn báo # BHM-PCB-LED-4200-RO",
+                "field_value_id": 147033
+            },
+            {
+                "value": 157215,
+                "description": "Máy BTM-105DN # BTM-105DN",
+                "field_value_id": 147012
+            },
+            {
+                "value": 157609,
+                "description": "Màng lọc ngăn bản cực # BTH-DRY-MEMB",
+                "field_value_id": 147005
+            },
+            {
+                "value": 157774,
+                "description": "Bơm WT # E-P50",
+                "field_value_id": 149791
+            },
+            {
+                "value": 157775,
+                "description": "Biến áp # E-AD-2412",
+                "field_value_id": 149791
+            },
+            {
+                "value": 157776,
+                "description": "Bộ đo lưu lượng nước BTM # BHM-E-BTM-WFS",
+                "field_value_id": 147016
+            },
+            {
+                "value": 158140,
+                "description": "PCB cảm ứng # BHM-PCB-TOUCH-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 158142,
+                "description": "PCB máy HB640 # BHM-PCB-HB640",
+                "field_value_id": 147036
+            },
+            {
+                "value": 158170,
+                "description": "Vòi thứ cấp # BHM-V-BTM-FS",
+                "field_value_id": 147013
+            },
+            {
+                "value": 158171,
+                "description": "Lõi lọc Pre-Carbon # FK-PRC11",
+                "field_value_id": 147028
+            },
+            {
+                "value": 159445,
+                "description": "Van thải # VFR-300",
+                "field_value_id": 147028
+            },
+            {
+                "value": 160083,
+                "description": "Máy mới có lõi # WT-4200-RO",
+                "field_value_id": 147033
+            },
+            {
+                "value": 160084,
+                "description": "Van thải # BHM-V-FR-Q250",
+                "field_value_id": 147033
+            },
+            {
+                "value": 160087,
+                "description": "BHM-BOTTLE-WT3C # Bình chứa nước 5L",
+                "field_value_id": 154763
+            },
+            {
+                "value": 160119,
+                "description": "Máy mới không lõi # BTM-207",
+                "field_value_id": 147013
+            },
+            {
+                "value": 160120,
+                "description": "Máy mới có lõi # BTM-207",
+                "field_value_id": 147013
+            },
+            {
+                "value": 160161,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 160160
+            },
+            {
+                "value": 160222,
+                "description": "Máy mới có lõi # BTM-505N",
+                "field_value_id": 147016
+            },
+            {
+                "value": 160223,
+                "description": "Máy mới không lõi # BTM-505N",
+                "field_value_id": 147016
+            },
+            {
+                "value": 160224,
+                "description": "Lõi lọc Pre-Carbon # FK-PRC11",
+                "field_value_id": 155672
+            },
+            {
+                "value": 160238,
+                "description": "Van bình áp # BHM-V-BV-BCN",
+                "field_value_id": 155838
+            },
+            {
+                "value": 160245,
+                "description": "Màn hình LED # BHM-SC-WT50-DP",
+                "field_value_id": 155838
+            },
+            {
+                "value": 160246,
+                "description": "Bơm 36V # BHM-E-P50-36V-BCN",
+                "field_value_id": 155838
+            },
+            {
+                "value": 160247,
+                "description": "Biến áp 36V # BHM-E-AD-36V-BCN",
+                "field_value_id": 155838
+            },
+            {
+                "value": 160262,
+                "description": "Trụ 105DN giắc nhỏ # BHM-BTM-105DN-TR-GN",
+                "field_value_id": 147012
+            },
+            {
+                "value": 160270,
+                "description": "Bình áp # B-PRO-32P-K",
+                "field_value_id": 160160
+            },
+            {
+                "value": 160328,
+                "description": "PCB máy # BHM-E-BMT-PCB-507",
+                "field_value_id": 147017
+            },
+            {
+                "value": 160352,
+                "description": "Vỏ lõi lọc OCB 4.5x20 # BHM-C-EC-4520W",
+                "field_value_id": 147021
+            },
+            {
+                "value": 160377,
+                "description": "Phao Điện # BHM-E-FS-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 160383,
+                "description": "Vỏ sau máy # BHM-B-COVER-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 160408,
+                "description": "Máy mới không lõi # WT-4200-RO",
+                "field_value_id": 147033
+            },
+            {
+                "value": 160411,
+                "description": "Lõi lọc than hoạt tính 20\" Aries # F-RC-20-1052-BB",
+                "field_value_id": 147019
+            },
+            {
+                "value": 160702,
+                "description": "Lõi ionine lọc tổng# F-4520IC",
+                "field_value_id": 160701
+            },
+            {
+                "value": 160722,
+                "description": "PCB máy # BHM-E-BMT-PCB-505",
+                "field_value_id": 147016
+            },
+            {
+                "value": 160780,
+                "description": "Biến áp # E-AD-2412",
+                "field_value_id": 160779
+            },
+            {
+                "value": 161072,
+                "description": "Van từ nhanh# E-V-SV-D",
+                "field_value_id": 161071
+            },
+            {
+                "value": 161093,
+                "description": "Van áp cao nhanh # E-HPS-Q0404",
+                "field_value_id": 147023
+            },
+            {
+                "value": 161264,
+                "description": "Máy bơm nước nhỏ # BHM-E-P-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 161265,
+                "description": "Bo mạch hiển thị máy # BHM-E-BTH-LED-101T",
+                "field_value_id": 147005
+            },
+            {
+                "value": 161282,
+                "description": "PIN # BHM-E-BTH-BAT",
+                "field_value_id": 147005
+            },
+            {
+                "value": 161283,
+                "description": "Máy mới không lõi # WT-50",
+                "field_value_id": 155838
+            },
+            {
+                "value": 161288,
+                "description": "Thân bình kiềm # BHM-BOTTLE-WT-45",
+                "field_value_id": 152962
+            },
+            {
+                "value": 161415,
+                "description": "Lõi lọc 10\" CTO # F-CTO10",
+                "field_value_id": 147024
+            },
+            {
+                "value": 161429,
+                "description": "PCB phím bấm 303 # BHM-E-BTM-PCB-303KB",
+                "field_value_id": 147015
+            },
+            {
+                "value": 161430,
+                "description": "PCB nguồn # BHM-PCB-M-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 161565,
+                "description": "Pre cacbon # FK-PRC11",
+                "field_value_id": 154763
+            },
+            {
+                "value": 161580,
+                "description": "Máy mới # LUX-100UF-N",
+                "field_value_id": 147027
+            },
+            {
+                "value": 161584,
+                "description": "Van bình áp # V-BV-Z2544",
+                "field_value_id": 155185
+            },
+            {
+                "value": 161630,
+                "description": "Ông kết nối đáy máy # BHM-T-C-BTM-105DN",
+                "field_value_id": 147012
+            },
+            {
+                "value": 161667,
+                "description": "Van 1 chiều # V-CV-Q-1544",
+                "field_value_id": 169347
+            },
+            {
+                "value": 162273,
+                "description": "Vòi inox hiển thị # V-WT-81",
+                "field_value_id": 160160
+            },
+            {
+                "value": 162365,
+                "description": "BLOCK LẠNH # BHM-E-BLOCK-WT4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 162366,
+                "description": "Bộ khóa T chia nhựa 10 # V-TBV-QKFA0608",
+                "field_value_id": 155672
+            },
+            {
+                "value": 162410,
+                "description": "Cút ren 3/8 # Q-4046",
+                "field_value_id": 147028
+            },
+            {
+                "value": 162411,
+                "description": "Đầu bút đo H2 # D-H2-TIP-METER",
+                "field_value_id": 154220
+            },
+            {
+                "value": 162422,
+                "description": "Vỏ ionine lọc tổng # BHM-C-EC-4520W",
+                "field_value_id": 160701
+            },
+            {
+                "value": 162652,
+                "description": "Biến áp # E-AD-2412",
+                "field_value_id": 160160
+            },
+            {
+                "value": 162687,
+                "description": "Hạt Ionice # M-IC",
+                "field_value_id": 147021
+            },
+            {
+                "value": 162688,
+                "description": "Hạt Ionice # M-IC",
+                "field_value_id": 147020
+            },
+            {
+                "value": 162689,
+                "description": "Biến áp # E-AD-2412",
+                "field_value_id": 169347
+            },
+            {
+                "value": 162761,
+                "description": "Bộ nhiệt làm nóng nhanh # BHM-F-HEAT-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 162775,
+                "description": "Bơm # BHM-E-P50-1050",
+                "field_value_id": 147010
+            },
+            {
+                "value": 163118,
+                "description": "Bình nóng máy # BHM-E-HEAT-TANK-WT4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 163164,
+                "description": "PCB máy # BHM-PCB-HB640",
+                "field_value_id": 147035
+            },
+            {
+                "value": 163302,
+                "description": "Cút ren 1/4 dây 10 # Q-4064",
+                "field_value_id": 147026
+            },
+            {
+                "value": 163338,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 147010
+            },
+            {
+                "value": 163487,
+                "description": "Van áp cao lắp ren 1/4 # E-HPS-Q0404-WT",
+                "field_value_id": 147026
+            },
+            {
+                "value": 163522,
+                "description": "Bơm # E-P50",
+                "field_value_id": 160160
+            },
+            {
+                "value": 163539,
+                "description": "Van áp cao lắp ren 1/4 # E-HPS-Q0404-WT",
+                "field_value_id": 169347
+            },
+            {
+                "value": 163647,
+                "description": "Van 1 chiều thẳng nhanh # V-CV-Q-1544",
+                "field_value_id": 147026
+            },
+            {
+                "value": 163714,
+                "description": "Biến áp # BHM-E-BTM-2000-TF",
+                "field_value_id": 147014
+            },
+            {
+                "value": 164003,
+                "description": "MÁY BƠM  # BHM-E-P50-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 164009,
+                "description": "PCB trụ 105DN # BHM-E-BTM-MBK-105DN",
+                "field_value_id": 147012
+            },
+            {
+                "value": 164637,
+                "description": "PCB hiển thị trụ 105D # BHM-E-BTM-PCB-105D-SC",
+                "field_value_id": 147012
+            },
+            {
+                "value": 164965,
+                "description": "Bộ khóa T chia nhựa 10 # V-TBV-QKFA0608",
+                "field_value_id": 147028
+            },
+            {
+                "value": 165036,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 155838
+            },
+            {
+                "value": 165042,
+                "description": "Củ van xoay đĩa sứ máy Pi # BHM-V-BTM-RV",
+                "field_value_id": 147015
+            },
+            {
+                "value": 165211,
+                "description": "Màng RO #FK-RO50",
+                "field_value_id": 154763
+            },
+            {
+                "value": 165270,
+                "description": "FLõi lọc 20\" béo gấp nếp # -K40430B",
+                "field_value_id": 147020
+            },
+            {
+                "value": 165496,
+                "description": "Biến áp # E-AD-2412-WT",
+                "field_value_id": 161071
+            },
+            {
+                "value": 165767,
+                "description": "Biến áp # E-AD-2412-WT",
+                "field_value_id": 165766
+            },
+            {
+                "value": 165984,
+                "description": "Bình nóng HB640 # WT-HB640-HT",
+                "field_value_id": 147036
+            },
+            {
+                "value": 165985,
+                "description": "Van nước thải # V-FR-300",
+                "field_value_id": 154763
+            },
+            {
+                "value": 165987,
+                "description": "Bình nóng HB640 # WT-HB640-HT",
+                "field_value_id": 147035
+            },
+            {
+                "value": 167145,
+                "description": "Van bình áp # V-BV-Z2544",
+                "field_value_id": 160160
+            },
+            {
+                "value": 167160,
+                "description": "Lõi lọc Sendiment # FK-PP11",
+                "field_value_id": 147033
+            },
+            {
+                "value": 167167,
+                "description": "Nắp cột lọc tổng # NapLT",
+                "field_value_id": 147020
+            },
+            {
+                "value": 167470,
+                "description": "Bộ DARC # BHM-E-DARC-BTM505N",
+                "field_value_id": 147016
+            },
+            {
+                "value": 167660,
+                "description": "PCB máy # BHM-PCB-1050-RO",
+                "field_value_id": 147010
+            },
+            {
+                "value": 167741,
+                "description": "Phao điện # BHM-E-FS-1050",
+                "field_value_id": 147010
+            },
+            {
+                "value": 167991,
+                "description": "Máy # LUX 200 RO",
+                "field_value_id": 147028
+            },
+            {
+                "value": 167994,
+                "description": "Pre-Carbon # FK-PRC11",
+                "field_value_id": 147024
+            },
+            {
+                "value": 168189,
+                "description": "Cốc trong 10-4 # C-EG-14CW-04",
+                "field_value_id": 147033
+            },
+            {
+                "value": 168235,
+                "description": "Loa máy PI # BHM-E-BTM-LOA",
+                "field_value_id": 147013
+            },
+            {
+                "value": 168296,
+                "description": "Bộ lọc nước # ECOM8000",
+                "field_value_id": 165917
+            },
+            {
+                "value": 168297,
+                "description": "Máy mới # WT-1050-RO",
+                "field_value_id": 147010
+            },
+            {
+                "value": 168465,
+                "description": "Lõi trong bình kiềm # F-ALKALINE",
+                "field_value_id": 152962
+            },
+            {
+                "value": 168501,
+                "description": "Nắp cốc lọc chặn # NAPCOC10",
+                "field_value_id": 169347
+            },
+            {
+                "value": 168642,
+                "description": "Phao điện # BHM-E-FS-Q",
+                "field_value_id": 147033
+            },
+            {
+                "value": 168643,
+                "description": "Cột inox lọc tổng số 1 # C-ST-4520",
+                "field_value_id": 147019
+            },
+            {
+                "value": 171487,
+                "description": "Van bình áp # V-BV-Z2544",
+                "field_value_id": 169347
+            },
+            {
+                "value": 171649,
+                "description": "Cột số 1 # C-ST-4520",
+                "field_value_id": 147020
+            },
+            {
+                "value": 171723,
+                "description": "Vòi inox 304 # V-F304-AQ6",
+                "field_value_id": 164004
+            },
+            {
+                "value": 171891,
+                "description": "Chip âm thanh # BHM-AUDIOCHIP-BTM507",
+                "field_value_id": 147017
+            },
+            {
+                "value": 172953,
+                "description": "Máy mới không lõi # Lux 300 RO",
+                "field_value_id": 169347
+            },
+            {
+                "value": 173140,
+                "description": "Bình áp # B-PRO-32P-K",
+                "field_value_id": 169347
+            },
+            {
+                "value": 174057,
+                "description": "Van từ đóng mở nước cấp máy BTM-105DN # BHM-E-V-SV-105DN",
+                "field_value_id": 147012
+            },
+            {
+                "value": 174059,
+                "description": "PCB máy WT-030S-UF # BHM-PCB-030S-UF",
+                "field_value_id": 147032
+            },
+            {
+                "value": 174151,
+                "description": "màn hình # BHM-SC-BTM507-DP",
+                "field_value_id": 147017
+            },
+            {
+                "value": 174208,
+                "description": "Bơm # E-P50-WT",
+                "field_value_id": 169347
+            },
+            {
+                "value": 175116,
+                "description": "Buồng điện giải 7 bản cực # BHM-E-BTM-EB-7P",
+                "field_value_id": 147013
+            },
+            {
+                "value": 175252,
+                "description": "PCB phím bấm BTM-507 # BHM-E-BTM-PCB-507KB",
+                "field_value_id": 147017
+            },
+            {
+                "value": 175253,
+                "description": "Nắp cột lọc tổng # NapLT",
+                "field_value_id": 147030
+            },
+            {
+                "value": 177131,
+                "description": "BHM-E-BTM-PCB-100N",
+                "field_value_id": 147011
+            },
+            {
+                "value": 177133,
+                "description": "BHM-E-BTM-EB-5P",
+                "field_value_id": 147011
+            },
+            {
+                "value": 177134,
+                "description": "Phao cơ máy WT-3C-RO # BHM-PHAOCO-3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 177135,
+                "description": "Rơ-le nhiệt máy 4200 # BHM-ROLE-4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 177141,
+                "description": "Bơm Watek E-P50",
+                "field_value_id": 147023
+            },
+            {
+                "value": 177523,
+                "description": "Vách sau máy # BHM-VACHSAU-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 177524,
+                "description": "Cảm biến mực nước # BHM-S-F-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 177581,
+                "description": "Bộ điều nhiệt máy nóng lạnh # BHM-E-THER-WT4200",
+                "field_value_id": 147033
+            },
+            {
+                "value": 177950,
+                "description": "Màng lọc RO#FK-RO50",
+                "field_value_id": 169347
+            },
+            {
+                "value": 178308,
+                "description": "Nắp cột lọc tổng NapLT",
+                "field_value_id": 147019
+            },
+            {
+                "value": 178532,
+                "description": "núm bịt xả đáy",
+                "field_value_id": 154763
+            },
+            {
+                "value": 178605,
+                "description": "biến áp BHM-E-AD-24V-1050",
+                "field_value_id": 147010
+            },
+            {
+                "value": 178611,
+                "description": "Lõi lọc 20\" béo gấp nếp Unicel - Made in USA F-K40430B",
+                "field_value_id": 147030
+            },
+            {
+                "value": 178636,
+                "description": "Bơm tăng áp # E-PS-50",
+                "field_value_id": 147013
+            },
+            {
+                "value": 178672,
+                "description": "Lõi Post carbon Hàn Quốc # FK-PC11",
+                "field_value_id": 147027
+            },
+            {
+                "value": 178706,
+                "description": "van từ nhanh E-V-SV-D",
+                "field_value_id": 160160
+            },
+            {
+                "value": 179338,
+                "description": "Màng RO # FK-RO50",
+                "field_value_id": 160160
+            },
+            {
+                "value": 179427,
+                "description": "Biến áp 24V máy WT-3C-RO #BHM-E-AD-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 179523,
+                "description": "GN-ECOM8000\tGiá nhựa bộ lọc nước Ecom8000",
+                "field_value_id": 165917
+            },
+            {
+                "value": 179602,
+                "description": "Bộ DARC # BHM-E-DARC-BTM505N",
+                "field_value_id": 147017
+            },
+            {
+                "value": 179781,
+                "description": "Lõi lọc Carbon máy BTM-105DN ( Lõi số 1 ) # F-BF106-CB",
+                "field_value_id": 147012
+            },
+            {
+                "value": 179782,
+                "description": "Lõi lọc UF máy BTM-105DN ( Lõi số 2 ) # F-BF106-UF",
+                "field_value_id": 147012
+            },
+            {
+                "value": 179904,
+                "description": "Cầu chì 5A máy WT-4200-RO # BHTD-E-WB-FUSE",
+                "field_value_id": 147033
+            },
+            {
+                "value": 179907,
+                "description": "Biến áp điện tử 24 V# E-AD-24V-DT",
+                "field_value_id": 160160
+            },
+            {
+                "value": 180157,
+                "description": "BHM-E-BTM-507-TF\tBiến áp máy BTM-507 BHM",
+                "field_value_id": 147017
+            },
+            {
+                "value": 180319,
+                "description": "C-BTH-200  Cốc máy phun sương bth 200",
+                "field_value_id": 172713
+            },
+            {
+                "value": 180353,
+                "description": "Vòi inox 304 # V-F304-AQ6",
+                "field_value_id": 155672
+            },
+            {
+                "value": 180448,
+                "description": "E-V-SV-D-WT - van từ nhanh",
+                "field_value_id": 180447
+            },
+            {
+                "value": 180909,
+                "description": "lõi tạo KIỀM HYDROGEN 3 TRONG 1 (HYDRO-PH FILTER)FK-HYDRO11",
+                "field_value_id": 169347
+            },
+            {
+                "value": 181467,
+                "description": "LOXO-LT\tLò xo cột Inox lọc tổng",
+                "field_value_id": 147020
+            },
+            {
+                "value": 181468,
+                "description": "LOXO-LT\tLò xo cột Inox lọc tổng",
+                "field_value_id": 147021
+            },
+            {
+                "value": 181704,
+                "description": "Van áp thấp nhanh # E-LPS-Q0404",
+                "field_value_id": 160160
+            },
+            {
+                "value": 182191,
+                "description": "BHM-GIOANGCOC10",
+                "field_value_id": 181779
+            },
+            {
+                "value": 182594,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 147025
+            },
+            {
+                "value": 182727,
+                "description": "Buồng điện giải 9 bản cực máy BTM E-BTM-EB-9P",
+                "field_value_id": 147016
+            },
+            {
+                "value": 182728,
+                "description": "C-F-UF-PVDF # Vỏ mica của màng lọc UF UStopwater",
+                "field_value_id": 147030
+            },
+            {
+                "value": 182730,
+                "description": "C-F-UF-PVDF # Vỏ mica của màng lọc UF UStopwater",
+                "field_value_id": 180374
+            },
+            {
+                "value": 182796,
+                "description": "Bơm 36V # BHM-E-P50-36V-BCN",
+                "field_value_id": 154574
+            },
+            {
+                "value": 182851,
+                "description": "Lõi UF # F-BF106-UF",
+                "field_value_id": 147017
+            },
+            {
+                "value": 182862,
+                "description": "PCB máy 2000 # E-BTM-PCB-2000",
+                "field_value_id": 147014
+            },
+            {
+                "value": 182917,
+                "description": "BHM-BTM-NC-TC",
+                "field_value_id": 147013
+            },
+            {
+                "value": 182936,
+                "description": "Bộ lọc nước OECOM8000",
+                "field_value_id": 165917
+            },
+            {
+                "value": 182946,
+                "description": "Ống nối mềm tổng Mỹ T-2C-08",
+                "field_value_id": 147020
+            },
+            {
+                "value": 183014,
+                "description": "LOXO-LT\tLò xo cột Inox lọc tổng",
+                "field_value_id": 147019
+            },
+            {
+                "value": 183274,
+                "description": "DHD",
+                "field_value_id": 183272
+            },
+            {
+                "value": 183434,
+                "description": "Lõi lọc thay thế xử lý sắt USTopwater 20 inches béo, model: F-Fera-45, công suất 1200 lít/giờ # F-FERA-45",
+                "field_value_id": 160363
+            },
+            {
+                "value": 183466,
+                "description": "FACE-BTM100N\tMặt trước máy BTM-100N",
+                "field_value_id": 147011
+            },
+            {
+                "value": 183573,
+                "description": "E-P50-WT",
+                "field_value_id": 147033
+            },
+            {
+                "value": 183579,
+                "description": "Lõi lọc diệt khuẩn lượng tử # F-QD10",
+                "field_value_id": 147028
+            },
+            {
+                "value": 183653,
+                "description": "Vòi inox 304 + cút nối V-F304-AQ6",
+                "field_value_id": 169347
+            },
+            {
+                "value": 183762,
+                "description": "V-CV-Q-1544 # Van 1 chiều thẳng nhanh",
+                "field_value_id": 160160
+            },
+            {
+                "value": 183877,
+                "description": "Buồng điện giải 5 bản cực # E-BTM-EB-5P",
+                "field_value_id": 147014
+            },
+            {
+                "value": 184431,
+                "description": "E-HPS-Q0404-WT # Van áp cao",
+                "field_value_id": 160160
+            },
+            {
+                "value": 184432,
+                "description": "E-C-HLPS # Dây nối van áp cao",
+                "field_value_id": 160160
+            },
+            {
+                "value": 184670,
+                "description": "Bơm máy LUX # E-P50-WT",
+                "field_value_id": 147033
+            },
+            {
+                "value": 184671,
+                "description": "Cút ren 3/8 # Q-4046",
+                "field_value_id": 147033
+            },
+            {
+                "value": 184833,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 154574
+            },
+            {
+                "value": 186072,
+                "description": "máy nóng lạnh mới WT-028S-RO",
+                "field_value_id": 184866
+            },
+            {
+                "value": 186078,
+                "description": "Gioăng lọc tổng loại dày GioangLT",
+                "field_value_id": 147020
+            },
+            {
+                "value": 186083,
+                "description": "E-V-AF01-LM\t# Van sục xả màng Ro lắp máy",
+                "field_value_id": 169347
+            },
+            {
+                "value": 186112,
+                "description": "Lỗi Kiềm # FK - HYDRO11",
+                "field_value_id": 147010
+            },
+            {
+                "value": 186348,
+                "description": "bơm máy nóng lạnh WT-028S-RO # E-P50-LM",
+                "field_value_id": 184866
+            },
+            {
+                "value": 186445,
+                "description": "Van khóa chia V-TBV-M080608",
+                "field_value_id": 165917
+            },
+            {
+                "value": 186586,
+                "description": "Màng lọc RO Hàn Quốc # FK-RO50",
+                "field_value_id": 184866
+            },
+            {
+                "value": 186686,
+                "description": "Van từ # E-V-SV-D-WT",
+                "field_value_id": 169347
+            },
+            {
+                "value": 186922,
+                "description": "F-UF-PVDF # Lõi lọc của màng lọc UF UStopwater",
+                "field_value_id": 180374
+            },
+            {
+                "value": 187118,
+                "description": "Biến áp điện tử 24 V# E-AD-24V-DT",
+                "field_value_id": 147028
+            },
+            {
+                "value": 187175,
+                "description": "Màng lọc RO Hàn Quốc # FK-RO50",
+                "field_value_id": 169347
+            },
+            {
+                "value": 187264,
+                "description": "Van từ 24V máy WT-3C-RO #BHM-E-V-SV-WT3C",
+                "field_value_id": 154763
+            },
+            {
+                "value": 188018,
+                "description": "Vòi thứ cấp  Mặc định V-BTM-FS",
+                "field_value_id": 147017
+            },
+            {
+                "value": 188019,
+                "description": "Vòi nước uống inox máy Pi bảo hành mới  Mặc định BHM-V-BTM-FM",
+                "field_value_id": 147017
+            },
+            {
+                "value": 188020,
+                "description": "PK-PI-2- hộp phụ kiện 2 máy pi ( vòi uống + vòi thứ cấp +thuốc thử +nắp máy )",
+                "field_value_id": 147017
+            },
+            {
+                "value": 188200,
+                "description": "BHM-MATCAMUNG-028 Mặt kính cảm ứng  phía trước máy WT-028S-RO",
+                "field_value_id": 184866
+            },
+            {
+                "value": 188294,
+                "description": "Bộ đo lưu lượng nước BTM (áp thấp)E-BTM-WFS",
+                "field_value_id": 147013
+            },
+            {
+                "value": 188386,
+                "description": "Cút ren 1/4 dây 6 nhanh có gioăng # Q4044",
+                "field_value_id": 187702
+            },
+            {
+                "value": 188392,
+                "description": "Lõi tạo KIỀM HYDROGEN 3 TRONG 1 FK-HYDRO11",
+                "field_value_id": 187702
+            },
+            {
+                "value": 188468,
+                "description": "BHM-BDN-WTS30\tBộ đếm nước máy WT-S30 BHM",
+                "field_value_id": 183346
+            },
+            {
+                "value": 188806,
+                "description": "BHM-PCB-028S-RO\tPCB máy WT-028S-RO",
+                "field_value_id": 184866
+            },
+            {
+                "value": 188874,
+                "description": "BHM-CAMBIEN-WT-S30 Cảm biến nước máy WT-S30",
+                "field_value_id": 183346
+            },
+            {
+                "value": 188934,
+                "description": "BHM-028S-WATERTRAY Khay hứng nước WT-028S bảo hành mới",
+                "field_value_id": 184866
+            },
+            {
+                "value": 188935,
+                "description": "BPKTM Bộ phụ kiện theo máy",
+                "field_value_id": 184866
+            },
+            {
+                "value": 188937,
+                "description": "BHM-TOP-C-F-UF-PVDF Nắp trên của vỏ mica của màng lọc UF  lọc tổng",
+                "field_value_id": 180374
+            },
+            {
+                "value": 188938,
+                "description": "Van từ nhanh E-V-SV-D-WT",
+                "field_value_id": 184866
+            },
+            {
+                "value": 189683,
+                "description": "E-SB-G\tNút công tắc xanh (DTAT) dài 70cm",
+                "field_value_id": 184866
+            },
+            {
+                "value": 189951,
+                "description": "BHM-028S-FRONTCOVER\tNắp mặt trước phía trên máy WT-028S bảo hành mới",
+                "field_value_id": 184866
+            },
+            {
+                "value": 189952,
+                "description": "BHM-MATCAMUNG-028\tMặt kính cảm ứng  phía trước máy WT-028S-RO",
+                "field_value_id": 184866
+            },
+            {
+                "value": 189953,
+                "description": "BHM-E-WT-028S-RO-KB\tPCB phím bấm  máy WT-028S-RO  bảo hành mới",
+                "field_value_id": 184866
+            },
+            {
+                "value": 190395,
+                "description": "Bộ điều nhiệt máy nóng lạnh WT-4200 BHM-E-THER-WT4200",
+                "field_value_id": 147034
+            },
+            {
+                "value": 190742,
+                "description": "Màng lọc UF Hàn Quốc 120 lít/h  FK-UF120",
+                "field_value_id": 190741
+            },
+            {
+                "value": 190743,
+                "description": "BHM-CAP-MAN-HINH-505N\tCáp màn hình máy BTM-505N  BHM",
+                "field_value_id": 147016
+            },
+            {
+                "value": 190744,
+                "description": "BHM-E-BTM-PCB-505N-KB PHÍM BẤM",
+                "field_value_id": 147016
+            },
+            {
+                "value": 190747,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 184866
+            },
+            {
+                "value": 190752,
+                "description": "E-AD-24V-DT # BIẾN ÁP ĐIỆN TỬ 24V",
+                "field_value_id": 187702
+            },
+            {
+                "value": 190810,
+                "description": "Lõi lọc vải Polyester 20'' béo gấp nếp USTOPWATER - Made in Taiwan # PLEATED-20-BB",
+                "field_value_id": 147018
+            },
+            {
+                "value": 190811,
+                "description": "Lõi lọc vải Polyester 20'' béo gấp nếp USTOPWATER - Made in Taiwan # PLEATED-20-BB",
+                "field_value_id": 147029
+            },
+            {
+                "value": 190951,
+                "description": "Bộ đo lưu lượng nước BTM (áp thấp)  Mặc định E-BTM-WFS",
+                "field_value_id": 147012
+            },
+            {
+                "value": 191001,
+                "description": "BHM-SC-BTM207-DP",
+                "field_value_id": 147013
+            },
+            {
+                "value": 191002,
+                "description": "BHM-E-BTM-PCB-207KB",
+                "field_value_id": 147013
+            },
+            {
+                "value": 191012,
+                "description": "Lõi PRE CACBON # FK-PRC11",
+                "field_value_id": 147025
+            },
+            {
+                "value": 191209,
+                "description": "BHM-GIOANG-COC-20B\tGioăng cốc 20 béo BHM",
+                "field_value_id": 160363
+            },
+            {
+                "value": 191279,
+                "description": "C-EG-14WW-04\tCốc trắng 10-4",
+                "field_value_id": 147012
+            },
+            {
+                "value": 191280,
+                "description": "F-OCB10  LÕI LỌC THÔ SỐ 2",
+                "field_value_id": 147012
+            },
+            {
+                "value": 191302,
+                "description": "Van bình áp # V-BV-Z2544",
+                "field_value_id": 187702
+            },
+            {
+                "value": 191395,
+                "description": "Lõi lọc bộ lọc nước ECOM8000 OECOM8000",
+                "field_value_id": 165917
+            },
+            {
+                "value": 191424,
+                "description": "Biến áp  E-AD-24V-DT",
+                "field_value_id": 169347
+            },
+            {
+                "value": 191475,
+                "description": "PCB # BHM-PCB-030S",
+                "field_value_id": 147031
+            },
+            {
+                "value": 191476,
+                "description": "Phao điện # E-FS-030S",
+                "field_value_id": 147031
+            },
+            {
+                "value": 191477,
+                "description": "BLOCK LẠNH # BHM-E-BLOCK-WT030S",
+                "field_value_id": 147031
+            },
+            {
+                "value": 191478,
+                "description": "Van áp thấp #E-LPS-Wonbong",
+                "field_value_id": 147031
+            },
+            {
+                "value": 191479,
+                "description": "Ống mềm thoát hơi bình nóng # T-DM-H-WT030S",
+                "field_value_id": 147031
+            },
+            {
+                "value": 191480,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 147031
+            },
+            {
+                "value": 191493,
+                "description": "Máy BTH-101T mới # BTH-101T",
+                "field_value_id": 147005
+            },
+            {
+                "value": 191494,
+                "description": "Hộp carton cột inox lọc tổng HC-C-ST-4520",
+                "field_value_id": 147020
+            },
+            {
+                "value": 191518,
+                "description": "Cút ren 3/8 # Q-4046",
+                "field_value_id": 160160
+            },
+            {
+                "value": 191519,
+                "description": "Van từ 12 vol máy wonbong # E-V-SD-WB",
+                "field_value_id": 147031
+            },
+            {
+                "value": 191645,
+                "description": "BHM-NAP-DE-BTH101T # Nắp đế máy kèm gioăng máy  BTH-101T",
+                "field_value_id": 147005
+            },
+            {
+                "value": 191685,
+                "description": "Đầu vòi lấy nước WT-030S BHM-V-IS-030S",
+                "field_value_id": 147031
+            },
+            {
+                "value": 191726,
+                "description": "Lõi Post carbon # FK-PC11",
+                "field_value_id": 147025
+            },
+            {
+                "value": 192562,
+                "description": "PCB đèn hiển thị 030S BHM  Mặc định BHM-PCB-L-030S",
+                "field_value_id": 147031
+            },
+            {
+                "value": 192563,
+                "description": "Gioăng nắp bình chứa máy BTH-101T BHM # BHM-GIOANG-NAP-BTH-101T",
+                "field_value_id": 147005
+            },
+            {
+                "value": 192564,
+                "description": "PCB của máy nóng nhanh WT-S30 # BHM-PCB-S30",
+                "field_value_id": 183346
+            },
+            {
+                "value": 195416,
+                "description": "BHM-E-BTM-EB-9P-DRC Buồng điện giải 9 bản cực DRC",
+                "field_value_id": 147016
+            },
+            {
+                "value": 195429,
+                "description": "Cốc trong 10-4 # C-EG-14CW-04",
+                "field_value_id": 169347
+            },
+            {
+                "value": 195446,
+                "description": "C-EG-14CW-04-THAN\tThân cốc trong 10-4",
+                "field_value_id": 147031
+            },
+            {
+                "value": 195473,
+                "description": "Lõi kiềm # FK-HYDRO11",
+                "field_value_id": 156630
+            },
+            {
+                "value": 195474,
+                "description": "model Pleated-20-BB PLEATED-20-BB",
+                "field_value_id": 147018
+            },
+            {
+                "value": 195495,
+                "description": "Bơm # E-P50-12V-WB",
+                "field_value_id": 147031
+            },
+            {
+                "value": 195660,
+                "description": "Bơm Watek  E-P50",
+                "field_value_id": 184866
+            },
+            {
+                "value": 195661,
+                "description": "Cút ren 3/8 dây 6 nhanh  Q-4046",
+                "field_value_id": 184866
+            },
+            {
+                "value": 195823,
+                "description": "Van từ máy LUX # E-V-SV-D-WT",
+                "field_value_id": 147033
+            },
+            {
+                "value": 195824,
+                "description": "F-UF-PVDF\tCái\t1\tMàng lọc UF UStopwater dùng cho bộ lọc tổng",
+                "field_value_id": 147018
+            },
+            {
+                "value": 195825,
+                "description": "Van từ # BHM-E-V-SV-1050",
+                "field_value_id": 147010
+            },
+            {
+                "value": 195884,
+                "description": "PCB/Main máy BTM-207D BHM-E-BTM-PCB-207",
+                "field_value_id": 147013
+            },
+            {
+                "value": 195932,
+                "description": "Bộ điều nhiệt máy nóng lạnh WT-030S BHM-E-THER-WT030S",
+                "field_value_id": 147031
+            },
+            {
+                "value": 195964,
+                "description": "Nút bấm Clean&H2 máy TBH-101T BHM-CLEAN-H2",
+                "field_value_id": 147005
+            },
+            {
+                "value": 195965,
+                "description": "BHM-E-ELEC-BTH-101T\tBộ điện giải máy BTH-101T",
+                "field_value_id": 147005
+            },
+            {
+                "value": 195970,
+                "description": "Van điện từ đóng mở lấy nước máy WT-030S # E-V-SD-OUT-WB",
+                "field_value_id": 147031
+            },
+            {
+                "value": 195989,
+                "description": "Bầu nóng máy 1050 BHM",
+                "field_value_id": 147010
+            },
+            {
+                "value": 196022,
+                "description": "Van thải 300 # V-FR-300",
+                "field_value_id": 147031
+            },
+            {
+                "value": 196295,
+                "description": "Màng RO # FK-RO50",
+                "field_value_id": 187702
+            },
+            {
+                "value": 196305,
+                "description": "Bơm # E-P50-WT",
+                "field_value_id": 147010
+            },
+            {
+                "value": 196338,
+                "description": "BHM-E-BTM-WFS #Bộ đo lưu lượng nước BTM",
+                "field_value_id": 147015
+            },
+            {
+                "value": 196353,
+                "description": "Màng lọc RO GNB KOREA # FK-RO80",
+                "field_value_id": 184866
+            },
+            {
+                "value": 196483,
+                "description": "Cột số 1 # C-ST-4520",
+                "field_value_id": 147021
+            },
+            {
+                "value": 196489,
+                "description": "Màng RO # FK-RO50",
+                "field_value_id": 147033
+            },
+            {
+                "value": 196492,
+                "description": "Màng lọc RO đúc nguyên khối",
+                "field_value_id": 147033
+            },
+            {
+                "value": 196493,
+                "description": "Màng lọc RO GNB KOREA # FK-RO80",
+                "field_value_id": 147033
+            },
+            {
+                "value": 196495,
+                "description": "Cút ren 1/2 dây 10 # Q-4068",
+                "field_value_id": 152960
+            },
+            {
+                "value": 196515,
+                "description": "Máy phun sương Hydrogen cá nhân LA SHIELD # BTH-200",
+                "field_value_id": 172713
+            },
+            {
+                "value": 196517,
+                "description": "Bộ đo lưu lượng nước BTM (áp thấp) # E-BTM-WFS",
+                "field_value_id": 147011
+            },
+            {
+                "value": 196518,
+                "description": "Lõi lọc vải Polyester 20inch béo gấp nếp USTOPWATER - Thailan, model Pleated-20-BB",
+                "field_value_id": 180374
+            },
+            {
+                "value": 196525,
+                "description": "Màng lọc RO GNB KOREA # FK-RO80",
+                "field_value_id": 147031
+            },
+            {
+                "value": 196543,
+                "description": "KIST-TEST # Que test cho máy làm mềm nước US-UA1",
+                "field_value_id": 191388
+            },
+            {
+                "value": 196557,
+                "description": "Buồng điện giải 7 bản cực máy BTM 105 DN # BHM-E-BTM-EB-7P-DRC",
+                "field_value_id": 147012
+            },
+            {
+                "value": 196743,
+                "description": "Cầu chì 5A máy WT-030S-RO # BHTD-E-WB-FUSE",
+                "field_value_id": 147031
+            },
+            {
+                "value": 196744,
+                "description": "Biến áp 12V máy WT-030s-RO # E-AD-12V",
+                "field_value_id": 147031
+            },
+            {
+                "value": 196745,
+                "description": "Q-4064 # Cút ren 1/4 dây 10 nhanh có gioăng",
+                "field_value_id": 187702
+            }
+        ]
+    },
+    {
+        "key": "addition_field30",
+        "description": "Mã sản phẩm",
+        "type": 3,
+        "id": 9720,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 147004,
+                "description": "BTH-100P",
+                "field_value_id": -1
+            },
+            {
+                "value": 147005,
+                "description": "BTH-101T",
+                "field_value_id": -1
+            },
+            {
+                "value": 147010,
+                "description": "WT-1050-RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 147011,
+                "description": "BTM-100N",
+                "field_value_id": -1
+            },
+            {
+                "value": 147012,
+                "description": "BTM-105DN",
+                "field_value_id": -1
+            },
+            {
+                "value": 147013,
+                "description": "BTM-207D",
+                "field_value_id": -1
+            },
+            {
+                "value": 147014,
+                "description": "BTM-2000",
+                "field_value_id": -1
+            },
+            {
+                "value": 147015,
+                "description": "BTM-303D",
+                "field_value_id": -1
+            },
+            {
+                "value": 147016,
+                "description": "BTM-505N",
+                "field_value_id": -1
+            },
+            {
+                "value": 147017,
+                "description": "BTM-507",
+                "field_value_id": -1
+            },
+            {
+                "value": 147018,
+                "description": "CLO-AS",
+                "field_value_id": -1
+            },
+            {
+                "value": 147019,
+                "description": "CLO-PLUS-US",
+                "field_value_id": -1
+            },
+            {
+                "value": 147020,
+                "description": "DELUX-1-US",
+                "field_value_id": -1
+            },
+            {
+                "value": 147021,
+                "description": "DELUX-1-US-QD",
+                "field_value_id": -1
+            },
+            {
+                "value": 147022,
+                "description": "DELUX-AS",
+                "field_value_id": -1
+            },
+            {
+                "value": 147023,
+                "description": "E-PS50",
+                "field_value_id": -1
+            },
+            {
+                "value": 147024,
+                "description": "F-CB-BNC",
+                "field_value_id": -1
+            },
+            {
+                "value": 147025,
+                "description": "F-CB-DNK",
+                "field_value_id": -1
+            },
+            {
+                "value": 147026,
+                "description": "LUX-100RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 147027,
+                "description": "LUX-100UF-N",
+                "field_value_id": -1
+            },
+            {
+                "value": 147028,
+                "description": "LUX-200RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 147029,
+                "description": "SENDI-AS",
+                "field_value_id": -1
+            },
+            {
+                "value": 147030,
+                "description": "SENDI-PLUS-US",
+                "field_value_id": -1
+            },
+            {
+                "value": 147031,
+                "description": "WT-030S-RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 147032,
+                "description": "WT-030S-UF-N",
+                "field_value_id": -1
+            },
+            {
+                "value": 147033,
+                "description": "WT-4200-RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 147034,
+                "description": "WT-4200-UF",
+                "field_value_id": -1
+            },
+            {
+                "value": 147035,
+                "description": "WT-HB640-H2-QD",
+                "field_value_id": -1
+            },
+            {
+                "value": 147036,
+                "description": "WT-HB640-RO-QD",
+                "field_value_id": -1
+            },
+            {
+                "value": 147037,
+                "description": "HQ9-LUX-RO-QD",
+                "field_value_id": -1
+            },
+            {
+                "value": 147038,
+                "description": "WT-PROMAX",
+                "field_value_id": -1
+            },
+            {
+                "value": 148375,
+                "description": "BTM-1800",
+                "field_value_id": -1
+            },
+            {
+                "value": 148376,
+                "description": "BTM-403D",
+                "field_value_id": -1
+            },
+            {
+                "value": 148377,
+                "description": "BTM-503",
+                "field_value_id": -1
+            },
+            {
+                "value": 148378,
+                "description": "BTM-503D",
+                "field_value_id": -1
+            },
+            {
+                "value": 149786,
+                "description": "WT-HB640-H2-QD",
+                "field_value_id": -1
+            },
+            {
+                "value": 149787,
+                "description": "HQ9-2EU-QD",
+                "field_value_id": -1
+            },
+            {
+                "value": 149788,
+                "description": "WT-HD-QD-W",
+                "field_value_id": -1
+            },
+            {
+                "value": 149789,
+                "description": "WT-PM-H2-QD",
+                "field_value_id": -1
+            },
+            {
+                "value": 149790,
+                "description": "HQ9-LUX-H2-QD-W",
+                "field_value_id": -1
+            },
+            {
+                "value": 149791,
+                "description": "HQ9-LUX-H2-QD-B",
+                "field_value_id": -1
+            },
+            {
+                "value": 149792,
+                "description": "LUX-100UF",
+                "field_value_id": -1
+            },
+            {
+                "value": 149793,
+                "description": "WT-030S-UF",
+                "field_value_id": -1
+            },
+            {
+                "value": 149794,
+                "description": "COMBOVIP2",
+                "field_value_id": -1
+            },
+            {
+                "value": 149903,
+                "description": "FK-RO50-CSM",
+                "field_value_id": -1
+            },
+            {
+                "value": 151938,
+                "description": "D-TDS",
+                "field_value_id": -1
+            },
+            {
+                "value": 152603,
+                "description": "PREF-PH-20",
+                "field_value_id": -1
+            },
+            {
+                "value": 152960,
+                "description": "PREF-PH-20",
+                "field_value_id": -1
+            },
+            {
+                "value": 152962,
+                "description": "WT-45",
+                "field_value_id": -1
+            },
+            {
+                "value": 153094,
+                "description": "WT-45",
+                "field_value_id": -1
+            },
+            {
+                "value": 153095,
+                "description": "PR-303",
+                "field_value_id": -1
+            },
+            {
+                "value": 154220,
+                "description": "D-H2",
+                "field_value_id": -1
+            },
+            {
+                "value": 154574,
+                "description": "WT-50T",
+                "field_value_id": -1
+            },
+            {
+                "value": 154763,
+                "description": "WT-3C-RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 155183,
+                "description": "FK-RO50",
+                "field_value_id": -1
+            },
+            {
+                "value": 155185,
+                "description": "B-PRO-3.2P-K",
+                "field_value_id": -1
+            },
+            {
+                "value": 155194,
+                "description": "FK-RO50-CSM",
+                "field_value_id": -1
+            },
+            {
+                "value": 155240,
+                "description": "E-PS50",
+                "field_value_id": -1
+            },
+            {
+                "value": 155599,
+                "description": "BT1000",
+                "field_value_id": -1
+            },
+            {
+                "value": 155672,
+                "description": "LUX-200UF",
+                "field_value_id": -1
+            },
+            {
+                "value": 155838,
+                "description": "WT-50",
+                "field_value_id": -1
+            },
+            {
+                "value": 156177,
+                "description": "FK-RO50-CSM",
+                "field_value_id": -1
+            },
+            {
+                "value": 156630,
+                "description": "FK-HYDRO11",
+                "field_value_id": -1
+            },
+            {
+                "value": 157888,
+                "description": "PREF-3-10",
+                "field_value_id": -1
+            },
+            {
+                "value": 159446,
+                "description": "PR-303",
+                "field_value_id": -1
+            },
+            {
+                "value": 160160,
+                "description": "LUX-S-RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 160237,
+                "description": "WT-50T",
+                "field_value_id": -1
+            },
+            {
+                "value": 160363,
+                "description": "FERA-45-AS",
+                "field_value_id": -1
+            },
+            {
+                "value": 160381,
+                "description": "F-CB-BNC5",
+                "field_value_id": -1
+            },
+            {
+                "value": 160701,
+                "description": "SCALA-45-AS",
+                "field_value_id": -1
+            },
+            {
+                "value": 160779,
+                "description": "WT-GP900-RO-QD",
+                "field_value_id": -1
+            },
+            {
+                "value": 161071,
+                "description": "LKBH",
+                "field_value_id": -1
+            },
+            {
+                "value": 162316,
+                "description": "CLO-45-AS",
+                "field_value_id": -1
+            },
+            {
+                "value": 163157,
+                "description": "DELUX-AS-QD",
+                "field_value_id": -1
+            },
+            {
+                "value": 163579,
+                "description": "COMBOLUXURY",
+                "field_value_id": -1
+            },
+            {
+                "value": 164004,
+                "description": "V-F304-AQ6",
+                "field_value_id": -1
+            },
+            {
+                "value": 164360,
+                "description": "FK-HQ9-1E",
+                "field_value_id": -1
+            },
+            {
+                "value": 164653,
+                "description": "BTM-105D",
+                "field_value_id": -1
+            },
+            {
+                "value": 165766,
+                "description": "E-AD-2412-WT",
+                "field_value_id": -1
+            },
+            {
+                "value": 165856,
+                "description": "F-RC-20-1052-BB",
+                "field_value_id": -1
+            },
+            {
+                "value": 165917,
+                "description": "ECOM8000",
+                "field_value_id": -1
+            },
+            {
+                "value": 167406,
+                "description": "FERA-45-US",
+                "field_value_id": -1
+            },
+            {
+                "value": 169347,
+                "description": "LUX-300RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 172713,
+                "description": "BTH-200",
+                "field_value_id": -1
+            },
+            {
+                "value": 177527,
+                "description": "KDF-45-AS",
+                "field_value_id": -1
+            },
+            {
+                "value": 179584,
+                "description": "SCALA-45-US",
+                "field_value_id": -1
+            },
+            {
+                "value": 179585,
+                "description": "CLO-45-US",
+                "field_value_id": -1
+            },
+            {
+                "value": 180374,
+                "description": "SENDI-UF",
+                "field_value_id": -1
+            },
+            {
+                "value": 180447,
+                "description": "E-V-SV-D-WT",
+                "field_value_id": -1
+            },
+            {
+                "value": 181683,
+                "description": "B-HD-H2",
+                "field_value_id": -1
+            },
+            {
+                "value": 181779,
+                "description": "PREF-1-10",
+                "field_value_id": -1
+            },
+            {
+                "value": 183272,
+                "description": "DHD",
+                "field_value_id": -1
+            },
+            {
+                "value": 183346,
+                "description": "WT-S30",
+                "field_value_id": -1
+            },
+            {
+                "value": 183595,
+                "description": "F-CB-BNC-KM",
+                "field_value_id": -1
+            },
+            {
+                "value": 184394,
+                "description": "F-CTO10",
+                "field_value_id": -1
+            },
+            {
+                "value": 184866,
+                "description": "WT-028S-RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 184869,
+                "description": "CLO-XS",
+                "field_value_id": -1
+            },
+            {
+                "value": 184870,
+                "description": "DELUX-XS",
+                "field_value_id": -1
+            },
+            {
+                "value": 187702,
+                "description": "ECO-100RO",
+                "field_value_id": -1
+            },
+            {
+                "value": 190741,
+                "description": "FK-UF120",
+                "field_value_id": -1
+            },
+            {
+                "value": 190840,
+                "description": "PREF-HW-20",
+                "field_value_id": -1
+            },
+            {
+                "value": 191388,
+                "description": "US-UA1",
+                "field_value_id": -1
+            },
+            {
+                "value": 191389,
+                "description": "CLO-UF",
+                "field_value_id": -1
+            },
+            {
+                "value": 191727,
+                "description": "E-P50-WT",
+                "field_value_id": -1
+            },
+            {
+                "value": 195966,
+                "description": "PREF-3-10",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field31",
+        "description": "Nguyên nhân",
+        "type": 4,
+        "id": 9722,
+        "parent_id": 9850,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 164691,
+                "description": "Bơm chạy yếu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164692,
+                "description": "Bơm không chạy",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164693,
+                "description": "Bơm ăn nguồn",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164694,
+                "description": "Bơm rò nước đầu bơm",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164695,
+                "description": "Gãy cút đầu bơm",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164696,
+                "description": "Van áp cáo không thông mạch",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164697,
+                "description": "Van áp cao luôn đóng",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164698,
+                "description": "Van áp cao rò nước",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164699,
+                "description": "Van từ rò nước",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164700,
+                "description": "Van từ đo không thông mạch",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164702,
+                "description": "Van từ luôn đóng",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164703,
+                "description": "Biến áp sun vỏ",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164704,
+                "description": "Van bình áp rò nước",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164705,
+                "description": "Khóa chia rò nước",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164706,
+                "description": "Van áp thấp không đóng",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164707,
+                "description": "Van áp thấp luôn hở mạch",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164708,
+                "description": "Van áp thấp rò nước",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164709,
+                "description": "Lõi Sendiment gãy đầu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164710,
+                "description": "Bình áp nứt",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164711,
+                "description": "Bình áp vỡ",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164712,
+                "description": "Bình áp rò nước van bơm hơi",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164713,
+                "description": "Bình áp không đẩy được nước lên",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164714,
+                "description": "Lõi kiềm lỗi kết cấu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164715,
+                "description": "Van thải có tiếng kêu to",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164716,
+                "description": "Van thải tắc",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164717,
+                "description": "Nước tinh khiết sau màng RO ra nhỏ giọt",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164718,
+                "description": "Lõi Kiềm chỉ số pH không đạt",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164719,
+                "description": "Lõi Lượng tử gãy đầu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164720,
+                "description": "Lõi Kiềm gãy đầu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164721,
+                "description": "Lõi màng RO gãy đầu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164722,
+                "description": "Lõi Pre-Carbon gãy đầu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164723,
+                "description": "Lỗi sử dụng",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164724,
+                "description": "Rò nước nắp lọc tổng",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164725,
+                "description": "Nứt lõi số 3 ionice",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164726,
+                "description": "Tắc lõi số 3 ionice",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164727,
+                "description": "Nứt lõi số 2 than hoạt tính",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164728,
+                "description": "Tắc lõi số 2 than hoạt tính",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164729,
+                "description": "Tắc lõi số 1 vải nếp gấp",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164730,
+                "description": "Lỗi sử dụng",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164731,
+                "description": "Khóa chia rò nước",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164732,
+                "description": "Van áp thấp không đóng",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164733,
+                "description": "Van áp thấp luôn hở mạch",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164734,
+                "description": "Van áp thấp rò nước",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164735,
+                "description": "Van từ rò nước",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164736,
+                "description": "Van từ đo không thông mạch",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164738,
+                "description": "Van từ luôn đóng",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164739,
+                "description": "Biến áp sun vỏ",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164740,
+                "description": "Biến áp ra điện yếu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164741,
+                "description": "Biến áp không có điện ra",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164742,
+                "description": "Bơm chạy yếu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164743,
+                "description": "Bơm không chạy",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164744,
+                "description": "Bơm ăn nguồn",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164745,
+                "description": "Bơm rò nước đầu bơm",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164746,
+                "description": "Gãy cút đầu bơm",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164747,
+                "description": "Phao điện không thông mạch",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164748,
+                "description": "Phao điện luôn thông mạch",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164749,
+                "description": "Van thải có tiếng kêu to",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164750,
+                "description": "Van thải tắc",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164751,
+                "description": "Màng RO tắc",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164752,
+                "description": "Lõi Kiềm chỉ số pH không đạt",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164753,
+                "description": "Lõi Lượng tử gãy đầu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164754,
+                "description": "Lõi Kiềm gãy đầu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164755,
+                "description": "Lõi màng RO gãy đầu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164756,
+                "description": "Lõi Pre-Carbon gãy đầu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164757,
+                "description": "Lõi Sendiment gãy đầu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164758,
+                "description": "Lõi Post-Carbon gãy đầu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164759,
+                "description": "Lỗi sử dụng",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164760,
+                "description": "Lõi kiềm lỗi kết cấu",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164761,
+                "description": "Hỏng zoăng",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164762,
+                "description": "Nứt vỡ nắp",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164764,
+                "description": "PCB đèn LED không sáng",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164765,
+                "description": "Bản cực rò nước",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164766,
+                "description": "Pin không ra điện",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164767,
+                "description": "PCB nguồn chập cháy",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164768,
+                "description": "Dây sạc không ra điện",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164769,
+                "description": "Rách màn lọc ngăn bản cực",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164770,
+                "description": "Lỗi sử dụng",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164771,
+                "description": "Lõi số 3 nứt thân vỏ",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164772,
+                "description": "Lõi số 2 nứt thân vỏ",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164773,
+                "description": "Lõi Lượng tử gãy đầu",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164774,
+                "description": "Lõi Kiềm gãy đầu",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164775,
+                "description": "Lõi kiềm lỗi kết cấu",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164776,
+                "description": "Lõi Kiềm chỉ số pH không đạt",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164777,
+                "description": "Lỗi sử dụng",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164778,
+                "description": "Lỗi sử dụng",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164779,
+                "description": "Hết pin",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164780,
+                "description": "Biến áp sun vỏ",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164781,
+                "description": "Lõi kiềm lỗi kết cấu",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164782,
+                "description": "Tắc màng RO",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164783,
+                "description": "Bình áp rò nước van bơm hơi",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164784,
+                "description": "Bình áp vỡ",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164785,
+                "description": "Bình áp vỡ",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164786,
+                "description": "Màng RO lỗi kết cấu tụt đường thải",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164787,
+                "description": "Màng RO lỗi kết cấu tụt đường thải",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164788,
+                "description": "Màn hình không hiển thị",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164789,
+                "description": "Cáu cặn bản cực",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164790,
+                "description": "Màn hình hiển thị sai màu",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164791,
+                "description": "Kẹt củ núm xoay",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164792,
+                "description": "Vỡ củ núm xoay",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164793,
+                "description": "Bản cực nứt",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164794,
+                "description": "PCB nguồn chập cháy",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164795,
+                "description": "PCB nguồn lỗi",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164832,
+                "description": "Thân bình lỗi kết cấu",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164833,
+                "description": "Nắp bình lỗi kết cấu",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164863,
+                "description": "Gãy đầu vòi",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164865,
+                "description": "Van từ luôn mở",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164866,
+                "description": "Van từ luôn mở",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164964,
+                "description": "Khóa chia tụt zoăng trong",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165032,
+                "description": "Bơm kêu to",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165033,
+                "description": "Màng RO nứt đáy lõi",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165034,
+                "description": "Lõi kiềm lỗi kết cấu",
+                "field_value_id": 160248
+            },
+            {
+                "value": 165035,
+                "description": "Lõi kiềm chỉ số pH không đạt",
+                "field_value_id": 160248
+            },
+            {
+                "value": 165191,
+                "description": "Rò nước đáy máy",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165192,
+                "description": "Rò nước đáy máy",
+                "field_value_id": 148352
+            },
+            {
+                "value": 165209,
+                "description": "Màng RO tụt lõi",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165210,
+                "description": "Màng RO tụt lõi",
+                "field_value_id": 148352
+            },
+            {
+                "value": 165213,
+                "description": "Màng ro rò nước thân dưới",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165233,
+                "description": "Lỗi PCB trụ cảm ứng",
+                "field_value_id": 148353
+            },
+            {
+                "value": 165269,
+                "description": "Tụt tâm lõi số 1",
+                "field_value_id": 148350
+            },
+            {
+                "value": 165272,
+                "description": "Bình áp tụt áp",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165273,
+                "description": "Bục lõi nếp gấp",
+                "field_value_id": 148350
+            },
+            {
+                "value": 165274,
+                "description": "Bơm kêu to",
+                "field_value_id": 148352
+            },
+            {
+                "value": 165275,
+                "description": "Bình áp tụt áp",
+                "field_value_id": 155312
+            },
+            {
+                "value": 165279,
+                "description": "Chỉ số pH không đạt",
+                "field_value_id": 155312
+            },
+            {
+                "value": 165283,
+                "description": "Lõi post cacbon gãy đầu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165287,
+                "description": "thu hồi kiểm tra xác định nguyên nhân",
+                "field_value_id": 155312
+            },
+            {
+                "value": 165301,
+                "description": "Lỗi PCB nguồn",
+                "field_value_id": 148353
+            },
+            {
+                "value": 165354,
+                "description": "Bục dây mềm kết nối bình nóng ra vòi",
+                "field_value_id": 148352
+            },
+            {
+                "value": 165358,
+                "description": "Khách không dùng trả hàng",
+                "field_value_id": 155312
+            },
+            {
+                "value": 165522,
+                "description": "Lỗi bộ nhiệt làm nóng nhanh",
+                "field_value_id": 148352
+            },
+            {
+                "value": 165526,
+                "description": "Biến áp không ra điện 24V",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165658,
+                "description": "Bình áp rò van núm khóa",
+                "field_value_id": 155312
+            },
+            {
+                "value": 165730,
+                "description": "Van áp cao không thông mạch",
+                "field_value_id": 155312
+            },
+            {
+                "value": 165751,
+                "description": "Van áp cao luôn thông mạch",
+                "field_value_id": 155312
+            },
+            {
+                "value": 165784,
+                "description": "Vòi điện tử không hiện thị",
+                "field_value_id": 148351
+            },
+            {
+                "value": 165813,
+                "description": "Lõi lượng tử tắc",
+                "field_value_id": 148354
+            },
+            {
+                "value": 165814,
+                "description": "Lõi kiềm tắc",
+                "field_value_id": 148354
+            },
+            {
+                "value": 165986,
+                "description": "Bình nóng lỗi",
+                "field_value_id": 148352
+            },
+            {
+                "value": 166141,
+                "description": "Cháy cầu chì",
+                "field_value_id": 148353
+            },
+            {
+                "value": 166142,
+                "description": "Rò nước nắp ecomac",
+                "field_value_id": 148351
+            },
+            {
+                "value": 166143,
+                "description": "Bục lõi ECOMAC",
+                "field_value_id": 148351
+            },
+            {
+                "value": 166985,
+                "description": "Lõi Sendiment bục đáy",
+                "field_value_id": 148351
+            },
+            {
+                "value": 167166,
+                "description": "Gãy lò xo nắp lọc tổng",
+                "field_value_id": 148350
+            },
+            {
+                "value": 167240,
+                "description": "Kẹt van từ",
+                "field_value_id": 148352
+            },
+            {
+                "value": 167430,
+                "description": "Màng RO rò nước đầu kết nối",
+                "field_value_id": 155312
+            },
+            {
+                "value": 167464,
+                "description": "Lỏng rắc điện",
+                "field_value_id": 148353
+            },
+            {
+                "value": 167468,
+                "description": "Bộ DARC không hoạt động, motor không quay",
+                "field_value_id": 148353
+            },
+            {
+                "value": 167545,
+                "description": "Lỗi van 1 chiều",
+                "field_value_id": 148351
+            },
+            {
+                "value": 167556,
+                "description": "Vòi lạnh  rò nước",
+                "field_value_id": 148352
+            },
+            {
+                "value": 167658,
+                "description": "Lõi kiềm có mùi",
+                "field_value_id": 148354
+            },
+            {
+                "value": 167789,
+                "description": "Rò nước vòi inox",
+                "field_value_id": 148351
+            },
+            {
+                "value": 167822,
+                "description": "Lỗi PCB cảm ứng",
+                "field_value_id": 148352
+            },
+            {
+                "value": 167993,
+                "description": "Pre cacbon không có tem nhãn",
+                "field_value_id": 148354
+            },
+            {
+                "value": 168085,
+                "description": "Bục lõi ECOMAC",
+                "field_value_id": 155312
+            },
+            {
+                "value": 168174,
+                "description": "Lỗi màng RO",
+                "field_value_id": 155312
+            },
+            {
+                "value": 168176,
+                "description": "Lỗi từ NSX",
+                "field_value_id": 148351
+            },
+            {
+                "value": 168177,
+                "description": "Lỗi từ NSX",
+                "field_value_id": 148352
+            },
+            {
+                "value": 168234,
+                "description": "Lỗi màng Loa máy PI",
+                "field_value_id": 148353
+            },
+            {
+                "value": 168295,
+                "description": "Rò nước nắp ECOM8000",
+                "field_value_id": 155312
+            },
+            {
+                "value": 168334,
+                "description": "Cột inox rỉ vàng",
+                "field_value_id": 148350
+            },
+            {
+                "value": 168342,
+                "description": "Vòi INOX bị mọp",
+                "field_value_id": 155312
+            },
+            {
+                "value": 168464,
+                "description": "Nắp lõi kiềm bị bung",
+                "field_value_id": 148349
+            },
+            {
+                "value": 168648,
+                "description": "Lỗi van từ đôi lấy nước",
+                "field_value_id": 148352
+            },
+            {
+                "value": 172689,
+                "description": "Lỗi Bộ điều nhiệt",
+                "field_value_id": 148352
+            },
+            {
+                "value": 176404,
+                "description": "Đứt  cầu chì",
+                "field_value_id": 148352
+            },
+            {
+                "value": 182729,
+                "description": "Tắc lõi Ecom8000",
+                "field_value_id": 155312
+            },
+            {
+                "value": 182795,
+                "description": "Rò nước cổ bơm",
+                "field_value_id": 160248
+            },
+            {
+                "value": 186444,
+                "description": "Rò rỉ nước van khóa chia",
+                "field_value_id": 155312
+            }
+        ]
+    },
+    {
+        "key": "addition_field32",
+        "description": "Phương án xử lý",
+        "type": 6,
+        "id": 9723,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field33",
+        "description": "Thông tin thay đổi đơn hàng",
+        "type": 3,
+        "id": 9725,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 183009,
+                "description": "ĐLĐ không lắp",
+                "field_value_id": -1
+            },
+            {
+                "value": 183010,
+                "description": "ĐLĐ không xác nhận",
+                "field_value_id": -1
+            },
+            {
+                "value": 183011,
+                "description": "KH hủy đơn",
+                "field_value_id": -1
+            },
+            {
+                "value": 183012,
+                "description": "KH yêu cầu đổi ĐLĐ",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field34",
+        "description": "Ngày thanh toán",
+        "type": 2,
+        "id": 9726,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field35",
+        "description": "Ghi chú",
+        "type": 6,
+        "id": 9769,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field36",
+        "description": "SĐT ĐLĐ",
+        "type": 0,
+        "id": 9829,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field37",
+        "description": "Thông số kiểm tra",
+        "type": 6,
+        "id": 9844,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field38",
+        "description": "THÔNG SỐ KT LINH KIỆN THU HỒI",
+        "type": 6,
+        "id": 9845,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field39",
+        "description": "TÌNH TRẠNG ĐLĐ",
+        "type": 4,
+        "id": 9846,
+        "parent_id": 9662,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 164828,
+                "description": "Không làm nữa",
+                "field_value_id": 164796
+            },
+            {
+                "value": 164829,
+                "description": "Vẫn còn làm-đã ký HĐ",
+                "field_value_id": 164796
+            },
+            {
+                "value": 164830,
+                "description": "Vẫn còn làm-chưa ký HĐ",
+                "field_value_id": 164796
+            },
+            {
+                "value": 164834,
+                "description": "Vẫn còn làm",
+                "field_value_id": 164796
+            },
+            {
+                "value": 164835,
+                "description": "Vẫn còn làm-nhận được HĐ-không biết thao tác",
+                "field_value_id": 164796
+            },
+            {
+                "value": 164838,
+                "description": "Vẫn còn làm- chưa ký HĐ- không dùng gmail",
+                "field_value_id": 164796
+            },
+            {
+                "value": 164867,
+                "description": "Không liên hệ được",
+                "field_value_id": 164796
+            }
+        ]
+    },
+    {
+        "key": "addition_field40",
+        "description": "KT Tiếp Nhận",
+        "type": 4,
+        "id": 9847,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 164536,
+                "description": "Ngọc",
+                "field_value_id": -1
+            },
+            {
+                "value": 164537,
+                "description": "Phong",
+                "field_value_id": -1
+            },
+            {
+                "value": 164538,
+                "description": "Tuấn",
+                "field_value_id": -1
+            },
+            {
+                "value": 164539,
+                "description": "Xuyên",
+                "field_value_id": -1
+            },
+            {
+                "value": 164540,
+                "description": "Phương",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field41",
+        "description": "Thu hồi linh kiện",
+        "type": 3,
+        "id": 9848,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 149893,
+                "description": "- Không thu hồi",
+                "field_value_id": -1
+            },
+            {
+                "value": 149894,
+                "description": "- Chưa thu hồi",
+                "field_value_id": -1
+            },
+            {
+                "value": 149895,
+                "description": "- Đang thu hồi",
+                "field_value_id": -1
+            },
+            {
+                "value": 149896,
+                "description": "- Đã thu hồi",
+                "field_value_id": -1
+            },
+            {
+                "value": 168222,
+                "description": "-Đang chờ thu hồi",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field42",
+        "description": "Tên ĐLĐ",
+        "type": 0,
+        "id": 9849,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field43",
+        "description": "Nhóm sản phẩm",
+        "type": 3,
+        "id": 9850,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 148349,
+                "description": "MÁY CẦM TAY",
+                "field_value_id": -1
+            },
+            {
+                "value": 148350,
+                "description": "LỌC TỔNG",
+                "field_value_id": -1
+            },
+            {
+                "value": 148351,
+                "description": "MÁY LUX",
+                "field_value_id": -1
+            },
+            {
+                "value": 148352,
+                "description": "MÁY NÓNG LẠNH",
+                "field_value_id": -1
+            },
+            {
+                "value": 148353,
+                "description": "MÁY PI",
+                "field_value_id": -1
+            },
+            {
+                "value": 148354,
+                "description": "COMBO LÕI LỌC",
+                "field_value_id": -1
+            },
+            {
+                "value": 155312,
+                "description": "SẢN PHẨM KHÁC",
+                "field_value_id": -1
+            },
+            {
+                "value": 160248,
+                "description": "MÁY CÔNG NGHIỆP",
+                "field_value_id": -1
+            }
+        ]
+    },
+    {
+        "key": "addition_field44",
+        "description": "Đại lý phụ trách",
+        "type": 0,
+        "id": 9851,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field45",
+        "description": "Chi tiết lỗi",
+        "type": 3,
+        "id": 9852,
+        "parent_id": 9850,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 155313,
+                "description": "Chỉ số PH không đạt",
+                "field_value_id": 148354
+            },
+            {
+                "value": 155314,
+                "description": "Giao nhầm hàng",
+                "field_value_id": 148354
+            },
+            {
+                "value": 155316,
+                "description": "Không xác định",
+                "field_value_id": 148354
+            },
+            {
+                "value": 155317,
+                "description": "Lỗi kết cấu",
+                "field_value_id": 148354
+            },
+            {
+                "value": 155318,
+                "description": "Máy không ra nước",
+                "field_value_id": 148354
+            },
+            {
+                "value": 155319,
+                "description": "Nước có cặn",
+                "field_value_id": 148354
+            },
+            {
+                "value": 155320,
+                "description": "Nước có mùi vị lạ",
+                "field_value_id": 148354
+            },
+            {
+                "value": 155321,
+                "description": "Rò rỉ nước",
+                "field_value_id": 148354
+            },
+            {
+                "value": 155325,
+                "description": "Nứt vỡ thân vỏ",
+                "field_value_id": 148350
+            },
+            {
+                "value": 155326,
+                "description": "Chỉ số PH không đạt",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155328,
+                "description": "Không lên nguồn",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155329,
+                "description": "Không xác định",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155330,
+                "description": "Lỗi kết cấu",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155331,
+                "description": "Lỗi phím bấm",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155332,
+                "description": "Nước có cặn",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155333,
+                "description": "Nứt vỡ thân vỏ",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155334,
+                "description": "Pin tụt nhanh",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155335,
+                "description": "Rò rỉ nước",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155336,
+                "description": "Yêu cầu kỹ thuật lắp đặt",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155337,
+                "description": "Bình áp tụt áp",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155338,
+                "description": "Bung nắp",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155339,
+                "description": "Chỉ số PH không đạt",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155340,
+                "description": "Dịch vụ trả phí",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155341,
+                "description": "Không có nước thải",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155342,
+                "description": "Không lên nguồn",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155343,
+                "description": "Không xác định",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155344,
+                "description": "Máy chạy không dừng",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155345,
+                "description": "Máy kêu to",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155346,
+                "description": "Máy không ra nước",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155347,
+                "description": "Nước có mùi vị lạ",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155348,
+                "description": "Nước ra yếu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155349,
+                "description": "Nước thải không ngắt",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155350,
+                "description": "Rò rỉ nước",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155351,
+                "description": "Thông tin thay lõi",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155352,
+                "description": "Yêu cầu kỹ thuật lắp đặt",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155353,
+                "description": "Bung nắp",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155354,
+                "description": "Chỉ số PH không đạt",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155355,
+                "description": "Gãy cút đầu bơm",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155356,
+                "description": "Gãy phao",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155359,
+                "description": "Không lên nguồn",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155360,
+                "description": "Lỗi Block lạnh",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155361,
+                "description": "Lỗi lắp ráp",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155362,
+                "description": "Lỗi nhiệt độ nước",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155363,
+                "description": "Lỗi phím bấm",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155364,
+                "description": "Máy kêu to",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155365,
+                "description": "Máy không ra nước",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155366,
+                "description": "Nước có mùi vị lạ",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155367,
+                "description": "Nứt vỡ thân vỏ",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155368,
+                "description": "Rò rỉ nước",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155369,
+                "description": "Thông tin thay lõi",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155370,
+                "description": "Vòi nóng không chảy",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155371,
+                "description": "Yêu cầu kỹ thuật lắp đặt",
+                "field_value_id": 148352
+            },
+            {
+                "value": 155372,
+                "description": "Chỉ số PH không đạt",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155373,
+                "description": "Hỗ trợ thông tin cơ bản",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155374,
+                "description": "Không có nước thải",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155375,
+                "description": "Không lên nguồn",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155376,
+                "description": "Hướng dẫn sử dụng",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155377,
+                "description": "Lỗi chức năng tự sục rửa",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155378,
+                "description": "Lỗi màn hình hiển thị",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155379,
+                "description": "Lỗi phím bấm",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155380,
+                "description": "Máy kêu to",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155381,
+                "description": "Máy không ra nước",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155382,
+                "description": "Nước thải chảy không dừng",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155383,
+                "description": "Thông tin thay lõi",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155384,
+                "description": "Yêu cầu kiểm tra định kỳ",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155385,
+                "description": "Yêu cầu kỹ thuật lắp đặt",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155386,
+                "description": "Không ra nước",
+                "field_value_id": 148350
+            },
+            {
+                "value": 155387,
+                "description": "Nứt vỡ thân vỏ",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155388,
+                "description": "Chỉ số H2 thấp",
+                "field_value_id": 148349
+            },
+            {
+                "value": 155389,
+                "description": "Nứt võ thân vỏ",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155391,
+                "description": "Nứt võ thân vỏ",
+                "field_value_id": 155312
+            },
+            {
+                "value": 155392,
+                "description": "Bình áp tụt áp",
+                "field_value_id": 155312
+            },
+            {
+                "value": 155394,
+                "description": "Rò rỉ nước",
+                "field_value_id": 148353
+            },
+            {
+                "value": 155395,
+                "description": "Tắc lõi lọc",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155396,
+                "description": "Hỏng gioăng",
+                "field_value_id": 155312
+            },
+            {
+                "value": 155471,
+                "description": "Lỗi kết cấu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 155674,
+                "description": "Bút mới hết pin",
+                "field_value_id": 155312
+            },
+            {
+                "value": 156172,
+                "description": "Vận chuyển làm vỡ máy",
+                "field_value_id": 148351
+            },
+            {
+                "value": 156173,
+                "description": "Tắc lõi",
+                "field_value_id": 148351
+            },
+            {
+                "value": 156174,
+                "description": "Tắc lõi",
+                "field_value_id": 155312
+            },
+            {
+                "value": 156175,
+                "description": "Tắc lõi",
+                "field_value_id": 148352
+            },
+            {
+                "value": 156176,
+                "description": "Tắc lõi",
+                "field_value_id": 148354
+            },
+            {
+                "value": 156180,
+                "description": "Bảo dưỡng định kỳ",
+                "field_value_id": 148353
+            },
+            {
+                "value": 156218,
+                "description": "Lỗi sử dụng",
+                "field_value_id": 148350
+            },
+            {
+                "value": 156536,
+                "description": "Nước thải chảy liên tục",
+                "field_value_id": 148352
+            },
+            {
+                "value": 156537,
+                "description": "Nước thải chảy liên tục",
+                "field_value_id": 148351
+            },
+            {
+                "value": 156632,
+                "description": "Lỗi kết cấu",
+                "field_value_id": 155312
+            },
+            {
+                "value": 160239,
+                "description": "Rò rỉ nước",
+                "field_value_id": 155312
+            },
+            {
+                "value": 160240,
+                "description": "Chỉ số khoáng quá cao",
+                "field_value_id": 155312
+            },
+            {
+                "value": 160241,
+                "description": "Rò rỉ nước",
+                "field_value_id": 148350
+            },
+            {
+                "value": 160249,
+                "description": "Không lên nguồn",
+                "field_value_id": 160248
+            },
+            {
+                "value": 160283,
+                "description": "Nước có mùi vị lạ",
+                "field_value_id": 148349
+            },
+            {
+                "value": 160777,
+                "description": "Chỉ số khoáng quá cao",
+                "field_value_id": 148351
+            },
+            {
+                "value": 160778,
+                "description": "Rò rỉ nước",
+                "field_value_id": 160248
+            },
+            {
+                "value": 161092,
+                "description": "Không lên nguồn",
+                "field_value_id": 155312
+            },
+            {
+                "value": 162412,
+                "description": "Đền báo không sáng khi sạc pin",
+                "field_value_id": 148349
+            },
+            {
+                "value": 162413,
+                "description": "Chỉ số H2 không ổn định",
+                "field_value_id": 155312
+            },
+            {
+                "value": 162423,
+                "description": "Cáu cặn bản cực",
+                "field_value_id": 148353
+            },
+            {
+                "value": 162564,
+                "description": "Nước ra có màu vàng",
+                "field_value_id": 148353
+            },
+            {
+                "value": 162565,
+                "description": "Nước ra có mùi vị lạ",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164300,
+                "description": "Cáu cặn bản cực",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164446,
+                "description": "Có cặn",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164487,
+                "description": "Chỉ số khoáng không đạt",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164488,
+                "description": "Gãy do vận chuyển",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164489,
+                "description": "Tắc lõi",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164490,
+                "description": "Nước ra có màu và mùi lạ",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164491,
+                "description": "Chỉ số khoáng quá thấp",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164492,
+                "description": "Chỉ số khoáng quá cao",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164493,
+                "description": "Chỉ số khoáng quá thấp",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164494,
+                "description": "Chỉ số khoáng quá thấp",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164504,
+                "description": "Đường tinh khiết ra yếu",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164505,
+                "description": "Đường tinh khiết ra yếu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164506,
+                "description": "Đường tinh khiết ra yếu",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164507,
+                "description": "Đường tinh khiết ra yếu",
+                "field_value_id": 160248
+            },
+            {
+                "value": 164638,
+                "description": "Lỗi người dùng",
+                "field_value_id": 148354
+            },
+            {
+                "value": 164639,
+                "description": "Lỗi người dùng",
+                "field_value_id": 148350
+            },
+            {
+                "value": 164640,
+                "description": "Lỗi người dùng",
+                "field_value_id": 148349
+            },
+            {
+                "value": 164641,
+                "description": "Lỗi người dùng",
+                "field_value_id": 148351
+            },
+            {
+                "value": 164642,
+                "description": "Lỗi người dùng",
+                "field_value_id": 148352
+            },
+            {
+                "value": 164643,
+                "description": "Lỗi người dùng",
+                "field_value_id": 148353
+            },
+            {
+                "value": 164644,
+                "description": "Lỗi người dùng",
+                "field_value_id": 155312
+            },
+            {
+                "value": 164645,
+                "description": "Lỗi người dùng",
+                "field_value_id": 160248
+            },
+            {
+                "value": 165037,
+                "description": "Chỉ số pH không đạt",
+                "field_value_id": 160248
+            },
+            {
+                "value": 165280,
+                "description": "Chỉ số pH không đạt",
+                "field_value_id": 155312
+            },
+            {
+                "value": 165284,
+                "description": "Tụt tâm lõi nếp gấp",
+                "field_value_id": 148350
+            },
+            {
+                "value": 165285,
+                "description": "Bục lõi nếp gấp",
+                "field_value_id": 148350
+            },
+            {
+                "value": 165286,
+                "description": "Máy không ra nước",
+                "field_value_id": 155312
+            },
+            {
+                "value": 165303,
+                "description": "Máy không có âm thanh",
+                "field_value_id": 148353
+            },
+            {
+                "value": 165576,
+                "description": "Vòi inox điện tử mất hiển thị",
+                "field_value_id": 148351
+            },
+            {
+                "value": 167469,
+                "description": "Nước ra vòi kiềm chảy yếu",
+                "field_value_id": 148353
+            },
+            {
+                "value": 167995,
+                "description": "Không có ten nhãn",
+                "field_value_id": 148354
+            },
+            {
+                "value": 168178,
+                "description": "Cốc lọc thô không lắp vừa",
+                "field_value_id": 148352
+            },
+            {
+                "value": 168333,
+                "description": "Cột Inox rỉ vàng",
+                "field_value_id": 148350
+            },
+            {
+                "value": 178367,
+                "description": "gãy đầu vòi",
+                "field_value_id": 148352
+            },
+            {
+                "value": 178609,
+                "description": "lỗi lõi lọc",
+                "field_value_id": 148350
+            },
+            {
+                "value": 182802,
+                "description": "Bơm yếu",
+                "field_value_id": 148352
+            },
+            {
+                "value": 182803,
+                "description": "Lỗi lõi lọc",
+                "field_value_id": 148353
+            },
+            {
+                "value": 183811,
+                "description": "Gãy cút đầu bơm",
+                "field_value_id": 155312
+            },
+            {
+                "value": 188382,
+                "description": "Gãy cút nối cốc lọc chặn",
+                "field_value_id": 148352
+            },
+            {
+                "value": 188402,
+                "description": "Nước thải không chảy",
+                "field_value_id": 148352
+            },
+            {
+                "value": 196776,
+                "description": "Diệt khuẩn không đạt",
+                "field_value_id": 148351
+            }
+        ]
+    },
+    {
+        "key": "addition_field46",
+        "description": "Gia hạn xử lý",
+        "type": 0,
+        "id": 9853,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field47",
+        "description": "Thông tin khiếu nại / Góp ý",
+        "type": 6,
+        "id": 9854,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    },
+    {
+        "key": "addition_field48",
+        "description": "XÁC NHẬN KH",
+        "type": 4,
+        "id": 9855,
+        "parent_id": 9662,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 164649,
+                "description": "Đã lắp",
+                "field_value_id": 162774
+            },
+            {
+                "value": 164650,
+                "description": "Chưa lắp",
+                "field_value_id": 162774
+            },
+            {
+                "value": 164651,
+                "description": "Đã lắp nhưng có lỗi",
+                "field_value_id": 162774
+            },
+            {
+                "value": 164652,
+                "description": "Không liên hệ được",
+                "field_value_id": 162774
+            }
+        ]
+    },
+    {
+        "key": "addition_field49",
+        "description": "XÁC NHẬN  ĐLĐ",
+        "type": 4,
+        "id": 9856,
+        "parent_id": 9662,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": [
+            {
+                "value": 164646,
+                "description": "Gọi thành công",
+                "field_value_id": 162774
+            },
+            {
+                "value": 164647,
+                "description": "Chưa liên hệ được",
+                "field_value_id": 162774
+            },
+            {
+                "value": 164648,
+                "description": "Từ chối lắp đặt",
+                "field_value_id": 162774
+            }
+        ]
+    },
+    {
+        "key": "addition_field50",
+        "description": "Số SERI",
+        "type": 0,
+        "id": 9857,
+        "parent_id": -1,
+        "object_type": [
+            "0"
+        ],
+        "field_type": "DYNAMIC_FIELD",
+        "data": []
+    }
+]

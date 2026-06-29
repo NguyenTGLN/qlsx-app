@@ -4,7 +4,8 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send, Download, CheckCircle2, RotateCcw, Calendar } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, CLOSING_STEP, getThongTinBoSung } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, getThongTinBoSung, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel } from '../../lib/warrantyProcessing';
+import fieldOptions from '../../data/caresoftFieldOptions.json';
 import ProcessingModal from './ProcessingModal';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
@@ -195,9 +196,10 @@ const chipPalette = (done, urg) => {
   return { background: '#dcfce7', color: '#166534', border: '1px solid #86efac' }; // chưa đặt hạn → xanh (bước bình thường)
 };
 
-// Dãy chip bước WF. Bấm 1 chip → mở popover: nhập "đã thực hiện gì" (ghi_chú), đánh dấu xong/mở lại,
-// Lưu (ghi DB) hoặc Đồng bộ (đẩy ghi chú bước làm comment Caresoft). Popover position:fixed (không bị cắt).
-function StepChips({ row, perm, onToggle, onSaveNote }) {
+// Dãy chip bước WF. Bấm 1 chip → mở popover: nhập "đã thực hiện gì" (ghi_chú) rồi 1 nút duy nhất
+// "Hoàn thành & Đồng bộ" (lật xong + đẩy về Caresoft; bước "Đóng phiếu" → đóng ticket Solved) + "Đóng".
+// Popover position:fixed (không bị cắt).
+function StepChips({ row, perm, onCompleteSync }) {
   const steps = getEffectiveSteps(row['các_bước']);
   const [open, setOpen] = useState(null); // { index, top, left }
   const [draft, setDraft] = useState('');
@@ -212,11 +214,11 @@ function StepChips({ row, perm, onToggle, onSaveNote }) {
     setOpen({ index: i, top: Math.min(r.bottom + 6, window.innerHeight - 220), left: Math.max(8, Math.min(r.left, window.innerWidth - 320)) });
   };
   const close = () => setOpen(null);
-  const doSave = async (sync) => {
+  // sync = có quyền N/X (perm.io) → đẩy về Caresoft; không thì chỉ lưu/đánh dấu xong tại app.
+  const doAction = async () => {
     setBusy(true);
-    try { await onSaveNote(row, open.index, steps, draft, sync); close(); } finally { setBusy(false); }
+    try { await onCompleteSync(row, open.index, steps, draft, perm.io); close(); } finally { setBusy(false); }
   };
-  const doToggle = () => { const i = open.index; close(); onToggle(row, i, steps); };
 
   return (
     <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', alignItems: 'stretch', height: '100%' }}>
@@ -256,10 +258,14 @@ function StepChips({ row, perm, onToggle, onSaveNote }) {
             <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1e293b', marginBottom: '0.5rem' }}>{cur?.['tên'] || 'Bước'}</div>
             <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Đã thực hiện gì... (vd: đã liên hệ chị A, khách hài lòng)" rows={3} style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.5rem', fontSize: '0.82rem', outline: 'none', resize: 'vertical', boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
-              {perm.edit && <button disabled={busy} onClick={doToggle} style={{ padding: '0.35rem 0.6rem', borderRadius: '7px', border: '1px solid ' + (curDone ? '#f59e0b' : '#86efac'), background: curDone ? '#fffbeb' : '#dcfce7', color: curDone ? '#b45309' : '#166534', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer' }}>{curDone ? 'Mở lại' : 'Đánh dấu xong'}</button>}
-              {perm.edit && <button disabled={busy} onClick={() => doSave(false)} style={{ padding: '0.35rem 0.6rem', borderRadius: '7px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 600, fontSize: '0.78rem', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>Lưu</button>}
-              {perm.io && <button disabled={busy} onClick={() => doSave(true)} style={{ padding: '0.35rem 0.6rem', borderRadius: '7px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.78rem', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>Đồng bộ</button>}
-              <button disabled={busy} onClick={close} style={{ padding: '0.35rem 0.6rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer' }}>Đóng</button>
+              {perm.edit && (
+                <button disabled={busy} onClick={doAction} title={perm.io ? 'Lật trạng thái bước & đẩy về Caresoft' : 'Lật trạng thái bước (không có quyền đồng bộ)'} style={{ padding: '0.35rem 0.7rem', borderRadius: '7px', border: 'none', background: curDone ? '#f59e0b' : '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.78rem', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+                  {curDone
+                    ? (perm.io ? 'Mở lại & Đồng bộ' : 'Mở lại')
+                    : (perm.io ? 'Hoàn thành & Đồng bộ' : 'Hoàn thành')}
+                </button>
+              )}
+              <button disabled={busy} onClick={close} style={{ padding: '0.35rem 0.7rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer' }}>Đóng</button>
             </div>
           </div>
         </>
@@ -288,12 +294,15 @@ function SyncCell({ row, perm, onSync }) {
   );
 }
 
-// Khai báo trường cho từng card nhóm thông tin (ngoài danh sách). readOnly → chỉ hiển thị (đọc từ row mirror).
+// Khai báo trường cho từng card nhóm thông tin (ngoài danh sách).
+//  - kind:'option' → dropdown từ caresoftFieldOptions (cascade theo OPTION_FIELDS[fieldKey].parentKey).
+//  - readOnly → chỉ hiển thị (đọc từ row mirror); còn lại = ô text sửa thông_tin_bổ_sung.
+// Thứ tự đặt cha trên con: Nhóm SP→Chi tiết lỗi, Mã SP→Linh kiện.
 const SP_FIELDS = [
-  { key: 'mã_sản_phẩm', label: 'Mã SP', readOnly: true },
-  { key: 'nhóm_sản_phẩm', label: 'Nhóm SP', readOnly: true },
-  { key: 'chi_tiết_lỗi', label: 'Chi tiết lỗi', readOnly: true },
-  { key: 'linh_kiện', label: 'Linh kiện lỗi', readOnly: true },
+  { key: 'nhóm_sản_phẩm', label: 'Nhóm SP', kind: 'option', fieldKey: 'nhóm_sản_phẩm' },
+  { key: 'chi_tiết_lỗi', label: 'Chi tiết lỗi', kind: 'option', fieldKey: 'chi_tiết_lỗi' },
+  { key: 'mã_sản_phẩm', label: 'Mã SP', kind: 'option', fieldKey: 'mã_sản_phẩm' },
+  { key: 'linh_kiện', label: 'Linh kiện lỗi', kind: 'option', fieldKey: 'linh_kiện' },
   { key: 'ngày_lắp_đặt', label: 'Ngày lắp' },
   { key: 'tình_trạng', label: 'Tình trạng' },
 ];
@@ -313,20 +322,84 @@ function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
   const tin = getThongTinBoSung(row);
-  const valOf = (f) => (f.readOnly ? (row[f.key] || '') : (tin[f.key] || ''));
-  const hasEditable = fields.some(f => !f.readOnly);
+  const ttRaw = (row && row['thông_tin_bổ_sung']) || {}; // chứa *_option_id / linh_kiện_option_ids
+
+  // Hiển thị nhãn 1 ô. option-single: resolve theo *_option_id; option-multi: nối nhãn; fallback mirror row[key].
+  const valOf = (f) => {
+    if (f.kind === 'option') {
+      const meta = OPTION_FIELDS[f.fieldKey];
+      if (meta.multi) {
+        const ids = Array.isArray(ttRaw[f.key + '_option_ids']) ? ttRaw[f.key + '_option_ids'] : [];
+        return ids.map(id => resolveOptionLabel(fieldOptions, id)).filter(Boolean).join(', ') || (row[f.key] || '');
+      }
+      return resolveOptionLabel(fieldOptions, ttRaw[f.key + '_option_id']) || (row[f.key] || '');
+    }
+    return f.readOnly ? (row[f.key] || '') : (tin[f.key] || '');
+  };
+  const hasEditable = fields.some(f => f.kind === 'option' || !f.readOnly);
 
   const openPop = (e) => {
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
     const d = {};
-    fields.forEach(f => { if (!f.readOnly) d[f.key] = tin[f.key] || ''; });
+    fields.forEach(f => {
+      if (f.kind === 'option') {
+        if (OPTION_FIELDS[f.fieldKey].multi) d[f.key + '_option_ids'] = Array.isArray(ttRaw[f.key + '_option_ids']) ? [...ttRaw[f.key + '_option_ids']] : [];
+        else d[f.key + '_option_id'] = ttRaw[f.key + '_option_id'] || '';
+      } else if (!f.readOnly) d[f.key] = tin[f.key] || '';
+    });
     setDraft(d);
     const top = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 160));
     setOpen({ top, left: Math.max(8, Math.min(r.left, window.innerWidth - 340)), maxH: window.innerHeight - top - 12 });
   };
   const close = () => setOpen(null);
   const save = async (sync) => { setBusy(true); try { await onSaveGroup(row, draft, sync); close(); } finally { setBusy(false); } };
+
+  // Đổi 1 option-single: cập nhật + reset con cascade phụ thuộc nó (nhóm→chi tiết lỗi, mã→linh kiện).
+  const setSingleOpt = (fieldKey, v) => setDraft(d => {
+    const nd = { ...d, [fieldKey + '_option_id']: v };
+    for (const ck of OPTION_FIELD_KEYS) {
+      const cm = OPTION_FIELDS[ck];
+      if (cm.parentKey === fieldKey) { if (cm.multi) nd[ck + '_option_ids'] = []; else nd[ck + '_option_id'] = ''; }
+    }
+    return nd;
+  });
+
+  const renderEditor = (f) => {
+    const meta = OPTION_FIELDS[f.fieldKey];
+    const parentOid = meta.parentKey ? (draft[meta.parentKey + '_option_id'] || '') : null;
+    const opts = optionsFor(fieldOptions, f.fieldKey, meta.cascade ? parentOid : null);
+    const blocked = meta.cascade && !parentOid;
+    const parentLabel = meta.parentKey === 'mã_sản_phẩm' ? 'Mã SP' : 'Nhóm SP';
+    if (meta.multi) {
+      const sel = new Set((draft[f.key + '_option_ids'] || []).map(String));
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', maxHeight: 150, overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.35rem 0.5rem' }}>
+          {blocked ? <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>(chọn {parentLabel} trước)</span>
+            : opts.length === 0 ? <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>(không có linh kiện cho máy này)</span>
+            : opts.map(o => (
+              <label key={o.option_id} style={{ display: 'flex', gap: '0.4rem', fontSize: '0.8rem', alignItems: 'flex-start' }}>
+                <input type="checkbox" disabled={!perm.edit} checked={sel.has(String(o.option_id))}
+                  onChange={e => setDraft(d => {
+                    const cur = new Set((d[f.key + '_option_ids'] || []).map(String));
+                    if (e.target.checked) cur.add(String(o.option_id)); else cur.delete(String(o.option_id));
+                    return { ...d, [f.key + '_option_ids']: [...cur].map(Number) };
+                  })} />
+                <span>{o.label}</span>
+              </label>
+            ))}
+        </div>
+      );
+    }
+    return (
+      <select value={draft[f.key + '_option_id'] || ''} disabled={!perm.edit || blocked}
+        onChange={e => setSingleOpt(f.key, e.target.value)}
+        style={{ border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.4rem 0.5rem', fontSize: '0.84rem', outline: 'none', background: '#fff' }}>
+        <option value="">{blocked ? `(chọn ${parentLabel} trước)` : '— chọn —'}</option>
+        {opts.map(o => <option key={o.option_id} value={o.option_id}>{o.label}</option>)}
+      </select>
+    );
+  };
 
   return (
     <div style={{ height: '100%' }}>
@@ -347,9 +420,11 @@ function InfoGroupCard({ row, perm, title, accent, fields, onSaveGroup }) {
               {fields.map(f => (
                 <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                   <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#475569' }}>{f.label}{f.readOnly ? ' (chỉ đọc)' : ''}</label>
-                  {f.readOnly
-                    ? <div style={{ fontSize: '0.82rem', color: '#0f172a', padding: '0.3rem 0' }}>{valOf(f) || '—'}</div>
-                    : <input value={draft[f.key] ?? ''} disabled={!perm.edit} onChange={(e) => { const v = e.target.value; setDraft(d => ({ ...d, [f.key]: v })); }} style={{ border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.4rem 0.5rem', fontSize: '0.84rem', outline: 'none' }} />}
+                  {f.kind === 'option'
+                    ? renderEditor(f)
+                    : f.readOnly
+                      ? <div style={{ fontSize: '0.82rem', color: '#0f172a', padding: '0.3rem 0' }}>{valOf(f) || '—'}</div>
+                      : <input value={draft[f.key] ?? ''} disabled={!perm.edit} onChange={(e) => { const v = e.target.value; setDraft(d => ({ ...d, [f.key]: v })); }} style={{ border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.4rem 0.5rem', fontSize: '0.84rem', outline: 'none' }} />}
                 </div>
               ))}
             </div>
@@ -417,7 +492,7 @@ const LIST_COLUMNS = [
   { key: 'tổng_chi_phí', label: 'Chi phí', render: r => (Number(r['tổng_chi_phí']) || 0).toLocaleString('vi-VN') + ' đ' },
   { key: 'kết_quả_xử_lý', label: 'Kết quả', render: r => r['kết_quả_xử_lý'] || '-' },
   { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
-  { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onToggle={ctx.onToggleStep} onSaveNote={ctx.onSaveStepNote} /> },
+  { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onCompleteSync={ctx.onCompleteSync} /> },
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
@@ -475,6 +550,35 @@ export default function WarrantyProcessing() {
   };
 
   useEffect(() => { fetchRows(); }, []);
+
+  // Auto-refresh phiếu đang "pending": n8n đẩy về Caresoft rồi ghi 'đã_đồng_bộ'/'lỗi' vào DB BẤT ĐỒNG BỘ
+  // (vài giây sau). Poll nhẹ trạng thái các phiếu pending để badge tự nhảy, khỏi phải bấm "Làm mới".
+  // Dừng khi hết pending hoặc sau ~2 phút (tránh poll vô hạn nếu n8n lỗi). Chỉ tải lại các cột đồng bộ.
+  const pendingKey = useMemo(
+    () => rows.filter(r => r['trạng_thái_đồng_bộ'] === 'pending').map(r => r.id).sort().join(','),
+    [rows]
+  );
+  useEffect(() => {
+    if (!pendingKey) return;
+    const ids = pendingKey.split(',');
+    let tries = 0;
+    const poll = async () => {
+      tries += 1;
+      const { data, error } = await taskDb
+        .from('xu_ly_phieu_bao_hanh')
+        .select('id, "trạng_thái_đồng_bộ", "thời_điểm_đồng_bộ", "lỗi_đồng_bộ"')
+        .in('id', ids);
+      if (!error && data) {
+        setRows(prev => prev.map(r => {
+          const u = data.find(d => d.id === r.id);
+          return u && u['trạng_thái_đồng_bộ'] !== r['trạng_thái_đồng_bộ'] ? { ...r, ...u } : r;
+        }));
+      }
+      if (tries >= 24) clearInterval(timer);
+    };
+    const timer = setInterval(poll, 5000);
+    return () => clearInterval(timer);
+  }, [pendingKey]);
 
   // Số liệu dashboard — đếm theo trạng thái Caresoft (trạng_thái_phiếu_ghi) trên CHÍNH bảng
   // xử lý (rows). Đếm từ rows (không phải bảng nguồn) để khi đóng/mở phiếu là số đổi ngay.
@@ -548,45 +652,55 @@ export default function WarrantyProcessing() {
     await fetchRows();
   };
 
-  // Tick 1 bước ngay trên danh sách: lật trạng_thái rồi lưu các_bước (vật chất hóa
-  // workflow chuẩn vào phiếu nếu trước đó phiếu chưa có bước). Cập nhật lạc quan UI.
-  const toggleStepDone = async (row, index, steps) => {
+  // Hoàn thành (hoặc mở lại) 1 bước + ghi chú "đã thực hiện" + (tùy chọn) đồng bộ về Caresoft.
+  // Gộp 3 thao tác cũ (tick xong / lưu ghi chú / đồng bộ) làm 1 nút "Hoàn thành & Đồng bộ".
+  //  - Lật trạng_thái bước (theo quy tắc tuần tự của applyStepToggle), vật chất hóa workflow chuẩn.
+  //  - Khi bước "Đóng phiếu" đổi trạng thái → set trạng_thái_caresoft_muốn_set ('solved'/'open').
+  //    ĐÂY là tín hiệu n8n đọc để đổi status ticket; thiếu nó thì CS không bao giờ chuyển Solved.
+  //  - doSync=true → ghi chú bước thành comment + cờ pending (n8n đẩy về Caresoft). Cập nhật lạc quan UI.
+  const completeStepAndSync = async (row, index, steps, note, doSync) => {
     const operator = (user && (user.name || user.id)) || '';
-    const { steps: next, error: gateErr } = applyStepToggle(steps, index, operator);
+    const { steps: toggled, error: gateErr } = applyStepToggle(steps, index, operator);
     if (gateErr) { alert(gateErr); return; } // chưa đủ điều kiện hoàn tất (bước trước chưa xong)
-    const patch = { 'các_bước': next, 'người_cập_nhật': operator };
-    // Đồng bộ trạng thái phiếu khi bước "Đóng phiếu" đổi trạng thái xong↔chưa (kể cả do cascade mở lại).
-    const closeOf = (arr) => arr.find(s => String(s['tên'] || '').trim() === CLOSING_STEP)?.['trạng_thái'] === 'xong';
-    const before = closeOf(steps), after = closeOf(next);
-    if (before !== after) patch['trạng_thái_phiếu_ghi'] = after ? 'solved' : 'open';
-    setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
-    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
-    if (error) { alert('Lỗi cập nhật bước: ' + error.message); await fetchRows(); }
-  };
-
-  // Lưu ghi chú "đã thực hiện" của 1 bước (vật chất hóa workflow). doSync=true → đặt comment đồng bộ
-  // = ghi chú bước rồi cờ pending (n8n đẩy ghi chú bước này làm comment Caresoft thay tóm tắt chung).
-  const saveStepNote = async (row, index, steps, note, doSync) => {
-    const operator = (user && (user.name || user.id)) || '';
-    const nextSteps = steps.map((st, i) => i === index ? { ...st, 'ghi_chú': note } : st);
+    const nextSteps = toggled.map((st, i) => i === index ? { ...st, 'ghi_chú': note } : st);
     const patch = { 'các_bước': nextSteps, 'người_cập_nhật': operator };
+    // Đổi trạng thái phiếu (+ tín hiệu cho Caresoft) khi bước "Đóng phiếu" được hoàn tất / mở lại.
+    const csWant = csStatusOnClosingToggle(steps, nextSteps); // 'solved' | 'open' | ''
+    if (csWant) {
+      patch['trạng_thái_phiếu_ghi'] = csWant;
+      patch['trạng_thái_caresoft_muốn_set'] = csWant;
+    }
     if (doSync) {
-      const stepName = String(steps[index]?.['tên'] || `Bước ${index + 1}`).trim();
-      const tt = { ...(row['thông_tin_bổ_sung'] || {}), 'ghi_chú_đồng_bộ': `[Cập nhật từ Webapp QLSX]\n${stepName}: ${note}` };
+      const tt = { ...(row['thông_tin_bổ_sung'] || {}) };
+      if (note && note.trim()) {
+        const stepName = String(steps[index]?.['tên'] || `Bước ${index + 1}`).trim();
+        tt['ghi_chú_đồng_bộ'] = `[Cập nhật từ Webapp QLSX]\n${stepName}: ${note.trim()}`;
+      } else {
+        delete tt['ghi_chú_đồng_bộ']; // để n8n tự dựng tóm tắt chung (gồm các bước đã xong)
+      }
       patch['thông_tin_bổ_sung'] = tt;
       patch['trạng_thái_đồng_bộ'] = 'pending';
       patch['lỗi_đồng_bộ'] = null;
     }
     setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
     const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
-    if (error) { alert('Lỗi lưu ghi chú bước: ' + error.message); await fetchRows(); }
+    if (error) { alert('Lỗi cập nhật bước: ' + error.message); await fetchRows(); }
   };
 
   // Lưu 1 nhóm thông tin từ card ngoài danh sách: merge các ô sửa vào thông_tin_bổ_sung.
-  // doSync=true → đặt cờ pending (n8n đẩy custom_fields về Caresoft). Cập nhật lạc quan UI.
+  // Với trường option (Nhóm/Mã SP/Chi tiết lỗi/Linh kiện): draft chứa *_option_id / *_option_ids;
+  // ghi kèm NHÃN vào key gốc để hiển thị & comment đồng bộ. doSync=true → cờ pending (n8n đẩy về CS).
   const saveInfoGroup = async (row, draft, doSync) => {
     const operator = (user && (user.name || user.id)) || '';
     const tt = { ...(row['thông_tin_bổ_sung'] || {}), ...draft };
+    for (const k of OPTION_FIELD_KEYS) {
+      const meta = OPTION_FIELDS[k];
+      if (meta.multi) {
+        if (Array.isArray(tt[k + '_option_ids'])) tt[k] = tt[k + '_option_ids'].map(id => resolveOptionLabel(fieldOptions, id)).filter(Boolean).join(', ');
+      } else if (tt[k + '_option_id'] !== undefined) {
+        tt[k] = resolveOptionLabel(fieldOptions, tt[k + '_option_id']) || '';
+      }
+    }
     const patch = { 'thông_tin_bổ_sung': tt, 'người_cập_nhật': operator };
     if (doSync) { patch['trạng_thái_đồng_bộ'] = 'pending'; patch['lỗi_đồng_bộ'] = null; }
     setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
@@ -621,16 +735,20 @@ export default function WarrantyProcessing() {
   const clearSelection = () => setSelectedIds(new Set());
 
   // Đóng (solved) / Mở lại (open) phiếu — áp cho TẤT CẢ phiếu đã tick (1 hoặc nhiều).
-  // Cập nhật trạng_thái_phiếu_ghi trong bảng xử lý + người_cập_nhật. Cập nhật lạc quan UI.
+  //  - Luôn ghi trạng_thái_phiếu_ghi (mirror) + trạng_thái_caresoft_muốn_set (ý muốn — tín hiệu DUY NHẤT
+  //    n8n đọc để đổi status ticket). Thiếu trường này thì CS không bao giờ chuyển Solved.
+  //  - Có quyền N/X (perm.io) → đặt cờ pending để n8n đẩy về Caresoft ngay; không thì chỉ lưu, lần
+  //    "Đồng bộ" sau (của người có quyền) sẽ mang theo ý muốn này. Cập nhật lạc quan UI.
   const bulkSetStatus = async (status) => {
     const ids = [...selectedIds];
     if (ids.length === 0) { alert('Vui lòng tick chọn ít nhất 1 phiếu!'); return; }
     const verb = status === 'solved' ? 'ĐÓNG' : 'MỞ LẠI';
-    if (!window.confirm(`${verb} ${ids.length} phiếu đã chọn?`)) return;
+    if (!window.confirm(`${verb} ${ids.length} phiếu đã chọn?${perm.io ? ' (đồng bộ về Caresoft)' : ''}`)) return;
     const operator = (user && (user.name || user.id)) || '';
-    setRows(prev => prev.map(x => selectedIds.has(x.id) ? { ...x, 'trạng_thái_phiếu_ghi': status } : x));
-    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh')
-      .update({ 'trạng_thái_phiếu_ghi': status, 'người_cập_nhật': operator }).in('id', ids);
+    const patch = { 'trạng_thái_phiếu_ghi': status, 'trạng_thái_caresoft_muốn_set': status, 'người_cập_nhật': operator };
+    if (perm.io) { patch['trạng_thái_đồng_bộ'] = 'pending'; patch['lỗi_đồng_bộ'] = null; }
+    setRows(prev => prev.map(x => selectedIds.has(x.id) ? { ...x, ...patch } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).in('id', ids);
     if (error) { alert('Lỗi cập nhật trạng thái: ' + error.message); await fetchRows(); return; }
     clearSelection();
   };
@@ -823,7 +941,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isSteps || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onToggleStep: toggleStepDone, onQuickSync: quickSync, onSaveStepNote: saveStepNote, onSaveGroup: saveInfoGroup })}
+                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup })}
                     </td>
                   );
                 })}

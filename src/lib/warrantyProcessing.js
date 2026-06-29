@@ -97,6 +97,23 @@ export function applyStepToggle(steps, index, operator = '', nowIso = new Date()
   return { steps: arr, error: null };
 }
 
+// Bước "Đóng phiếu" hiện đã 'xong' chưa? (ensureClosingStep đảm bảo luôn tồn tại & ở cuối.)
+export function isClosingStepDone(steps) {
+  const arr = ensureClosingStep(Array.isArray(steps) ? steps : []);
+  const closing = arr.find(s => String(s['tên'] || '').trim() === CLOSING_STEP);
+  return closing ? closing['trạng_thái'] === 'xong' : false;
+}
+
+// Khi bước "Đóng phiếu" đổi trạng thái giữa prevSteps → nextSteps, trả trạng thái Caresoft cần đẩy:
+//   'solved' (vừa hoàn tất Đóng phiếu) · 'open' (vừa mở lại) · '' (bước Đóng phiếu không đổi → không động CS).
+// Đây là tín hiệu DUY NHẤT n8n đọc để đổi status ticket (ghi vào trạng_thái_caresoft_muốn_set).
+export function csStatusOnClosingToggle(prevSteps, nextSteps) {
+  const before = isClosingStepDone(prevSteps);
+  const after = isClosingStepDone(nextSteps);
+  if (before === after) return '';
+  return after ? 'solved' : 'open';
+}
+
 // Mức khẩn của 1 bước theo hạn xử lý ngày+giờ (so với 'now' truyền vào cho dễ test).
 // Chỉ áp cho bước CHƯA xong & có hạn.
 //  - 'blink'  : quá hạn hoặc còn ≤ 1 giờ          → nhấp nháy cam↔đỏ
@@ -145,4 +162,44 @@ export function getThongTinBoSung(row) {
     else out[k] = goc[k] != null ? String(goc[k]) : '';
   }
   return out;
+}
+
+// ── GĐ4: 4 trường option Caresoft (cascade) ──
+// Cấu trúc cascade xác nhận từ config CS thật (field_value_id):
+//   Nhóm SP (9850) gốc · Mã SP (9720) gốc · Chi tiết lỗi (9852) ← Nhóm SP · Linh kiện (9719, multi) ← MÃ SP.
+// Dữ liệu option: src/data/caresoftFieldOptions.json {option_id, field_id, field_key, label, parent_option_id, sort_order}.
+export const OPTION_FIELDS = {
+  'nhóm_sản_phẩm': { fieldId: 9850, multi: false, cascade: false, parentKey: null },
+  'mã_sản_phẩm':   { fieldId: 9720, multi: false, cascade: false, parentKey: null },
+  'chi_tiết_lỗi':  { fieldId: 9852, multi: false, cascade: true,  parentKey: 'nhóm_sản_phẩm' },
+  'linh_kiện':     { fieldId: 9719, multi: true,  cascade: true,  parentKey: 'mã_sản_phẩm' },
+};
+export const OPTION_FIELD_KEYS = Object.keys(OPTION_FIELDS);
+
+// Lọc option để render dropdown.
+//  - field KHÔNG cascade → mọi option của field.
+//  - field cascade → option có parent_option_id == parentOptionId (rỗng → mảng rỗng, buộc chọn cha trước).
+export function optionsFor(list, fieldKey, parentOptionId = null) {
+  if (!Array.isArray(list)) return [];
+  const meta = OPTION_FIELDS[fieldKey] || {};
+  const base = list.filter(o => o.field_key === fieldKey);
+  if (!meta.cascade) return base;
+  if (parentOptionId == null || parentOptionId === '') return [];
+  return base.filter(o => String(o.parent_option_id) === String(parentOptionId));
+}
+
+// option_id → nhãn (chịu số/chuỗi). Không thấy → ''.
+export function resolveOptionLabel(list, optionId) {
+  if (!Array.isArray(list) || optionId == null || optionId === '') return '';
+  const o = list.find(x => String(x.option_id) === String(optionId));
+  return o ? o.label : '';
+}
+
+// Caresoft lưu multi-select dạng ",id,id," — parse ⇄ mảng số.
+export function parseMultiIds(v) {
+  return String(v == null ? '' : v).split(',').map(s => s.trim()).filter(Boolean).map(Number);
+}
+export function joinMultiIds(ids) {
+  const a = (ids || []).filter(x => x != null && x !== '');
+  return a.length ? ',' + a.join(',') + ',' : '';
 }

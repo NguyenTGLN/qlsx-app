@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { X, Save, Send, Plus, Trash2, CheckCircle2, Circle } from 'lucide-react';
-import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU, applyStepToggle, ensureClosingStep, CLOSING_STEP, getThongTinBoSung } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU, applyStepToggle, ensureClosingStep, isClosingStepDone, getThongTinBoSung, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel } from '../../lib/warrantyProcessing';
+import fieldOptions from '../../data/caresoftFieldOptions.json';
 
 const s = {
   inputGroup: { display: 'flex', flexDirection: 'column', gap: '0.4rem' },
@@ -69,7 +70,24 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
   const [history] = useState(() => Array.isArray(row['lịch_sử_thao_tác']) ? row['lịch_sử_thao_tác'] : []);
   const [newNote, setNewNote] = useState('');
   const [tinBoSung, setTinBoSung] = useState(() => getThongTinBoSung(row));
+  // 4 trường option (Nhóm/Mã SP single, Chi tiết lỗi single, Linh kiện multi). Prefill từ thông_tin_bổ_sung.
+  const [optIds, setOptIds] = useState(() => {
+    const tt = row['thông_tin_bổ_sung'] || {};
+    return {
+      'nhóm_sản_phẩm': tt['nhóm_sản_phẩm_option_id'] || '',
+      'mã_sản_phẩm': tt['mã_sản_phẩm_option_id'] || '',
+      'chi_tiết_lỗi': tt['chi_tiết_lỗi_option_id'] || '',
+      'linh_kiện': Array.isArray(tt['linh_kiện_option_ids']) ? tt['linh_kiện_option_ids'] : [],
+    };
+  });
   const [saving, setSaving] = useState(false);
+
+  // Đổi 1 option-single → reset con cascade phụ thuộc (nhóm→chi tiết lỗi, mã→linh kiện).
+  const setOpt = (fieldKey, v) => setOptIds(prev => {
+    const nd = { ...prev, [fieldKey]: v };
+    for (const ck of OPTION_FIELD_KEYS) { const cm = OPTION_FIELDS[ck]; if (cm.parentKey === fieldKey) nd[ck] = cm.multi ? [] : ''; }
+    return nd;
+  });
 
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
   const totalCost = useMemo(() => computeTotalCost(parts), [parts]);
@@ -97,22 +115,31 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
       : history;
     // Luôn đảm bảo bước cuối là "Đóng phiếu". Nếu bước đó đã xong → đóng phiếu (solved).
     const finalSteps = ensureClosingStep(steps);
-    const closingDone = String(finalSteps.at(-1)?.['tên'] || '').trim() === CLOSING_STEP && finalSteps.at(-1)['trạng_thái'] === 'xong';
+    // Trạng thái Caresoft muốn đẩy: ưu tiên lựa chọn ở dropdown; nếu để trống mà bước "Đóng phiếu"
+    // đã xong → 'solved'. Đây là tín hiệu DUY NHẤT n8n đọc để đổi status ticket (thiếu nó CS không đóng).
+    const wantCs = form['trạng_thái_caresoft_muốn_set'] || (isClosingStepDone(finalSteps) ? 'solved' : '');
+    // thông_tin_bổ_sung: giữ key cũ + 9 ô text (resolve) + 4 trường option (id + nhãn).
+    const tin = { ...(row['thông_tin_bổ_sung'] || {}), ...(tinOverride || tinBoSung) };
+    tin['nhóm_sản_phẩm_option_id'] = optIds['nhóm_sản_phẩm'] || '';
+    tin['mã_sản_phẩm_option_id'] = optIds['mã_sản_phẩm'] || '';
+    tin['chi_tiết_lỗi_option_id'] = optIds['chi_tiết_lỗi'] || '';
+    tin['linh_kiện_option_ids'] = optIds['linh_kiện'] || [];
+    for (const k of ['nhóm_sản_phẩm', 'mã_sản_phẩm', 'chi_tiết_lỗi']) tin[k] = resolveOptionLabel(fieldOptions, tin[k + '_option_id']) || tin[k] || '';
+    tin['linh_kiện'] = (tin['linh_kiện_option_ids'] || []).map(id => resolveOptionLabel(fieldOptions, id)).filter(Boolean).join(', ') || tin['linh_kiện'] || '';
     return {
       'người_phụ_trách': form['người_phụ_trách'],
       'trạng_thái_xử_lý': form['trạng_thái_xử_lý'],
       'ngày_hẹn': form['ngày_hẹn'] || null,
       'kết_quả_xử_lý': form['kết_quả_xử_lý'],
-      'trạng_thái_caresoft_muốn_set': form['trạng_thái_caresoft_muốn_set'] || null,
+      'trạng_thái_caresoft_muốn_set': wantCs || null,
       'các_bước': finalSteps,
-      ...(closingDone ? { 'trạng_thái_phiếu_ghi': 'solved' } : {}),
-      ...(form['trạng_thái_caresoft_muốn_set'] ? { 'trạng_thái_phiếu_ghi': form['trạng_thái_caresoft_muốn_set'] } : {}),
+      ...(wantCs ? { 'trạng_thái_phiếu_ghi': wantCs } : {}),
       'linh_kiện_thay': parts,
       'tổng_chi_phí': totalCost,
       'lịch_sử_thao_tác': nextHistory,
       'người_cập_nhật': operator,
       'người_tạo': row['người_tạo'] || operator,
-      'thông_tin_bổ_sung': tinOverride || tinBoSung,
+      'thông_tin_bổ_sung': tin,
     };
   };
 
@@ -144,6 +171,46 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
       onSave={v => onSaveField(key, v)} onSync={v => onSyncField(key, v)} full={full} />
   );
 
+  // Trường option (dropdown/cascade). Lưu vào state optIds; buildPayload sẽ ghi *_option_id + nhãn khi bấm Lưu/Đồng bộ dưới.
+  const optField = (fieldKey, label, full) => {
+    const meta = OPTION_FIELDS[fieldKey];
+    const parentOid = meta.parentKey ? optIds[meta.parentKey] : null;
+    const opts = optionsFor(fieldOptions, fieldKey, meta.cascade ? parentOid : null);
+    const blocked = meta.cascade && !parentOid;
+    const parentLabel = meta.parentKey === 'mã_sản_phẩm' ? 'Mã SP' : 'Nhóm SP';
+    const wrap = full ? { ...s.inputGroup, gridColumn: 'span 2' } : s.inputGroup;
+    return (
+      <div style={wrap}>
+        <label style={s.label}>{label}</label>
+        {meta.multi ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', maxHeight: 170, overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.4rem 0.6rem' }}>
+            {blocked ? <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>(chọn {parentLabel} trước)</span>
+              : opts.length === 0 ? <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>(không có linh kiện cho máy này)</span>
+              : opts.map(o => {
+                const sel = (optIds[fieldKey] || []).map(String).includes(String(o.option_id));
+                return (
+                  <label key={o.option_id} style={{ display: 'flex', gap: '0.45rem', fontSize: '0.85rem', alignItems: 'flex-start' }}>
+                    <input type="checkbox" disabled={!perm.edit} checked={sel}
+                      onChange={e => setOptIds(prev => {
+                        const cur = new Set((prev[fieldKey] || []).map(String));
+                        if (e.target.checked) cur.add(String(o.option_id)); else cur.delete(String(o.option_id));
+                        return { ...prev, [fieldKey]: [...cur].map(Number) };
+                      })} />
+                    <span>{o.label}</span>
+                  </label>
+                );
+              })}
+          </div>
+        ) : (
+          <select style={s.input} value={optIds[fieldKey] || ''} disabled={!perm.edit || blocked} onChange={e => setOpt(fieldKey, e.target.value)}>
+            <option value="">{blocked ? `(chọn ${parentLabel} trước)` : '— chọn —'}</option>
+            {opts.map(o => <option key={o.option_id} value={o.option_id}>{o.label}</option>)}
+          </select>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '1rem' }}>
       <div className="modal-card" style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '720px', padding: '1.25rem', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
@@ -161,14 +228,14 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
           <div><div style={s.readonlyLbl}>Phân loại</div><div style={s.readonlyVal}>{row['phân_loại_công_việc'] || '-'}</div></div>
         </div>
 
-        {/* Nhóm 2: Thông tin sản phẩm (4 trường option chỉ-đọc + ngày lắp/tình trạng sửa được) */}
+        {/* Nhóm 2: Thông tin sản phẩm — dropdown cascade (Nhóm SP→Chi tiết lỗi · Mã SP→Linh kiện) */}
         <div style={s.section}>
           <h3 style={s.sectionTitle}>Thông tin sản phẩm</h3>
           <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            <EditableField label="Mã sản phẩm" value={row['mã_sản_phẩm']} editable={false} />
-            <EditableField label="Nhóm sản phẩm" value={row['nhóm_sản_phẩm']} editable={false} />
-            <EditableField label="Chi tiết lỗi" value={row['chi_tiết_lỗi']} editable={false} full />
-            <EditableField label="Linh kiện lỗi" value={row['linh_kiện']} editable={false} full />
+            {optField('nhóm_sản_phẩm', 'Nhóm sản phẩm')}
+            {optField('chi_tiết_lỗi', 'Chi tiết lỗi')}
+            {optField('mã_sản_phẩm', 'Mã sản phẩm')}
+            {optField('linh_kiện', 'Linh kiện lỗi', true)}
             {tinField('Ngày lắp đặt', 'ngày_lắp_đặt')}
             {tinField('Tình trạng', 'tình_trạng')}
           </div>

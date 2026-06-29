@@ -2,7 +2,8 @@ import { test, expect, describe } from 'vitest';
 import {
   PROCESSING_STATUSES, PROCESSING_CATEGORIES, WORKFLOW_STEPS_MAU,
   isQualifyingTicket, computeTotalCost, getEffectiveSteps, ensureClosingStep, applyStepToggle, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
-  THONG_TIN_BO_SUNG_KEYS, getThongTinBoSung,
+  THONG_TIN_BO_SUNG_KEYS, getThongTinBoSung, isClosingStepDone, csStatusOnClosingToggle, CLOSING_STEP,
+  OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, parseMultiIds, joinMultiIds,
 } from './warrantyProcessing';
 
 const mkSteps = (...states) => states.map((st, i) => ({ 'tên': `B${i}`, 'trạng_thái': st }));
@@ -118,6 +119,75 @@ describe('ensureClosingStep', () => {
   test('không nhân đôi khi đã ở cuối', () => {
     const out = ensureClosingStep([{ 'tên': 'A', 'trạng_thái': 'chưa_xong' }, { 'tên': 'Đóng phiếu', 'trạng_thái': 'chưa_xong' }]);
     expect(out.filter(s => s['tên'] === 'Đóng phiếu').length).toBe(1);
+  });
+});
+
+describe('isClosingStepDone', () => {
+  test('bước "Đóng phiếu" đã xong → true', () => {
+    expect(isClosingStepDone([{ 'tên': 'A', 'trạng_thái': 'xong' }, { 'tên': CLOSING_STEP, 'trạng_thái': 'xong' }])).toBe(true);
+  });
+  test('bước "Đóng phiếu" chưa xong → false', () => {
+    expect(isClosingStepDone([{ 'tên': 'A', 'trạng_thái': 'xong' }, { 'tên': CLOSING_STEP, 'trạng_thái': 'chưa_xong' }])).toBe(false);
+  });
+  test('chưa có bước Đóng phiếu (ensureClosingStep tự thêm, chưa_xong) → false', () => {
+    expect(isClosingStepDone([{ 'tên': 'A', 'trạng_thái': 'xong' }])).toBe(false);
+    expect(isClosingStepDone(null)).toBe(false);
+  });
+});
+
+describe('csStatusOnClosingToggle', () => {
+  const open = [{ 'tên': 'A', 'trạng_thái': 'xong' }, { 'tên': CLOSING_STEP, 'trạng_thái': 'chưa_xong' }];
+  const closed = [{ 'tên': 'A', 'trạng_thái': 'xong' }, { 'tên': CLOSING_STEP, 'trạng_thái': 'xong' }];
+  test('vừa hoàn tất Đóng phiếu → solved', () => {
+    expect(csStatusOnClosingToggle(open, closed)).toBe('solved');
+  });
+  test('vừa mở lại Đóng phiếu → open', () => {
+    expect(csStatusOnClosingToggle(closed, open)).toBe('open');
+  });
+  test('bước Đóng phiếu không đổi → "" (không động CS)', () => {
+    expect(csStatusOnClosingToggle(open, open)).toBe('');
+    expect(csStatusOnClosingToggle(closed, closed)).toBe('');
+  });
+});
+
+describe('GĐ4 option helpers', () => {
+  const L = [
+    { option_id: 148351, field_key: 'nhóm_sản_phẩm', label: 'MÁY LUX', parent_option_id: null, sort_order: 1 },
+    { option_id: 148354, field_key: 'nhóm_sản_phẩm', label: 'COMBO LÕI LỌC', parent_option_id: null, sort_order: 0 },
+    { option_id: 147028, field_key: 'mã_sản_phẩm', label: 'LUX-200RO', parent_option_id: null, sort_order: 0 },
+    { option_id: 155318, field_key: 'chi_tiết_lỗi', label: 'Máy không ra nước', parent_option_id: 148354, sort_order: 0 },
+    { option_id: 155346, field_key: 'chi_tiết_lỗi', label: 'Máy không ra nước', parent_option_id: 148351, sort_order: 0 },
+    { option_id: 149905, field_key: 'linh_kiện', label: 'Lõi kiềm # FK-HYDRO11', parent_option_id: 147028, sort_order: 0 },
+  ];
+  test('meta đúng: Mã SP phẳng, Chi tiết lỗi←Nhóm SP, Linh kiện←Mã SP + multi', () => {
+    expect(OPTION_FIELDS['mã_sản_phẩm'].cascade).toBe(false);
+    expect(OPTION_FIELDS['chi_tiết_lỗi'].parentKey).toBe('nhóm_sản_phẩm');
+    expect(OPTION_FIELDS['linh_kiện'].parentKey).toBe('mã_sản_phẩm');
+    expect(OPTION_FIELDS['linh_kiện'].multi).toBe(true);
+    expect(OPTION_FIELD_KEYS.slice().sort()).toEqual(['chi_tiết_lỗi', 'linh_kiện', 'mã_sản_phẩm', 'nhóm_sản_phẩm']);
+  });
+  test('field phẳng → mọi option của field', () => {
+    expect(optionsFor(L, 'nhóm_sản_phẩm').map(o => o.option_id)).toEqual([148351, 148354]);
+  });
+  test('field cascade → lọc theo parent', () => {
+    expect(optionsFor(L, 'chi_tiết_lỗi', 148351).map(o => o.option_id)).toEqual([155346]);
+    expect(optionsFor(L, 'linh_kiện', 147028).map(o => o.option_id)).toEqual([149905]);
+  });
+  test('field cascade chưa chọn cha → rỗng', () => {
+    expect(optionsFor(L, 'chi_tiết_lỗi', null)).toEqual([]);
+    expect(optionsFor(L, 'linh_kiện', '')).toEqual([]);
+  });
+  test('resolveOptionLabel chịu số & chuỗi', () => {
+    expect(resolveOptionLabel(L, 155318)).toBe('Máy không ra nước');
+    expect(resolveOptionLabel(L, '149905')).toBe('Lõi kiềm # FK-HYDRO11');
+    expect(resolveOptionLabel(L, null)).toBe('');
+  });
+  test('parseMultiIds / joinMultiIds (định dạng CS ,id,id,)', () => {
+    expect(parseMultiIds(',149905,149620,')).toEqual([149905, 149620]);
+    expect(parseMultiIds('')).toEqual([]);
+    expect(parseMultiIds(null)).toEqual([]);
+    expect(joinMultiIds([149905, 149620])).toBe(',149905,149620,');
+    expect(joinMultiIds([])).toBe('');
   });
 });
 
