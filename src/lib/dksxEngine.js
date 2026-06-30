@@ -72,14 +72,22 @@ export async function loadComponentStock() {
 // Giữ nguyên DLK đã 'Đã đặt mua'/'Chờ xác nhận'/... ; chỉ thay các dòng còn 'Mới'.
 export async function recomputeProposals() {
   const [{ data: dksx }, bomMap, stockMap] = await Promise.all([
-    db.from('production_demand').select('item_code, qty_demand').gt('qty_demand', 0),
+    db.from('production_demand').select('id, item_code, qty_demand').gt('qty_demand', 0),
     loadBomMap(),
     loadComponentStock(),
   ]);
+  const isParent = (c) => bomMap[c] && bomMap[c].length > 0;
 
-  // Gross: nổ BOM tổng nhu cầu sản xuất
+  // Tự dọn nhu cầu SX "rác": mã không còn là thành phẩm (đã mất BOM) thì không thể sản xuất.
+  // Vô hiệu hoá (qty_demand=0, Hủy) để không hiện badge "ĐX SX" sai ở Tồn HH và không làm phồng nhu cầu linh kiện.
+  const orphanDemandIds = (dksx || []).filter(d => !isParent(d.item_code)).map(d => d.id);
+  if (orphanDemandIds.length) {
+    await db.from('production_demand').update({ qty_demand: 0, trang_thai: 'Hủy' }).in('id', orphanDemandIds);
+  }
+
+  // Gross: chỉ nổ BOM nhu cầu của thành phẩm hợp lệ (bỏ qua mã rác vừa vô hiệu hoá)
   const gross = {};
-  (dksx || []).forEach(d => explodeBom(bomMap, d.item_code, Number(d.qty_demand) || 0, gross));
+  (dksx || []).forEach(d => { if (isParent(d.item_code)) explodeBom(bomMap, d.item_code, Number(d.qty_demand) || 0, gross); });
 
   // Tất cả dòng DLK: committed (đã đặt) để trừ nhu cầu; map dòng 'Mới' theo item_code (≤1/mã sau migration)
   const { data: dlkAll } = await db.from('purchase_proposals')
@@ -92,7 +100,6 @@ export async function recomputeProposals() {
   });
 
   // Net bom need / linh kiện lá (bỏ mã còn là thành phẩm có BOM)
-  const isParent = (c) => bomMap[c] && bomMap[c].length > 0;
   const bomNeed = {};
   Object.keys(gross).forEach(c => {
     if (isParent(c)) return;

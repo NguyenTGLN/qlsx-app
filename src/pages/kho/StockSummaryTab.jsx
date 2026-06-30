@@ -1,15 +1,26 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
-import { Search, Loader2, RefreshCw, Download, Send } from 'lucide-react';
+import { Search, Loader2, RefreshCw, Download, Send, Factory, ExternalLink } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
 import { todayLocal } from '../../lib/dateUtils';
-import { recomputeProposals, loadBomMap, sendRetailProposals } from '../../lib/dksxEngine';
+import { recomputeProposals, loadBomMap, loadComponentStock, explodeBom, sendRetailProposals } from '../../lib/dksxEngine';
 
-const TABLE_COLS = ['urgency','san_pham','dvt','total_quantity','avg_monthly_sales','avg_daily','days_remaining','runout_date','safe_inventory','replenish_qty','de_xuat_sl','dlk_status'];
-const COL_LABELS_MAP = { urgency:'Cảnh báo', san_pham:'Sản phẩm', dvt:'ĐVT', total_quantity:'Tổng Tồn', avg_monthly_sales:'TB Bán/Tháng', avg_daily:'TB Bán/Ngày', days_remaining:'Ngày Bán KD', runout_date:'Ngày cạn kho', safe_inventory:'Tồn An Toàn', replenish_qty:'Cần Bổ Sung', de_xuat_sl:'SL Đề xuất', dlk_status:'Đã đề xuất (SX/Mua)' };
+const TABLE_COLS = ['urgency','san_pham','dvt','total_quantity','avg_monthly_sales','avg_daily','days_remaining','runout_date','safe_inventory','replenish_qty','de_xuat_sl','dlk_status','actions'];
+const COL_LABELS_MAP = { urgency:'Cảnh báo', san_pham:'Sản phẩm', dvt:'ĐVT', total_quantity:'Tổng Tồn', avg_monthly_sales:'TB Bán/Tháng', avg_daily:'TB Bán/Ngày', days_remaining:'Ngày Bán KD', runout_date:'Ngày cạn kho', safe_inventory:'Tồn An Toàn', replenish_qty:'Cần Bổ Sung', de_xuat_sl:'SL Đề xuất', dlk_status:'Đã đề xuất (SX/Mua)', actions:'Thao tác' };
+
+// Màu badge tiến độ mua — đồng bộ với tab Đề xuất (OrderProposalTab)
+const TIEN_DO_CFG = {
+  'Mới':             { bg:'#f1f5f9', color:'#475569', border:'#cbd5e1' },
+  'Chờ duyệt':       { bg:'#fff7ed', color:'#ea580c', border:'#fdba74' },
+  'Đã đặt':          { bg:'#eff6ff', color:'#2563eb', border:'#93c5fd' },
+  'Đang vận chuyển': { bg:'#eef2ff', color:'#6366f1', border:'#c7d2fe' },
+  'Đã về kho':       { bg:'#f0fdf4', color:'#16a34a', border:'#86efac' },
+};
+const TIEN_DO_RANK = { 'Mới':0, 'Chờ duyệt':1, 'Đã đặt':2, 'Đang vận chuyển':3, 'Đã về kho':4 };
+function pctColor(p) { return p >= 100 ? '#16a34a' : p >= 50 ? '#d97706' : '#dc2626'; }
 
 const URGENCY_CFG = {
   CRITICAL: { label:'🔴 Gấp',     bg:'#fef2f2', color:'#dc2626', border:'#fca5a5', rowBg:'#fff5f5' },
@@ -42,7 +53,9 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
   const [sortAsc, setSortAsc] = useState(true);
   const [proposalQty, setProposalQty] = useState({}); // { item_code: qty }
   const [proposedMap, setProposedMap] = useState({}); // { item_code: qty_demand } — SL đã đề xuất sang DKSX
-  const [retailProposedMap, setRetailProposedMap] = useState({}); // { item_code: actual_qty } — DLK bán lẻ đang mở (mua thẳng)
+  const [purchaseProposedMap, setPurchaseProposedMap] = useState({}); // { item_code: { qty, tien_do } } — đề xuất đặt mua (DLK) đang mở
+  const [bomMap, setBomMap] = useState({}); // { product_code: [{component, qty}] } — để tính "làm được ngay"
+  const [compStock, setCompStock] = useState({}); // { item_code: tồn } — tồn linh kiện (đầy đủ, không lọc theo search)
   const [sortByProposal, setSortByProposal] = useState(false); // true = SL đề xuất > 0 lên đầu
 
   // Advanced features
@@ -180,17 +193,70 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
     setProposedMap(map);
   }, []);
 
-  // Fetch DLK bán lẻ (mua thẳng) đang mở để hiển thị badge "ĐX mua"
-  const fetchRetailProposed = useCallback(async () => {
-    const { data } = await db.from('purchase_proposals').select('item_code, retail_qty').gt('retail_qty', 0).eq('trang_thai', 'Mới');
+  // Fetch đề xuất đặt mua (DLK) đang mở → "ĐX mua" = đúng SL đang đề xuất thực tế (gồm BOM lẫn bán lẻ) + tiến độ mua.
+  const fetchPurchaseProposed = useCallback(async () => {
+    const { data } = await db.from('purchase_proposals').select('item_code, actual_qty, tien_do').eq('trang_thai', 'Mới').gt('actual_qty', 0);
     const map = {};
-    (data || []).forEach(r => { map[r.item_code] = (map[r.item_code] || 0) + (Number(r.retail_qty) || 0); });
-    setRetailProposedMap(map);
+    (data || []).forEach(r => {
+      const code = r.item_code;
+      const td = r.tien_do || 'Mới';
+      if (!map[code]) map[code] = { qty: 0, tien_do: td };
+      map[code].qty += (Number(r.actual_qty) || 0);
+      // Nếu 1 mã có nhiều dòng: giữ tiến độ "sớm nhất" (ít hoàn tất nhất) cho an toàn
+      if ((TIEN_DO_RANK[td] ?? 0) < (TIEN_DO_RANK[map[code].tien_do] ?? 0)) map[code].tien_do = td;
+    });
+    setPurchaseProposedMap(map);
   }, []);
 
   useEffect(() => { fetchStockSummary(); }, [fetchStockSummary]);
   useEffect(() => { fetchProposed(); }, [fetchProposed]);
-  useEffect(() => { fetchRetailProposed(); }, [fetchRetailProposed]);
+  useEffect(() => { fetchPurchaseProposed(); }, [fetchPurchaseProposed]);
+
+  // Tải BOM + tồn linh kiện 1 lần để tính "làm được ngay" (độc lập với bộ lọc tìm kiếm của bảng).
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const [bm, sm] = await Promise.all([loadBomMap(), loadComponentStock()]);
+        if (alive) { setBomMap(bm); setCompStock(sm); }
+      } catch (e) { console.warn('Không tải được BOM/tồn linh kiện để tính khả năng SX:', e.message); }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Khả năng SX cho mỗi mã có nhu cầu DKSX: nổ BOM so với tồn linh kiện → SL làm được ngay (bottleneck) + %.
+  const buildableMap = useMemo(() => {
+    const out = {};
+    if (!bomMap || Object.keys(bomMap).length === 0) return out;
+    Object.keys(proposedMap).forEach(code => {
+      const N = proposedMap[code];
+      if (!(N > 0)) return;
+      const perUnit = explodeBom(bomMap, code, 1);
+      let buildable = N;
+      Object.keys(perUnit).forEach(leaf => {
+        const pu = perUnit[leaf];
+        if (pu > 0) {
+          const canBuild = Math.floor((compStock[leaf] || 0) / pu);
+          if (canBuild < buildable) buildable = canBuild;
+        }
+      });
+      buildable = Math.max(0, buildable);
+      out[code] = { buildable, feasibility: Math.min(100, Math.round(buildable / N * 100)) };
+    });
+    return out;
+  }, [bomMap, compStock, proposedMap]);
+
+  // Tạo phiếu sản xuất ngay từ Tồn HH (giống tab DKSX): nhập SL → sang màn Lệnh SX với thông tin điền sẵn.
+  const handleMakeProductionOrder = (row) => {
+    const bd = buildableMap[row.item_code];
+    const need = proposedMap[row.item_code] || 0;
+    const def = (bd && bd.buildable > 0) ? bd.buildable : (need || row.replenish_qty || 0);
+    const qtyStr = window.prompt(`Làm phiếu sản xuất cho ${row.item_code}\nSL cần SX: ${need.toLocaleString('vi-VN')}${bd ? `  ·  Làm được ngay: ${bd.buildable.toLocaleString('vi-VN')}` : ''}\nNhập số lượng sản xuất:`, String(def));
+    if (qtyStr === null) return;
+    const qty = Number(qtyStr);
+    if (!qty || qty <= 0) return alert('Số lượng không hợp lệ.');
+    if (navigateTo) navigateTo('lenh-sx', { sx: { item_code: row.item_code, item_name: row.item_name, qty } });
+  };
 
   const handleSort = (col) => {
     setSortByProposal(false); // sort cột thường → tắt ưu tiên SL đề xuất
@@ -278,7 +344,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
 
       setSelectedKeys(new Set());
       await fetchProposed();
-      await fetchRetailProposed();
+      await fetchPurchaseProposed();
       // Điều hướng: ưu tiên DKSX nếu có thành phẩm, ngược lại sang tab Đề xuất
       if (navigateTo) navigateTo(upserts > 0 ? 'dksx' : 'de-xuat-dat-hang');
     } catch (e) {
@@ -362,6 +428,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                     {vis('replenish_qty') && <th onClick={()=>handleSort('replenish_qty')} style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortCol==='replenish_qty'?'#0891b2':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:sortCol==='replenish_qty'?'#0891b2':'#64748b',cursor:'pointer',whiteSpace:'nowrap'}}>Bổ Sung{sortCol==='replenish_qty'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {vis('de_xuat_sl') && <th onClick={()=>setSortByProposal(v=>!v)} title="Bấm để đưa dòng có SL đề xuất > 0 lên đầu" style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortByProposal?'#7c3aed':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:'#7c3aed',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none'}}>SL Đề xuất {sortByProposal?'↑':'⇅'}</th>}
                     {vis('dlk_status') && <th style={{padding:'0.4rem 0.3rem',textAlign:'center',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#4f46e5',whiteSpace:'nowrap'}}>Đã ĐX</th>}
+                    {vis('actions') && <th style={{padding:'0.4rem 0.3rem',textAlign:'center',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#64748b',whiteSpace:'nowrap'}}>Thao tác</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -400,21 +467,44 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                           style={{...s.input, width:68, padding:'0.2rem 0.3rem', textAlign:'right', fontWeight:700, color:'#7c3aed', borderColor:'#c4b5fd'}}
                         />
                       </td>}
+                      {(() => { const sxQty = proposedMap[row.item_code]; const buyInfo = purchaseProposedMap[row.item_code]; const bd = buildableMap[row.item_code]; const tdc = buyInfo ? (TIEN_DO_CFG[buyInfo.tien_do] || TIEN_DO_CFG['Mới']) : null; return (<>
                       {vis('dlk_status') && <td style={{padding:'0.25rem 0.2rem',textAlign:'center'}} onClick={e=>e.stopPropagation()}>
-                        {proposedMap[row.item_code] > 0 ? (
-                          <span style={{display:'inline-block',padding:'0.15rem 0.45rem',borderRadius:5,fontSize:'0.65rem',fontWeight:700,background:'#eef2ff',color:'#4f46e5',border:'1px solid #c7d2fe',whiteSpace:'nowrap',cursor:'pointer'}}
-                            title="Đang đề xuất sản xuất — bấm để mở DKSX"
-                            onClick={() => navigateTo && navigateTo('dksx')}>
-                            🏭 ĐX SX: {proposedMap[row.item_code].toLocaleString('vi-VN')}
-                          </span>
-                        ) : retailProposedMap[row.item_code] > 0 ? (
-                          <span style={{display:'inline-block',padding:'0.15rem 0.45rem',borderRadius:5,fontSize:'0.65rem',fontWeight:700,background:'#fff7ed',color:'#ea580c',border:'1px solid #fed7aa',whiteSpace:'nowrap',cursor:'pointer'}}
-                            title="Mã bán lẻ — đang đề xuất mua thẳng; bấm để mở tab Đề xuất"
-                            onClick={() => navigateTo && navigateTo('de-xuat-dat-hang')}>
-                            🛒 ĐX mua: {retailProposedMap[row.item_code].toLocaleString('vi-VN')}
-                          </span>
+                        {sxQty > 0 ? (
+                          <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
+                            <span style={{display:'inline-block',padding:'0.15rem 0.45rem',borderRadius:5,fontSize:'0.65rem',fontWeight:700,background:'#eef2ff',color:'#4f46e5',border:'1px solid #c7d2fe',whiteSpace:'nowrap',cursor:'pointer'}}
+                              title="Đang đề xuất sản xuất — bấm để mở DKSX"
+                              onClick={() => navigateTo && navigateTo('dksx')}>
+                              🏭 ĐX SX: {sxQty.toLocaleString('vi-VN')}
+                            </span>
+                            {bd && <div style={{display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}} title={`Làm được ngay ${bd.buildable.toLocaleString('vi-VN')} / ${sxQty.toLocaleString('vi-VN')} cần SX`}>
+                              <div style={{width:42,height:5,background:'#e2e8f0',borderRadius:4,overflow:'hidden'}}><div style={{width:`${bd.feasibility}%`,height:'100%',background:pctColor(bd.feasibility)}}/></div>
+                              <span style={{fontSize:'0.6rem',color:'#64748b'}}>Làm ngay {bd.buildable.toLocaleString('vi-VN')} · {bd.feasibility}%</span>
+                            </div>}
+                          </div>
+                        ) : buyInfo && buyInfo.qty > 0 ? (
+                          <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
+                            <span style={{display:'inline-block',padding:'0.15rem 0.45rem',borderRadius:5,fontSize:'0.65rem',fontWeight:700,background:'#fff7ed',color:'#ea580c',border:'1px solid #fed7aa',whiteSpace:'nowrap',cursor:'pointer'}}
+                              title="Đang có đề xuất đặt mua (DLK) — bấm để mở tab Đề xuất"
+                              onClick={() => navigateTo && navigateTo('de-xuat-dat-hang')}>
+                              🛒 ĐX mua: {buyInfo.qty.toLocaleString('vi-VN')}
+                            </span>
+                            <div style={{display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}}>
+                              <span style={{fontSize:'0.6rem',fontWeight:700,padding:'0 5px',borderRadius:4,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`}}>{buyInfo.tien_do || 'Mới'}</span>
+                              <span style={{fontSize:'0.6rem',color:'#64748b'}}>Đặt: {buyInfo.qty.toLocaleString('vi-VN')}</span>
+                            </div>
+                          </div>
                         ) : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>}
                       </td>}
+                      {vis('actions') && <td style={{padding:'0.25rem 0.3rem',textAlign:'center'}} onClick={e=>e.stopPropagation()}>
+                        {sxQty > 0 ? (
+                          perms.create
+                            ? <button onClick={()=>handleMakeProductionOrder(row)} title="Tạo phiếu sản xuất ngay" style={{...s.btn,padding:'0.25rem 0.5rem',fontSize:'0.68rem',fontWeight:600,background:'#4f46e5',color:'#fff',border:'none',whiteSpace:'nowrap'}}><Factory size={12}/>Tạo phiếu SX</button>
+                            : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>
+                        ) : buyInfo && buyInfo.qty > 0 ? (
+                          <button onClick={()=>navigateTo && navigateTo('de-xuat-dat-hang')} title="Mở tab Đề xuất (DLK)" style={{...s.btn,padding:'0.25rem 0.5rem',fontSize:'0.68rem',fontWeight:600,color:'#ea580c',border:'1px solid #fed7aa',whiteSpace:'nowrap'}}><ExternalLink size={12}/>Mở DLK</button>
+                        ) : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>}
+                      </td>}
+                      </>); })()}
                     </tr>
                   ))}
                 </tbody>
