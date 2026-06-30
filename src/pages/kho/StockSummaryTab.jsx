@@ -57,6 +57,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
   const [bomMap, setBomMap] = useState({}); // { product_code: [{component, qty}] } — để tính "làm được ngay"
   const [compStock, setCompStock] = useState({}); // { item_code: tồn } — tồn linh kiện (đầy đủ, không lọc theo search)
   const [sortByProposal, setSortByProposal] = useState(false); // true = SL đề xuất > 0 lên đầu
+  const [groupByType, setGroupByType] = useState(true);        // mặc định: nhóm Sản xuất (SX) trước → Đặt mua → còn lại
 
   // Advanced features
   const [selectedKeys, setSelectedKeys] = useState(new Set());
@@ -260,6 +261,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
 
   const handleSort = (col) => {
     setSortByProposal(false); // sort cột thường → tắt ưu tiên SL đề xuất
+    setGroupByType(false);    // và tắt nhóm SX/Mua
     if (sortCol === col) setSortAsc(!sortAsc);
     else { setSortCol(col); setSortAsc(true); }
   };
@@ -370,15 +372,19 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
   const vis = (col) => !hiddenCols.has(col);
   const visCount = TABLE_COLS.filter(c => vis(c)).length + 2; // +checkbox+#
 
-  // Sắp xếp hiển thị: khi bật → dòng có SL đề xuất > 0 lên đầu (nhiều hơn ở trên)
+  // Sắp xếp hiển thị (ưu tiên): nhóm SX→Mua→còn lại, hoặc đưa SL đề xuất > 0 lên đầu.
+  // Array.sort ổn định nên trong từng nhóm vẫn giữ thứ tự của rows (mặc định Bổ Sung giảm dần).
   const qOf = (r) => proposalQty[r.item_code] ?? r.replenish_qty ?? 0;
-  const displayRows = sortByProposal
-    ? [...rows].sort((a, b) => {
-        const qa = qOf(a), qb = qOf(b);
-        if ((qa > 0) !== (qb > 0)) return qa > 0 ? -1 : 1;
-        return qb - qa;
-      })
-    : rows;
+  const rankOf = (r) => proposedMap[r.item_code] > 0 ? 0 : ((purchaseProposedMap[r.item_code]?.qty || 0) > 0 ? 1 : 2);
+  const displayRows = groupByType
+    ? [...rows].sort((a, b) => rankOf(a) - rankOf(b))
+    : sortByProposal
+      ? [...rows].sort((a, b) => {
+          const qa = qOf(a), qb = qOf(b);
+          if ((qa > 0) !== (qb > 0)) return qa > 0 ? -1 : 1;
+          return qb - qa;
+        })
+      : rows;
 
   return (
     <div style={{display:'flex',flexDirection:'column',flex:1,height:'100%',position:'relative'}}>
@@ -426,8 +432,8 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                     {vis('runout_date') && <th style={{padding:'0.4rem 0.3rem',textAlign:'center',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#64748b',whiteSpace:'nowrap'}}>Ngày cạn kho</th>}
                     {vis('safe_inventory') && <th onClick={()=>handleSort('safe_inventory')} style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortCol==='safe_inventory'?'#0891b2':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:sortCol==='safe_inventory'?'#0891b2':'#64748b',cursor:'pointer',whiteSpace:'nowrap'}}>Tồn AT{sortCol==='safe_inventory'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {vis('replenish_qty') && <th onClick={()=>handleSort('replenish_qty')} style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortCol==='replenish_qty'?'#0891b2':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:sortCol==='replenish_qty'?'#0891b2':'#64748b',cursor:'pointer',whiteSpace:'nowrap'}}>Bổ Sung{sortCol==='replenish_qty'?(sortAsc?' ↑':' ↓'):''}</th>}
-                    {vis('de_xuat_sl') && <th onClick={()=>setSortByProposal(v=>!v)} title="Bấm để đưa dòng có SL đề xuất > 0 lên đầu" style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortByProposal?'#7c3aed':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:'#7c3aed',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none'}}>SL Đề xuất {sortByProposal?'↑':'⇅'}</th>}
-                    {vis('dlk_status') && <th style={{padding:'0.4rem 0.5rem',textAlign:'left',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#4f46e5',whiteSpace:'nowrap'}}>Đã ĐX</th>}
+                    {vis('de_xuat_sl') && <th onClick={()=>{ setGroupByType(false); setSortByProposal(v=>!v); }} title="Bấm để đưa dòng có SL đề xuất > 0 lên đầu" style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortByProposal?'#7c3aed':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:'#7c3aed',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none'}}>SL Đề xuất {sortByProposal?'↑':'⇅'}</th>}
+                    {vis('dlk_status') && <th onClick={()=>{ setSortByProposal(false); setGroupByType(v=>!v); }} title="Bấm để nhóm: Sản xuất (ĐX SX) trước → Đặt mua (ĐX mua) → còn lại" style={{padding:'0.4rem 0.5rem',textAlign:'left',borderBottom:`2px solid ${groupByType?'#4f46e5':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:'#4f46e5',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none'}}>Đã ĐX {groupByType?'≡':'⇅'}</th>}
                     {vis('actions') && <th style={{padding:'0.4rem 0.3rem',textAlign:'center',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#64748b',whiteSpace:'nowrap'}}>Thao tác</th>}
                   </tr>
                 </thead>
