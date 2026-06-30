@@ -319,10 +319,11 @@ const LAN_FIELDS = [
 
 // 1 ô = 1 LẦN xử lý: "Lần N · loại nhiệm vụ" + 3 dòng trạng thái (suy từ CNV theo cnv_id) + nút Gửi/Gửi lại.
 // Bấm ô → popover sửa thông tin riêng của lần (LAN_FIELDS, free text) + Lưu / Gửi form / Đóng.
-function LanCard({ row, lan, perm, ext, onSave, onSend, onDelete }) {
+function LanCard({ row, lan, perm, ext, onSave, onSend, onCancel }) {
   const [open, setOpen] = useState(null);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
+  const huy = !!lan['đã_hủy'];
   const sent = !!lan['thời_điểm_gửi'] || !!ext;
   const { bienBan, xacNhan, thanhToan } = deriveKhaiBaoStatuses(ext);
   const line = (s) => <span style={{ color: KB_TONE[s.tone] || '#64748b', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>● {s.text}</span>;
@@ -340,23 +341,25 @@ function LanCard({ row, lan, perm, ext, onSave, onSend, onDelete }) {
   const close = () => setOpen(null);
   const act = async (alsoSend) => { setBusy(true); try { await (alsoSend ? onSend : onSave)(lan, draft); close(); } finally { setBusy(false); } };
   const quickSend = async (e) => { e.stopPropagation(); setBusy(true); try { await onSend(lan, null); } finally { setBusy(false); } };
-  const doDelete = async () => {
-    if (!window.confirm(`Xóa lần ${lan['lần']}? Dữ liệu lần này ở app sẽ bị xóa (bản ghi bên CNV KHÔNG bị xóa).`)) return;
-    setBusy(true); try { await onDelete(lan); close(); } finally { setBusy(false); }
+  const doCancel = async (huyVal) => {
+    if (huyVal && !window.confirm(`Hủy lần ${lan['lần']}? Lần này sẽ bị làm mờ + đánh dấu "Đã Hủy" (không xóa, không đụng CNV).`)) return;
+    setBusy(true); try { await onCancel(lan, huyVal); close(); } finally { setBusy(false); }
   };
 
   return (
     <div style={{ flex: '0 0 auto' }}>
-      <div onClick={openPop} className="wf-card" title="Bấm để sửa / xem lần này"
-        style={{ cursor: 'pointer', width: 172, minHeight: 116, boxSizing: 'border-box', padding: '7px 9px', borderRadius: '10px', border: '1px solid #e11d4855', background: '#e11d480d', display: 'flex', flexDirection: 'column', gap: 3, fontSize: '0.66rem' }}>
-        <div style={{ fontWeight: 700, fontSize: '0.7rem', color: '#be123c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Lần {lan['lần']}{lan['loại_nhiệm_vụ'] ? ` · ${lan['loại_nhiệm_vụ']}` : ''}</div>
-        {sent ? (
+      <div onClick={openPop} className="wf-card" title={huy ? 'Lần đã hủy — bấm để bỏ hủy / xem' : 'Bấm để sửa / xem lần này'}
+        style={{ cursor: 'pointer', width: 172, minHeight: 116, boxSizing: 'border-box', padding: '7px 9px', borderRadius: '10px', border: `1px solid ${huy ? '#cbd5e1' : '#e11d4855'}`, background: huy ? '#f1f5f9' : '#e11d480d', opacity: huy ? 0.6 : 1, display: 'flex', flexDirection: 'column', gap: 3, fontSize: '0.66rem' }}>
+        <div style={{ fontWeight: 700, fontSize: '0.7rem', color: huy ? '#64748b' : '#be123c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: huy ? 'line-through' : 'none' }}>Lần {lan['lần']}{lan['loại_nhiệm_vụ'] ? ` · ${lan['loại_nhiệm_vụ']}` : ''}</div>
+        {huy ? (
+          <span style={{ color: '#64748b', fontWeight: 700, fontStyle: 'italic' }}>● Đã Hủy</span>
+        ) : sent ? (
           <>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#15803d', fontWeight: 700 }}><CheckCircle2 size={11} /> Đã gửi form</span>
             {line(bienBan)}{line(xacNhan)}{line(thanhToan)}
           </>
         ) : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Chưa gửi · bấm để nhập</span>}
-        {perm.edit && (
+        {perm.edit && !huy && (
           <button disabled={busy} onClick={quickSend}
             style={{ marginTop: 'auto', padding: '2px 8px', borderRadius: '7px', border: `1px solid ${sent ? '#cbd5e1' : '#93c5fd'}`, background: sent ? '#fff' : '#eff6ff', color: sent ? '#64748b' : '#1d4ed8', cursor: busy ? 'wait' : 'pointer', fontWeight: 700, fontSize: '0.62rem' }}>
             {busy ? 'Đang gửi...' : (sent ? 'Gửi lại' : 'Gửi')}
@@ -367,22 +370,24 @@ function LanCard({ row, lan, perm, ext, onSave, onSend, onDelete }) {
         <>
           <div onClick={(e) => { e.stopPropagation(); close(); }} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
           <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: open.top, left: open.left, zIndex: 1001, width: 320, maxHeight: open.maxH, overflowY: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: '0.85rem' }}>
-            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1e293b', marginBottom: '0.6rem' }}>Lần {lan['lần']} — thông tin xử lý</div>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1e293b', marginBottom: '0.6rem' }}>Lần {lan['lần']} — thông tin xử lý{huy ? ' (Đã Hủy)' : ''}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               {LAN_FIELDS.map(([k, label]) => (
                 <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                   <label style={{ fontSize: '0.74rem', fontWeight: 600, color: '#475569' }}>{label}</label>
-                  <input value={draft[k] ?? ''} disabled={!perm.edit}
+                  <input value={draft[k] ?? ''} disabled={!perm.edit || huy}
                     onChange={(e) => { const v = e.target.value; setDraft(d => ({ ...d, [k]: v })); }}
-                    style={{ border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.4rem 0.5rem', fontSize: '0.84rem', outline: 'none' }} />
+                    style={{ border: '1px solid #cbd5e1', borderRadius: '7px', padding: '0.4rem 0.5rem', fontSize: '0.84rem', outline: 'none', background: huy ? '#f8fafc' : '#fff' }} />
                 </div>
               ))}
             </div>
             <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.7rem', flexWrap: 'wrap' }}>
-              {perm.edit && <button disabled={busy} onClick={() => act(false)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Lưu</button>}
-              {perm.edit && <button disabled={busy} onClick={() => act(true)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>{busy ? 'Đang gửi...' : 'Gửi form'}</button>}
+              {perm.edit && !huy && <button disabled={busy} onClick={() => act(false)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Lưu</button>}
+              {perm.edit && !huy && <button disabled={busy} onClick={() => act(true)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>{busy ? 'Đang gửi...' : 'Gửi form'}</button>}
               <button disabled={busy} onClick={close} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>Đóng</button>
-              {perm.edit && <button disabled={busy} onClick={doDelete} title="Xóa lần này khỏi app" style={{ marginLeft: 'auto', padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Xóa lần</button>}
+              {perm.edit && (huy
+                ? <button disabled={busy} onClick={() => doCancel(false)} title="Bỏ đánh dấu hủy" style={{ marginLeft: 'auto', padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #6ee7b7', background: '#ecfdf5', color: '#047857', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Bỏ hủy</button>
+                : <button disabled={busy} onClick={() => doCancel(true)} title="Hủy lần này (làm mờ, đánh dấu Đã Hủy)" style={{ marginLeft: 'auto', padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Hủy lần</button>)}
             </div>
           </div>
         </>
@@ -392,7 +397,7 @@ function LanCard({ row, lan, perm, ext, onSave, onSend, onDelete }) {
 }
 
 // Ô cột "Form khai báo": hàng ngang các ô-lần + ô "+ Thêm lần".
-function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan, onDeleteLan }) {
+function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan, onCancelLan }) {
   const [busy, setBusy] = useState(false);
   let lans = getEffectiveLan(row);
   // Chưa có lần nào ở app nhưng CNV đã có bản ghi cho số phiếu trần → hiện lần 1 (đối chiếu CNV).
@@ -409,7 +414,7 @@ function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan, on
           ext={khaiBaoExt && khaiBaoExt.get(String(lan['cnv_id']))}
           onSave={(l, draft) => onSaveLan(row, l, draft)}
           onSend={(l, draft) => onSendLan(row, l, draft)}
-          onDelete={(l) => onDeleteLan(row, l)} />
+          onCancel={(l, huy) => onCancelLan(row, l, huy)} />
       ))}
       {perm.edit && (
         <button disabled={busy} onClick={add} className="wf-card"
@@ -665,7 +670,7 @@ const LIST_COLUMNS = [
   { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
   { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onCompleteSync={ctx.onCompleteSync} /> },
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
-  { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} khaiBaoExt={ctx.khaiBaoExt} onSaveLan={ctx.onSaveLan} onSendLan={ctx.onSendLan} onAddLan={ctx.onAddLan} /> },
+  { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} khaiBaoExt={ctx.khaiBaoExt} onSaveLan={ctx.onSaveLan} onSendLan={ctx.onSendLan} onAddLan={ctx.onAddLan} onCancelLan={ctx.onCancelLan} /> },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
 const DEFAULT_VISIBLE = ['phiếu_ghi', 'card_sp', 'card_ktv', 'card_kh', 'card_bh', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ', 'khai_báo'];
@@ -985,14 +990,19 @@ export default function WarrantyProcessing() {
     const phieuGhi = row['phiếu_ghi'] || row['id_phiếu_ghi'];
     await persistLans(row, [...lans, { 'lần': nextNo, 'cnv_id': cnvIdForLan(phieuGhi, nextNo), 'loại_nhiệm_vụ': '', 'thời_điểm_gửi': null }]);
   };
-  // Lưu thông tin 1 lần (không gửi).
+  // Lưu thông tin 1 lần (không gửi). Materialize lần ảo (synthesize từ CNV) nếu chưa có trong các_lần.
   const saveLan = async (row, lan, draft) => {
-    const lans = getEffectiveLan(row).map(l => l['lần'] === lan['lần'] ? { ...l, ...(draft || {}) } : l);
+    let lans = getEffectiveLan(row);
+    if (!lans.some(l => l['lần'] === lan['lần'])) lans = [...lans, lan];
+    lans = lans.map(l => l['lần'] === lan['lần'] ? { ...l, ...(draft || {}) } : l);
     await persistLans(row, lans);
   };
-  // Xóa 1 lần khỏi app (cột các_lần). KHÔNG đụng CNV. Không đánh số lại các lần còn lại.
-  const deleteLan = async (row, lan) => {
-    const lans = getEffectiveLan(row).filter(l => l['lần'] !== lan['lần']);
+  // Hủy / bỏ hủy 1 lần (soft-delete): đánh dấu đã_hủy trong các_lần. KHÔNG xóa, KHÔNG đụng CNV,
+  // KHÔNG đánh số lại — giữ cnv_id ổn định để đối chiếu CNV không lệch.
+  const cancelLan = async (row, lan, huy) => {
+    let lans = getEffectiveLan(row);
+    if (!lans.some(l => l['lần'] === lan['lần'])) lans = [...lans, lan];
+    lans = lans.map(l => l['lần'] === lan['lần'] ? { ...l, 'đã_hủy': !!huy } : l);
     await persistLans(row, lans);
   };
   // Gửi form 1 lần → POST payload CNV (id ghép) → đánh dấu thời_điểm_gửi + lưu các_lần. draft = sửa kèm (nếu có).
@@ -1244,7 +1254,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isWide || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, onDeleteLan: deleteLan, khaiBaoExt })}
+                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, onCancelLan: cancelLan, khaiBaoExt })}
                     </td>
                   );
                 })}
