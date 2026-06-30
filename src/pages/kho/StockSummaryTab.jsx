@@ -492,7 +492,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                           style={{...s.input, width:68, padding:'0.2rem 0.3rem', textAlign:'right', fontWeight:700, color:'#7c3aed', borderColor:'#c4b5fd'}}
                         />
                       </td>}
-                      {(() => { const sxQty = proposedMap[row.item_code]; const buyInfo = purchaseProposedMap[row.item_code]; const bd = buildableMap[row.item_code]; const tdc = buyInfo ? (TIEN_DO_CFG[buyInfo.tien_do] || TIEN_DO_CFG['Mới']) : null; return (<>
+                      {(() => { const sxQty = proposedMap[row.item_code]; const buyInfo = purchaseProposedMap[row.item_code]; const bd = buildableMap[row.item_code]; const tdc = buyInfo ? (TIEN_DO_CFG[buyInfo.tien_do] || TIEN_DO_CFG['Mới']) : null; const arrived = !!buyInfo && buyInfo.tien_do === 'Đã về kho'; return (<>
                       {vis('dlk_status') && <td style={{padding:'0.4rem 0.5rem',textAlign:'left'}} onClick={e=>e.stopPropagation()}>
                         {sxQty > 0 ? (
                           <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}
@@ -526,7 +526,9 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                             : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>
                         ) : buyInfo && buyInfo.qty > 0 ? (
                           <div style={{display:'flex',alignItems:'center',gap:5,justifyContent:'center'}}>
-                            <button onClick={()=>handleReceiveStock(row)} title="Nhập kho số đã về (điền sẵn DLK)" style={{...s.btn,padding:'0.32rem 0.7rem',fontSize:'0.7rem',fontWeight:600,background:'#0d9488',color:'#fff',border:'none',whiteSpace:'nowrap'}}><PackageCheck size={13}/>Nhập kho</button>
+                            <button onClick={()=>handleReceiveStock(row)} disabled={!arrived}
+                              title={arrived ? 'Nhập kho số đã về (điền sẵn DLK)' : `Chỉ nhập kho khi tiến độ = "Đã về kho" (hiện: ${buyInfo.tien_do || 'Mới'})`}
+                              style={{...s.btn,padding:'0.32rem 0.7rem',fontSize:'0.7rem',fontWeight:600,background:arrived?'#0d9488':'#e2e8f0',color:arrived?'#fff':'#94a3b8',border:'none',whiteSpace:'nowrap',cursor:arrived?'pointer':'not-allowed'}}><PackageCheck size={13}/>Nhập kho</button>
                             <button onClick={()=>navigateTo && navigateTo('de-xuat-dat-hang')} title="Mở tab Đề xuất (DLK)" style={{...s.btn,padding:'0.32rem 0.45rem',fontSize:'0.7rem',color:'#ea580c',border:'1px solid #fed7aa'}}><ExternalLink size={13}/></button>
                           </div>
                         ) : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>}
