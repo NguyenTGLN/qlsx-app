@@ -427,7 +427,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                     {vis('safe_inventory') && <th onClick={()=>handleSort('safe_inventory')} style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortCol==='safe_inventory'?'#0891b2':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:sortCol==='safe_inventory'?'#0891b2':'#64748b',cursor:'pointer',whiteSpace:'nowrap'}}>Tồn AT{sortCol==='safe_inventory'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {vis('replenish_qty') && <th onClick={()=>handleSort('replenish_qty')} style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortCol==='replenish_qty'?'#0891b2':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:sortCol==='replenish_qty'?'#0891b2':'#64748b',cursor:'pointer',whiteSpace:'nowrap'}}>Bổ Sung{sortCol==='replenish_qty'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {vis('de_xuat_sl') && <th onClick={()=>setSortByProposal(v=>!v)} title="Bấm để đưa dòng có SL đề xuất > 0 lên đầu" style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortByProposal?'#7c3aed':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:'#7c3aed',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none'}}>SL Đề xuất {sortByProposal?'↑':'⇅'}</th>}
-                    {vis('dlk_status') && <th style={{padding:'0.4rem 0.3rem',textAlign:'center',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#4f46e5',whiteSpace:'nowrap'}}>Đã ĐX</th>}
+                    {vis('dlk_status') && <th style={{padding:'0.4rem 0.5rem',textAlign:'left',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#4f46e5',whiteSpace:'nowrap'}}>Đã ĐX</th>}
                     {vis('actions') && <th style={{padding:'0.4rem 0.3rem',textAlign:'center',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#64748b',whiteSpace:'nowrap'}}>Thao tác</th>}
                   </tr>
                 </thead>
@@ -468,40 +468,40 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                         />
                       </td>}
                       {(() => { const sxQty = proposedMap[row.item_code]; const buyInfo = purchaseProposedMap[row.item_code]; const bd = buildableMap[row.item_code]; const tdc = buyInfo ? (TIEN_DO_CFG[buyInfo.tien_do] || TIEN_DO_CFG['Mới']) : null; return (<>
-                      {vis('dlk_status') && <td style={{padding:'0.25rem 0.2rem',textAlign:'center'}} onClick={e=>e.stopPropagation()}>
+                      {vis('dlk_status') && <td style={{padding:'0.4rem 0.5rem',textAlign:'left'}} onClick={e=>e.stopPropagation()}>
                         {sxQty > 0 ? (
-                          <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
-                            <span style={{display:'inline-block',padding:'0.15rem 0.45rem',borderRadius:5,fontSize:'0.65rem',fontWeight:700,background:'#eef2ff',color:'#4f46e5',border:'1px solid #c7d2fe',whiteSpace:'nowrap',cursor:'pointer'}}
+                          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-start',gap:4}}>
+                            <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'0.18rem 0.5rem',borderRadius:6,fontSize:'0.65rem',fontWeight:700,background:'#eef2ff',color:'#4f46e5',border:'1px solid #c7d2fe',whiteSpace:'nowrap',cursor:'pointer'}}
                               title="Đang đề xuất sản xuất — bấm để mở DKSX"
                               onClick={() => navigateTo && navigateTo('dksx')}>
                               🏭 ĐX SX: {sxQty.toLocaleString('vi-VN')}
                             </span>
-                            {bd && <div style={{display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}} title={`Làm được ngay ${bd.buildable.toLocaleString('vi-VN')} / ${sxQty.toLocaleString('vi-VN')} cần SX`}>
-                              <div style={{width:42,height:5,background:'#e2e8f0',borderRadius:4,overflow:'hidden'}}><div style={{width:`${bd.feasibility}%`,height:'100%',background:pctColor(bd.feasibility)}}/></div>
-                              <span style={{fontSize:'0.6rem',color:'#64748b'}}>Làm ngay {bd.buildable.toLocaleString('vi-VN')} · {bd.feasibility}%</span>
+                            {bd && <div style={{display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap'}} title={`Làm được ngay ${bd.buildable.toLocaleString('vi-VN')} / ${sxQty.toLocaleString('vi-VN')} cần SX`}>
+                              <div style={{width:44,height:5,background:'#e5e7eb',borderRadius:3,overflow:'hidden',flexShrink:0}}><div style={{width:`${bd.feasibility}%`,height:'100%',background:pctColor(bd.feasibility)}}/></div>
+                              <span style={{fontSize:'0.62rem',color:'#64748b'}}>Làm ngay {bd.buildable.toLocaleString('vi-VN')} · {bd.feasibility}%</span>
                             </div>}
                           </div>
                         ) : buyInfo && buyInfo.qty > 0 ? (
-                          <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
-                            <span style={{display:'inline-block',padding:'0.15rem 0.45rem',borderRadius:5,fontSize:'0.65rem',fontWeight:700,background:'#fff7ed',color:'#ea580c',border:'1px solid #fed7aa',whiteSpace:'nowrap',cursor:'pointer'}}
+                          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-start',gap:4}}>
+                            <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'0.18rem 0.5rem',borderRadius:6,fontSize:'0.65rem',fontWeight:700,background:'#fff7ed',color:'#ea580c',border:'1px solid #fed7aa',whiteSpace:'nowrap',cursor:'pointer'}}
                               title="Đang có đề xuất đặt mua (DLK) — bấm để mở tab Đề xuất"
                               onClick={() => navigateTo && navigateTo('de-xuat-dat-hang')}>
                               🛒 ĐX mua: {buyInfo.qty.toLocaleString('vi-VN')}
                             </span>
-                            <div style={{display:'flex',alignItems:'center',gap:4,whiteSpace:'nowrap'}}>
-                              <span style={{fontSize:'0.6rem',fontWeight:700,padding:'0 5px',borderRadius:4,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`}}>{buyInfo.tien_do || 'Mới'}</span>
-                              <span style={{fontSize:'0.6rem',color:'#64748b'}}>Đặt: {buyInfo.qty.toLocaleString('vi-VN')}</span>
+                            <div style={{display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap'}}>
+                              <span style={{fontSize:'0.62rem',color:'#94a3b8'}}>Tiến độ</span>
+                              <span style={{fontSize:'0.6rem',fontWeight:700,padding:'0.05rem 6px',borderRadius:5,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`}}>{buyInfo.tien_do || 'Mới'}</span>
                             </div>
                           </div>
                         ) : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>}
                       </td>}
-                      {vis('actions') && <td style={{padding:'0.25rem 0.3rem',textAlign:'center'}} onClick={e=>e.stopPropagation()}>
+                      {vis('actions') && <td style={{padding:'0.4rem 0.4rem',textAlign:'center'}} onClick={e=>e.stopPropagation()}>
                         {sxQty > 0 ? (
                           perms.create
-                            ? <button onClick={()=>handleMakeProductionOrder(row)} title="Tạo phiếu sản xuất ngay" style={{...s.btn,padding:'0.25rem 0.5rem',fontSize:'0.68rem',fontWeight:600,background:'#4f46e5',color:'#fff',border:'none',whiteSpace:'nowrap'}}><Factory size={12}/>Tạo phiếu SX</button>
+                            ? <button onClick={()=>handleMakeProductionOrder(row)} title="Tạo phiếu sản xuất ngay" style={{...s.btn,padding:'0.32rem 0.7rem',fontSize:'0.7rem',fontWeight:600,background:'#4f46e5',color:'#fff',border:'none',whiteSpace:'nowrap'}}><Factory size={13}/>Tạo phiếu SX</button>
                             : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>
                         ) : buyInfo && buyInfo.qty > 0 ? (
-                          <button onClick={()=>navigateTo && navigateTo('de-xuat-dat-hang')} title="Mở tab Đề xuất (DLK)" style={{...s.btn,padding:'0.25rem 0.5rem',fontSize:'0.68rem',fontWeight:600,color:'#ea580c',border:'1px solid #fed7aa',whiteSpace:'nowrap'}}><ExternalLink size={12}/>Mở DLK</button>
+                          <button onClick={()=>navigateTo && navigateTo('de-xuat-dat-hang')} title="Mở tab Đề xuất (DLK)" style={{...s.btn,padding:'0.32rem 0.7rem',fontSize:'0.7rem',fontWeight:600,color:'#ea580c',border:'1px solid #fed7aa',whiteSpace:'nowrap'}}><ExternalLink size={13}/>Mở DLK</button>
                         ) : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>}
                       </td>}
                       </>); })()}
