@@ -437,10 +437,10 @@ import { useNavigate } from 'react-router-dom';
                   h('button',{type:'button',onClick:()=>bulkModule(mod,'all'),className:'text-xs px-2 py-0.5 rounded bg-blue-100'},'Toàn quyền'),
                   h('button',{type:'button',onClick:()=>bulkModule(mod,'clear'),className:'text-xs px-2 py-0.5 rounded bg-slate-100'},'Bỏ chọn'),
                 ),
-                h('div',{style:{display:'grid',gridTemplateColumns:'1.6fr repeat(5, 1fr)',gap:'0.2rem',fontSize:'0.65rem',color:'#64748b',fontWeight:600,padding:'0.2rem 0'}},
+                h('div',{style:{display:'grid',gridTemplateColumns:`1.6fr repeat(${ALL_CAPS.length}, 1fr)`,gap:'0.2rem',fontSize:'0.65rem',color:'#64748b',fontWeight:600,padding:'0.2rem 0'}},
                   h('span',null,'Tab'), ...ALL_CAPS.map(c => h('span',{key:c,style:{textAlign:'center'}}, CAP_LABEL[c])),
                 ),
-                mod.tabs.map(t => h('div',{key:t.id, style:{display:'grid',gridTemplateColumns:'1.6fr repeat(5, 1fr)',gap:'0.2rem',alignItems:'center',padding:'0.15rem 0'}},
+                mod.tabs.map(t => h('div',{key:t.id, style:{display:'grid',gridTemplateColumns:`1.6fr repeat(${ALL_CAPS.length}, 1fr)`,gap:'0.2rem',alignItems:'center',padding:'0.15rem 0'}},
                   h('span',{style:{fontSize:'0.7rem',color:'#0f172a'}}, t.label),
                   ...ALL_CAPS.map(c => {
                     if (!t.caps.includes(c)) return h('span',{key:c,style:{textAlign:'center',color:'#cbd5e1'}}, '—');

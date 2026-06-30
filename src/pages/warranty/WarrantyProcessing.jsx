@@ -359,7 +359,7 @@ function LanCard({ row, lan, perm, ext, onSave, onSend, onCancel }) {
             {line(bienBan)}{line(xacNhan)}{line(thanhToan)}
           </>
         ) : <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Chưa gửi · bấm để nhập</span>}
-        {perm.edit && !huy && (
+        {perm.sendForm && !huy && (
           <button disabled={busy} onClick={quickSend}
             style={{ marginTop: 'auto', padding: '2px 8px', borderRadius: '7px', border: `1px solid ${sent ? '#cbd5e1' : '#93c5fd'}`, background: sent ? '#fff' : '#eff6ff', color: sent ? '#64748b' : '#1d4ed8', cursor: busy ? 'wait' : 'pointer', fontWeight: 700, fontSize: '0.62rem' }}>
             {busy ? 'Đang gửi...' : (sent ? 'Gửi lại' : 'Gửi')}
@@ -383,9 +383,9 @@ function LanCard({ row, lan, perm, ext, onSave, onSend, onCancel }) {
             </div>
             <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.7rem', flexWrap: 'wrap' }}>
               {perm.edit && !huy && <button disabled={busy} onClick={() => act(false)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Lưu</button>}
-              {perm.edit && !huy && <button disabled={busy} onClick={() => act(true)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>{busy ? 'Đang gửi...' : 'Gửi form'}</button>}
+              {perm.sendForm && !huy && <button disabled={busy} onClick={() => act(true)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>{busy ? 'Đang gửi...' : 'Gửi form'}</button>}
               <button disabled={busy} onClick={close} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>Đóng</button>
-              {perm.edit && (huy
+              {perm.cancelLan && (huy
                 ? <button disabled={busy} onClick={() => doCancel(false)} title="Bỏ đánh dấu hủy" style={{ marginLeft: 'auto', padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #6ee7b7', background: '#ecfdf5', color: '#047857', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Bỏ hủy</button>
                 : <button disabled={busy} onClick={() => doCancel(true)} title="Hủy lần này (làm mờ, đánh dấu Đã Hủy)" style={{ marginLeft: 'auto', padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Hủy lần</button>)}
             </div>
@@ -410,7 +410,7 @@ function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan, on
   return (
     <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '6px', alignItems: 'stretch' }}>
       {lans.map((lan) => (
-        <LanCard key={lan['lần']} row={row} lan={lan} perm={perm}
+        <LanCard key={String(lan['cnv_id'] || lan['lần'])} row={row} lan={lan} perm={perm}
           ext={khaiBaoExt && khaiBaoExt.get(String(lan['cnv_id']))}
           onSave={(l, draft) => onSaveLan(row, l, draft)}
           onSend={(l, draft) => onSendLan(row, l, draft)}
@@ -1010,6 +1010,7 @@ export default function WarrantyProcessing() {
     let lans = getEffectiveLan(row);
     let target = lans.find(l => l['lần'] === lan['lần']) || { ...lan };
     if (draft) target = { ...target, ...draft };
+    if (target['đã_hủy']) { alert('Lần này đã hủy — không gửi được. Bỏ hủy trước nếu muốn gửi.'); return; }
     // Điền sẵn từ phiếu cho các trường per-lần còn TRỐNG (giống popover) — để gửi nhanh không bị thiếu dữ liệu.
     const defaults = lanDefaultsFromRow(row, fieldOptions);
     for (const k of Object.keys(defaults)) if (!target[k]) target = { ...target, [k]: defaults[k] };

@@ -1,7 +1,7 @@
 import { test, expect, describe } from 'vitest';
 import {
   PERM_REGISTRY, tabKey, getTabPerm, canSeeTab, canSeeModule,
-  migrateLegacyToTabPerms, emptyTabPerms,
+  migrateLegacyToTabPerms, emptyTabPerms, CAP_LABEL, ALL_CAPS,
 } from './permRegistry';
 
 describe('registry shape', () => {
@@ -104,11 +104,26 @@ describe('emptyTabPerms', () => {
 });
 
 describe('tab xuLy của Bảo Hành', () => {
-  test('module warranty có tab xuLy với đủ 5 cap', () => {
+  test('module warranty có tab xuLy với đủ 7 cap (gồm sendForm + cancelLan)', () => {
     const warranty = PERM_REGISTRY.find(m => m.module === 'warranty');
     const xuLy = warranty.tabs.find(t => t.id === 'xuLy');
     expect(xuLy).toBeTruthy();
     expect(xuLy.label).toBe('Xử Lý Phiếu');
-    expect(xuLy.caps).toEqual(['view', 'create', 'edit', 'delete', 'io']);
+    expect(xuLy.caps).toEqual(['view', 'create', 'edit', 'delete', 'io', 'sendForm', 'cancelLan']);
+  });
+  test('cap mới có nhãn + getTabPerm trả về sendForm/cancelLan', () => {
+    expect(CAP_LABEL.sendForm).toBe('Gửi Form');
+    expect(CAP_LABEL.cancelLan).toBe('Hủy Lần');
+    expect(ALL_CAPS).toContain('sendForm');
+    expect(ALL_CAPS).toContain('cancelLan');
+    const admin = getTabPerm({ role: 'ADMIN' }, 'warranty', 'xuLy');
+    expect(admin.sendForm).toBe(true);
+    expect(admin.cancelLan).toBe(true);
+    const staff = getTabPerm({ role: 'AGENT', permissions: { 'tab.warranty.xuLy.edit': true } }, 'warranty', 'xuLy');
+    expect(staff.edit).toBe(true);
+    expect(staff.sendForm).toBe(false); // quyền tách riêng — không tự suy từ edit
+    expect(staff.cancelLan).toBe(false);
+    const granted = getTabPerm({ role: 'AGENT', permissions: { 'tab.warranty.xuLy.sendForm': true } }, 'warranty', 'xuLy');
+    expect(granted.sendForm).toBe(true);
   });
 });

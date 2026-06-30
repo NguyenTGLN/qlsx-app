@@ -4,10 +4,11 @@
 //    Tab chỉ-đọc -> caps = ['view']. Mọi tab BẮT BUỘC có 'view'.
 //    legacyAccess: key access_* cũ để đồng bộ.
 // ============================================================
-export const ALL_CAPS = ['view', 'create', 'edit', 'delete', 'io'];
+export const ALL_CAPS = ['view', 'create', 'edit', 'delete', 'io', 'sendForm', 'cancelLan'];
 
 export const CAP_LABEL = {
   view: 'Xem', create: 'Thêm', edit: 'Sửa', delete: 'Xóa', io: 'N/X',
+  sendForm: 'Gửi Form', cancelLan: 'Hủy Lần',
 };
 
 export const PERM_REGISTRY = [
@@ -43,7 +44,7 @@ export const PERM_REGISTRY = [
     module: 'warranty', label: 'Bảo Hành', icon: '🛡️', legacyAccess: 'access_warranty',
     tabs: [
       { id: 'history',        label: 'Lịch Sử Phiếu', caps: ['view'] }, // nội dung chỉ-đọc (thẻ + biểu đồ)
-      { id: 'xuLy',           label: 'Xử Lý Phiếu',   caps: ['view', 'create', 'edit', 'delete', 'io'] }, // xử lý phiếu đang mở + đồng bộ Caresoft
+      { id: 'xuLy',           label: 'Xử Lý Phiếu',   caps: ['view', 'create', 'edit', 'delete', 'io', 'sendForm', 'cancelLan'] }, // xử lý phiếu mở + đồng bộ CS + gửi form khai báo + hủy lần
       { id: 'batchAnalytics', label: 'Phân Tích Lỗi', caps: ['view'] }, // chỉ-đọc
       { id: 'dataManager',    label: 'QL Dữ Liệu',    caps: ['view', 'edit', 'delete', 'io'] }, // bản ghi vào qua import, không có nút Thêm tay
     ],
