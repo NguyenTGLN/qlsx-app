@@ -272,6 +272,35 @@ export function getEffectiveLan(row) {
   return [];
 }
 
+// Giá trị MẶC ĐỊNH của phiếu cho các trường per-lần (để điền sẵn popover khi lần chưa có dữ liệu):
+// lấy giá trị hiển thị ở tab (thông_tin_bổ_sung đã sửa → phiếu_gốc_json → mirror; option resolve nhãn).
+// Không gồm loại_nhiệm_vụ (free text, không có nguồn từ phiếu).
+export function lanDefaultsFromRow(row, fieldOptions = []) {
+  const goc = (row && row['phiếu_gốc_json']) || {};
+  const tin = getThongTinBoSung(row);
+  const ttRaw = (row && row['thông_tin_bổ_sung']) || {};
+  const optLabel = (key) => {
+    const meta = OPTION_FIELDS[key] || {};
+    if (meta.multi) {
+      const ids = Array.isArray(ttRaw[key + '_option_ids']) ? ttRaw[key + '_option_ids'] : [];
+      return ids.map(id => resolveOptionLabel(fieldOptions, id)).filter(Boolean).join(', ') || (row && row[key]) || goc[key] || '';
+    }
+    return resolveOptionLabel(fieldOptions, ttRaw[key + '_option_id']) || (row && row[key]) || goc[key] || '';
+  };
+  const s = (v) => (v == null ? '' : String(v));
+  return {
+    'chi_tiết_lỗi': s(optLabel('chi_tiết_lỗi')),
+    'tình_trạng': s(tin['tình_trạng']),
+    'nguyên_nhân': s(optLabel('nguyên_nhân')),
+    'phương_án_xử_lý': s(ttRaw['phương_án_xử_lý'] || goc['phương_án_xử_lý']),
+    'linh_kiện': s(optLabel('linh_kiện')),
+    'tên_đlđ': s(tin['tên_đlđ']),
+    'mã_đlđ': s(tin['mã_đlđ']),
+    'sđt_đlđ': s(tin['sđt_đlđ']),
+    'khoảng_cách': s(tin['khoảng_cách']),
+  };
+}
+
 // Dựng payload CNV cho 1 LẦN: shared (KH/SP/ĐH/ngày lắp) lấy từ row; per-lần lấy từ lan (loại nhiệm vụ
 // → Phan_Loai_CV; chi tiết lỗi/tình trạng/nguyên nhân/phương án/linh kiện/KTV-ĐLĐ/khoảng cách). Phieu_Ghi = cnv_id.
 export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {

@@ -4,7 +4,7 @@ import {
   isQualifyingTicket, computeTotalCost, getEffectiveSteps, ensureClosingStep, applyStepToggle, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
   THONG_TIN_BO_SUNG_KEYS, getThongTinBoSung, isClosingStepDone, csStatusOnClosingToggle, CLOSING_STEP,
   OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, parseMultiIds, joinMultiIds,
-  buildKhaiBaoRecord, normDateYmd, deriveKhaiBaoStatuses, cnvIdForLan, getEffectiveLan, buildLanKhaiBaoRecord,
+  buildKhaiBaoRecord, normDateYmd, deriveKhaiBaoStatuses, cnvIdForLan, getEffectiveLan, buildLanKhaiBaoRecord, lanDefaultsFromRow,
   KB_TRANG_THAI_FORM, KB_XAC_NHAN_ONLINE_INIT, KB_THANH_TOAN_INIT,
 } from './warrantyProcessing';
 
@@ -322,6 +322,22 @@ describe('xử lý nhiều lần', () => {
   test('getEffectiveLan: phiếu chưa gì → rỗng', () => {
     expect(getEffectiveLan({ 'phiếu_ghi': '229545' })).toEqual([]);
   });
+  test('lanDefaultsFromRow: lấy giá trị phiếu cho trường per-lần (điền sẵn popover)', () => {
+    const row = {
+      'chi_tiết_lỗi': 'Bung nắp', 'linh_kiện': 'Vòi lạnh',
+      'phiếu_gốc_json': { 'tình_trạng': 'Không ra nước', 'phương_án_xử_lý': 'Thay vòi', 'mã_đlđ': 'NA84', 'tên_đlđ': 'KTV A', 'sđt_đlđ': '098' },
+      'thông_tin_bổ_sung': { 'khoảng_cách': '12 km' },
+    };
+    const d = lanDefaultsFromRow(row, []);
+    expect(d['chi_tiết_lỗi']).toBe('Bung nắp');
+    expect(d['tình_trạng']).toBe('Không ra nước');
+    expect(d['phương_án_xử_lý']).toBe('Thay vòi');
+    expect(d['linh_kiện']).toBe('Vòi lạnh');
+    expect(d['mã_đlđ']).toBe('NA84');
+    expect(d['khoảng_cách']).toBe('12 km');
+    expect(d).not.toHaveProperty('loại_nhiệm_vụ'); // free text, không default
+  });
+
   test('buildLanKhaiBaoRecord: Phieu_Ghi = cnv_id; per-lần từ lan; shared từ row', () => {
     const row = {
       'phiếu_ghi': '229545', 'mã_đơn_hàng': 'VNA01', 'mã_sản_phẩm': 'WT-4200-RO', 'ngày_lắp_đặt': '2026/06/18',

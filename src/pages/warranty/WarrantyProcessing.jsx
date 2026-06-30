@@ -4,7 +4,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send, Download, CheckCircle2, RotateCcw, Calendar, DownloadCloud } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, deriveKhaiBaoStatuses, cnvIdForLan, getEffectiveLan, buildLanKhaiBaoRecord } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, deriveKhaiBaoStatuses, cnvIdForLan, getEffectiveLan, buildLanKhaiBaoRecord, lanDefaultsFromRow } from '../../lib/warrantyProcessing';
 import fieldOptions from '../../data/caresoftFieldOptions.json';
 import ProcessingModal from './ProcessingModal';
 
@@ -319,7 +319,7 @@ const LAN_FIELDS = [
 
 // 1 ô = 1 LẦN xử lý: "Lần N · loại nhiệm vụ" + 3 dòng trạng thái (suy từ CNV theo cnv_id) + nút Gửi/Gửi lại.
 // Bấm ô → popover sửa thông tin riêng của lần (LAN_FIELDS, free text) + Lưu / Gửi form / Đóng.
-function LanCard({ lan, perm, ext, onSave, onSend }) {
+function LanCard({ row, lan, perm, ext, onSave, onSend }) {
   const [open, setOpen] = useState(null);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
@@ -330,7 +330,9 @@ function LanCard({ lan, perm, ext, onSave, onSend }) {
   const openPop = (e) => {
     e.stopPropagation();
     const r = e.currentTarget.getBoundingClientRect();
-    const d = {}; LAN_FIELDS.forEach(([k]) => { d[k] = lan[k] || ''; });
+    // Điền sẵn: giá trị lần đã lưu → mặc định từ phiếu (đỡ gõ lại). loại_nhiệm_vụ không có default.
+    const defaults = lanDefaultsFromRow(row, fieldOptions);
+    const d = {}; LAN_FIELDS.forEach(([k]) => { d[k] = lan[k] || defaults[k] || ''; });
     setDraft(d);
     const top = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 360));
     setOpen({ top, left: Math.max(8, Math.min(r.left, window.innerWidth - 340)), maxH: window.innerHeight - top - 12 });
@@ -398,7 +400,7 @@ function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan }) 
   return (
     <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '6px', alignItems: 'stretch' }}>
       {lans.map((lan) => (
-        <LanCard key={lan['lần']} lan={lan} perm={perm}
+        <LanCard key={lan['lần']} row={row} lan={lan} perm={perm}
           ext={khaiBaoExt && khaiBaoExt.get(String(lan['cnv_id']))}
           onSave={(l, draft) => onSaveLan(row, l, draft)}
           onSend={(l, draft) => onSendLan(row, l, draft)} />
