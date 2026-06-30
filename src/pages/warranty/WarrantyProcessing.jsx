@@ -319,7 +319,7 @@ const LAN_FIELDS = [
 
 // 1 ô = 1 LẦN xử lý: "Lần N · loại nhiệm vụ" + 3 dòng trạng thái (suy từ CNV theo cnv_id) + nút Gửi/Gửi lại.
 // Bấm ô → popover sửa thông tin riêng của lần (LAN_FIELDS, free text) + Lưu / Gửi form / Đóng.
-function LanCard({ row, lan, perm, ext, onSave, onSend }) {
+function LanCard({ row, lan, perm, ext, onSave, onSend, onDelete }) {
   const [open, setOpen] = useState(null);
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
@@ -340,6 +340,10 @@ function LanCard({ row, lan, perm, ext, onSave, onSend }) {
   const close = () => setOpen(null);
   const act = async (alsoSend) => { setBusy(true); try { await (alsoSend ? onSend : onSave)(lan, draft); close(); } finally { setBusy(false); } };
   const quickSend = async (e) => { e.stopPropagation(); setBusy(true); try { await onSend(lan, null); } finally { setBusy(false); } };
+  const doDelete = async () => {
+    if (!window.confirm(`Xóa lần ${lan['lần']}? Dữ liệu lần này ở app sẽ bị xóa (bản ghi bên CNV KHÔNG bị xóa).`)) return;
+    setBusy(true); try { await onDelete(lan); close(); } finally { setBusy(false); }
+  };
 
   return (
     <div style={{ flex: '0 0 auto' }}>
@@ -378,6 +382,7 @@ function LanCard({ row, lan, perm, ext, onSave, onSend }) {
               {perm.edit && <button disabled={busy} onClick={() => act(false)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Lưu</button>}
               {perm.edit && <button disabled={busy} onClick={() => act(true)} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: 'none', background: '#10b981', color: '#fff', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>{busy ? 'Đang gửi...' : 'Gửi form'}</button>}
               <button disabled={busy} onClick={close} style={{ padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>Đóng</button>
+              {perm.edit && <button disabled={busy} onClick={doDelete} title="Xóa lần này khỏi app" style={{ marginLeft: 'auto', padding: '0.4rem 0.7rem', borderRadius: '7px', border: '1px solid #fca5a5', background: '#fef2f2', color: '#b91c1c', fontWeight: 600, fontSize: '0.8rem', cursor: busy ? 'wait' : 'pointer' }}>Xóa lần</button>}
             </div>
           </div>
         </>
@@ -387,7 +392,7 @@ function LanCard({ row, lan, perm, ext, onSave, onSend }) {
 }
 
 // Ô cột "Form khai báo": hàng ngang các ô-lần + ô "+ Thêm lần".
-function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan }) {
+function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan, onDeleteLan }) {
   const [busy, setBusy] = useState(false);
   let lans = getEffectiveLan(row);
   // Chưa có lần nào ở app nhưng CNV đã có bản ghi cho số phiếu trần → hiện lần 1 (đối chiếu CNV).
@@ -403,7 +408,8 @@ function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan }) 
         <LanCard key={lan['lần']} row={row} lan={lan} perm={perm}
           ext={khaiBaoExt && khaiBaoExt.get(String(lan['cnv_id']))}
           onSave={(l, draft) => onSaveLan(row, l, draft)}
-          onSend={(l, draft) => onSendLan(row, l, draft)} />
+          onSend={(l, draft) => onSendLan(row, l, draft)}
+          onDelete={(l) => onDeleteLan(row, l)} />
       ))}
       {perm.edit && (
         <button disabled={busy} onClick={add} className="wf-card"
@@ -984,6 +990,11 @@ export default function WarrantyProcessing() {
     const lans = getEffectiveLan(row).map(l => l['lần'] === lan['lần'] ? { ...l, ...(draft || {}) } : l);
     await persistLans(row, lans);
   };
+  // Xóa 1 lần khỏi app (cột các_lần). KHÔNG đụng CNV. Không đánh số lại các lần còn lại.
+  const deleteLan = async (row, lan) => {
+    const lans = getEffectiveLan(row).filter(l => l['lần'] !== lan['lần']);
+    await persistLans(row, lans);
+  };
   // Gửi form 1 lần → POST payload CNV (id ghép) → đánh dấu thời_điểm_gửi + lưu các_lần. draft = sửa kèm (nếu có).
   const sendLan = async (row, lan, draft) => {
     let lans = getEffectiveLan(row);
@@ -1233,7 +1244,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isWide || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, khaiBaoExt })}
+                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, onDeleteLan: deleteLan, khaiBaoExt })}
                     </td>
                   );
                 })}
