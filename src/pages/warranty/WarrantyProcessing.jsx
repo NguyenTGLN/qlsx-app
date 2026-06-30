@@ -989,6 +989,9 @@ export default function WarrantyProcessing() {
     let lans = getEffectiveLan(row);
     let target = lans.find(l => l['lần'] === lan['lần']) || { ...lan };
     if (draft) target = { ...target, ...draft };
+    // Điền sẵn từ phiếu cho các trường per-lần còn TRỐNG (giống popover) — để gửi nhanh không bị thiếu dữ liệu.
+    const defaults = lanDefaultsFromRow(row, fieldOptions);
+    for (const k of Object.keys(defaults)) if (!target[k]) target = { ...target, [k]: defaults[k] };
     const label = `${row['phiếu_ghi'] || row['id_phiếu_ghi']} · lần ${target['lần']}`;
     if (!window.confirm(`Gửi form khai báo cho phiếu ${label}?`)) return;
     const operator = (user && (user.name || user.id)) || '';
