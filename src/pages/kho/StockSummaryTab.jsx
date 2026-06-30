@@ -476,9 +476,9 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                               onClick={() => navigateTo && navigateTo('dksx')}>
                               🏭 ĐX SX: {sxQty.toLocaleString('vi-VN')}
                             </span>
-                            {bd && <div style={{display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap'}} title={`Làm được ngay ${bd.buildable.toLocaleString('vi-VN')} / ${sxQty.toLocaleString('vi-VN')} cần SX`}>
-                              <div style={{width:44,height:5,background:'#e5e7eb',borderRadius:3,overflow:'hidden',flexShrink:0}}><div style={{width:`${bd.feasibility}%`,height:'100%',background:pctColor(bd.feasibility)}}/></div>
-                              <span style={{fontSize:'0.62rem',color:'#64748b'}}>Làm ngay {bd.buildable.toLocaleString('vi-VN')} · {bd.feasibility}%</span>
+                            {bd && <div title={`Làm được ngay ${bd.buildable.toLocaleString('vi-VN')} / ${sxQty.toLocaleString('vi-VN')} cần SX`} style={{position:'relative',width:110,height:15,background:'#e5e7eb',borderRadius:4,overflow:'hidden'}}>
+                              <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${bd.feasibility}%`,background:pctColor(bd.feasibility)}}/>
+                              <span style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.6rem',fontWeight:700,color:bd.feasibility>=50?'#fff':'#334155'}}>{bd.feasibility}%</span>
                             </div>}
                           </div>
                         ) : buyInfo && buyInfo.qty > 0 ? (
