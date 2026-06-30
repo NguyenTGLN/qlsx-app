@@ -68,6 +68,40 @@ export async function loadComponentStock() {
   return map;
 }
 
+// Tồn linh kiện KHÔNG tính kho dở dang SX9- (khớp luồng XUẤT linh kiện cho sản xuất).
+export async function loadComponentStockExclWip() {
+  let stock = [], p = 0;
+  while (true) {
+    const { data } = await db.from('inventory_stock').select('item_code, quantity, location').range(p * 1000, (p + 1) * 1000 - 1);
+    if (data) stock = stock.concat(data);
+    if (!data || data.length < 1000) break;
+    p++;
+  }
+  const map = {};
+  stock.forEach(r => {
+    if (String(r.location || '').startsWith('SX9-')) return; // né kho dở dang (WIP)
+    map[r.item_code] = (map[r.item_code] || 0) + (Number(r.quantity) || 0);
+  });
+  return map;
+}
+
+// "Làm được ngay" theo BOM 1 CẤP trực tiếp (khớp lệnh sản xuất — KHÔNG nổ qua bán-thành-phẩm).
+// stockMap nên là tồn đã né SX9. Trả { buildable, feasibility } hoặc null nếu mã không có BOM.
+export function buildableNow(bomMap, stockMap, code, demand) {
+  const bom = bomMap[code];
+  if (!bom || bom.length === 0) return null;
+  let buildable = demand;
+  bom.forEach(c => {
+    const per = Number(c.qty) || 0;
+    if (per > 0) {
+      const canBuild = Math.floor((stockMap[c.component] || 0) / per);
+      if (canBuild < buildable) buildable = canBuild;
+    }
+  });
+  buildable = Math.max(0, buildable);
+  return { buildable, feasibility: demand > 0 ? Math.min(100, Math.round(buildable / demand * 100)) : 100 };
+}
+
 // Tính lại bảng Đề xuất DLK theo NET = nổ BOM toàn bộ DKSX − tồn linh kiện − DLK đã cam kết.
 // Giữ nguyên DLK đã 'Đã đặt mua'/'Chờ xác nhận'/... ; chỉ thay các dòng còn 'Mới'.
 export async function recomputeProposals() {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { Loader2, RefreshCw, Factory, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
-import { loadBomMap, loadComponentStock, explodeBom, recomputeProposals } from '../../lib/dksxEngine';
+import { loadBomMap, loadComponentStockExclWip, recomputeProposals } from '../../lib/dksxEngine';
 
 const s = {
   btn: { display:'flex',alignItems:'center',gap:5,padding:'0.35rem 0.7rem',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',fontSize:'0.75rem',fontWeight:600,color:'#475569' },
@@ -22,12 +22,14 @@ export default function DKSXTab({ navigateTo, perms = { view: true, create: true
       const [{ data: demand }, bomMap, stockMap] = await Promise.all([
         db.from('production_demand').select('*').gt('qty_demand', 0).order('updated_at', { ascending: false }),
         loadBomMap(),
-        loadComponentStock(),
+        loadComponentStockExclWip(),
       ]);
 
       const formatted = (demand || []).map(d => {
         const N = Number(d.qty_demand) || 0;
-        const perUnit = explodeBom(bomMap, d.item_code, 1); // linh kiện / 1 thành phẩm
+        // BOM 1 cấp trực tiếp (khớp lệnh SX — KHÔNG nổ qua bán-thành-phẩm)
+        const perUnit = {};
+        (bomMap[d.item_code] || []).forEach(c => { perUnit[c.component] = (perUnit[c.component] || 0) + (Number(c.qty) || 0); });
         const comps = Object.keys(perUnit).map(c => {
           const required = perUnit[c] * N;
           const onHand = stockMap[c] || 0;

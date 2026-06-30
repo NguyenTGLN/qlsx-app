@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
 import { todayLocal } from '../../lib/dateUtils';
-import { recomputeProposals, loadBomMap, loadComponentStock, explodeBom, sendRetailProposals } from '../../lib/dksxEngine';
+import { recomputeProposals, loadBomMap, loadComponentStockExclWip, buildableNow, sendRetailProposals } from '../../lib/dksxEngine';
 
 const TABLE_COLS = ['urgency','san_pham','dvt','total_quantity','avg_monthly_sales','avg_daily','days_remaining','runout_date','safe_inventory','replenish_qty','de_xuat_sl','dlk_status','actions'];
 const COL_LABELS_MAP = { urgency:'Cảnh báo', san_pham:'Sản phẩm', dvt:'ĐVT', total_quantity:'Tổng Tồn', avg_monthly_sales:'TB Bán/Tháng', avg_daily:'TB Bán/Ngày', days_remaining:'Ngày Bán KD', runout_date:'Ngày cạn kho', safe_inventory:'Tồn An Toàn', replenish_qty:'Cần Bổ Sung', de_xuat_sl:'SL Đề xuất', dlk_status:'Đã đề xuất (SX/Mua)', actions:'Thao tác' };
@@ -55,7 +55,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
   const [proposedMap, setProposedMap] = useState({}); // { item_code: qty_demand } — SL đã đề xuất sang DKSX
   const [purchaseProposedMap, setPurchaseProposedMap] = useState({}); // { item_code: { qty, tien_do } } — đề xuất đặt mua (DLK) đang mở
   const [bomMap, setBomMap] = useState({}); // { product_code: [{component, qty}] } — để tính "làm được ngay"
-  const [compStock, setCompStock] = useState({}); // { item_code: tồn } — tồn linh kiện (đầy đủ, không lọc theo search)
+  const [compStock, setCompStock] = useState({}); // { item_code: tồn } — tồn linh kiện (né SX9, khớp lệnh SX)
   const [sortByProposal, setSortByProposal] = useState(false); // true = SL đề xuất > 0 lên đầu
   const [groupByType, setGroupByType] = useState(true);        // mặc định: nhóm Sản xuất (SX) trước → Đặt mua → còn lại
   const [groupOrder, setGroupOrder] = useState('sx');          // 'sx' = SX lên đầu | 'mua' = Đặt mua lên đầu
@@ -222,31 +222,22 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
     let alive = true;
     (async () => {
       try {
-        const [bm, sm] = await Promise.all([loadBomMap(), loadComponentStock()]);
+        const [bm, sm] = await Promise.all([loadBomMap(), loadComponentStockExclWip()]);
         if (alive) { setBomMap(bm); setCompStock(sm); }
       } catch (e) { console.warn('Không tải được BOM/tồn linh kiện để tính khả năng SX:', e.message); }
     })();
     return () => { alive = false; };
   }, []);
 
-  // Khả năng SX cho mỗi mã có nhu cầu DKSX: nổ BOM so với tồn linh kiện → SL làm được ngay (bottleneck) + %.
+  // Khả năng SX cho mỗi mã có nhu cầu DKSX — BOM 1 cấp trực tiếp + tồn né SX9 (khớp đúng lệnh sản xuất).
   const buildableMap = useMemo(() => {
     const out = {};
     if (!bomMap || Object.keys(bomMap).length === 0) return out;
     Object.keys(proposedMap).forEach(code => {
       const N = proposedMap[code];
       if (!(N > 0)) return;
-      const perUnit = explodeBom(bomMap, code, 1);
-      let buildable = N;
-      Object.keys(perUnit).forEach(leaf => {
-        const pu = perUnit[leaf];
-        if (pu > 0) {
-          const canBuild = Math.floor((compStock[leaf] || 0) / pu);
-          if (canBuild < buildable) buildable = canBuild;
-        }
-      });
-      buildable = Math.max(0, buildable);
-      out[code] = { buildable, feasibility: Math.min(100, Math.round(buildable / N * 100)) };
+      const r = buildableNow(bomMap, compStock, code, N);
+      if (r) out[code] = r;
     });
     return out;
   }, [bomMap, compStock, proposedMap]);
@@ -504,16 +495,15 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                       {(() => { const sxQty = proposedMap[row.item_code]; const buyInfo = purchaseProposedMap[row.item_code]; const bd = buildableMap[row.item_code]; const tdc = buyInfo ? (TIEN_DO_CFG[buyInfo.tien_do] || TIEN_DO_CFG['Mới']) : null; return (<>
                       {vis('dlk_status') && <td style={{padding:'0.4rem 0.5rem',textAlign:'left'}} onClick={e=>e.stopPropagation()}>
                         {sxQty > 0 ? (
-                          <div style={{display:'flex',flexDirection:'column',alignItems:'flex-start',gap:4}}>
-                            <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'0.18rem 0.5rem',borderRadius:6,fontSize:'0.65rem',fontWeight:700,background:'#eef2ff',color:'#4f46e5',border:'1px solid #c7d2fe',whiteSpace:'nowrap',cursor:'pointer'}}
-                              title="Đang đề xuất sản xuất — bấm để mở DKSX"
-                              onClick={() => navigateTo && navigateTo('dksx')}>
-                              🏭 ĐX SX: {sxQty.toLocaleString('vi-VN')}
-                            </span>
-                            {bd && <div title={`Làm được ngay ${bd.buildable.toLocaleString('vi-VN')} / ${sxQty.toLocaleString('vi-VN')} cần SX`} style={{position:'relative',width:110,height:15,background:'#e5e7eb',borderRadius:4,overflow:'hidden'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}}
+                            title={`Đề xuất SX ${sxQty.toLocaleString('vi-VN')}${bd ? ` · làm được ngay ${bd.buildable.toLocaleString('vi-VN')}` : ''} — bấm để mở DKSX`}
+                            onClick={() => navigateTo && navigateTo('dksx')}>
+                            <Factory size={14} style={{color:'#4f46e5',flexShrink:0}}/>
+                            {bd && <div style={{position:'relative',width:92,height:16,background:'#e5e7eb',borderRadius:4,overflow:'hidden',flexShrink:0}}>
                               <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${bd.feasibility}%`,background:pctColor(bd.feasibility)}}/>
                               <span style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'0.6rem',fontWeight:700,color:bd.feasibility>=50?'#fff':'#334155'}}>{bd.feasibility}%</span>
                             </div>}
+                            <span style={{fontSize:'0.72rem',fontWeight:700,color:'#4f46e5',whiteSpace:'nowrap'}}>{sxQty.toLocaleString('vi-VN')}</span>
                           </div>
                         ) : buyInfo && buyInfo.qty > 0 ? (
                           <div style={{display:'flex',flexDirection:'column',alignItems:'flex-start',gap:4}}>
