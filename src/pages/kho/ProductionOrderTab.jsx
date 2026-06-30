@@ -263,6 +263,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     if (!sxPrefill) return;
     setMode('production');
     setProdRows([{ id: ++__prodRowSeq, code: sxPrefill.item_code || '', name: '', qty: sxPrefill.qty ? Number(sxPrefill.qty) : 1 }]);
+    setShowProductionModal(true); // mở thẳng form Phiếu sản xuất (bỏ bước "Chọn loại phiếu xuất kho")
     if (onSxConsumed) onSxConsumed();
     // onSxConsumed cố tình bỏ khỏi deps: chỉ chạy khi sxPrefill đổi, tránh vòng lặp khi parent truyền hàm inline
     // eslint-disable-next-line react-hooks/exhaustive-deps
