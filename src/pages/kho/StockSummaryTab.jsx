@@ -197,14 +197,23 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
 
   // Fetch đề xuất đặt mua (DLK) đang mở → "ĐX mua" = SL đang đề xuất thực tế + tiến độ + thông tin để nhập kho.
   const fetchPurchaseProposed = useCallback(async () => {
-    const { data } = await db.from('purchase_proposals').select('item_code, actual_qty, tien_do, dlk_code, unit').eq('trang_thai', 'Mới').gt('actual_qty', 0);
+    const { data } = await db.from('purchase_proposals').select('item_code, actual_qty, calculated_qty, tien_do, dlk_code, unit').eq('trang_thai', 'Mới').gt('actual_qty', 0);
+    // Đã nhận theo dlk_code (từ du_lieu_nhap) để hiện "Đã nhận · Còn"
+    const dlkCodes = [...new Set((data || []).map(r => r.dlk_code).filter(Boolean))];
+    const recvByDlk = {};
+    if (dlkCodes.length) {
+      const { data: nhap } = await db.from('du_lieu_nhap').select('dlk_code, so_luong_nhap').in('dlk_code', dlkCodes);
+      (nhap || []).forEach(r => { if (r.dlk_code) recvByDlk[r.dlk_code] = (recvByDlk[r.dlk_code] || 0) + (Number(r.so_luong_nhap) || 0); });
+    }
     const map = {};
     (data || []).forEach(r => {
       const code = r.item_code;
       const td = r.tien_do || 'Mới';
       const rank = TIEN_DO_RANK[td] ?? 0;
-      if (!map[code]) map[code] = { qty: 0, tien_do: td, dlk_code: r.dlk_code, unit: r.unit, _maxRank: rank };
+      if (!map[code]) map[code] = { qty: 0, calculated: 0, received: 0, tien_do: td, dlk_code: r.dlk_code, unit: r.unit, _maxRank: rank };
       map[code].qty += (Number(r.actual_qty) || 0);
+      map[code].calculated += (Number(r.calculated_qty) || 0);
+      map[code].received += (recvByDlk[r.dlk_code] || 0);
       // Badge: giữ tiến độ "sớm nhất" (ít hoàn tất nhất) cho an toàn
       if (rank < (TIEN_DO_RANK[map[code].tien_do] ?? 99)) map[code].tien_do = td;
       // Nhập kho: nhắm dòng DLK tiến độ "xa nhất" (gần về kho nhất)
@@ -508,10 +517,15 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                         ) : buyInfo && buyInfo.qty > 0 ? (
                           <div style={{display:'flex',flexDirection:'column',alignItems:'flex-start',gap:4}}>
                             <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'0.18rem 0.5rem',borderRadius:6,fontSize:'0.65rem',fontWeight:700,background:'#fff7ed',color:'#ea580c',border:'1px solid #fed7aa',whiteSpace:'nowrap',cursor:'pointer'}}
-                              title="Đang có đề xuất đặt mua (DLK) — bấm để mở tab Đề xuất"
+                              title="Đề xuất đặt mua (DLK): ĐX = SL đề xuất · Đặt = SL đặt thực tế — bấm để mở tab Đề xuất"
                               onClick={() => navigateTo && navigateTo('de-xuat-dat-hang')}>
-                              🛒 ĐX mua: {buyInfo.qty.toLocaleString('vi-VN')}
+                              🛒 ĐX: {(buyInfo.calculated || 0).toLocaleString('vi-VN')} · Đặt: {buyInfo.qty.toLocaleString('vi-VN')}
                             </span>
+                            {buyInfo.received > 0 && (
+                              <span style={{fontSize:'0.6rem',color:'#64748b',whiteSpace:'nowrap'}}>
+                                Đã nhận {buyInfo.received.toLocaleString('vi-VN')} · Còn {Math.max(0, (buyInfo.calculated || 0) - buyInfo.received).toLocaleString('vi-VN')}
+                              </span>
+                            )}
                             <div style={{display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap'}}>
                               <span style={{fontSize:'0.62rem',color:'#94a3b8'}}>Tiến độ</span>
                               <span style={{fontSize:'0.6rem',fontWeight:700,padding:'0.05rem 6px',borderRadius:5,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`}}>{buyInfo.tien_do || 'Mới'}</span>
