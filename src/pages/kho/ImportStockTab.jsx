@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase as db } from '../../lib/supabase';
-import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, ShoppingCart, RefreshCw, XCircle, MoreHorizontal, ArrowLeft } from 'lucide-react';
+import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, ShoppingCart, RefreshCw, XCircle, MoreHorizontal, ArrowLeft, Archive } from 'lucide-react';
+import { closeProposalWithShortfall } from '../../lib/dksxEngine';
 
 const IMPORT_TYPES = [
   { id: 'Nhập mới', label: 'Nhập mới', icon: Plus, color: '#3b82f6' },
@@ -105,6 +106,8 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
   const [pasteCodes, setPasteCodes] = useState('');   // ô dán nhiều mã đơn cho Nhập hoàn/hủy
   const [openDlkList, setOpenDlkList] = useState([]);  // danh sách DLK đang mở để chọn (Nhập mua vào)
   const [allOrders, setAllOrders] = useState([]);
+  const [shortfallRows, setShortfallRows] = useState([]);   // các DLK vừa nhập còn thiếu so đề xuất → modal LC1/LC2
+  const [shortfallBusy, setShortfallBusy] = useState(false); // đang xử lý LC2
 
   const blockIdRef = useRef(1);
   const newBlockId = () => blockIdRef.current++;
@@ -529,15 +532,54 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
         if (error) console.error("Lỗi insert du_lieu_nhap:", error);
       }
 
+      // Xác định các DLK vừa nhập còn thiếu so với SL đề xuất (calculated_qty) → mở modal xử lý
+      let shortfall = [];
+      if (reason === 'Nhập mua vào') {
+        const dlkCodes = [...new Set(blocks.map(b => b.dlkCode).filter(Boolean))];
+        if (dlkCodes.length > 0) {
+          const { data: props } = await db.from('purchase_proposals')
+            .select('id, dlk_code, item_code, item_name, unit, calculated_qty, actual_qty, bom_qty, retail_qty, tien_do, trang_thai, source, note, ngay_de_xuat, ngay_du_kien, batch_id, created_at')
+            .in('dlk_code', dlkCodes);
+          const { data: nhapRows } = await db.from('du_lieu_nhap').select('dlk_code, so_luong_nhap').in('dlk_code', dlkCodes);
+          const recvMap = {};
+          (nhapRows || []).forEach(r => { if (r.dlk_code) recvMap[r.dlk_code] = (recvMap[r.dlk_code] || 0) + (Number(r.so_luong_nhap) || 0); });
+          shortfall = (props || [])
+            .map(p => ({ ...p, received: recvMap[p.dlk_code] || 0 }))
+            .filter(p => (p.received) < (Number(p.calculated_qty) || 0));
+        }
+      }
+
       setBlocks(initBlocksFor(reason));
       setPasteCodes('');
       alert(`Đã hoàn tất lưu chứng từ nhập kho ${orderCode}!\nHệ thống đã lưu trạng thái "Chưa in". Vui lòng xem ở tab Quản Lý Chứng Từ.`);
+      if (shortfall.length > 0) setShortfallRows(shortfall);
 
     } catch (e) {
       console.error(e);
       alert("Có lỗi xảy ra khi cập nhật kho: " + e.message);
     }
     setLoading(false);
+  };
+
+  // LC1: giữ đề xuất — chỉ đóng dòng trong modal (không đổi cấu trúc DB).
+  const handleKeepProposal = (id) => {
+    setShortfallRows(prev => prev.filter(r => r.id !== id));
+  };
+  // LC2: đóng đề xuất + lưu trữ + tạo/cộng dồn đề xuất mới cho phần thiếu.
+  const handleCloseAndReorder = async (row) => {
+    setShortfallBusy(true);
+    try {
+      const user = localStorage.getItem('qlsx_user') || 'Nhân viên';
+      const res = await closeProposalWithShortfall({ orig: row, received: row.received, archivedBy: user });
+      setShortfallRows(prev => prev.filter(r => r.id !== row.id));
+      alert(res.shortfall > 0
+        ? `Đã đóng ${row.dlk_code} (lưu trữ). Tạo đề xuất mới cho phần thiếu ${res.shortfall} → ${res.shortfallDlkCode}.`
+        : `Đã đóng & lưu trữ ${row.dlk_code}.`);
+    } catch (e) {
+      console.error(e);
+      alert('Lỗi đóng đề xuất: ' + e.message);
+    }
+    setShortfallBusy(false);
   };
 
   const s = {
@@ -934,6 +976,49 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
                   <Loader2 size={32} className="spin" color="#0891b2"/>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal xử lý đề xuất về thiếu (Req 3) */}
+      {shortfallRows.length > 0 && (
+        <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:120, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)', padding:'1rem'}}>
+          <div style={{background:'#fff', borderRadius:'1rem', boxShadow:'0 25px 50px -12px rgba(0,0,0,0.25)', width:'100%', maxWidth:640, maxHeight:'85vh', display:'flex', flexDirection:'column', overflow:'hidden'}}>
+            <div style={{padding:'1rem 1.5rem', borderBottom:'1px solid #e2e8f0', background:'#fff7ed'}}>
+              <h2 style={{margin:0, fontSize:'1rem', fontWeight:700, color:'#c2410c'}}>Đề xuất về thiếu — chọn cách xử lý</h2>
+              <p style={{margin:'4px 0 0', fontSize:'0.78rem', color:'#9a3412'}}>Số đã nhận nhỏ hơn SL đề xuất. Chọn cho từng dòng.</p>
+            </div>
+            <div style={{flex:1, overflow:'auto', padding:'1rem 1.25rem', display:'flex', flexDirection:'column', gap:'0.75rem'}}>
+              {shortfallRows.map(row => {
+                const con = Math.max(0, (Number(row.calculated_qty) || 0) - (Number(row.received) || 0));
+                const fullyOrdered = (Number(row.received) || 0) >= (Number(row.actual_qty) || 0);
+                return (
+                  <div key={row.id} style={{border:'1px solid #e2e8f0', borderRadius:10, padding:'0.75rem 0.9rem', background:'#f8fafc'}}>
+                    <div style={{fontWeight:700, color:'#0f172a', fontSize:'0.85rem'}}>{row.item_code} — <span style={{fontWeight:500, color:'#64748b'}}>{row.item_name}</span></div>
+                    <div style={{fontSize:'0.72rem', color:'#475569', margin:'4px 0 8px', display:'flex', flexWrap:'wrap', gap:'2px 14px'}}>
+                      <span>DLK: <b style={{color:'#7c3aed'}}>{row.dlk_code}</b></span>
+                      <span>Đề xuất: <b>{Number(row.calculated_qty).toLocaleString('vi-VN')}</b></span>
+                      <span>Đặt: <b>{Number(row.actual_qty).toLocaleString('vi-VN')}</b></span>
+                      <span>Đã nhận: <b style={{color:'#059669'}}>{Number(row.received).toLocaleString('vi-VN')}</b></span>
+                      <span>Còn thiếu (ĐX): <b style={{color:'#dc2626'}}>{con.toLocaleString('vi-VN')}</b></span>
+                    </div>
+                    <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                      <button onClick={()=>handleKeepProposal(row.id)} disabled={shortfallBusy}
+                        style={{...s.btn, padding:'7px 12px', fontSize:'0.78rem', background: fullyOrdered ? '#f1f5f9' : '#0ea5e9', color: fullyOrdered ? '#475569' : '#fff', border: fullyOrdered ? '1px solid #cbd5e1' : 'none'}}>
+                        Giữ đề xuất (còn {con.toLocaleString('vi-VN')}/{Number(row.calculated_qty).toLocaleString('vi-VN')})
+                      </button>
+                      <button onClick={()=>handleCloseAndReorder(row)} disabled={shortfallBusy}
+                        style={{...s.btn, padding:'7px 12px', fontSize:'0.78rem', background: fullyOrdered ? '#f59e0b' : '#fff7ed', color: fullyOrdered ? '#fff' : '#ea580c', border: fullyOrdered ? 'none' : '1px solid #fdba74'}}>
+                        {shortfallBusy ? <Loader2 size={14} className="spin"/> : <Archive size={14}/>} Đóng &amp; tạo ĐX mới cho phần thiếu
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{padding:'0.75rem 1.25rem', borderTop:'1px solid #e2e8f0', display:'flex', justifyContent:'flex-end'}}>
+              <button onClick={()=>setShortfallRows([])} disabled={shortfallBusy} style={{...s.btn, background:'#f1f5f9', color:'#64748b', padding:'8px 18px'}}>Để sau (giữ tất cả)</button>
             </div>
           </div>
         </div>
