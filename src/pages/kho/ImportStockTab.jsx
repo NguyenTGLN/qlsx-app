@@ -149,14 +149,21 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
     return newItems;
   };
 
-  // Tạo item từ một DLK đề xuất, điền sẵn SL đề xuất vào vị trí đầu
+  // Tạo item từ một DLK đề xuất. Trần nhập = SL đặt (actual_qty) − đã nhận (theo dlk_code).
+  // maxQty dùng chung cơ chế validate + hiển thị "Tối đa" sẵn có; điền sẵn import_qty = trần.
   const buildDlkItem = async (info) => {
-    const qty = Number(info.qty) || 0;
+    const ordered = Number(info.qty) || 0;
+    let received = 0;
+    if (info.dlk_code) {
+      const { data: nhap } = await db.from('du_lieu_nhap').select('so_luong_nhap').eq('dlk_code', info.dlk_code);
+      received = (nhap || []).reduce((sum, r) => sum + (Number(r.so_luong_nhap) || 0), 0);
+    }
+    const capMax = Math.max(0, ordered - received);
     const { data: stockData } = await db.from('inventory_stock').select('*').eq('item_code', info.item_code);
     let locations = (stockData || []).map(sx => ({ id: sx.id, location: sx.location || 'Kho Chính', current_qty: sx.quantity || 0, import_qty: 0 }));
-    if (locations.length > 0) locations[0].import_qty = qty;
-    else locations = [{ id: null, location: 'Kho Chính', current_qty: 0, import_qty: qty }];
-    return { code: info.item_code, name: info.item_name, unit: info.unit, locations, fromDlk: true };
+    if (locations.length > 0) locations[0].import_qty = capMax;
+    else locations = [{ id: null, location: 'Kho Chính', current_qty: 0, import_qty: capMax }];
+    return { code: info.item_code, name: info.item_name, unit: info.unit, locations, fromDlk: true, maxQty: capMax, dlkOrdered: ordered, dlkReceived: received };
   };
 
   // Luồng navigate từ tab Đề xuất (nút "Nhập") → mở "Nhập mua vào" với 1 khối DLK
@@ -165,7 +172,8 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
     (async () => {
       setReason('Nhập mua vào');
       const item = await buildDlkItem({
-        item_code: dlkPrefill.item_code, item_name: dlkPrefill.item_name, qty: dlkPrefill.qty, unit: dlkPrefill.unit
+        item_code: dlkPrefill.item_code, item_name: dlkPrefill.item_name, qty: dlkPrefill.qty, unit: dlkPrefill.unit,
+        dlk_code: dlkPrefill.dlk_code || ''
       });
       setBlocks([{ id: newBlockId(), sourceType: 'ncc', sourceValue: '', dlkCode: dlkPrefill.dlk_code || '', items: [item] }]);
       if (onDlkConsumed) onDlkConsumed();
@@ -234,7 +242,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
     }
     const found = openDlkList.find(d => d.dlk_code === code);
     if (!found) return;
-    const item = await buildDlkItem({ item_code: found.item_code, item_name: found.item_name, qty: found.actual_qty, unit: found.unit });
+    const item = await buildDlkItem({ item_code: found.item_code, item_name: found.item_name, qty: found.actual_qty, unit: found.unit, dlk_code: found.dlk_code });
     setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, dlkCode: code, items: [item] } : b));
   };
 
@@ -395,15 +403,17 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
     }
     if (!hasQuantity) return alert("Bạn chưa nhập số lượng nhập (phải > 0) cho vị trí nào cả!");
 
-    // Validate maxQty cho Nhập thành phẩm (theo từng phiếu SX)
-    if (reason === 'Nhập thành phẩm') {
-      for (const b of blocks) {
-        for (const item of b.items) {
-          if (item.selected === false) continue;
-          const total = item.locations.reduce((sum, loc) => sum + (parseFloat(loc.import_qty) || 0), 0);
-          if (item.maxQty !== undefined && total > item.maxQty) {
-            return alert(`Lỗi: Hàng hóa ${item.code} (phiếu ${b.sourceValue}) nhập quá số lượng cho phép!\nSố lượng tối đa: ${item.maxQty}\nSố lượng đang nhập: ${total}`);
-          }
+    // Validate trần SL cho mọi item có maxQty (Nhập thành phẩm theo phiếu SX; Nhập mua vào theo DLK: đặt − đã nhận)
+    for (const b of blocks) {
+      for (const item of b.items) {
+        if (item.selected === false) continue;
+        if (item.maxQty === undefined) continue;
+        const total = item.locations.reduce((sum, loc) => sum + (parseFloat(loc.import_qty) || 0), 0);
+        if (total > item.maxQty) {
+          const ctx = item.fromDlk
+            ? `DLK ${b.dlkCode || ''}: chỉ được nhập tối đa ${item.maxQty} (đã đặt ${item.dlkOrdered} − đã nhận ${item.dlkReceived}).`
+            : `phiếu ${b.sourceValue}: nhập quá số lượng cho phép! Tối đa ${item.maxQty}, đang nhập ${total}.`;
+          return alert(`Hàng hóa ${item.code} — ${ctx}`);
         }
       }
     }
