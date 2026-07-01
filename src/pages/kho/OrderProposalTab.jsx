@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase as db } from '../../lib/supabase';
-import { Loader2, RefreshCw, Download, Trash2, XCircle, ShoppingCart } from 'lucide-react';
+import { Loader2, RefreshCw, Download, Trash2, XCircle, ShoppingCart, Archive } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { computeNeededDates } from '../../lib/dksxEngine';
@@ -8,8 +8,8 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
 
 // Các cột data có thể ẩn/hiện (cột "#" và "Thao tác" luôn hiện)
-const TABLE_COLS = ['urgency','dlk_code','san_pham','unit','ngay_de_xuat','ngay_du_kien','needed_ts','calculated_qty','actual_qty','received','tien_do','note'];
-const COL_LABELS_MAP = { urgency:'Khẩn cấp', dlk_code:'Mã DLK', san_pham:'Sản phẩm', unit:'ĐVT', ngay_de_xuat:'Ngày ĐX', ngay_du_kien:'Dự kiến về', needed_ts:'Ngày cần về', calculated_qty:'SL ĐX', actual_qty:'SL Đặt', received:'Đã nhập', tien_do:'Tiến độ', note:'Ghi chú' };
+const TABLE_COLS = ['urgency','dlk_code','san_pham','unit','ngay_de_xuat','ngay_du_kien','needed_ts','calculated_qty','actual_qty','received','con_lai','tien_do','note'];
+const COL_LABELS_MAP = { urgency:'Khẩn cấp', dlk_code:'Mã DLK', san_pham:'Sản phẩm', unit:'ĐVT', ngay_de_xuat:'Ngày ĐX', ngay_du_kien:'Dự kiến về', needed_ts:'Ngày cần về', calculated_qty:'SL ĐX', actual_qty:'SL Đặt', received:'Đã nhập', con_lai:'Còn lại (ĐX)', tien_do:'Tiến độ', note:'Ghi chú' };
 
 const TIEN_DO_OPTIONS = ['Mới','Chờ duyệt','Đã đặt','Đang vận chuyển','Đã về kho'];
 // Mỗi tiến độ một màu riêng (dùng cho dropdown + bộ lọc)
@@ -45,6 +45,9 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [filterStatus, setFilterStatus] = useState('active'); // 'active' | 'all' | 'done'
+  const [archiveOpen, setArchiveOpen] = useState(false);   // modal xem lưu trữ
+  const [archiveRows, setArchiveRows] = useState([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
   const [filterTienDo, setFilterTienDo] = useState('all'); // 'all' | một giá trị trong TIEN_DO_OPTIONS
   const [sortCol, setSortCol] = useState(null); // cột đang sắp xếp (null = giữ thứ tự gốc)
   const [sortAsc, setSortAsc] = useState(true);
@@ -185,6 +188,14 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
     if (navigateTo) navigateTo('nhap-kho', { dlk: { dlk_code: row.dlk_code, item_code: row.item_code, item_name: row.item_name, qty: row.actual_qty, unit: row.unit } });
   };
 
+  const openArchive = async () => {
+    setArchiveOpen(true);
+    setArchiveLoading(true);
+    const { data } = await db.from('purchase_proposals_archive').select('*').order('archived_at', { ascending: false }).limit(500);
+    setArchiveRows(data || []);
+    setArchiveLoading(false);
+  };
+
   const handleExport = () => {
     const data = rows.map((r, i) => ({
       'STT': i + 1,
@@ -227,6 +238,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
       case 'calculated_qty': return Number(r.calculated_qty) || 0;
       case 'actual_qty': return Number(r.actual_qty) || 0;
       case 'received': return Number(r.received) || 0;
+      case 'con_lai': return Math.max(0, (Number(r.calculated_qty) || 0) - (Number(r.received) || 0));
       default: return r[col];
     }
   };
@@ -287,6 +299,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
           <RefreshCw size={15} style={{animation:loading?'spin 1s linear infinite':'none',color:'#7c3aed'}}/>
         </button>
         <button onClick={handleExport} disabled={rows.length===0} style={{...s.btn,color:'#059669',flexShrink:0}}><Download size={14}/>Excel</button>
+        <button onClick={openArchive} style={{...s.btn,color:'#b45309',flexShrink:0}}><Archive size={14}/>Lưu trữ</button>
         <ColumnToggleModal columns={TABLE_COLS} labels={COL_LABELS_MAP} hiddenCols={hiddenCols} setHiddenCols={setHiddenCols} />
       </div>
 
@@ -312,6 +325,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                   {vis('calculated_qty') && <th onClick={()=>handleSort('calculated_qty')} style={{...sortTh(sortCol==='calculated_qty'),textAlign:'right'}}>SL ĐX{sortInd('calculated_qty')}</th>}
                   {vis('actual_qty') && <th onClick={()=>handleSort('actual_qty')} style={{...sortTh(sortCol==='actual_qty'),textAlign:'right'}}>SL Đặt{sortInd('actual_qty')}</th>}
                   {vis('received') && <th onClick={()=>handleSort('received')} style={{...sortTh(sortCol==='received'),textAlign:'right'}}>Đã nhập{sortInd('received')}</th>}
+                  {vis('con_lai') && <th onClick={()=>handleSort('con_lai')} style={{...sortTh(sortCol==='con_lai'),textAlign:'right'}}>Còn lại (ĐX){sortInd('con_lai')}</th>}
                   {vis('tien_do') && <th onClick={()=>handleSort('tien_do')} style={sortTh(sortCol==='tien_do')}>Tiến độ{sortInd('tien_do')}</th>}
                   {vis('note') && <th style={th}>Ghi chú</th>}
                   <th style={th}>Thao tác</th>
@@ -340,7 +354,10 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                       </td>}
                       {vis('dlk_code') && <td style={{...td,fontWeight:700,color:'#7c3aed',whiteSpace:'nowrap'}}>{row.dlk_code}</td>}
                       {vis('san_pham') && <td style={{...td,textAlign:'left'}}>
-                        <div style={{fontWeight:600,color:'#0284c7'}}>{row.item_code}</div>
+                        <div style={{fontWeight:600,color:'#0284c7'}}>
+                          {row.item_code}
+                          {row.source === 'shortfall' && <span title="Đề xuất tạo cho phần thiếu" style={{marginLeft:6,fontSize:'0.58rem',fontWeight:700,color:'#b45309',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:4,padding:'0 4px'}}>⤷ phần thiếu</span>}
+                        </div>
                         <div style={{fontSize:'0.66rem',color:'#64748b',fontStyle:'italic'}}>{row.item_name}</div>
                       </td>}
                       {vis('unit') && <td style={{...td,color:'#64748b'}}>{row.unit}</td>}
@@ -363,6 +380,11 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                       {vis('received') && <td style={{...td,textAlign:'right',fontWeight:700,color: row.received>0?'#059669':'#94a3b8'}}>
                         {row.received > 0 ? row.received.toLocaleString('vi-VN') : '—'}
                       </td>}
+                      {vis('con_lai') && (() => { const con = Math.max(0, (Number(row.calculated_qty)||0) - (Number(row.received)||0)); return (
+                        <td style={{...td,textAlign:'right',fontWeight:700,color: con>0?'#dc2626':'#94a3b8'}}>
+                          {con.toLocaleString('vi-VN')}
+                        </td>
+                      ); })()}
                       {vis('tien_do') && <td style={{...td}}>
                         <select value={row.tien_do||'Mới'} disabled={isDone || !perms.edit}
                           onChange={e=>{const v=e.target.value; handleUpdateRow(row.id,'tien_do',v); flushSave(row,{tien_do:v});}}
@@ -409,6 +431,49 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
         </span>
         {saving && <span style={{fontSize:'0.75rem',color:'#7c3aed',display:'flex',alignItems:'center',gap:4}}><Loader2 size={12} style={{animation:'spin 1s linear infinite'}}/>Đang lưu...</span>}
       </div>
+
+      {archiveOpen && (
+        <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:120, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem'}} onClick={()=>setArchiveOpen(false)}>
+          <div style={{background:'#fff', borderRadius:'0.75rem', width:'100%', maxWidth:900, maxHeight:'85vh', display:'flex', flexDirection:'column', overflow:'hidden'}} onClick={e=>e.stopPropagation()}>
+            <div style={{padding:'0.85rem 1.25rem', borderBottom:'1px solid #e2e8f0', background:'#fffbeb', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <h2 style={{margin:0, fontSize:'0.95rem', fontWeight:700, color:'#b45309'}}>Đề xuất đã lưu trữ (đóng do về thiếu)</h2>
+              <button onClick={()=>setArchiveOpen(false)} style={{background:'none', border:'none', color:'#94a3b8', cursor:'pointer', fontSize:'1.1rem'}}>✕</button>
+            </div>
+            <div style={{flex:1, overflow:'auto'}}>
+              {archiveLoading ? (
+                <div style={{padding:'2rem', textAlign:'center', color:'#94a3b8'}}><Loader2 size={22} style={{animation:'spin 1s linear infinite'}}/></div>
+              ) : archiveRows.length === 0 ? (
+                <div style={{padding:'2rem', textAlign:'center', color:'#94a3b8', fontWeight:600}}>Chưa có đề xuất nào được lưu trữ.</div>
+              ) : (
+                <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.72rem'}}>
+                  <thead>
+                    <tr style={{background:'#fffbeb', position:'sticky', top:0}}>
+                      {['DLK gốc','Mã HH','ĐX','Đặt','Đã nhận','Ngày đóng','Người đóng','Lý do','DLK phần thiếu'].map(h=>(
+                        <th key={h} style={{padding:'0.4rem 0.5rem', borderBottom:'2px solid #fde68a', color:'#92400e', fontWeight:700, whiteSpace:'nowrap'}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {archiveRows.map(a => (
+                      <tr key={a.id} style={{borderBottom:'1px solid #f1f5f9'}}>
+                        <td style={{padding:'0.35rem 0.5rem', fontWeight:700, color:'#7c3aed', whiteSpace:'nowrap'}}>{a.dlk_code}</td>
+                        <td style={{padding:'0.35rem 0.5rem'}}>{a.item_code}</td>
+                        <td style={{padding:'0.35rem 0.5rem', textAlign:'right'}}>{Number(a.calculated_qty||0).toLocaleString('vi-VN')}</td>
+                        <td style={{padding:'0.35rem 0.5rem', textAlign:'right'}}>{Number(a.actual_qty||0).toLocaleString('vi-VN')}</td>
+                        <td style={{padding:'0.35rem 0.5rem', textAlign:'right', color:'#059669', fontWeight:700}}>{Number(a.received_snapshot||0).toLocaleString('vi-VN')}</td>
+                        <td style={{padding:'0.35rem 0.5rem', whiteSpace:'nowrap'}}>{a.archived_at ? new Date(a.archived_at).toLocaleString('vi-VN') : '—'}</td>
+                        <td style={{padding:'0.35rem 0.5rem'}}>{a.archived_by || '—'}</td>
+                        <td style={{padding:'0.35rem 0.5rem'}}>{a.archive_reason || '—'}</td>
+                        <td style={{padding:'0.35rem 0.5rem', fontWeight:700, color:'#b45309', whiteSpace:'nowrap'}}>{a.shortfall_dlk_code || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
