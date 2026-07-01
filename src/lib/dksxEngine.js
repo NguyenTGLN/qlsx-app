@@ -1,5 +1,6 @@
 import { supabase as db } from './supabase';
 import { todayLocal } from './dateUtils';
+import { classifyProposalRows, buildShortfallProposalRow, buildArchiveRow, computeShortfall } from './proposalQty';
 
 function makeDlkDate() {
   const d = new Date();
@@ -125,13 +126,9 @@ export async function recomputeProposals() {
 
   // Tất cả dòng DLK: committed (đã đặt) để trừ nhu cầu; map dòng 'Mới' theo item_code (≤1/mã sau migration)
   const { data: dlkAll } = await db.from('purchase_proposals')
-    .select('id, item_code, actual_qty, bom_qty, retail_qty, trang_thai');
-  const committed = {};
-  const openByCode = {};
-  (dlkAll || []).forEach(r => {
-    if (r.trang_thai === 'Mới') openByCode[r.item_code] = r;
-    else if (r.trang_thai !== 'Hủy') committed[r.item_code] = (committed[r.item_code] || 0) + (Number(r.actual_qty) || 0);
-  });
+    .select('id, item_code, actual_qty, bom_qty, retail_qty, trang_thai, source');
+  // Phân loại: dòng 'shortfall' được ghim (committed, không vào openByCode) → engine không xóa/không tạo trùng.
+  const { committed, openByCode } = classifyProposalRows(dlkAll);
 
   // Net bom need / linh kiện lá (bỏ mã còn là thành phẩm có BOM)
   const bomNeed = {};
@@ -195,6 +192,45 @@ export async function recomputeProposals() {
     await db.from('purchase_proposals').insert(rows);
   }
   return { created: toCreate.length };
+}
+
+// Đóng 1 đề xuất khi hàng về thiếu (chọn LC2 ở modal Nhập kho):
+//  1) lưu bản ghi vào purchase_proposals_archive (kèm received_snapshot),
+//  2) tạo/cộng dồn đề xuất mới cho phần thiếu (source='shortfall', được engine ghim),
+//  3) xóa dòng gốc khỏi purchase_proposals.
+// `orig` = đối tượng đề xuất gốc (đủ cột), `received` = tổng đã nhận, `archivedBy` = user.
+export async function closeProposalWithShortfall({ orig, received, archivedBy }) {
+  const shortfall = computeShortfall(orig.calculated_qty, received);
+  let shortfallDlkCode = null;
+
+  if (shortfall > 0) {
+    // Cộng dồn vào dòng phần thiếu 'Mới' sẵn có cùng mã (nếu có) — tránh tạo nhiều DLK phần thiếu cho 1 mã.
+    const { data: existing } = await db.from('purchase_proposals')
+      .select('id, dlk_code, calculated_qty')
+      .eq('item_code', orig.item_code)
+      .eq('source', 'shortfall')
+      .eq('trang_thai', 'Mới')
+      .neq('id', orig.id)
+      .limit(1);
+    if (existing && existing.length > 0) {
+      const ex = existing[0];
+      const newQty = (Number(ex.calculated_qty) || 0) + shortfall;
+      await db.from('purchase_proposals').update({
+        bom_qty: newQty, calculated_qty: newQty, actual_qty: newQty,
+      }).eq('id', ex.id);
+      shortfallDlkCode = ex.dlk_code;
+    } else {
+      const { prefix, seq } = await nextDlkSeq();
+      shortfallDlkCode = `${prefix}${String(seq + 1).padStart(2, '0')}`;
+      const row = buildShortfallProposalRow({ orig, received, dlkCode: shortfallDlkCode, today: todayLocal() });
+      await db.from('purchase_proposals').insert(row);
+    }
+  }
+
+  const archiveRow = buildArchiveRow({ orig, received, archivedBy, shortfallDlkCode, archiveReason: 'Đóng do về thiếu' });
+  await db.from('purchase_proposals_archive').insert(archiveRow);
+  await db.from('purchase_proposals').delete().eq('id', orig.id);
+  return { shortfallDlkCode, shortfall };
 }
 
 // Đề xuất MUA THẲNG cho mã bán lẻ (không BOM + có xuất bán): đi thẳng vào purchase_proposals,
