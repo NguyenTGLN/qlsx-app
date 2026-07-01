@@ -215,21 +215,26 @@ export async function closeProposalWithShortfall({ orig, received, archivedBy })
     if (existing && existing.length > 0) {
       const ex = existing[0];
       const newQty = (Number(ex.calculated_qty) || 0) + shortfall;
-      await db.from('purchase_proposals').update({
+      const { error: upErr } = await db.from('purchase_proposals').update({
         bom_qty: newQty, calculated_qty: newQty, actual_qty: newQty,
       }).eq('id', ex.id);
+      if (upErr) throw upErr;
       shortfallDlkCode = ex.dlk_code;
     } else {
       const { prefix, seq } = await nextDlkSeq();
       shortfallDlkCode = `${prefix}${String(seq + 1).padStart(2, '0')}`;
       const row = buildShortfallProposalRow({ orig, received, dlkCode: shortfallDlkCode, today: todayLocal() });
-      await db.from('purchase_proposals').insert(row);
+      const { error: insErr } = await db.from('purchase_proposals').insert(row);
+      if (insErr) throw insErr;
     }
   }
 
+  // Lưu trữ TRƯỚC, xóa gốc SAU — chặn xóa nếu lưu trữ lỗi (VD chưa chạy migration) để KHÔNG mất dữ liệu.
   const archiveRow = buildArchiveRow({ orig, received, archivedBy, shortfallDlkCode, archiveReason: 'Đóng do về thiếu' });
-  await db.from('purchase_proposals_archive').insert(archiveRow);
-  await db.from('purchase_proposals').delete().eq('id', orig.id);
+  const { error: archErr } = await db.from('purchase_proposals_archive').insert(archiveRow);
+  if (archErr) throw archErr;
+  const { error: delErr } = await db.from('purchase_proposals').delete().eq('id', orig.id);
+  if (delErr) throw delErr;
   return { shortfallDlkCode, shortfall };
 }
 
@@ -241,10 +246,12 @@ export async function sendRetailProposals(items) {
   if (valid.length === 0) return { created: 0, updated: 0, skippedSmaller: 0 };
 
   const codes = [...new Set(valid.map(it => it.item_code))];
-  // Dòng 'Mới' theo item_code (mọi nguồn — giờ ≤1 dòng/mã)
+  // Dòng 'Mới' theo item_code (mọi nguồn — giờ ≤1 dòng/mã).
+  // KHÔNG lấy dòng source='shortfall' (đã ghim): nếu không, đề xuất bán lẻ sẽ hijack + đổi source → mất ghim.
   const { data: openRows } = await db.from('purchase_proposals')
     .select('id, item_code, bom_qty, retail_qty')
     .eq('trang_thai', 'Mới')
+    .neq('source', 'shortfall')
     .in('item_code', codes);
   const openMap = {};
   (openRows || []).forEach(r => { openMap[r.item_code] = r; });

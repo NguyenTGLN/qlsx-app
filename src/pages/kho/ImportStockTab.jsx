@@ -245,6 +245,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
     }
     const found = openDlkList.find(d => d.dlk_code === code);
     if (!found) return;
+    if (blocks.some(b => b.id !== blockId && b.dlkCode === code)) { alert('DLK này đã được chọn ở khối khác — tránh nhập trùng vượt trần.'); return; }
     const item = await buildDlkItem({ item_code: found.item_code, item_name: found.item_name, qty: found.actual_qty, unit: found.unit, dlk_code: found.dlk_code });
     setBlocks(prev => prev.map(b => b.id === blockId ? { ...b, dlkCode: code, items: [item] } : b));
   };

@@ -210,10 +210,11 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
       const code = r.item_code;
       const td = r.tien_do || 'Mới';
       const rank = TIEN_DO_RANK[td] ?? 0;
-      if (!map[code]) map[code] = { qty: 0, calculated: 0, received: 0, tien_do: td, dlk_code: r.dlk_code, unit: r.unit, _maxRank: rank };
+      if (!map[code]) map[code] = { qty: 0, calculated: 0, received: 0, count: 0, tien_do: td, dlk_code: r.dlk_code, unit: r.unit, _maxRank: rank };
       map[code].qty += (Number(r.actual_qty) || 0);
       map[code].calculated += (Number(r.calculated_qty) || 0);
       map[code].received += (recvByDlk[r.dlk_code] || 0);
+      map[code].count += 1;
       // Badge: giữ tiến độ "sớm nhất" (ít hoàn tất nhất) cho an toàn
       if (rank < (TIEN_DO_RANK[map[code].tien_do] ?? 99)) map[code].tien_do = td;
       // Nhập kho: nhắm dòng DLK tiến độ "xa nhất" (gần về kho nhất)
@@ -267,6 +268,12 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
   const handleReceiveStock = (row) => {
     const info = purchaseProposedMap[row.item_code];
     if (!info) return;
+    // Mã có nhiều DLK đang mở: trần gộp (Σ actual_qty, 1 dlk_code) sẽ sai → mở tab Đề xuất để nhập theo từng DLK.
+    if (info.count > 1) {
+      alert('Mã này đang có nhiều đề xuất (DLK) mở — hãy vào tab Đề xuất và bấm "Nhập" theo từng DLK cho đúng số đã đặt.');
+      if (navigateTo) navigateTo('de-xuat-dat-hang');
+      return;
+    }
     if (navigateTo) navigateTo('nhap-kho', { dlk: { dlk_code: info.dlk_code || '', item_code: row.item_code, item_name: row.item_name, qty: info.qty, unit: info.unit || row.unit } });
   };
 
