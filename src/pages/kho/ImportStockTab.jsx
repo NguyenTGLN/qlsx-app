@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, ShoppingCart, RefreshCw, XCircle, MoreHorizontal, ArrowLeft, Archive } from 'lucide-react';
 import { closeProposalWithShortfall } from '../../lib/dksxEngine';
+import { dlkImportCap } from '../../lib/proposalQty';
 
 const IMPORT_TYPES = [
   { id: 'Nhập mới', label: 'Nhập mới', icon: Plus, color: '#3b82f6' },
@@ -156,12 +157,12 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, perms = { vi
   // maxQty dùng chung cơ chế validate + hiển thị "Tối đa" sẵn có; điền sẵn import_qty = trần.
   const buildDlkItem = async (info) => {
     const ordered = Number(info.qty) || 0;
-    let received = 0;
+    let nhapRows = [];
     if (info.dlk_code) {
-      const { data: nhap } = await db.from('du_lieu_nhap').select('so_luong_nhap').eq('dlk_code', info.dlk_code);
-      received = (nhap || []).reduce((sum, r) => sum + (Number(r.so_luong_nhap) || 0), 0);
+      const { data } = await db.from('du_lieu_nhap').select('so_luong_nhap').eq('dlk_code', info.dlk_code);
+      nhapRows = data || [];
     }
-    const capMax = Math.max(0, ordered - received);
+    const { received, capMax } = dlkImportCap(ordered, nhapRows);
     const { data: stockData } = await db.from('inventory_stock').select('*').eq('item_code', info.item_code);
     let locations = (stockData || []).map(sx => ({ id: sx.id, location: sx.location || 'Kho Chính', current_qty: sx.quantity || 0, import_qty: 0 }));
     if (locations.length > 0) locations[0].import_qty = capMax;

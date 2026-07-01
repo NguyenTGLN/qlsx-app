@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeCap, computeShortfall, classifyProposalRows,
-  buildShortfallProposalRow, buildArchiveRow,
+  buildShortfallProposalRow, buildArchiveRow, dlkImportCap,
 } from './proposalQty';
 
 describe('computeCap', () => {
@@ -21,6 +21,21 @@ describe('computeShortfall', () => {
     expect(computeShortfall(1000, 500)).toBe(500);
     expect(computeShortfall(1000, 1000)).toBe(0);
     expect(computeShortfall(1000, 1500)).toBe(0);
+  });
+});
+
+describe('dlkImportCap — kịch bản nhập nhiều lần (đặt 527)', () => {
+  it('lần 1: chưa nhận gì → trần = 527', () => {
+    expect(dlkImportCap(527, [])).toEqual({ received: 0, capMax: 527 });
+  });
+  it('lần 2: đã nhận 327 → trần = 200 (KHÔNG cho nhập 527)', () => {
+    expect(dlkImportCap(527, [{ so_luong_nhap: 327 }])).toEqual({ received: 327, capMax: 200 });
+  });
+  it('lần 3: đã nhận 327+200 = 527 → trần = 0', () => {
+    expect(dlkImportCap(527, [{ so_luong_nhap: 327 }, { so_luong_nhap: 200 }])).toEqual({ received: 527, capMax: 0 });
+  });
+  it('cộng dồn nhiều dòng du_lieu_nhap + né giá trị rỗng', () => {
+    expect(dlkImportCap(1000, [{ so_luong_nhap: 100 }, { so_luong_nhap: null }, { so_luong_nhap: 250 }])).toEqual({ received: 350, capMax: 650 });
   });
 });
 

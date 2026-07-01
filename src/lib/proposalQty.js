@@ -13,6 +13,13 @@ export function computeShortfall(calculatedQty, received) {
   return Math.max(0, num(calculatedQty) - num(received));
 }
 
+// Trần nhập kho cho 1 DLK: cộng tổng đã nhận (các dòng du_lieu_nhap) rồi trừ khỏi SL đặt.
+// Trả { received, capMax }. Dùng ở ImportStockTab.buildDlkItem — mỗi lần mở phiếu tính lại từ đầu.
+export function dlkImportCap(orderedQty, receivedRows) {
+  const received = (receivedRows || []).reduce((s, r) => s + num(r && r.so_luong_nhap), 0);
+  return { received, capMax: computeCap(orderedQty, received) };
+}
+
 // Phân loại dòng purchase_proposals cho recomputeProposals:
 //  - Hủy: bỏ qua
 //  - source='shortfall': "ghim" — cộng vào committed, KHÔNG vào openByCode (engine không đụng)
