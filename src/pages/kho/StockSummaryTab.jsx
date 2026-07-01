@@ -277,6 +277,14 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
     if (navigateTo) navigateTo('nhap-kho', { dlk: { dlk_code: info.dlk_code || '', item_code: row.item_code, item_name: row.item_name, qty: info.qty, unit: info.unit || row.unit } });
   };
 
+  // Cập nhật tiến độ đặt mua ngay tại badge Tồn HH (chỉ khi mã có đúng 1 DLK — tránh mơ hồ nhiều dòng).
+  const handleUpdateTienDo = async (dlkCode, newTienDo) => {
+    if (!dlkCode) return;
+    const { error } = await db.from('purchase_proposals').update({ tien_do: newTienDo }).eq('dlk_code', dlkCode);
+    if (error) { alert('Lỗi cập nhật tiến độ: ' + error.message); return; }
+    fetchPurchaseProposed();
+  };
+
   const handleSort = (col) => {
     setSortByProposal(false); // sort cột thường → tắt ưu tiên SL đề xuất
     setGroupByType(false);    // và tắt nhóm SX/Mua
@@ -535,7 +543,18 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                             )}
                             <div style={{display:'flex',alignItems:'center',gap:5,whiteSpace:'nowrap'}}>
                               <span style={{fontSize:'0.62rem',color:'#94a3b8'}}>Tiến độ</span>
-                              <span style={{fontSize:'0.6rem',fontWeight:700,padding:'0.05rem 6px',borderRadius:5,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`}}>{buyInfo.tien_do || 'Mới'}</span>
+                              {(perms.edit && buyInfo.count === 1) ? (
+                                <select value={buyInfo.tien_do || 'Mới'} onClick={e=>e.stopPropagation()}
+                                  onChange={e=>handleUpdateTienDo(buyInfo.dlk_code, e.target.value)}
+                                  title="Đổi tiến độ đặt mua trực tiếp"
+                                  style={{fontSize:'0.6rem',fontWeight:700,padding:'0.05rem 4px',borderRadius:5,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`,cursor:'pointer',outline:'none'}}>
+                                  {Object.keys(TIEN_DO_CFG).map(o=><option key={o} value={o} style={{background:'#fff',color:'#334155',fontWeight:600}}>{o}</option>)}
+                                </select>
+                              ) : (
+                                <span onClick={buyInfo.count>1 ? (()=>navigateTo && navigateTo('de-xuat-dat-hang')) : undefined}
+                                  title={buyInfo.count>1 ? 'Mã có nhiều DLK — mở tab Đề xuất để sửa tiến độ từng dòng' : undefined}
+                                  style={{fontSize:'0.6rem',fontWeight:700,padding:'0.05rem 6px',borderRadius:5,background:tdc.bg,color:tdc.color,border:`1px solid ${tdc.border}`,cursor:buyInfo.count>1?'pointer':'default'}}>{buyInfo.tien_do || 'Mới'}{buyInfo.count>1?' ⋯':''}</span>
+                              )}
                             </div>
                           </div>
                         ) : <span style={{color:'#cbd5e1',fontSize:'0.68rem'}}>—</span>}
