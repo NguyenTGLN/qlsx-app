@@ -41,8 +41,9 @@ export function classifyProposalRows(rows) {
 }
 
 // Dòng purchase_proposals mới cho phần thiếu (đề xuất mới), nhãn source='shortfall' để engine ghim.
+// Phần thiếu tính theo SL ĐẶT (actual_qty) — số đã đặt mà chưa nhận đủ.
 export function buildShortfallProposalRow({ orig, received, dlkCode, today }) {
-  const shortfall = computeShortfall(orig.calculated_qty, received);
+  const shortfall = computeShortfall(orig.actual_qty, received);
   return {
     dlk_code: dlkCode,
     item_code: orig.item_code,
@@ -56,7 +57,7 @@ export function buildShortfallProposalRow({ orig, received, dlkCode, today }) {
     tien_do: 'Mới',
     trang_thai: 'Mới',
     source: 'shortfall',
-    note: `Tách từ ${orig.dlk_code} do về thiếu (đã nhận ${num(received)}/${num(orig.calculated_qty)})`,
+    note: `Tách từ ${orig.dlk_code} do về thiếu (đã nhận ${num(received)}/${num(orig.actual_qty)})`,
   };
 }
 

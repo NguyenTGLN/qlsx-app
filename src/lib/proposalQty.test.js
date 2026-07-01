@@ -79,7 +79,7 @@ describe('classifyProposalRows', () => {
 
 describe('buildShortfallProposalRow', () => {
   it('dựng dòng phần thiếu đúng số + nhãn source', () => {
-    const orig = { dlk_code: 'DLK-010726-01', item_code: 'X', item_name: 'Cái X', unit: 'Cái', calculated_qty: 1000 };
+    const orig = { dlk_code: 'DLK-010726-01', item_code: 'X', item_name: 'Cái X', unit: 'Cái', calculated_qty: 800, actual_qty: 1000 };
     const row = buildShortfallProposalRow({ orig, received: 500, dlkCode: 'DLK-010726-09', today: '2026-07-01' });
     expect(row.calculated_qty).toBe(500);
     expect(row.actual_qty).toBe(500);

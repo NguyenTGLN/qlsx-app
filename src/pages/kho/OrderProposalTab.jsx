@@ -9,7 +9,7 @@ import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
 
 // Các cột data có thể ẩn/hiện (cột "#" và "Thao tác" luôn hiện)
 const TABLE_COLS = ['urgency','dlk_code','san_pham','unit','ngay_de_xuat','ngay_du_kien','needed_ts','calculated_qty','actual_qty','received','con_lai','tien_do','note'];
-const COL_LABELS_MAP = { urgency:'Khẩn cấp', dlk_code:'Mã DLK', san_pham:'Sản phẩm', unit:'ĐVT', ngay_de_xuat:'Ngày ĐX', ngay_du_kien:'Dự kiến về', needed_ts:'Ngày cần về', calculated_qty:'SL ĐX', actual_qty:'SL Đặt', received:'Đã nhập', con_lai:'Còn lại (ĐX)', tien_do:'Tiến độ', note:'Ghi chú' };
+const COL_LABELS_MAP = { urgency:'Khẩn cấp', dlk_code:'Mã DLK', san_pham:'Sản phẩm', unit:'ĐVT', ngay_de_xuat:'Ngày ĐX', ngay_du_kien:'Dự kiến về', needed_ts:'Ngày cần về', calculated_qty:'SL ĐX', actual_qty:'SL Đặt', received:'Đã nhập', con_lai:'Còn lại', tien_do:'Tiến độ', note:'Ghi chú' };
 
 const TIEN_DO_OPTIONS = ['Mới','Chờ duyệt','Đã đặt','Đang vận chuyển','Đã về kho'];
 // Mỗi tiến độ một màu riêng (dùng cho dropdown + bộ lọc)
@@ -44,13 +44,13 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [filterStatus, setFilterStatus] = useState('active'); // 'active' | 'all' | 'done'
+  const [filterStatus, setFilterStatus] = usePersistedState('orderProposal_filterStatus', 'active'); // 'active' | 'all' | 'done'
   const [archiveOpen, setArchiveOpen] = useState(false);   // modal xem lưu trữ
   const [archiveRows, setArchiveRows] = useState([]);
   const [archiveLoading, setArchiveLoading] = useState(false);
-  const [filterTienDo, setFilterTienDo] = useState('all'); // 'all' | một giá trị trong TIEN_DO_OPTIONS
-  const [sortCol, setSortCol] = useState(null); // cột đang sắp xếp (null = giữ thứ tự gốc)
-  const [sortAsc, setSortAsc] = useState(true);
+  const [filterTienDo, setFilterTienDo] = usePersistedState('orderProposal_filterTienDo', 'all'); // 'all' | một giá trị trong TIEN_DO_OPTIONS
+  const [sortCol, setSortCol] = usePersistedState('orderProposal_sortCol', null); // cột đang sắp xếp (null = giữ thứ tự gốc)
+  const [sortAsc, setSortAsc] = usePersistedState('orderProposal_sortAsc', true);
   // Ẩn/hiện cột — lưu localStorage, mặc định hiện hết
   const [hiddenCols, setHiddenCols] = usePersistedState('orderProposal_hiddenCols', new Set());
   // Theo dõi các lệnh lưu đang bay (để Làm mới chờ chúng commit trước khi đọc lại DB)
@@ -238,7 +238,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
       case 'calculated_qty': return Number(r.calculated_qty) || 0;
       case 'actual_qty': return Number(r.actual_qty) || 0;
       case 'received': return Number(r.received) || 0;
-      case 'con_lai': return Math.max(0, (Number(r.calculated_qty) || 0) - (Number(r.received) || 0));
+      case 'con_lai': return Math.max(0, (Number(r.actual_qty) || 0) - (Number(r.received) || 0));
       default: return r[col];
     }
   };
@@ -325,7 +325,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                   {vis('calculated_qty') && <th onClick={()=>handleSort('calculated_qty')} style={{...sortTh(sortCol==='calculated_qty'),textAlign:'right'}}>SL ĐX{sortInd('calculated_qty')}</th>}
                   {vis('actual_qty') && <th onClick={()=>handleSort('actual_qty')} style={{...sortTh(sortCol==='actual_qty'),textAlign:'right'}}>SL Đặt{sortInd('actual_qty')}</th>}
                   {vis('received') && <th onClick={()=>handleSort('received')} style={{...sortTh(sortCol==='received'),textAlign:'right'}}>Đã nhập{sortInd('received')}</th>}
-                  {vis('con_lai') && <th onClick={()=>handleSort('con_lai')} style={{...sortTh(sortCol==='con_lai'),textAlign:'right'}}>Còn lại (ĐX){sortInd('con_lai')}</th>}
+                  {vis('con_lai') && <th onClick={()=>handleSort('con_lai')} style={{...sortTh(sortCol==='con_lai'),textAlign:'right'}}>Còn lại{sortInd('con_lai')}</th>}
                   {vis('tien_do') && <th onClick={()=>handleSort('tien_do')} style={sortTh(sortCol==='tien_do')}>Tiến độ{sortInd('tien_do')}</th>}
                   {vis('note') && <th style={th}>Ghi chú</th>}
                   <th style={th}>Thao tác</th>
@@ -380,7 +380,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                       {vis('received') && <td style={{...td,textAlign:'right',fontWeight:700,color: row.received>0?'#059669':'#94a3b8'}}>
                         {row.received > 0 ? row.received.toLocaleString('vi-VN') : '—'}
                       </td>}
-                      {vis('con_lai') && (() => { const con = Math.max(0, (Number(row.calculated_qty)||0) - (Number(row.received)||0)); return (
+                      {vis('con_lai') && (() => { const con = Math.max(0, (Number(row.actual_qty)||0) - (Number(row.received)||0)); return (
                         <td style={{...td,textAlign:'right',fontWeight:700,color: con>0?'#dc2626':'#94a3b8'}}>
                           {con.toLocaleString('vi-VN')}
                         </td>

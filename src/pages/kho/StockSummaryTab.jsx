@@ -48,20 +48,20 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [searchText, setSearchText] = useState('');
-  const [sortCol, setSortCol] = useState('replenish_qty'); // mặc định: sắp theo SL cần Bổ Sung
-  const [sortAsc, setSortAsc] = useState(false);           // giảm dần — mã cần bổ sung nhiều nhất lên đầu
+  const [searchText, setSearchText] = usePersistedState('stockSummary_search', '');
+  const [sortCol, setSortCol] = usePersistedState('stockSummary_sortCol', 'replenish_qty'); // mặc định: sắp theo SL cần Bổ Sung
+  const [sortAsc, setSortAsc] = usePersistedState('stockSummary_sortAsc', false);           // giảm dần — mã cần bổ sung nhiều nhất lên đầu
   const [proposalQty, setProposalQty] = useState({}); // { item_code: qty }
   const [proposedMap, setProposedMap] = useState({}); // { item_code: qty_demand } — SL đã đề xuất sang DKSX
   const [purchaseProposedMap, setPurchaseProposedMap] = useState({}); // { item_code: { qty, tien_do } } — đề xuất đặt mua (DLK) đang mở
   const [bomMap, setBomMap] = useState({}); // { product_code: [{component, qty}] } — để tính "làm được ngay"
   const [compStock, setCompStock] = useState({}); // { item_code: tồn } — tồn linh kiện (né SX9, khớp lệnh SX)
-  const [sortByProposal, setSortByProposal] = useState(false); // true = SL đề xuất > 0 lên đầu
-  const [groupByType, setGroupByType] = useState(true);        // mặc định: nhóm Sản xuất (SX) trước → Đặt mua → còn lại
+  const [sortByProposal, setSortByProposal] = usePersistedState('stockSummary_sortByProposal', false); // true = SL đề xuất > 0 lên đầu
+  const [groupByType, setGroupByType] = usePersistedState('stockSummary_groupByType', true);           // mặc định: nhóm Sản xuất (SX) trước → Đặt mua → còn lại
   const [groupOrder, setGroupOrder] = useState('sx');          // 'sx' = SX lên đầu | 'mua' = Đặt mua lên đầu
 
   // Advanced features
-  const [selectedKeys, setSelectedKeys] = useState(new Set());
+  const [selectedKeys, setSelectedKeys] = usePersistedState('stockSummary_selectedKeys', new Set());
 
   // Column Toggle
   const [hiddenCols, setHiddenCols] = usePersistedState('stockSummary_hiddenCols', new Set());

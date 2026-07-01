@@ -551,8 +551,10 @@ export default function KhoHangApp() {
   const [activeTab, setActiveTab] = usePersistedState('kho_activeTab', 'menu');
   const [dlkPrefill, setDlkPrefill] = useState(null); // { dlk_code, item_code, item_name, qty, unit } khi navigate từ tab đề xuất → nhập kho
   const [sxPrefill, setSxPrefill] = useState(null);   // { item_code, item_name, qty } khi navigate từ DKSX → lệnh SX
+  const [importReturnTab, setImportReturnTab] = useState(null); // tab gốc để quay về sau khi lưu phiếu nhập
 
   const navigateTo = (tab, params = null) => {
+    if (tab === 'nhap-kho' && activeTab !== 'nhap-kho') setImportReturnTab(activeTab); // nhớ chỗ bấm "Nhập kho" để quay lại
     if (params?.dlk) setDlkPrefill(params.dlk);
     if (params?.sx) setSxPrefill(params.sx);
     setActiveTab(tab);
@@ -871,7 +873,7 @@ export default function KhoHangApp() {
       ) : activeTab === 'de-xuat-dat-hang' ? (
         <OrderProposalTab navigateTo={navigateTo} perms={perms} />
       ) : activeTab === 'nhap-kho' ? (
-        <ImportStockTab dlkPrefill={dlkPrefill} onDlkConsumed={() => setDlkPrefill(null)} perms={perms} />
+        <ImportStockTab dlkPrefill={dlkPrefill} onDlkConsumed={() => setDlkPrefill(null)} onImportComplete={() => { if (importReturnTab) { setActiveTab(importReturnTab); setImportReturnTab(null); } }} perms={perms} />
       ) : activeTab === 'print_queue' ? (
         <PrintQueueTab />
       ) : activeTab === 'du-lieu-nhap' ? (

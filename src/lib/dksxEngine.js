@@ -200,7 +200,7 @@ export async function recomputeProposals() {
 //  3) xóa dòng gốc khỏi purchase_proposals.
 // `orig` = đối tượng đề xuất gốc (đủ cột), `received` = tổng đã nhận, `archivedBy` = user.
 export async function closeProposalWithShortfall({ orig, received, archivedBy }) {
-  const shortfall = computeShortfall(orig.calculated_qty, received);
+  const shortfall = computeShortfall(orig.actual_qty, received);
   let shortfallDlkCode = null;
 
   if (shortfall > 0) {
