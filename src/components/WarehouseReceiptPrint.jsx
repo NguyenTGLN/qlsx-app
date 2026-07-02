@@ -52,7 +52,7 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
         {isNK ? 'PHIẾU NHẬP KHO' : 'PHIẾU XUẤT KHO'}
       </h2>
       <div style={{ textAlign: 'center', fontSize: '0.82rem', marginBottom: 8 }}>
-        Ngày {dd} tháng {mm} năm {yyyy} {isNK ? 'nhập' : 'xuất'}
+        Ngày {dd} tháng {mm} năm {yyyy}
       </div>
 
       {/* Khối thông tin đầu phiếu */}
@@ -82,13 +82,12 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
             <tr>
               <th style={{ ...th, width: '4%' }}>Số TT</th>
               <th style={{ ...th, width: '12%' }}>Mã hàng</th>
-              <th style={{ ...th, width: '19%' }}>Tên hàng hóa nhập vào thực tế</th>
+              <th style={{ ...th, width: '22%' }}>Tên hàng hóa nhập vào thực tế</th>
               <th style={{ ...th, width: '6%' }}>Đơn vị</th>
-              <th style={{ ...th, width: '7%' }}>Số lượng</th>
-              <th style={{ ...th, width: '11%' }}>Kho nhập</th>
-              <th style={{ ...th, width: '10%' }}>Tình trạng khi nhập</th>
-              <th style={{ ...th, width: '12%' }}>Tem nhãn, in ấn, khắc có cần xử lý không?</th>
-              <th style={{ ...th, width: '9%' }}>Kỹ thuật kiểm tra xác nhận</th>
+              <th style={{ ...th, width: '8%' }}>Số lượng</th>
+              <th style={{ ...th, width: '12%' }}>Vị trí</th>
+              <th style={{ ...th, width: '15%' }}>Tình trạng khi nhập</th>
+              <th style={{ ...th, width: '11%' }}>Kỹ thuật kiểm tra xác nhận</th>
               <th style={{ ...th, width: '10%' }}>Mã đơn hàng</th>
             </tr>
           ) : (
@@ -99,7 +98,7 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
               <th style={{ ...th, width: '7%' }}>Đơn vị</th>
               <th style={{ ...th, width: '9%' }}>Số lượng LT</th>
               <th style={{ ...th, width: '9%' }}>Số lượng thực</th>
-              <th style={{ ...th, width: '12%' }}>Kho Xuất</th>
+              <th style={{ ...th, width: '12%' }}>Vị trí</th>
               <th style={{ ...th, width: '17%' }}>Ghi chú</th>
             </tr>
           )}
@@ -114,7 +113,6 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
                 <td style={{ ...cell, textAlign: 'center' }}>{r.dvt}</td>
                 <td style={{ ...cell, textAlign: 'right' }}>{r.sl}</td>
                 <td style={cell}>{r.kho}</td>
-                <td style={cell}></td>
                 <td style={cell}></td>
                 <td style={cell}></td>
                 <td style={cell}>{r.maDonHang || ''}</td>
