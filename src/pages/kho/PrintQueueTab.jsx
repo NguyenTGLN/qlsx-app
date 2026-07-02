@@ -30,6 +30,7 @@ export default function PrintQueueTab() {
   const [printingOrders, setPrintingOrders] = useState([]);
   const [receiptData, setReceiptData] = useState({}); // order_code -> items
   const [unitMap, setUnitMap] = useState({}); // item_code -> ĐVT (tra từ danh mục HH)
+  const [nccMap, setNccMap] = useState({});   // tên/mã NCC (lowercase) -> { dia_chi, so_dien_thoai }
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const loadData = async () => {
@@ -135,7 +136,17 @@ export default function PrintQueueTab() {
         (items || []).forEach(it => { uMap[it.item_code] = it.unit || ''; });
       }
 
+      // Tra địa chỉ + SĐT theo NCC (khớp theo tên hoặc mã NCC, lowercase)
+      const nMap = {};
+      const { data: nccs } = await db.from('nha_cung_cap').select('ma_ncc, ten_ncc, dia_chi, so_dien_thoai');
+      (nccs || []).forEach(n => {
+        const info = { dia_chi: n.dia_chi || '', so_dien_thoai: n.so_dien_thoai || '' };
+        if (n.ten_ncc) nMap[n.ten_ncc.trim().toLowerCase()] = info;
+        if (n.ma_ncc) nMap[n.ma_ncc.trim().toLowerCase()] = info;
+      });
+
       setUnitMap(uMap);
+      setNccMap(nMap);
       setReceiptData(dataMap);
       setPrintingOrders(ordersArray);
       
@@ -175,6 +186,7 @@ export default function PrintQueueTab() {
     setPrintingOrders([]);
     setReceiptData({});
     setUnitMap({});
+    setNccMap({});
   };
 
   const s_btn = { display:'flex',alignItems:'center',gap:5,padding:'0.45rem 0.85rem',borderRadius:7,border:'none',cursor:'pointer',fontSize:'0.85rem',fontWeight:600,transition:'all 0.15s' };
@@ -183,7 +195,7 @@ export default function PrintQueueTab() {
     <div style={{padding:'0.6rem', background:'#f8fafc', minHeight:'100%', position:'relative'}}>
       <style>{`
         @media print {
-          @page { size: A4 landscape; margin: 8mm; }
+          @page { size: A4 portrait; margin: 8mm; }
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
           #print-area { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; margin: 0 !important; background: #fff !important; box-shadow: none !important; border: none !important;}
@@ -389,14 +401,18 @@ export default function PrintQueueTab() {
               ghiChu: it.notes || '',
               maDonHang: '', // picking-log không lưu mã đơn hàng riêng → để trống điền tay
             }));
+            // Địa chỉ + SĐT lấy từ NCC theo tên nguồn (nếu khớp), không có thì bỏ trống
+            const ncc = source ? nccMap[source.trim().toLowerCase()] : null;
             return (
-            <div key={order.order_code} style={{padding:'32px 28px', pageBreakAfter: index < printingOrders.length - 1 ? 'always' : 'auto'}}>
+            <div key={order.order_code} style={{padding:'24px 20px', pageBreakAfter: index < printingOrders.length - 1 ? 'always' : 'auto'}}>
               <WarehouseReceiptPrint
                 kind={isNK ? 'NK' : 'XK'}
                 code={order.order_code}
                 date={order.created_at}
                 source={source || reason}
                 reason={reason}
+                diaChi={ncc ? ncc.dia_chi : ''}
+                sdt={ncc ? ncc.so_dien_thoai : ''}
                 rows={rows}
               />
             </div>

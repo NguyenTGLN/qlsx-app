@@ -268,7 +268,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
       if (ordersData) setAllOrders(ordersData);
 
       // Danh mục NCC cho ô chọn nhà cung cấp (nhỏ ~vài trăm dòng). Lỗi (bảng chưa tạo) → để trống, không chặn nhập.
-      const { data: nccData, error: nccErr } = await db.from('nha_cung_cap').select('ma_ncc, ten_ncc, so_dien_thoai, nguoi_lien_he').order('ten_ncc');
+      const { data: nccData, error: nccErr } = await db.from('nha_cung_cap').select('ma_ncc, ten_ncc, so_dien_thoai, nguoi_lien_he, dia_chi').order('ten_ncc');
       if (nccErr) console.error('Không tải được danh mục NCC:', nccErr.message);
       else if (nccData) setSuppliers(nccData);
     };
@@ -738,12 +738,16 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
     </div>
   );
 
+  // NCC khớp nguồn đầu tiên (để in địa chỉ/SĐT lên phiếu; không khớp thì bỏ trống)
+  const printSourceName = blocks.map(b => b.sourceValue).find(Boolean);
+  const printNcc = printSourceName ? suppliers.find(x => x.ten_ncc === printSourceName) : null;
+
   return (
     <div style={{display:'flex', flexDirection:'column', height:'100%', background:'#f8fafc', position:'relative'}}>
       {/* Ẩn giao diện thao tác khi in */}
       <style>{`
         @media print {
-          @page { size: A4 landscape; margin: 8mm; }
+          @page { size: A4 portrait; margin: 8mm; }
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
           #print-area { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; margin: 0 !important; background: #fff !important; box-shadow: none !important; border: none !important;}
@@ -859,6 +863,8 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
                     date={new Date()}
                     source={[...new Set(blocks.map(b => b.sourceValue).filter(Boolean))].join(', ') || reason}
                     reason={reason}
+                    diaChi={printNcc ? (printNcc.dia_chi || '') : ''}
+                    sdt={printNcc ? (printNcc.so_dien_thoai || '') : ''}
                     rows={blocks.flatMap(b =>
                       b.items.filter(it => it.selected !== false).flatMap(it =>
                         it.locations.filter(loc => (Number(loc.import_qty) || 0) > 0).map(loc => ({
