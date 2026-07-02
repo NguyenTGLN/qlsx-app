@@ -4,6 +4,7 @@ import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, Sh
 import { closeProposalWithShortfall } from '../../lib/dksxEngine';
 import { dlkImportCap } from '../../lib/proposalQty';
 import AddCatalogItemModal from '../../components/AddCatalogItemModal';
+import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
 
 const IMPORT_TYPES = [
   { id: 'Nhập mới', label: 'Nhập mới', icon: Plus, color: '#3b82f6' },
@@ -742,6 +743,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
       {/* Ẩn giao diện thao tác khi in */}
       <style>{`
         @media print {
+          @page { size: A4 landscape; margin: 8mm; }
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
           #print-area { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; margin: 0 !important; background: #fff !important; box-shadow: none !important; border: none !important;}
@@ -749,7 +751,6 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
           body, html, #root, main { overflow: visible !important; height: auto !important; background: #fff !important; }
           /* Ghi đè các thuộc tính có thể gây lỗi clipping layout */
           div { overflow: visible !important; }
-          .print-signature { display: flex !important; justify-content: space-around; margin-top: 50px; text-align: center; }
           th, td { border-color: #333 !important; }
           th { background: #f2f2f2 !important; -webkit-print-color-adjust: exact; }
           input { border: none !important; padding: 0 !important; background: transparent !important; outline: none !important; }
@@ -849,21 +850,28 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
 
               {/* Khu vực in + danh sách block */}
               <div id="print-area" style={{width:'100%', background:'#fff'}}>
-                <h2 className="only-print" style={{display:'none', textAlign:'center', fontSize:20, color:'#0f172a', margin:'0 0 20px 0', letterSpacing:1}}>PHIẾU NHẬP KHO</h2>
                 <style>{`@media print { .only-print { display: block !important; } }`}</style>
 
-                <div className="only-print" style={{display:'none', justifyContent:'space-between', marginBottom:20, fontSize:'0.9rem', color:'#334155'}}>
-                   <div>
-                     <p style={{margin:'4px 0'}}><strong>Lý do nhập:</strong> {reason}</p>
-                     <p style={{margin:'4px 0'}}><strong>Nguồn:</strong> {blocks.map(b => b.sourceValue).filter(Boolean).join(', ') || '---'}</p>
-                   </div>
-                   <div style={{textAlign:'right'}}>
-                     <p style={{margin:'4px 0'}}><strong>Ngày lập:</strong> {new Date().toLocaleDateString('vi-VN')}</p>
-                     <p style={{margin:'4px 0'}}><strong>Người tạo:</strong> {localStorage.getItem('qlsx_user') || 'Nhân viên'}</p>
-                   </div>
+                {/* Bản in giống mẫu Excel (PHIẾU NHẬP KHO) — chỉ hiện khi in */}
+                <div className="only-print" style={{display:'none'}}>
+                  <WarehouseReceiptPrint
+                    kind="NK"
+                    date={new Date()}
+                    source={[...new Set(blocks.map(b => b.sourceValue).filter(Boolean))].join(', ') || reason}
+                    reason={reason}
+                    rows={blocks.flatMap(b =>
+                      b.items.filter(it => it.selected !== false).flatMap(it =>
+                        it.locations.filter(loc => (Number(loc.import_qty) || 0) > 0).map(loc => ({
+                          ma: it.code, ten: it.name, dvt: it.unit || '',
+                          sl: Number(loc.import_qty) || 0, kho: loc.location,
+                          maDonHang: b.orderCode || b.dlkCode || '',
+                        }))
+                      )
+                    )}
+                  />
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div className="no-print" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   {blocks.map((block) => (
                     <div key={block.id} style={{ border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden', background:'#fff' }}>
 
@@ -1007,22 +1015,6 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
                    >
                      {loading ? <Loader2 size={18} className="spin"/> : <Check size={18}/>} LƯU PHIẾU
                    </button>
-                </div>
-
-                <div className="print-signature" style={{display:'none'}}>
-                   <div>
-                     <b>Người giao hàng</b><br/>
-                     <i>(Ký, ghi rõ họ tên)</i>
-                   </div>
-                   <div>
-                     <b>Thủ kho</b><br/>
-                     <i>(Ký, ghi rõ họ tên)</i>
-                   </div>
-                   <div>
-                     <b>Người tạo phiếu</b><br/>
-                     <i>(Ký, ghi rõ họ tên)</i><br/><br/><br/>
-                     {localStorage.getItem('qlsx_user') || 'Nhân viên'}
-                   </div>
                 </div>
 
               </div>

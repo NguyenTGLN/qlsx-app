@@ -3,6 +3,15 @@ import { supabase as db } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { Printer, Search, Loader2, CheckCircle, Clock, RefreshCw, Check, X, CheckSquare, Square, AlertCircle } from 'lucide-react';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
+import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
+
+// notes phiếu nhập được lưu dạng "{lý do} - {nguồn}" (hoặc chỉ "{lý do}"); phiếu xuất chỉ có lý do.
+const splitNote = (n) => {
+  const s = String(n || '').trim();
+  const idx = s.indexOf(' - ');
+  return idx < 0 ? { reason: s, source: '' } : { reason: s.slice(0, idx).trim(), source: s.slice(idx + 3).trim() };
+};
+const uniqJoin = (arr) => [...new Set(arr.filter(Boolean))].join(', ');
 
 export default function PrintQueueTab() {
   const [loading, setLoading] = useState(false);
@@ -20,6 +29,7 @@ export default function PrintQueueTab() {
   // States for printing modal
   const [printingOrders, setPrintingOrders] = useState([]);
   const [receiptData, setReceiptData] = useState({}); // order_code -> items
+  const [unitMap, setUnitMap] = useState({}); // item_code -> ĐVT (tra từ danh mục HH)
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const loadData = async () => {
@@ -116,7 +126,16 @@ export default function PrintQueueTab() {
         if (!dataMap[item.order_code]) dataMap[item.order_code] = [];
         dataMap[item.order_code].push(item);
       });
-      
+
+      // Tra ĐVT theo mã hàng từ danh mục HH (1 truy vấn cho cả lô)
+      const codes = [...new Set(data.map(d => d.component_code).filter(Boolean))];
+      const uMap = {};
+      if (codes.length > 0) {
+        const { data: items } = await db.from('inventory_items').select('item_code, unit').in('item_code', codes);
+        (items || []).forEach(it => { uMap[it.item_code] = it.unit || ''; });
+      }
+
+      setUnitMap(uMap);
       setReceiptData(dataMap);
       setPrintingOrders(ordersArray);
       
@@ -155,6 +174,7 @@ export default function PrintQueueTab() {
     // Dọn dẹp state in
     setPrintingOrders([]);
     setReceiptData({});
+    setUnitMap({});
   };
 
   const s_btn = { display:'flex',alignItems:'center',gap:5,padding:'0.45rem 0.85rem',borderRadius:7,border:'none',cursor:'pointer',fontSize:'0.85rem',fontWeight:600,transition:'all 0.15s' };
@@ -163,6 +183,7 @@ export default function PrintQueueTab() {
     <div style={{padding:'0.6rem', background:'#f8fafc', minHeight:'100%', position:'relative'}}>
       <style>{`
         @media print {
+          @page { size: A4 landscape; margin: 8mm; }
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
           #print-area { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; margin: 0 !important; background: #fff !important; box-shadow: none !important; border: none !important;}
@@ -345,66 +366,39 @@ export default function PrintQueueTab() {
 
       {/* Hidden Print Area - Renders multiple orders with page breaks */}
       {printingOrders.length > 0 && Object.keys(receiptData).length > 0 && (
-        <div id="print-area" style={{width:'100%', maxWidth:800, background:'#fff', fontFamily:'sans-serif'}}>
+        <div id="print-area" style={{width:'100%', background:'#fff'}}>
           {printingOrders.map((order, index) => {
             const data = receiptData[order.order_code] || [];
+            const isNK = order.type === 'NHẬP KHO';
+            // Phiếu nhập: notes lưu "{lý do} - {nguồn}" → tách. Phiếu xuất: notes tự do → giữ nguyên làm Nội dung.
+            let reason, source;
+            if (isNK) {
+              const parts = data.map(it => splitNote(it.notes));
+              reason = uniqJoin(parts.map(p => p.reason)) || order.type;
+              source = uniqJoin(parts.map(p => p.source));
+            } else {
+              reason = uniqJoin(data.map(it => String(it.notes || '').trim())) || order.type;
+              source = '';
+            }
+            const rows = data.map(it => ({
+              ma: it.component_code,
+              ten: it.component_name,
+              dvt: unitMap[it.component_code] || '',
+              sl: Math.abs(Number(it.quantity_taken) || 0),
+              kho: it.location,
+              ghiChu: it.notes || '',
+              maDonHang: '', // picking-log không lưu mã đơn hàng riêng → để trống điền tay
+            }));
             return (
-            <div key={order.order_code} style={{padding:'40px', pageBreakAfter: index < printingOrders.length - 1 ? 'always' : 'auto'}}>
-              <h2 style={{textAlign:'center', fontSize:24, color:'#000', margin:'0 0 20px 0'}}>
-                PHIẾU {order.type}
-              </h2>
-              
-              <div style={{display:'flex', justifyContent:'space-between', marginBottom:20, fontSize:'0.9rem', color:'#000'}}>
-                 <div>
-                   <p style={{margin:'4px 0'}}><strong>Mã Phiếu:</strong> {order.order_code}</p>
-                   <p style={{margin:'4px 0'}}><strong>Người lập:</strong> {order.created_by || 'Hệ thống'}</p>
-                 </div>
-                 <div style={{textAlign:'right'}}>
-                   <p style={{margin:'4px 0'}}><strong>Ngày lập (DB):</strong> {new Date(order.created_at).toLocaleDateString('vi-VN')}</p>
-                   <p style={{margin:'4px 0'}}><strong>Ngày in:</strong> {new Date().toLocaleDateString('vi-VN')}</p>
-                 </div>
-              </div>
-
-              <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.85rem', color:'#000'}}>
-                <thead>
-                  <tr>
-                    <th style={{borderBottom:'2px solid #000', padding:'8px', textAlign:'left'}}>Mã hàng / LK</th>
-                    <th style={{borderBottom:'2px solid #000', padding:'8px', textAlign:'left'}}>Tên hàng</th>
-                    <th style={{borderBottom:'2px solid #000', padding:'8px', textAlign:'center'}}>Vị trí kho</th>
-                    <th style={{borderBottom:'2px solid #000', padding:'8px', textAlign:'center'}}>Nhập/Xuất</th>
-                    <th style={{borderBottom:'2px solid #000', padding:'8px', textAlign:'right'}}>Số lượng</th>
-                    <th style={{borderBottom:'2px solid #000', padding:'8px', textAlign:'left'}}>Ghi chú</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((item, idx) => (
-                    <tr key={idx} style={{borderBottom:'1px solid #ccc'}}>
-                      <td style={{padding:'8px', fontWeight:600}}>{item.component_code}</td>
-                      <td style={{padding:'8px'}}>{item.component_name}</td>
-                      <td style={{padding:'8px', textAlign:'center'}}>{item.location}</td>
-                      <td style={{padding:'8px', textAlign:'center', fontWeight:700}}>
-                        {item.quantity_taken > 0 ? 'Nhập' : 'Xuất'}
-                      </td>
-                      <td style={{padding:'8px', textAlign:'right', fontWeight:700}}>
-                        {Math.abs(item.quantity_taken)}
-                      </td>
-                      <td style={{padding:'8px', textAlign:'left', color:'#555'}}>{item.notes || ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div style={{display:'flex', justifyContent:'space-between', marginTop:50, padding:'0 30px', textAlign:'center'}}>
-                 <div>
-                   <b>Người lập phiếu</b><br/><i>(Ký, họ tên)</i>
-                 </div>
-                 <div>
-                   <b>Thủ kho</b><br/><i>(Ký, họ tên)</i>
-                 </div>
-                 <div>
-                   <b>Bên nhận/giao</b><br/><i>(Ký, họ tên)</i>
-                 </div>
-              </div>
+            <div key={order.order_code} style={{padding:'32px 28px', pageBreakAfter: index < printingOrders.length - 1 ? 'always' : 'auto'}}>
+              <WarehouseReceiptPrint
+                kind={isNK ? 'NK' : 'XK'}
+                code={order.order_code}
+                date={order.created_at}
+                source={source || reason}
+                reason={reason}
+                rows={rows}
+              />
             </div>
             );
           })}
