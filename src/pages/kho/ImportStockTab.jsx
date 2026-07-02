@@ -3,6 +3,7 @@ import { supabase as db } from '../../lib/supabase';
 import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, ShoppingCart, RefreshCw, XCircle, MoreHorizontal, ArrowLeft, Archive, Truck, X } from 'lucide-react';
 import { closeProposalWithShortfall } from '../../lib/dksxEngine';
 import { dlkImportCap } from '../../lib/proposalQty';
+import AddCatalogItemModal from '../../components/AddCatalogItemModal';
 
 const IMPORT_TYPES = [
   { id: 'Nhập mới', label: 'Nhập mới', icon: Plus, color: '#3b82f6' },
@@ -16,7 +17,7 @@ import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 
 // Component Autocomplete Component
-function AutoSuggest({ onChange, placeholder, data, keyField = 'item_code', labelField = 'item_name', extraFields = [] }) {
+function AutoSuggest({ onChange, placeholder, data, keyField = 'item_code', labelField = 'item_name', extraFields = [], onAddNew }) {
   const [input, setInput] = useState('');
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null); // {top,left,width,maxHeight} cho dropdown position:fixed
@@ -79,7 +80,21 @@ function AutoSuggest({ onChange, placeholder, data, keyField = 'item_code', labe
       </div>
       {open && input && pos && (
         <div style={{position:'fixed', top:pos.top, left:pos.left, width:pos.width, background:'#fff', border:'1px solid #cbd5e1', borderRadius:6, maxHeight:pos.maxHeight, overflow:'auto', zIndex:200, boxShadow:'0 10px 15px -3px rgba(0,0,0,0.1)'}}>
-          {results.length === 0 ? <div style={{padding:10, fontSize:'0.8rem', color:'#64748b', textAlign:'center'}}>Không tìm thấy kết quả</div> :
+          {results.length === 0 ? (
+            onAddNew ? (
+              <div
+                onClick={() => { onAddNew(input); setInput(''); setOpen(false); }}
+                style={{padding:'10px 12px', cursor:'pointer', fontSize:'0.8rem'}}
+                onMouseEnter={e=>e.currentTarget.style.background='#f0fdf4'}
+                onMouseLeave={e=>e.currentTarget.style.background=''}
+              >
+                <div style={{color:'#64748b', marginBottom:4}}>Không tìm thấy "{input}".</div>
+                <div style={{color:'#0891b2', fontWeight:700, display:'flex', alignItems:'center', gap:6}}><Plus size={15}/> Thêm mã hàng hóa mới</div>
+              </div>
+            ) : (
+              <div style={{padding:10, fontSize:'0.8rem', color:'#64748b', textAlign:'center'}}>Không tìm thấy kết quả</div>
+            )
+          ) :
             results.map((item, idx) => (
               <div
                 key={idx}
@@ -124,9 +139,10 @@ function NccPicker({ value, suppliers, onPick, onClear }) {
   );
 }
 
-export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComplete, perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
+export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComplete, perms = { view: true, create: true, edit: true, delete: true, io: true }, catalogCreatePerm = false }) {
   const [catalog, setCatalog] = useState([]);
   const [suppliers, setSuppliers] = useState([]);   // danh mục NCC cho ô gõ-tìm gợi ý
+  const [addItemCtx, setAddItemCtx] = useState(null); // { blockId, code } — mở form thêm mã HH mới ngay tại đây
   const [loading, setLoading] = useState(false);
   const [reason, setReason] = useState('');
 
@@ -927,6 +943,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
                               data={catalog}
                               placeholder="🔍 Gõ mã hoặc tên hàng hóa cần nhập..."
                               onChange={(it)=>handleSelectItem(block.id, it)}
+                              onAddNew={catalogCreatePerm ? (text)=>setAddItemCtx({ blockId: block.id, code: (text||'').trim() }) : undefined}
                             />
                           </div>
                         )}
@@ -1018,6 +1035,19 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
             </div>
           </div>
         </div>
+      )}
+
+      {/* Thêm nhanh mã hàng hóa mới ngay tại màn hình nhập → tự chọn vào khối */}
+      {addItemCtx && (
+        <AddCatalogItemModal
+          initialCode={addItemCtx.code}
+          onClose={()=>setAddItemCtx(null)}
+          onSaved={(item)=>{
+            setCatalog(prev => [...prev, item]);        // để lần tìm sau thấy ngay
+            handleSelectItem(addItemCtx.blockId, item); // tự thêm vào khối đang nhập
+            setAddItemCtx(null);
+          }}
+        />
       )}
 
       {/* Hộp kết quả nhập kho: báo thành công + (nếu nhận < SL Đặt) chọn giữ/đóng đề xuất — thay popup trình duyệt */}

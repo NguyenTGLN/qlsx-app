@@ -877,7 +877,7 @@ export default function KhoHangApp() {
       ) : activeTab === 'de-xuat-dat-hang' ? (
         <OrderProposalTab navigateTo={navigateTo} perms={perms} />
       ) : activeTab === 'nhap-kho' ? (
-        <ImportStockTab dlkPrefill={dlkPrefill} onDlkConsumed={() => setDlkPrefill(null)} onImportComplete={() => { if (importReturnTab) { setActiveTab(importReturnTab); setImportReturnTab(null); } }} perms={perms} />
+        <ImportStockTab dlkPrefill={dlkPrefill} onDlkConsumed={() => setDlkPrefill(null)} onImportComplete={() => { if (importReturnTab) { setActiveTab(importReturnTab); setImportReturnTab(null); } }} perms={perms} catalogCreatePerm={getTabPerm(user, 'kho', 'danh-muc').create} />
       ) : activeTab === 'print_queue' ? (
         <PrintQueueTab />
       ) : activeTab === 'du-lieu-nhap' ? (
