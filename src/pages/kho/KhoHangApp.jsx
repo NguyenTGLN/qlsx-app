@@ -3,7 +3,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { useNavigate } from 'react-router-dom';
 import { supabase as db } from '../../lib/supabase';
 import { useAuth, getTabPerm, canSeeTab } from '../../lib/AuthContext';
-import { Package, RefreshCw, Search, ChevronLeft, ChevronRight, Download, Database, Loader2, Trash2, Edit3, X, Check, Calendar, Eye, EyeOff, ChevronDown, Upload, Layers, List, GitMerge, Settings, ArrowUp, ArrowDown, Printer, LayoutGrid, Star } from 'lucide-react';
+import { Package, RefreshCw, Search, ChevronLeft, ChevronRight, Download, Database, Loader2, Trash2, Edit3, X, Check, Calendar, Eye, EyeOff, ChevronDown, Upload, Layers, List, GitMerge, Settings, ArrowUp, ArrowDown, Printer, LayoutGrid, Star, Truck } from 'lucide-react';
 import ModuleShell from '../../components/ModuleShell';
 import * as XLSX from 'xlsx';
 import DateRangeDropdown, { applyDateFilter } from '../../components/DateRangeDropdown';
@@ -21,6 +21,7 @@ import WipStockTab from './WipStockTab';
 import PrintQueueTab from './PrintQueueTab';
 import SaveExportTab from './SaveExportTab';
 import BookInventoryTab from './BookInventoryTab';
+import SupplierTab from './SupplierTab';
 
 // ── AutoSuggest Component (live search from Supabase) ──
 function AutoSuggest({ value, onChange, placeholder, columnName, isOpen, onToggle }) {
@@ -209,6 +210,7 @@ const ALL_TABS = [
   { id: 'ton-kho-so-sach',  label: 'Tồn kho sổ sách',       short: 'Sổ sách',   icon: Database,  color: '#16a34a' },
   { id: 'ton-kho',          label: 'Tồn kho theo vị trí',   short: 'Vị trí',    icon: Layers,    color: '#0284c7' },
   { id: 'danh-muc',         label: 'Danh mục hàng hóa',     short: 'Danh mục',  icon: List,      color: '#d97706' },
+  { id: 'danh-muc-ncc',     label: 'Danh mục NCC',          short: 'NCC',       icon: Truck,     color: '#be123c' },
   { id: 'bom',              label: 'BOM Sản xuất',          short: 'BOM',       icon: GitMerge,  color: '#db2777' },
   { id: 'lenh-sx',          label: 'Bốc dỡ & Xuất kho (PSX)', short: 'PSX',     icon: Package,   color: '#dc2626' },
   { id: 'lich-su-boc-do',   label: 'Lịch sử bốc dỡ',        short: 'LS bốc dỡ', icon: RefreshCw, color: '#475569' },
@@ -862,6 +864,8 @@ export default function KhoHangApp() {
         <WipStockTab perms={perms} />
       ) : activeTab === 'danh-muc' ? (
         <CatalogTab perms={perms} />
+      ) : activeTab === 'danh-muc-ncc' ? (
+        <SupplierTab perms={perms} />
       ) : activeTab === 'bom' ? (
         <BomTab perms={perms} />
       ) : activeTab === 'lenh-sx' ? (

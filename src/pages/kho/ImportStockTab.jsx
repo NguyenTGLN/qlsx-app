@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase as db } from '../../lib/supabase';
-import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, ShoppingCart, RefreshCw, XCircle, MoreHorizontal, ArrowLeft, Archive } from 'lucide-react';
+import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, ShoppingCart, RefreshCw, XCircle, MoreHorizontal, ArrowLeft, Archive, Truck, X } from 'lucide-react';
 import { closeProposalWithShortfall } from '../../lib/dksxEngine';
 import { dlkImportCap } from '../../lib/proposalQty';
 
@@ -16,7 +16,7 @@ import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 
 // Component Autocomplete Component
-function AutoSuggest({ onChange, placeholder, data, keyField = 'item_code', labelField = 'item_name' }) {
+function AutoSuggest({ onChange, placeholder, data, keyField = 'item_code', labelField = 'item_name', extraFields = [] }) {
   const [input, setInput] = useState('');
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null); // {top,left,width,maxHeight} cho dropdown position:fixed
@@ -52,9 +52,11 @@ function AutoSuggest({ onChange, placeholder, data, keyField = 'item_code', labe
     };
   }, [open, updatePos]);
 
+  const q = input.toLowerCase();
   const results = data.filter(item =>
-    (item[keyField]||'').toLowerCase().includes(input.toLowerCase()) ||
-    (item[labelField]||'').toLowerCase().includes(input.toLowerCase())
+    (item[keyField]||'').toLowerCase().includes(q) ||
+    (item[labelField]||'').toLowerCase().includes(q) ||
+    extraFields.some(f => String(item[f]||'').toLowerCase().includes(q))
   ).slice(0, 50);
 
   const handleSelect = (item) => {
@@ -96,8 +98,35 @@ function AutoSuggest({ onChange, placeholder, data, keyField = 'item_code', labe
   );
 }
 
+// Ô chọn Nhà cung cấp: đã chọn → hiện chip có nút đổi; chưa chọn → ô gõ-tìm gợi ý từ danh mục NCC.
+function NccPicker({ value, suppliers, onPick, onClear }) {
+  if (value) {
+    return (
+      <div className="no-print" style={{ display:'flex', alignItems:'center', gap:8, background:'#fff', border:'1px solid #cbd5e1', borderRadius:6, padding:'8px 10px' }}>
+        <Truck size={15} color="#be123c" style={{ flexShrink:0 }} />
+        <span style={{ flex:1, fontWeight:700, color:'#0f172a', fontSize:'0.85rem', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{value}</span>
+        <button type="button" onClick={onClear} title="Đổi nhà cung cấp" style={{ background:'none', border:'none', cursor:'pointer', color:'#94a3b8', display:'flex', padding:0 }}><X size={16} /></button>
+      </div>
+    );
+  }
+  return (
+    <div className="no-print">
+      <AutoSuggest
+        data={suppliers}
+        keyField="ma_ncc"
+        labelField="ten_ncc"
+        extraFields={['so_dien_thoai', 'nguoi_lien_he']}
+        placeholder="Gõ tên / mã / SĐT nhà cung cấp..."
+        onChange={onPick}
+      />
+      <span style={{ display:'block', fontSize:'0.7rem', color:'#94a3b8', marginTop:4 }}>NCC chưa có? Thêm ở tab <b>Danh mục NCC</b>.</span>
+    </div>
+  );
+}
+
 export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComplete, perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   const [catalog, setCatalog] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);   // danh mục NCC cho ô gõ-tìm gợi ý
   const [loading, setLoading] = useState(false);
   const [reason, setReason] = useState('');
 
@@ -220,6 +249,11 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
 
       const { data: ordersData } = await db.from('production_orders').select('id, order_code, product_code, status').order('created_at', { ascending: false });
       if (ordersData) setAllOrders(ordersData);
+
+      // Danh mục NCC cho ô chọn nhà cung cấp (nhỏ ~vài trăm dòng). Lỗi (bảng chưa tạo) → để trống, không chặn nhập.
+      const { data: nccData, error: nccErr } = await db.from('nha_cung_cap').select('ma_ncc, ten_ncc, so_dien_thoai, nguoi_lien_he').order('ten_ncc');
+      if (nccErr) console.error('Không tải được danh mục NCC:', nccErr.message);
+      else if (nccData) setSuppliers(nccData);
     };
     loadData();
   }, []);
@@ -824,12 +858,11 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
                             {block.sourceType === 'ncc' && (
                               <>
                                 <label style={s.label} className="no-print">Nhà cung cấp</label>
-                                <input
-                                  className="no-print"
-                                  style={{...s.input, padding:'8px'}}
+                                <NccPicker
                                   value={block.sourceValue}
-                                  onChange={e=>updateBlock(block.id, b=>({ ...b, sourceValue: e.target.value }))}
-                                  placeholder="VD: NCC A"
+                                  suppliers={suppliers}
+                                  onPick={ncc=>updateBlock(block.id, b=>({ ...b, sourceValue: ncc.ten_ncc }))}
+                                  onClear={()=>updateBlock(block.id, b=>({ ...b, sourceValue: '' }))}
                                 />
                                 <span className="only-print" style={{display:'none', fontWeight:700, color:'#0f172a'}}>Nhà cung cấp: {block.sourceValue || '---'}</span>
                                 <label style={{...s.label, marginTop:8}} className="no-print">Mã DLK đề xuất (tùy chọn)</label>
@@ -851,12 +884,11 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
                             {block.sourceType === 'none' && (
                               <>
                                 <label style={s.label} className="no-print">Nhà cung cấp</label>
-                                <input
-                                  className="no-print"
-                                  style={{...s.input, padding:'8px'}}
+                                <NccPicker
                                   value={block.sourceValue}
-                                  onChange={e=>updateBlock(block.id, b=>({ ...b, sourceValue: e.target.value }))}
-                                  placeholder="VD: NCC A"
+                                  suppliers={suppliers}
+                                  onPick={ncc=>updateBlock(block.id, b=>({ ...b, sourceValue: ncc.ten_ncc }))}
+                                  onClear={()=>updateBlock(block.id, b=>({ ...b, sourceValue: '' }))}
                                 />
                                 <span className="only-print" style={{display:'none', fontWeight:700, color:'#0f172a'}}>Nhà cung cấp: {block.sourceValue || '---'}</span>
                                 <label style={{...s.label, marginTop:8}} className="no-print">Mã đơn hàng nhập (tùy chọn)</label>

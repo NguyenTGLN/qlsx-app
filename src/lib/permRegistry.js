@@ -23,6 +23,7 @@ export const PERM_REGISTRY = [
       { id: 'ton-kho-so-sach',  label: 'Tồn kho sổ sách',          caps: ['view'] },
       { id: 'ton-kho',          label: 'Tồn kho theo vị trí',      caps: ['view', 'create', 'edit', 'delete', 'io'] },
       { id: 'danh-muc',         label: 'Danh mục hàng hóa',        caps: ['view', 'create', 'edit', 'delete', 'io'] },
+      { id: 'danh-muc-ncc',     label: 'Danh mục NCC',             caps: ['view', 'create', 'edit', 'delete', 'io'] },
       { id: 'bom',              label: 'BOM Sản xuất',             caps: ['view', 'create', 'edit', 'delete', 'io'] },
       { id: 'lenh-sx',          label: 'Bốc dỡ & Xuất kho (PSX)',  caps: ['view', 'create', 'edit', 'delete', 'io'] },
       { id: 'lich-su-boc-do',   label: 'Lịch sử bốc dỡ',           caps: ['view'] },
