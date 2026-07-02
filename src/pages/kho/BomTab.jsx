@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
-import { Search, Loader2, RefreshCw, Trash2, Edit3, Download, Upload, X, Check } from 'lucide-react';
+import { Search, Loader2, RefreshCw, Trash2, Edit3, Download, Upload, X, Check, Printer } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
@@ -35,6 +35,16 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
   // Column Toggle
   const [hiddenCols, setHiddenCols] = usePersistedState('bom_hiddenCols', new Set());
 
+  // In BOM một sản phẩm
+  const [showPrintBom, setShowPrintBom] = useState(false);
+  const [bomProducts, setBomProducts] = useState([]);
+  const [bomProductsLoading, setBomProductsLoading] = useState(false);
+  const [printBomQuery, setPrintBomQuery] = useState('');
+  const [printBomProduct, setPrintBomProduct] = useState(null);
+  const [printBomRows, setPrintBomRows] = useState([]);
+  const [printBomLoading, setPrintBomLoading] = useState(false);
+  const printBomReqRef = useRef(0); // chặn response cũ ghi đè khi đổi sản phẩm giữa chừng
+
   // Reset page on search
   useEffect(() => { setPage(1); }, [searchText, pageSize]);
 
@@ -52,10 +62,11 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
       `, { count: 'exact' });
 
       if (searchText.trim()) {
+        // Giá trị là các mã đã chọn từ gợi ý → lọc chính xác tuyệt đối, không khớp gần đúng
         const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
         if (terms.length > 0) {
-          const orClauses = terms.map(t => `product_code.ilike.%${t}%,component_code.ilike.%${t}%`).join(',');
-          q = q.or(orClauses);
+          const list = terms.map(t => `"${t}"`).join(',');
+          q = q.or(`product_code.in.(${list}),component_code.in.(${list})`);
         }
       }
 
@@ -64,7 +75,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
       } else {
         q = q.order(sortCol, { ascending: sortAsc });
       }
-      
+
       q = q.range((page - 1) * pageSize, page * pageSize - 1);
 
       const { data, count, error } = await q;
@@ -141,8 +152,8 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
           if (searchText.trim()) {
             const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
             if (terms.length > 0) {
-              const orClauses = terms.map(t => `product_code.ilike.%${t}%,component_code.ilike.%${t}%`).join(',');
-              q = q.or(orClauses);
+              const list = terms.map(t => `"${t}"`).join(',');
+              q = q.or(`product_code.in.(${list}),component_code.in.(${list})`);
             }
           }
           if (sortCol === 'component_name') {
@@ -173,6 +184,80 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "BOM");
     XLSX.writeFile(wb, `BOM_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
+  // --- In BOM một sản phẩm ---
+  const openPrintBom = async () => {
+    setShowPrintBom(true);
+    setPrintBomProduct(null);
+    setPrintBomRows([]);
+    setPrintBomQuery('');
+    // Luôn tải lại danh sách để không sót sản phẩm vừa import/sửa trong phiên
+    setBomProductsLoading(true);
+    try {
+      let all = [];
+      let from = 0;
+      while (true) {
+        const { data, error } = await db.from('bom_items')
+          .select('product_code, product_name')
+          .order('product_code')
+          .range(from, from + 999);
+        if (error) throw error;
+        all = all.concat(data || []);
+        if (!data || data.length < 1000) break;
+        from += 1000;
+      }
+      const seen = new Map();
+      all.forEach(r => { if (r.product_code && !seen.has(r.product_code)) seen.set(r.product_code, r.product_name || ''); });
+      setBomProducts([...seen.entries()].map(([code, name]) => ({ code, name })));
+    } catch (e) {
+      alert('Lỗi tải danh sách sản phẩm: ' + e.message);
+      setShowPrintBom(false);
+    } finally {
+      setBomProductsLoading(false);
+    }
+  };
+
+  const selectPrintBomProduct = async (p) => {
+    const reqId = ++printBomReqRef.current;
+    setPrintBomProduct(p);
+    setPrintBomRows([]);
+    setPrintBomLoading(true);
+    try {
+      const { data, error } = await db.from('bom_items').select(`
+        id, product_code, component_code, unit, quantity, product_name,
+        inventory_items!bom_items_component_code_fkey ( item_name )
+      `).eq('product_code', p.code).order('component_code');
+      if (reqId !== printBomReqRef.current) return;
+      if (error) throw error;
+      setPrintBomRows((data || []).map(r => ({ ...r, component_name: r.inventory_items?.item_name || '' })));
+    } catch (e) {
+      if (reqId !== printBomReqRef.current) return;
+      alert('Lỗi tải BOM: ' + e.message);
+      setPrintBomProduct(null);
+    } finally {
+      if (reqId === printBomReqRef.current) setPrintBomLoading(false);
+    }
+  };
+
+  const exportPrintBomExcel = () => {
+    if (!printBomProduct || printBomRows.length === 0) return;
+    const aoa = [
+      ['BẢNG ĐỊNH MỨC NGUYÊN VẬT LIỆU (BOM)'],
+      [],
+      ['Mã sản phẩm:', printBomProduct.code],
+      ['Tên sản phẩm:', printBomProduct.name],
+      ['Ngày xuất:', new Date().toLocaleDateString('vi-VN')],
+      ['Số linh kiện:', printBomRows.length],
+      [],
+      ['STT', 'Mã linh kiện', 'Tên linh kiện', 'ĐVT', 'Số lượng'],
+      ...printBomRows.map((r, i) => [i + 1, r.component_code, r.component_name, r.unit, r.quantity]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 5 }, { wch: 20 }, { wch: 45 }, { wch: 8 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BOM');
+    XLSX.writeFile(wb, `BOM_${printBomProduct.code}_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
   const handleSaveEdit = async (updatedRow) => {
@@ -323,6 +408,16 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
   const vis = (col) => !hiddenCols.has(col);
   const visCount = BOM_COLS.filter(c => vis(c)).length + 2;
 
+  // Gợi ý sản phẩm cho modal In BOM (gõ để tìm → hiện nhiều; chọn 1 mã → in chính xác mã đó)
+  const printBomMatches = (() => {
+    if (!showPrintBom || printBomProduct) return [];
+    const q = printBomQuery.trim().toLowerCase();
+    const list = q
+      ? bomProducts.filter(p => p.code.toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q))
+      : bomProducts;
+    return list.slice(0, 100);
+  })();
+
   return (
     <div style={{display:'flex',flexDirection:'column',flex:1,height:'100%',position:'relative'}}>
       <div className="mobile-toolbar" style={{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0.5rem',display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'nowrap',position:'sticky',top:0,zIndex:50,overflowX:'auto'}}>
@@ -447,6 +542,9 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
             {perms.io && <button onClick={()=>setShowImport(true)} style={{...s.btn, background:'#e0f2fe', color:'#0369a1', border:'none', padding:'0.4rem 0.75rem', flexShrink:0}}>
               <Upload size={14}/> Nhập Excel
             </button>}
+            <button onClick={openPrintBom} style={{...s.btn, background:'#ede9fe', color:'#6d28d9', border:'none', padding:'0.4rem 0.75rem', flexShrink:0}}>
+              <Printer size={14}/> In BOM
+            </button>
             <button onClick={handleExport} disabled={loading} style={{...s.btn,background:'#10b981',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}><Download size={14}/>Xuất Excel</button>
           </>
         )}
@@ -467,6 +565,130 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
               <button onClick={()=>setEditRow(null)} style={s.btn}>Hủy</button>
               <button onClick={()=>handleSaveEdit(editRow)} style={{...s.btn, background:'#2563eb', color:'#fff'}}>Lưu</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal In BOM — bước 1: chọn sản phẩm */}
+      {showPrintBom && !printBomProduct && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:'1rem'}}>
+          <div style={{background:'#fff',borderRadius:12,width:'100%',maxWidth:440,boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column',maxHeight:'80vh'}}>
+            <div style={{padding:'1rem 1.25rem',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <h3 style={{margin:0,fontSize:'1rem',display:'flex',alignItems:'center',gap:8}}><Printer size={18} color="#7c3aed"/> In BOM — Chọn sản phẩm</h3>
+              <button onClick={()=>setShowPrintBom(false)} style={{border:'none',background:'none',cursor:'pointer',color:'#94a3b8',padding:4}}><X size={18}/></button>
+            </div>
+            <div style={{padding:'0.75rem 1.25rem',borderBottom:'1px solid #f1f5f9'}}>
+              <input
+                value={printBomQuery}
+                onChange={e=>setPrintBomQuery(e.target.value)}
+                placeholder="Gõ mã hoặc tên sản phẩm..."
+                autoFocus
+                style={{...s.input,width:'100%',boxSizing:'border-box'}}
+              />
+            </div>
+            <div style={{flex:1,overflowY:'auto',padding:'0.4rem 0.5rem',minHeight:120}}>
+              {bomProductsLoading ? (
+                <p style={{textAlign:'center',color:'#94a3b8',fontSize:'0.8rem',padding:16}}>Đang tải danh sách sản phẩm...</p>
+              ) : bomProducts.length===0 ? (
+                <p style={{textAlign:'center',color:'#94a3b8',fontSize:'0.8rem',padding:16}}>Chưa có dữ liệu BOM.</p>
+              ) : printBomMatches.length===0 ? (
+                <p style={{textAlign:'center',color:'#94a3b8',fontSize:'0.8rem',padding:16}}>Không tìm thấy "{printBomQuery}"</p>
+              ) : printBomMatches.map(p => (
+                <div
+                  key={p.code}
+                  onClick={()=>selectPrintBomProduct(p)}
+                  style={{padding:'0.45rem 0.75rem',cursor:'pointer',borderRadius:8}}
+                  onMouseEnter={e=>(e.currentTarget.style.background='#f1f5f9')}
+                  onMouseLeave={e=>(e.currentTarget.style.background='')}
+                >
+                  <div style={{fontWeight:700,color:'#0891b2',fontSize:'0.8rem'}}>{p.code}</div>
+                  {p.name && <div style={{fontSize:'0.72rem',color:'#64748b',fontStyle:'italic'}}>{p.name}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal In BOM — bước 2: xem trước, in hoặc xuất Excel */}
+      {showPrintBom && printBomProduct && (
+        <div id="bom-print-overlay" style={{position:'fixed',inset:0,background:'#fff',zIndex:9999,display:'flex',flexDirection:'column'}}>
+          <style>{`
+            @media print {
+              body * { visibility: hidden; }
+              #bom-print-overlay, #bom-print-overlay * { visibility: visible; }
+              #bom-print-overlay {
+                position: absolute !important;
+                left: 0; top: 0; width: 100%;
+                display: block !important;
+                height: auto !important;
+                overflow: visible !important;
+              }
+              #bom-print-section {
+                position: static !important;
+                display: block !important;
+                height: auto !important;
+                overflow: visible !important;
+                padding: 0 !important;
+                margin: 0 !important;
+              }
+              .no-print { display: none !important; }
+              table { page-break-inside: auto; width: 100%; border-collapse: collapse; }
+              tr { page-break-inside: avoid; page-break-after: auto; }
+              thead { display: table-header-group; }
+            }
+          `}</style>
+
+          <div className="no-print" style={{padding:'0.75rem 1.5rem',borderBottom:'1px solid #e2e8f0',display:'flex',justifyContent:'space-between',alignItems:'center',background:'#f8fafc',flexWrap:'wrap',gap:8}}>
+            <h2 style={{margin:0,fontSize:'1.05rem',color:'#0f172a',display:'flex',alignItems:'center',gap:8}}>
+              <Printer size={20} color="#7c3aed"/> In BOM: {printBomProduct.code}
+            </h2>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+              <button onClick={()=>{printBomReqRef.current++;setPrintBomProduct(null);setPrintBomRows([]);setPrintBomLoading(false);}} style={{...s.btn,fontSize:'0.82rem',padding:'0.45rem 0.9rem'}}>Chọn SP khác</button>
+              <button onClick={exportPrintBomExcel} disabled={printBomLoading||printBomRows.length===0} style={{...s.btn,background:'#10b981',color:'#fff',border:'none',padding:'0.45rem 0.9rem',fontSize:'0.82rem',opacity:(printBomLoading||printBomRows.length===0)?0.5:1}}><Download size={15}/> Xuất Excel</button>
+              <button onClick={()=>window.print()} disabled={printBomLoading||printBomRows.length===0} style={{...s.btn,background:'#7c3aed',color:'#fff',border:'none',padding:'0.45rem 0.9rem',fontSize:'0.82rem',opacity:(printBomLoading||printBomRows.length===0)?0.5:1}}><Printer size={15}/> In ngay</button>
+              <button onClick={()=>{printBomReqRef.current++;setShowPrintBom(false);}} style={{...s.btn,fontSize:'0.82rem',padding:'0.45rem 0.9rem'}}><X size={15}/> Đóng</button>
+            </div>
+          </div>
+
+          <div id="bom-print-section" style={{flex:1,padding:'2rem',overflowY:'auto',background:'#fff',color:'#000',fontFamily:'Times New Roman, serif'}}>
+            {printBomLoading ? (
+              <p style={{textAlign:'center',color:'#94a3b8'}}>Đang tải BOM...</p>
+            ) : printBomRows.length === 0 ? (
+              <p style={{textAlign:'center',color:'#94a3b8'}}>Sản phẩm này chưa có BOM.</p>
+            ) : (
+              <>
+                <h1 style={{textAlign:'center',textTransform:'uppercase',marginBottom:5,fontSize:'16pt'}}>Bảng Định Mức Nguyên Vật Liệu (BOM)</h1>
+                <p style={{textAlign:'center',marginBottom:20,fontSize:'11pt',color:'#333'}}>Ngày in: {new Date().toLocaleDateString('vi-VN')}</p>
+                <div style={{fontSize:'12pt',marginBottom:14,lineHeight:1.7}}>
+                  <div><strong>Mã sản phẩm:</strong> {printBomProduct.code}</div>
+                  <div><strong>Tên sản phẩm:</strong> {printBomProduct.name}</div>
+                  <div><strong>Số linh kiện:</strong> {printBomRows.length}</div>
+                </div>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:'11pt'}}>
+                  <thead>
+                    <tr>
+                      <th style={{border:'1px solid #000',padding:'6px',textAlign:'center',width:40}}>STT</th>
+                      <th style={{border:'1px solid #000',padding:'6px',textAlign:'left',width:150}}>Mã linh kiện</th>
+                      <th style={{border:'1px solid #000',padding:'6px',textAlign:'left'}}>Tên linh kiện</th>
+                      <th style={{border:'1px solid #000',padding:'6px',textAlign:'center',width:60}}>ĐVT</th>
+                      <th style={{border:'1px solid #000',padding:'6px',textAlign:'right',width:80}}>Số lượng</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {printBomRows.map((r,i)=>(
+                      <tr key={r.id}>
+                        <td style={{border:'1px solid #000',padding:'6px',textAlign:'center'}}>{i+1}</td>
+                        <td style={{border:'1px solid #000',padding:'6px'}}>{r.component_code}</td>
+                        <td style={{border:'1px solid #000',padding:'6px'}}>{r.component_name}</td>
+                        <td style={{border:'1px solid #000',padding:'6px',textAlign:'center'}}>{r.unit}</td>
+                        <td style={{border:'1px solid #000',padding:'6px',textAlign:'right'}}>{r.quantity}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
           </div>
         </div>
       )}

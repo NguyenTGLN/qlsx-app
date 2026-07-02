@@ -69,10 +69,10 @@ export default function WipStockTab({ perms = { view: true, create: true, edit: 
       if (searchText.trim()) {
         const terms = searchText.toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
         if (terms.length > 0) {
-          formatted = formatted.filter(item => 
-            terms.some(t => 
-              (item.item_code && item.item_code.toLowerCase() === t) || 
-              (item.item_name && item.item_name.toLowerCase().includes(t)) ||
+          formatted = formatted.filter(item =>
+            terms.some(t =>
+              (item.item_code && item.item_code.toLowerCase() === t) ||
+              (item.item_name && item.item_name.toLowerCase() === t) ||
               (item.location && item.location.toLowerCase() === t)
             )
           );

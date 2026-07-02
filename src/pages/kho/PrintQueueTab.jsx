@@ -75,7 +75,7 @@ export default function PrintQueueTab() {
     if (filter === 'PRINTED' && !o.is_printed) return false;
     if (search) {
       const terms = search.toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
-      if (terms.length > 0 && !terms.some(t => o.order_code.toLowerCase().includes(t))) return false;
+      if (terms.length > 0 && !terms.some(t => o.order_code.toLowerCase() === t)) return false;
     }
     return true;
   });

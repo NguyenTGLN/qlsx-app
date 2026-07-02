@@ -46,11 +46,9 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
       let q = db.from('inventory_items').select('*', { count: 'exact' });
 
       if (searchText.trim()) {
+        // Giá trị là các mã đã chọn từ gợi ý → lọc chính xác tuyệt đối theo mã HH
         const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
-        if (terms.length > 0) {
-          const orClauses = terms.map(t => `item_code.ilike.%${t}%,item_name.ilike.%${t}%`).join(',');
-          q = q.or(orClauses);
-        }
+        if (terms.length > 0) q = q.in('item_code', terms);
       }
 
       q = q.order(sortCol, { ascending: sortAsc });
@@ -123,10 +121,7 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
           let q = db.from('inventory_items').select('*');
           if (searchText.trim()) {
             const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
-            if (terms.length > 0) {
-              const orClauses = terms.map(t => `item_code.ilike.%${t}%,item_name.ilike.%${t}%`).join(',');
-              q = q.or(orClauses);
-            }
+            if (terms.length > 0) q = q.in('item_code', terms);
           }
           q = q.order(sortCol, { ascending: sortAsc }).range(from, from + 999);
           const { data, error } = await q;
