@@ -9,8 +9,9 @@ import fieldOptions from '../../data/caresoftFieldOptions.json';
 import ProcessingModal from './ProcessingModal';
 import WarrantyProposalModal from './WarrantyProposalModal';
 import WarrantyProposalPrint from '../../components/WarrantyProposalPrint';
-import { mapRowToProposal } from '../../lib/warrantyProposalMap';
-import { downloadProposalExcel } from '../../lib/warrantyProposalExcel';
+import ProposalLanCell from './WarrantyProposalLanCell';
+import { getEffectiveProposalLan, nextProposalLanNo, buildProposalSnapshot } from '../../lib/warrantyProposalLan';
+import { downloadProposals } from '../../lib/warrantyProposalExcel';
 import { FileText } from 'lucide-react';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
@@ -684,13 +685,9 @@ const LIST_COLUMNS = [
   { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} khaiBaoExt={ctx.khaiBaoExt} onSaveLan={ctx.onSaveLan} onSendLan={ctx.onSendLan} onAddLan={ctx.onAddLan} onCancelLan={ctx.onCancelLan} /> },
   {
     key: 'de_xuat_bh', label: 'Đề xuất BH', render: (r, ctx) => (
-      <button
-        onClick={(e) => { e.stopPropagation(); ctx.onProposal([r]); }}
-        title="Tạo phiếu đề xuất bảo hành"
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', cursor: 'pointer', fontWeight: 700, fontSize: '0.7rem', whiteSpace: 'nowrap' }}
-      >
-        <FileText size={12} /> Đề xuất
-      </button>
+      <ProposalLanCell row={r} perm={ctx.perm}
+        onAddLan={ctx.onAddProposalLan} onSaveLan={ctx.onSaveProposalLan} onCancelLan={ctx.onCancelProposalLan}
+        onPrint={ctx.onPrintProposal} onExcel={ctx.onExcelProposal} />
     )
   },
 ];
@@ -724,8 +721,8 @@ export default function WarrantyProcessing() {
   const [editing, setEditing] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set()); // tick chọn phiếu để tải Excel / cập nhật hàng loạt (giữ qua các trang)
   const [khaiBaoExt, setKhaiBaoExt] = useState(() => new Map()); // map phiếu_ghi → dòng du_lieu_khai_bao__bao_hanh (trạng thái CNV)
-  const [proposalRows, setProposalRows] = useState(null); // dòng đang tạo phiếu đề xuất (null = đóng)
-  const [proposalNow, setProposalNow] = useState(null);   // mốc thời gian tạo (snapshot)
+  const [printingProposals, setPrintingProposals] = useState(null); // mảng snapshot dữ_liệu để IN (#wproc-print)
+  const [batchProposals, setBatchProposals] = useState(null);       // snapshot cho modal hàng loạt (null = đóng)
   const [proposalBusy, setProposalBusy] = useState(false);
 
   // Cột đang hiện (giữ thứ tự đăng ký, bỏ qua key lạ trong localStorage cũ).
@@ -1121,30 +1118,55 @@ export default function WarrantyProcessing() {
     XLSX.writeFile(wb, `XuLyPhieu_${new Date().getTime()}.xlsx`);
   };
 
-  // Mở modal tạo phiếu đề xuất BH (1 hoặc nhiều dòng). Chốt mốc thời gian tạo tại đây (snapshot).
-  const openProposal = (rowsArg) => {
-    const list = (rowsArg || []).filter(Boolean);
-    if (list.length === 0) { alert('Vui lòng chọn ít nhất 1 phiếu để tạo đề xuất!'); return; }
-    setProposalNow(new Date());
-    setProposalRows(list);
+  // ── Đề xuất bảo hành NHIỀU LẦN ──
+  // Ghi cột các_lần_đề_xuất (lạc quan + DB).
+  const persistProposalLans = async (row, newLans) => {
+    const operator = (user && (user.name || user.id)) || '';
+    setRows(prev => prev.map(x => x.id === row.id ? { ...x, 'các_lần_đề_xuất': newLans, 'người_cập_nhật': operator } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update({ 'các_lần_đề_xuất': newLans, 'người_cập_nhật': operator }).eq('id', row.id);
+    if (error) { alert('Lỗi lưu lần đề xuất: ' + error.message); await fetchRows(); }
   };
-  const closeProposal = () => { if (!proposalBusy) { setProposalRows(null); setProposalNow(null); } };
-  // In/PDF: vùng #wproc-print đã render sẵn theo proposalRows → chỉ cần gọi in.
-  const printProposal = () => { setTimeout(() => window.print(), 60); };
-  // Tải Excel theo mẫu.
-  const excelProposal = async () => {
+  // Thêm 1 lần đề xuất mới (snapshot nội dung phiếu hiện tại). Trả về snapshot vừa tạo.
+  const addProposalLan = async (row) => {
+    const lans = getEffectiveProposalLan(row);
+    const snap = { ...buildProposalSnapshot(row, user, new Date()), 'lần': nextProposalLanNo(lans) };
+    await persistProposalLans(row, [...lans, snap]);
+    return snap;
+  };
+  // Lưu sửa nội dung 1 lần (duLieu = dữ_liệu mới).
+  const saveProposalLan = async (row, lan, duLieu) => {
+    const lans = getEffectiveProposalLan(row).map(l => l['lần'] === lan['lần'] ? { ...l, 'dữ_liệu': duLieu } : l);
+    await persistProposalLans(row, lans);
+  };
+  // Hủy / bỏ hủy 1 lần (soft-delete).
+  const cancelProposalLan = async (row, lan, huy) => {
+    const lans = getEffectiveProposalLan(row).map(l => l['lần'] === lan['lần'] ? { ...l, 'đã_hủy': !!huy } : l);
+    await persistProposalLans(row, lans);
+  };
+  // In 1 hoặc nhiều snapshot: render vùng #wproc-print rồi gọi in.
+  const printProposals = (proposals) => { setPrintingProposals(proposals); setTimeout(() => window.print(), 80); };
+  // Tải Excel 1 hoặc nhiều snapshot.
+  const excelProposals = async (proposals) => {
     setProposalBusy(true);
-    try {
-      await downloadProposalExcel(proposalRows, user, proposalNow || new Date());
-      setProposalRows(null); setProposalNow(null);
-    } catch (e) {
-      alert('Lỗi tạo Excel: ' + (e?.message || e));
-    } finally {
-      setProposalBusy(false);
-    }
+    try { await downloadProposals(proposals, new Date()); }
+    catch (e) { alert('Lỗi tạo Excel: ' + (e?.message || e)); }
+    finally { setProposalBusy(false); }
   };
-  // Danh sách phiếu đã tick (theo filtered) — cho nút hàng loạt.
-  const selectedRows = filtered.filter(r => selectedIds.has(r.id));
+  // Hàng loạt: tạo 1 lần đề xuất trên MỖI phiếu đã tick, rồi mở modal in/tải gộp các snapshot vừa tạo.
+  const bulkAddProposalLan = async () => {
+    const list = filtered.filter(r => selectedIds.has(r.id));
+    if (list.length === 0) { alert('Vui lòng tick chọn ít nhất 1 phiếu!'); return; }
+    if (!perm.edit) { alert('Bạn không có quyền tạo lần đề xuất.'); return; }
+    const now = new Date();
+    const snaps = [];
+    for (const row of list) {
+      const lans = getEffectiveProposalLan(row);
+      const snap = { ...buildProposalSnapshot(row, user, now), 'lần': nextProposalLanNo(lans) };
+      await persistProposalLans(row, [...lans, snap]);
+      snaps.push(snap['dữ_liệu']);
+    }
+    setBatchProposals(snaps);
+  };
 
   if (loading && rows.length === 0) {
     return <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}><RefreshCw size={36} className="spin" color="#6366f1" /></div>;
@@ -1178,11 +1200,11 @@ export default function WarrantyProcessing() {
           <input type="checkbox" checked={showClosed} onChange={e => { setShowClosed(e.target.checked); setPage(1); }} /> Hiện cả phiếu đã đóng
         </label>
 
-        {/* Tạo phiếu đề xuất BH cho các phiếu đã tick (hàng loạt) */}
+        {/* Hàng loạt: tạo 1 lần đề xuất trên mỗi phiếu đã tick rồi in/tải gộp */}
         <button
-          onClick={() => openProposal(selectedRows)}
+          onClick={bulkAddProposalLan}
           disabled={selectedIds.size === 0}
-          title={selectedIds.size === 0 ? 'Tick chọn phiếu để tạo đề xuất' : 'Tạo phiếu đề xuất BH cho các phiếu đã chọn'}
+          title={selectedIds.size === 0 ? 'Tick chọn phiếu để tạo đề xuất' : 'Tạo lần đề xuất cho các phiếu đã chọn'}
           style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: 'none', borderRadius: '8px', background: selectedIds.size === 0 ? '#cbd5e1' : '#4f46e5', color: '#fff', cursor: selectedIds.size === 0 ? 'not-allowed' : 'pointer', fontWeight: 600 }}
         >
           <FileText size={15} /> Đề xuất BH{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
@@ -1315,7 +1337,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isWide || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, onCancelLan: cancelLan, khaiBaoExt, onProposal: openProposal })}
+                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, onCancelLan: cancelLan, khaiBaoExt, onAddProposalLan: addProposalLan, onSaveProposalLan: saveProposalLan, onCancelProposalLan: cancelProposalLan, onPrintProposal: (dl) => printProposals([dl]), onExcelProposal: (dl) => excelProposals([dl]) })}
                     </td>
                   );
                 })}
@@ -1352,21 +1374,22 @@ export default function WarrantyProcessing() {
         }
       `}</style>
 
-      {/* Vùng in (ẩn ngoài màn hình lúc xem; hiện khi in). Mỗi phiếu 1 trang. */}
-      {proposalRows && (
+      {/* Vùng in (ẩn ngoài màn hình lúc xem; hiện khi in). Render thẳng snapshot của lần. Mỗi phiếu 1 trang. */}
+      {printingProposals && (
         <div id="wproc-print" style={{ position: 'absolute', left: '-99999px', top: 0, width: '210mm', background: '#fff' }}>
-          {proposalRows.map((r, i) => (
-            <div key={r.id ?? i} style={{ padding: '6mm 4mm', pageBreakAfter: i < proposalRows.length - 1 ? 'always' : 'auto' }}>
-              <WarrantyProposalPrint p={mapRowToProposal(r, user, proposalNow || undefined)} />
+          {printingProposals.map((p, i) => (
+            <div key={i} style={{ padding: '6mm 4mm', pageBreakAfter: i < printingProposals.length - 1 ? 'always' : 'auto' }}>
+              <WarrantyProposalPrint p={p} />
             </div>
           ))}
         </div>
       )}
 
-      {proposalRows && (
+      {batchProposals && (
         <WarrantyProposalModal
-          rows={proposalRows} currentUser={user} now={proposalNow || undefined} busy={proposalBusy}
-          onPrint={printProposal} onExcel={excelProposal} onClose={closeProposal}
+          proposals={batchProposals} busy={proposalBusy}
+          onPrint={() => printProposals(batchProposals)} onExcel={() => excelProposals(batchProposals)}
+          onClose={() => { if (!proposalBusy) setBatchProposals(null); }}
         />
       )}
 
