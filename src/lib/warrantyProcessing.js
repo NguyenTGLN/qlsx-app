@@ -143,11 +143,13 @@ export function computeTotalCost(parts) {
   }, 0);
 }
 
-// 6 trường thông tin đẩy về Caresoft. KEY = tên cột trong phieu_bao_hanh (để prefill từ phiếu_gốc_json).
+// Các trường thông tin app quản lý trong thông_tin_bổ_sung (prefill từ phiếu_gốc_json → sửa được).
+// mã_đơn_hàng: app-only (Caresoft nhiều phiếu để trống) — cho sửa tay tại app, KHÔNG đẩy về CS
+// (buildLanKhaiBaoRecord vẫn đọc Ma_Don_Hang từ cột mirror nên thêm key này không đổi payload sync).
 export const THONG_TIN_BO_SUNG_KEYS = [
   'mã_đlđ', 'tên_đlđ', 'sđt_đlđ', 'khoảng_cách',
   'tên_khách_hàng', 'số_điện_thoại_khách_hàng', 'địa_chỉ_nhận_hàng',
-  'tình_trạng', 'ngày_lắp_đặt',
+  'tình_trạng', 'ngày_lắp_đặt', 'mã_đơn_hàng',
 ];
 
 // Object 6 khóa cho modal. Ưu tiên: bản app đã sửa (thông_tin_bổ_sung) → phiếu gốc (phiếu_gốc_json) → ''.

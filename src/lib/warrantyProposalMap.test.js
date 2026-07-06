@@ -41,9 +41,19 @@ describe('mapRowToProposal', () => {
     expect(p.linhKienList).toEqual(['Bơm', 'Van điện từ', 'Adapter']);
   });
 
-  test('tình trạng fallback sang chi_tiết_lỗi khi thiếu', () => {
+  test('tình trạng KHÔNG lấy chi tiết lỗi (chỉ có chi_tiết_lỗi -> để trống)', () => {
     const p = mapRowToProposal({ ...row, 'tình_trạng': '', 'chi_tiết_lỗi': 'Rò nước' }, {}, NOW);
-    expect(p.tinhTrang).toBe('Rò nước');
+    expect(p.tinhTrang).toBe('');
+  });
+
+  test('tình trạng đọc từ thông_tin_bổ_sung (bản app đã sửa) trước tiên', () => {
+    const edited = { ...row, 'tình_trạng': 'cũ (mirror)', 'thông_tin_bổ_sung': { 'tình_trạng': 'WT4200 không lạnh' } };
+    expect(mapRowToProposal(edited, {}, NOW).tinhTrang).toBe('WT4200 không lạnh');
+  });
+
+  test('mã đơn hàng: bản sửa trong app (thông_tin_bổ_sung) được ưu tiên', () => {
+    const edited = { ...row, 'mã_đơn_hàng': '', 'thông_tin_bổ_sung': { 'mã_đơn_hàng': 'DH-EDIT' } };
+    expect(mapRowToProposal(edited, {}, NOW).maDonHang).toBe('DH-EDIT');
   });
 
   test('khách hàng fallback: cột mirror trước, rồi phiếu_gốc_json', () => {

@@ -11,12 +11,14 @@ export function fmtNgay(v) {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
-const pick = (row, goc, keys) => {
-  for (const k of keys) {
-    if (row[k] != null && String(row[k]).trim() !== '') return String(row[k]).trim();
-  }
-  for (const k of keys) {
-    if (goc[k] != null && String(goc[k]).trim() !== '') return String(goc[k]).trim();
+// Lấy giá trị đầu tiên khác rỗng theo thứ tự nguồn: bản app đã sửa (thông_tin_bổ_sung)
+// → cột mirror (row) → phiếu gốc (phiếu_gốc_json). Nhờ vậy dữ liệu sửa trong app (tình trạng,
+// mã đơn hàng, tên KH, địa chỉ...) sẽ lên đúng trong phiếu đề xuất.
+const pick = (tt, row, goc, keys) => {
+  for (const src of [tt, row, goc]) {
+    for (const k of keys) {
+      if (src[k] != null && String(src[k]).trim() !== '') return String(src[k]).trim();
+    }
   }
   return '';
 };
@@ -45,17 +47,18 @@ export function resolveProposerName(nguoi) {
 export function mapRowToProposal(row, currentUser, now = new Date()) {
   const r = row || {};
   const goc = r['phiếu_gốc_json'] || {};
+  const tt = r['thông_tin_bổ_sung'] || {}; // giá trị đã sửa trong app (ưu tiên cao nhất)
   const nguoi = currentUser ? (currentUser.name || currentUser.id || '') : '';
   return {
-    maPhieu: pick(r, goc, ['phiếu_ghi', 'id_phiếu_ghi']),
-    khachHang: pick(r, goc, ['tên_người_yêu_cầu', 'tên_khách_hàng']),
-    sdt: pick(r, goc, ['số_điện_thoại_khách_hàng']),
-    diaChi: pick(r, goc, ['địa_chỉ_nhận_hàng']),
-    maDonHang: pick(r, goc, ['mã_đơn_hàng']),
-    ngayLap: fmtNgay(pick(r, goc, ['ngày_lắp_đặt'])),
-    maSP: pick(r, goc, ['mã_sản_phẩm']),
-    tinhTrang: pick(r, goc, ['tình_trạng', 'chi_tiết_lỗi']),
-    linhKienList: splitLinhKien(pick(r, goc, ['linh_kiện'])),
+    maPhieu: pick(tt, r, goc, ['phiếu_ghi', 'id_phiếu_ghi']),
+    khachHang: pick(tt, r, goc, ['tên_người_yêu_cầu', 'tên_khách_hàng']),
+    sdt: pick(tt, r, goc, ['số_điện_thoại_khách_hàng']),
+    diaChi: pick(tt, r, goc, ['địa_chỉ_nhận_hàng']),
+    maDonHang: pick(tt, r, goc, ['mã_đơn_hàng']),
+    ngayLap: fmtNgay(pick(tt, r, goc, ['ngày_lắp_đặt'])),
+    maSP: pick(tt, r, goc, ['mã_sản_phẩm']),
+    tinhTrang: pick(tt, r, goc, ['tình_trạng']), // Tình trạng (KHÔNG lấy chi tiết lỗi)
+    linhKienList: splitLinhKien(pick(tt, r, goc, ['linh_kiện'])),
     nguoiPhuTrach: resolveProposerName(nguoi),
     ngayText: `Hôm nay, ngày ${now.getDate()} tháng ${now.getMonth() + 1} năm ${now.getFullYear()} tại TTBH công ty TNHH Euromade Việt Nam`,
   };

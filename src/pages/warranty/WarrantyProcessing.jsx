@@ -189,6 +189,12 @@ const tenKhachHang = (r) => {
   const g = (r && r['phiếu_gốc_json']) || {};
   return r['tên_người_yêu_cầu'] || r['tên_khách_hàng'] || g['tên_người_yêu_cầu'] || g['tên_khách_hàng'] || '';
 };
+// Mã đơn hàng hiển thị: ưu tiên bản sửa trong app (thông_tin_bổ_sung) → cột mirror → phiếu gốc.
+const maDonHang = (r) => {
+  const g = (r && r['phiếu_gốc_json']) || {};
+  const tt = (r && r['thông_tin_bổ_sung']) || {};
+  return tt['mã_đơn_hàng'] || r['mã_đơn_hàng'] || g['mã_đơn_hàng'] || '';
+};
 
 // Cột workflow: dãy "đèn" các bước. Vàng SÁNG = chưa xong, vàng NHẠT (tắt đèn) = đã xong.
 // Bấm 1 đèn để bật/tắt xong ngay trên danh sách (cần quyền sửa). Không mở popup khi bấm đèn.
@@ -647,7 +653,7 @@ const LIST_COLUMNS = [
         <span style={{ fontWeight: 700, color: '#1e293b' }}>{r['mã_sản_phẩm'] || '-'}</span>
         <span style={{ color: '#475569' }}>{r['chi_tiết_lỗi'] || '-'}</span>
         <span style={{ color: '#64748b' }}>Lắp: {fmtDateOnly(r['ngày_lắp_đặt'])}</span>
-        <span style={{ color: '#64748b' }}>ĐH: {r['mã_đơn_hàng'] || '-'}</span>
+        <span style={{ color: '#64748b' }}>ĐH: {maDonHang(r) || '-'}</span>
         <span style={{ color: '#334155' }}>{tenKhachHang(r) || '-'}</span>
         <span style={{ color: '#3b82f6' }}>{r['số_điện_thoại_khách_hàng'] || '-'}</span>
       </div>
@@ -657,7 +663,7 @@ const LIST_COLUMNS = [
   { key: 'card_ktv', label: 'KTV (ĐLĐ)', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="KTV (ĐLĐ)" accent="#8b5cf6" fields={KTV_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
   { key: 'card_kh', label: 'Khách hàng', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="Khách hàng" accent="#16a34a" fields={KH_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
   { key: 'card_bh', label: 'Thông tin bảo hành', render: (r, ctx) => <InfoGroupCard row={r} perm={ctx.perm} title="Thông tin bảo hành" accent="#e11d48" fields={BH_FIELDS} onSaveGroup={ctx.onSaveGroup} /> },
-  { key: 'mã_đơn_hàng', label: 'Mã ĐH', render: r => r['mã_đơn_hàng'] || '-' },
+  { key: 'mã_đơn_hàng', label: 'Mã ĐH', render: r => maDonHang(r) || '-' },
   { key: 'mã_sản_phẩm', label: 'Mã SP', render: r => r['mã_sản_phẩm'] || '-' },
   { key: 'nhóm_sản_phẩm', label: 'Nhóm SP', render: r => r['nhóm_sản_phẩm'] || '-' },
   { key: 'tên_khách_hàng', label: 'Tên KH', render: r => tenKhachHang(r) || '-' },

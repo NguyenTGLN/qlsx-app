@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, Save, Send, Plus, Trash2, CheckCircle2, Circle } from 'lucide-react';
 import { TRANG_THAI_XU_LY, computeTotalCost, WORKFLOW_STEPS_MAU, applyStepToggle, ensureClosingStep, isClosingStepDone, getThongTinBoSung, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel } from '../../lib/warrantyProcessing';
 import fieldOptions from '../../data/caresoftFieldOptions.json';
@@ -19,7 +19,8 @@ const s = {
 function EditableField({ label, value, editable, canSync, saving, onSave, onSync, full }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || '');
-  useEffect(() => { if (!editing) setDraft(value || ''); }, [value, editing]);
+  // Vào chế độ sửa thì nạp lại draft = value hiện tại (thay cho useEffect đồng bộ — tránh cascading render).
+  const startEdit = () => { setDraft(value || ''); setEditing(true); };
   const wrap = full ? { ...s.inputGroup, gridColumn: 'span 2' } : s.inputGroup;
   if (!editable) {
     return (
@@ -33,7 +34,7 @@ function EditableField({ label, value, editable, canSync, saving, onSave, onSync
     return (
       <div style={wrap}>
         <label style={s.label}>{label}</label>
-        <div onClick={() => setEditing(true)} title="Bấm để sửa" style={{ ...s.input, cursor: 'pointer', background: '#f8fafc', minHeight: '1.2em', display: 'flex', alignItems: 'center' }}>
+        <div onClick={startEdit} title="Bấm để sửa" style={{ ...s.input, cursor: 'pointer', background: '#f8fafc', minHeight: '1.2em', display: 'flex', alignItems: 'center' }}>
           {value || <span style={{ color: '#94a3b8' }}>(bấm để nhập)</span>}
         </div>
       </div>
@@ -222,7 +223,8 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
         {/* Nhóm 1: Thông tin phiếu (chỉ đọc) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', background: '#f8fafc', padding: '0.75rem', borderRadius: '10px' }}>
           <div><div style={s.readonlyLbl}>Phiếu ghi</div><div style={s.readonlyVal}>{row['phiếu_ghi'] || row['id_phiếu_ghi'] || '-'}</div></div>
-          <div><div style={s.readonlyLbl}>Mã đơn hàng</div><div style={s.readonlyVal}>{row['mã_đơn_hàng'] || '-'}</div></div>
+          <EditableField label="Mã đơn hàng" value={tinBoSung['mã_đơn_hàng'] || row['mã_đơn_hàng'] || ''} editable={perm.edit} canSync={perm.io} saving={saving}
+            onSave={v => onSaveField('mã_đơn_hàng', v)} onSync={v => onSyncField('mã_đơn_hàng', v)} />
           <div><div style={s.readonlyLbl}>Ngày tạo</div><div style={s.readonlyVal}>{row['thời_điểm_tạo'] || '-'}</div></div>
           <div><div style={s.readonlyLbl}>Trạng thái phiếu (Caresoft)</div><div style={s.readonlyVal}>{row['trạng_thái_phiếu_ghi'] || '-'}</div></div>
           <div><div style={s.readonlyLbl}>Phân loại</div><div style={s.readonlyVal}>{row['phân_loại_công_việc'] || '-'}</div></div>
