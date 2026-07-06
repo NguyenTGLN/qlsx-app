@@ -19,7 +19,7 @@ const T = {
 
 // Tên sheet Excel: bỏ ký tự cấm [ ] : * ? / \, ≤31 ký tự, chống trùng bằng hậu tố.
 function sheetName(name, used) {
-  let s = String(name || 'Phiếu').replace(/[\[\]\*\?\/\\:]/g, ' ').trim().slice(0, 28) || 'Phiếu';
+  let s = String(name || 'Phiếu').replace(/[[\]*?/\\:]/g, ' ').trim().slice(0, 28) || 'Phiếu';
   const base = s; let i = 2;
   while (used.has(s)) s = `${base} (${i++})`.slice(0, 31);
   used.add(s);

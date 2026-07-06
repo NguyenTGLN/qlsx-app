@@ -7,6 +7,8 @@ describe('fmtNgay', () => {
   test('ISO -> dd/mm/yyyy', () => expect(fmtNgay('2026-01-09')).toBe('09/01/2026'));
   test('có giờ vẫn ra ngày', () => expect(fmtNgay('2026-01-09T08:30:00')).toBe('09/01/2026'));
   test('rỗng -> chuỗi rỗng', () => expect(fmtNgay('')).toBe(''));
+  test('nhận Date object', () => expect(fmtNgay(new Date('2026-12-31T00:00:00'))).toBe('31/12/2026'));
+  test('chuỗi không parse được -> rỗng', () => expect(fmtNgay('abc')).toBe(''));
 });
 
 describe('mapRowToProposal', () => {

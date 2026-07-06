@@ -77,4 +77,27 @@ describe('buildProposalWorkbook', () => {
     expect(merges).toContain('A1:E1');
     expect(merges).toContain('A41:B41');
   });
+
+  test('không linh kiện -> đúng 1 dòng trống, không còn FALSE của mẫu', async () => {
+    const P0 = { ...P1, maPhieu: 'PBH-0LK', linhKienList: [] };
+    const built = await buildProposalWorkbook(TEMPLATE(), [P0]);
+    const rt = new ExcelJS.Workbook(); await rt.xlsx.load(await built.xlsx.writeBuffer());
+    const ws = rt.worksheets[0];
+    expect(['', null, undefined]).toContain(ws.getCell('B26').value); // 1 dòng linh kiện trống
+    expect(ws.getCell('C26').value).toBe(1);
+    expect([null, undefined]).toContain(ws.getCell('E26').value);     // đã xoá FALSE của mẫu
+    expect(ws.getCell('A39').value).toBe('Trần KTV');                 // chữ ký ở vị trí gốc (extra=0)
+  });
+
+  test('tên sheet: loại ký tự cấm và chống trùng bằng hậu tố', async () => {
+    const A = { ...P1, maPhieu: 'PBH/01:X*?' };
+    const B = { ...P1, maPhieu: 'PBH-DUP' };
+    const C = { ...P1, maPhieu: 'PBH-DUP' };
+    const built = await buildProposalWorkbook(TEMPLATE(), [A, B, C]);
+    const names = built.worksheets.map(w => w.name);
+    expect(names[0]).not.toMatch(/[[\]*?/\\:]/);   // hết ký tự cấm
+    expect(names.every(n => n.length <= 31)).toBe(true);
+    expect(new Set(names).size).toBe(3);           // 3 tên phân biệt (đã chống trùng)
+    expect(names[2]).toContain('(2)');
+  });
 });
