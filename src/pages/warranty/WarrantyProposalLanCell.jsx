@@ -53,6 +53,11 @@ function ProposalLanCard({ row, lan, perm, onSave, onCancel, onPrint, onExcel })
         <div style={{ fontWeight: 700, fontSize: '0.72rem', color: huy ? '#64748b' : '#4338ca', textDecoration: huy ? 'line-through' : 'none' }}>Lần {lan['lần']}{huy ? ' · Đã Hủy' : ''}</div>
         <div style={{ color: '#64748b' }}>{fmtNgayTao(lan['thời_điểm_tạo'])}</div>
         {lan['người_tạo'] && <div style={{ color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lan['người_tạo']}</div>}
+        {Array.isArray(dl.linhKienList) && dl.linhKienList.length > 0 && (
+          <div title={dl.linhKienList.join(', ')} style={{ color: '#475569', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word', lineHeight: 1.25 }}>
+            🔧 {dl.linhKienList.join(', ')}
+          </div>
+        )}
         {!huy && (
           <div style={{ display: 'flex', gap: 4, marginTop: 'auto' }}>
             <button onClick={(e) => { e.stopPropagation(); printOne(); }} title="In / Tạo PDF" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 6px', borderRadius: 6, border: '1px solid #c7d2fe', background: '#fff', color: '#4338ca', cursor: 'pointer', fontWeight: 700, fontSize: '0.6rem' }}><Printer size={11} /> In</button>
