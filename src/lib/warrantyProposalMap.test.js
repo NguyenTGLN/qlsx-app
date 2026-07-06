@@ -1,0 +1,61 @@
+import { test, expect, describe } from 'vitest';
+import { mapRowToProposal, fmtNgay } from './warrantyProposalMap';
+
+const NOW = new Date('2026-07-06T10:00:00');
+
+describe('fmtNgay', () => {
+  test('ISO -> dd/mm/yyyy', () => expect(fmtNgay('2026-01-09')).toBe('09/01/2026'));
+  test('có giờ vẫn ra ngày', () => expect(fmtNgay('2026-01-09T08:30:00')).toBe('09/01/2026'));
+  test('rỗng -> chuỗi rỗng', () => expect(fmtNgay('')).toBe(''));
+});
+
+describe('mapRowToProposal', () => {
+  const row = {
+    'phiếu_ghi': 'PBH-001', 'id_phiếu_ghi': 111,
+    'số_điện_thoại_khách_hàng': '0909123456',
+    'địa_chỉ_nhận_hàng': '12 Lê Lợi, Q1',
+    'mã_đơn_hàng': 'DH-77', 'ngày_lắp_đặt': '2026-01-09',
+    'mã_sản_phẩm': 'RO-9', 'tình_trạng': 'Máy không lên nguồn',
+    'linh_kiện': 'Bơm, Van điện từ , Adapter',
+    'phiếu_gốc_json': { 'tên_người_yêu_cầu': 'Nguyễn Văn A' },
+  };
+
+  test('map đủ trường + ký người đăng nhập', () => {
+    const p = mapRowToProposal(row, { name: 'Trần Kỹ Thuật' }, NOW);
+    expect(p.maPhieu).toBe('PBH-001');
+    expect(p.khachHang).toBe('Nguyễn Văn A');
+    expect(p.sdt).toBe('0909123456');
+    expect(p.diaChi).toBe('12 Lê Lợi, Q1');
+    expect(p.maDonHang).toBe('DH-77');
+    expect(p.ngayLap).toBe('09/01/2026');
+    expect(p.maSP).toBe('RO-9');
+    expect(p.tinhTrang).toBe('Máy không lên nguồn');
+    expect(p.nguoiPhuTrach).toBe('Trần Kỹ Thuật');
+    expect(p.ngayText).toBe('Hôm nay, ngày 6 tháng 7 năm 2026 tại TTBH công ty TNHH Euromade Việt Nam');
+  });
+
+  test('tách linh kiện theo dấu phẩy, bỏ khoảng trắng thừa/rỗng', () => {
+    const p = mapRowToProposal(row, {}, NOW);
+    expect(p.linhKienList).toEqual(['Bơm', 'Van điện từ', 'Adapter']);
+  });
+
+  test('tình trạng fallback sang chi_tiết_lỗi khi thiếu', () => {
+    const p = mapRowToProposal({ ...row, 'tình_trạng': '', 'chi_tiết_lỗi': 'Rò nước' }, {}, NOW);
+    expect(p.tinhTrang).toBe('Rò nước');
+  });
+
+  test('khách hàng fallback: cột mirror trước, rồi phiếu_gốc_json', () => {
+    const p = mapRowToProposal({ ...row, 'tên_khách_hàng': 'Lê Thị B' }, {}, NOW);
+    expect(p.khachHang).toBe('Lê Thị B');
+  });
+
+  test('linh_kiện rỗng -> mảng rỗng', () => {
+    const p = mapRowToProposal({ ...row, 'linh_kiện': '' }, {}, NOW);
+    expect(p.linhKienList).toEqual([]);
+  });
+
+  test('user rỗng -> nguoiPhuTrach chuỗi rỗng', () => {
+    const p = mapRowToProposal(row, null, NOW);
+    expect(p.nguoiPhuTrach).toBe('');
+  });
+});
