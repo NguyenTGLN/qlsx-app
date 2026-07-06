@@ -1143,8 +1143,8 @@ export default function WarrantyProcessing() {
     const lans = getEffectiveProposalLan(row).map(l => l['lần'] === lan['lần'] ? { ...l, 'đã_hủy': !!huy } : l);
     await persistProposalLans(row, lans);
   };
-  // In 1 hoặc nhiều snapshot: render vùng #wproc-print rồi gọi in.
-  const printProposals = (proposals) => { setPrintingProposals(proposals); setTimeout(() => window.print(), 80); };
+  // In 1 hoặc nhiều snapshot: render vùng #wproc-print rồi gọi in; in xong bỏ vùng in (tránh giữ state cũ).
+  const printProposals = (proposals) => { setPrintingProposals(proposals); setTimeout(() => { window.print(); setPrintingProposals(null); }, 80); };
   // Tải Excel 1 hoặc nhiều snapshot.
   const excelProposals = async (proposals) => {
     setProposalBusy(true);
@@ -1152,20 +1152,25 @@ export default function WarrantyProcessing() {
     catch (e) { alert('Lỗi tạo Excel: ' + (e?.message || e)); }
     finally { setProposalBusy(false); }
   };
-  // Hàng loạt: tạo 1 lần đề xuất trên MỖI phiếu đã tick, rồi mở modal in/tải gộp các snapshot vừa tạo.
+  // Hàng loạt: tạo 1 lần đề xuất trên MỖI phiếu đã tick (song song, mỗi phiếu 1 id riêng nên không tranh chấp),
+  // rồi mở modal in/tải gộp các snapshot vừa tạo. Cờ proposalBusy để có phản hồi + chặn bấm lại.
   const bulkAddProposalLan = async () => {
     const list = filtered.filter(r => selectedIds.has(r.id));
     if (list.length === 0) { alert('Vui lòng tick chọn ít nhất 1 phiếu!'); return; }
     if (!perm.edit) { alert('Bạn không có quyền tạo lần đề xuất.'); return; }
-    const now = new Date();
-    const snaps = [];
-    for (const row of list) {
-      const lans = getEffectiveProposalLan(row);
-      const snap = { ...buildProposalSnapshot(row, user, now), 'lần': nextProposalLanNo(lans) };
-      await persistProposalLans(row, [...lans, snap]);
-      snaps.push(snap['dữ_liệu']);
+    setProposalBusy(true);
+    try {
+      const now = new Date();
+      const snaps = await Promise.all(list.map(async (row) => {
+        const lans = getEffectiveProposalLan(row);
+        const snap = { ...buildProposalSnapshot(row, user, now), 'lần': nextProposalLanNo(lans) };
+        await persistProposalLans(row, [...lans, snap]);
+        return snap['dữ_liệu'];
+      }));
+      setBatchProposals(snaps);
+    } finally {
+      setProposalBusy(false);
     }
-    setBatchProposals(snaps);
   };
 
   if (loading && rows.length === 0) {
@@ -1200,15 +1205,20 @@ export default function WarrantyProcessing() {
           <input type="checkbox" checked={showClosed} onChange={e => { setShowClosed(e.target.checked); setPage(1); }} /> Hiện cả phiếu đã đóng
         </label>
 
-        {/* Hàng loạt: tạo 1 lần đề xuất trên mỗi phiếu đã tick rồi in/tải gộp */}
-        <button
-          onClick={bulkAddProposalLan}
-          disabled={selectedIds.size === 0}
-          title={selectedIds.size === 0 ? 'Tick chọn phiếu để tạo đề xuất' : 'Tạo lần đề xuất cho các phiếu đã chọn'}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: 'none', borderRadius: '8px', background: selectedIds.size === 0 ? '#cbd5e1' : '#4f46e5', color: '#fff', cursor: selectedIds.size === 0 ? 'not-allowed' : 'pointer', fontWeight: 600 }}
-        >
-          <FileText size={15} /> Đề xuất BH{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
-        </button>
+        {/* Hàng loạt: tạo 1 lần đề xuất trên mỗi phiếu đã tick rồi in/tải gộp (chỉ quyền Sửa) */}
+        {perm.edit && (() => {
+          const canBulk = selectedIds.size > 0 && !proposalBusy;
+          return (
+            <button
+              onClick={bulkAddProposalLan}
+              disabled={!canBulk}
+              title={selectedIds.size === 0 ? 'Tick chọn phiếu để tạo đề xuất' : 'Tạo lần đề xuất cho các phiếu đã chọn'}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: 'none', borderRadius: '8px', background: canBulk ? '#4f46e5' : '#cbd5e1', color: '#fff', cursor: canBulk ? 'pointer' : 'not-allowed', fontWeight: 600 }}
+            >
+              <FileText size={15} /> Đề xuất BH{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+            </button>
+          );
+        })()}
 
         {/* Ẩn / Hiện cột */}
         <div style={{ position: 'relative' }}>
