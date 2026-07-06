@@ -22,6 +22,9 @@ Hỗ trợ **1 phiếu** (nút trên mỗi dòng) và **hàng loạt** (tick nhi
 3. **Ký "Phụ trách đơn"**: điền **tên người đang đăng nhập**. "Giám Đốc Kỹ Thuật" giữ "Đỗ Hương Nguyên" theo mẫu.
 4. **Các ô không suy được từ dữ liệu** (checkbox §2/§3/§4, cột Được/Không được BH): **để trống** cho ký/tick tay.
 5. **Không** lưu lịch sử đề xuất vào DB (YAGNI — người dùng không yêu cầu).
+6. **Nhiều linh kiện §3**: **mỗi linh kiện 1 dòng** (chèn dòng vào bảng linh kiện, dịch layout §4/chữ ký + cập nhật merges).
+7. **Excel nhiều phiếu**: **mỗi phiếu 1 sheet**, gộp nhiều sheet trong **1 file**.
+8. **`exceljs`**: đã đồng ý cài thêm.
 
 ## 3. Điểm vào UI
 
@@ -105,8 +108,8 @@ Hàm map dùng chung cho cả HTML in và Excel (một `mapRowToProposal(r, curr
 ## 8. Lưu ý kỹ thuật & rủi ro
 
 - **Tên file mẫu có dấu**: copy sang `public/mau-de-xuat-bao-hanh.xlsx` (ASCII) để `fetch` không vướng URL-encode.
-- **Clone sheet trong ExcelJS**: ExcelJS không có API clone sheet 1 dòng gọn; sẽ copy thủ công (giá trị + style + merges + column widths + row heights) từ sheet mẫu sang sheet mới cho từng phiếu. Cân nhắc: nếu phức tạp, phương án B là **mỗi phiếu 1 file** (tải nhiều file / hoặc gộp zip bằng JSZip). Ưu tiên nhiều-sheet-trong-1-file; fallback zip nếu clone rối.
-- **Chèn dòng linh kiện (§3)**: khi >1 linh kiện, chèn dòng làm dịch chỉ số các block §4/chữ ký bên dưới → phải cập nhật lại merges. Nếu rủi ro cao, bản đầu có thể gộp nhiều linh kiện vào **1 ô xuống dòng** (đơn giản, không dịch layout) và ghi chú tinh chỉnh sau.
+- **Clone sheet trong ExcelJS (mỗi phiếu 1 sheet, 1 file)**: ExcelJS không có API clone sheet 1 dòng gọn; sẽ copy thủ công (giá trị + style + merges + column widths + row heights) từ sheet mẫu sang sheet mới cho từng phiếu. Tên sheet = mã phiếu (cắt ≤31 ký tự, bỏ ký tự cấm `[]:*?/\`, chống trùng bằng hậu tố). **Chốt: nhiều sheet trong 1 file** (không dùng zip nhiều file).
+- **Chèn dòng linh kiện (§3) — mỗi linh kiện 1 dòng (đã chốt)**: khi >1 linh kiện, chèn thêm dòng vào bảng linh kiện (copy style dòng mẫu 26). Việc này làm **dịch chỉ số** các block §4/chữ ký bên dưới → phải **cập nhật lại `!merges`/merge ranges** cho phần dịch. Thứ tự an toàn: xử lý phần dưới trước, hoặc dùng `worksheet.spliceRows`/`insertRow` của ExcelJS (tự dịch merges) rồi set style. Cần test kỹ với 0, 1, và ≥2 linh kiện.
 - **Dependency mới `exceljs`**: cần `npm install exceljs`, tăng kích thước bundle (~1MB). Sau khi code xong phải `npm run build` + copy `dist` → `deploy-netlify` theo quy trình deploy hiện hành.
 - **Trường dữ liệu**: `địa_chỉ_nhận_hàng`, `tình_trạng` có thể nằm ở cột mirror, `thông_tin_bổ_sung`, hoặc `phiếu_gốc_json` — helper map cần fallback nhiều nguồn (giống `tenKhachHang`).
 
