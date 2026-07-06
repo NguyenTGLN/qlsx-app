@@ -3,7 +3,6 @@
 // cách copy từng dòng từ sheet mẫu với offset tính sẵn cho phần dưới bảng linh kiện.
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import { mapRowToProposal } from './warrantyProposalMap';
 
 export const TEMPLATE_URL = '/mau-de-xuat-bao-hanh.xlsx';
 
@@ -100,12 +99,11 @@ export async function buildProposalWorkbook(templateBuffer, proposals) {
   return out;
 }
 
-// Dùng ở trình duyệt: fetch mẫu → map dòng → dựng workbook → tải file.
-export async function downloadProposalExcel(rows, currentUser, now = new Date()) {
+// Dùng ở trình duyệt: nhận thẳng mảng proposal (snapshot dữ_liệu của lần) → dựng workbook theo mẫu → tải file.
+export async function downloadProposals(proposals, now = new Date()) {
   const res = await fetch(TEMPLATE_URL);
   if (!res.ok) throw new Error('Không tải được file mẫu: HTTP ' + res.status);
   const buf = await res.arrayBuffer();
-  const proposals = rows.map((r) => mapRowToProposal(r, currentUser, now));
   const wb = await buildProposalWorkbook(buf, proposals);
   const out = await wb.xlsx.writeBuffer();
   const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
