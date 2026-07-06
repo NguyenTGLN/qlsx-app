@@ -2,7 +2,7 @@ import React from 'react';
 
 // Phiếu đề nghị sửa chữa bảo hành — bản in HTML giống mẫu "Mẫu đề xuất bảo hành.xlsx".
 // Chỉ render nội dung; host lo hiện/ẩn khi in. Props: { p } = object từ mapRowToProposal.
-const GDKT = 'Đỗ Hương Nguyên'; // Giám Đốc Kỹ Thuật — theo mẫu
+const NGUOI_KY_BP = 'Nguyễn Bá Ngọc'; // Bộ phận bảo hành — tên ký cố định
 
 const box = { border: '1px solid #000' };
 const cell = { border: '1px solid #000', padding: '4px 6px', fontSize: '0.82rem', color: '#000', verticalAlign: 'top', wordBreak: 'break-word' };
@@ -106,8 +106,8 @@ export default function WarrantyProposalPrint({ p }) {
           <div style={{ marginTop: 48, fontWeight: 700 }}>{p.nguoiPhuTrach || ' '}</div>
         </div>
         <div style={{ width: '45%' }}>
-          <div style={{ fontWeight: 700 }}>Giám Đốc Kỹ Thuật</div>
-          <div style={{ marginTop: 48, fontWeight: 700 }}>{GDKT}</div>
+          <div style={{ fontWeight: 700 }}>Bộ phận bảo hành</div>
+          <div style={{ marginTop: 48, fontWeight: 700 }}>{NGUOI_KY_BP}</div>
         </div>
       </div>
     </div>

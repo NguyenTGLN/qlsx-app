@@ -83,7 +83,9 @@ function buildSheet(wb, tpl, p, used) {
     row.getCell(5).value = null;                            // Không được BH (trống)
     row.commit();
   }
-  ws.getRow(T.sigName + extra).getCell(1).value = p.nguoiPhuTrach; // A39 (dịch) = Phụ trách đơn
+  ws.getRow(T.sigName + extra).getCell(1).value = p.nguoiPhuTrach;   // A39 (dịch) = Phụ trách đơn
+  ws.getRow(T.sig1 + extra).getCell(5).value = 'Bộ phận bảo hành';   // E34 (dịch): thay "Giám Đốc Kỹ Thuật"
+  ws.getRow(T.sigName + extra).getCell(5).value = 'Nguyễn Bá Ngọc';  // E39 (dịch): tên ký cố định
   return ws;
 }
 

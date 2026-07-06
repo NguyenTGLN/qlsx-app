@@ -25,6 +25,23 @@ const pick = (row, goc, keys) => {
 const splitLinhKien = (s) => String(s || '')
   .split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
 
+// Tên đầy đủ người đề xuất (Phụ trách đơn) theo tên đăng nhập/nhân viên — riêng phiếu đề xuất BH.
+const PROPOSER_FULL_NAME = {
+  duong: 'Nguyễn Thị Thùy Dương',
+  xuyen: 'Hoàng Hà Xuyên',
+  ngoc: 'Nguyễn Bá Ngọc',
+  phong: 'Nguyễn Đình Phong',
+};
+// Chuẩn hóa tên để tra map: bỏ dấu, đổi đ→d, thường hóa, cắt khoảng trắng.
+const normNameKey = (s) => String(s || '')
+  .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
+  .toLowerCase().trim();
+// Tên hiển thị người đề xuất: khớp bảng → tên đầy đủ; không khớp → giữ nguyên tên gốc.
+export function resolveProposerName(nguoi) {
+  const raw = String(nguoi || '');
+  return PROPOSER_FULL_NAME[normNameKey(raw)] || raw;
+}
+
 export function mapRowToProposal(row, currentUser, now = new Date()) {
   const r = row || {};
   const goc = r['phiếu_gốc_json'] || {};
@@ -39,7 +56,7 @@ export function mapRowToProposal(row, currentUser, now = new Date()) {
     maSP: pick(r, goc, ['mã_sản_phẩm']),
     tinhTrang: pick(r, goc, ['tình_trạng', 'chi_tiết_lỗi']),
     linhKienList: splitLinhKien(pick(r, goc, ['linh_kiện'])),
-    nguoiPhuTrach: String(nguoi || ''),
+    nguoiPhuTrach: resolveProposerName(nguoi),
     ngayText: `Hôm nay, ngày ${now.getDate()} tháng ${now.getMonth() + 1} năm ${now.getFullYear()} tại TTBH công ty TNHH Euromade Việt Nam`,
   };
 }

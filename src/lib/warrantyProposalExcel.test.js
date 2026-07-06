@@ -51,7 +51,8 @@ describe('buildProposalWorkbook', () => {
     expect(ws.getCell('B26').value).toBe('Bơm');
     expect(ws.getCell('C26').value).toBe(1);
     expect(ws.getCell('A39').value).toBe('Trần KTV');
-    expect(ws.getCell('E39').value).toBe('Đỗ Hương Nguyên');
+    expect(ws.getCell('E34').value).toBe('Bộ phận bảo hành');   // nhãn ký (thay Giám Đốc Kỹ Thuật)
+    expect(ws.getCell('E39').value).toBe('Nguyễn Bá Ngọc');     // tên ký cố định
   });
 
   test('sheet 2 (3 linh kiện): 3 dòng liên tiếp, khối chữ ký dịch xuống 2 dòng', () => {
@@ -62,7 +63,8 @@ describe('buildProposalWorkbook', () => {
     expect(ws.getCell('A26').value).toBe(1);
     expect(ws.getCell('A28').value).toBe(3);
     expect(ws.getCell('A41').value).toBe('Phạm KTV');
-    expect(ws.getCell('E41').value).toBe('Đỗ Hương Nguyên');
+    expect(ws.getCell('E36').value).toBe('Bộ phận bảo hành');   // nhãn ký dịch xuống 2 (34→36)
+    expect(ws.getCell('E41').value).toBe('Nguyễn Bá Ngọc');     // tên ký cố định (39→41)
   });
 
   test('giữ style: viền ô header §1 (A13) không mất sau khi ghi', () => {

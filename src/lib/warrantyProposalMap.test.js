@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'vitest';
-import { mapRowToProposal, fmtNgay } from './warrantyProposalMap';
+import { mapRowToProposal, fmtNgay, resolveProposerName } from './warrantyProposalMap';
 
 const NOW = new Date('2026-07-06T10:00:00');
 
@@ -59,5 +59,27 @@ describe('mapRowToProposal', () => {
   test('user rỗng -> nguoiPhuTrach chuỗi rỗng', () => {
     const p = mapRowToProposal(row, null, NOW);
     expect(p.nguoiPhuTrach).toBe('');
+  });
+
+  test('tên rút gọn được đổi thành tên đầy đủ trong phiếu', () => {
+    expect(mapRowToProposal(row, { name: 'Dương' }, NOW).nguoiPhuTrach).toBe('Nguyễn Thị Thùy Dương');
+    expect(mapRowToProposal(row, { name: 'Ngọc' }, NOW).nguoiPhuTrach).toBe('Nguyễn Bá Ngọc');
+  });
+});
+
+describe('resolveProposerName', () => {
+  test('map 4 tên rút gọn -> tên đầy đủ', () => {
+    expect(resolveProposerName('Dương')).toBe('Nguyễn Thị Thùy Dương');
+    expect(resolveProposerName('Xuyên')).toBe('Hoàng Hà Xuyên');
+    expect(resolveProposerName('Ngọc')).toBe('Nguyễn Bá Ngọc');
+    expect(resolveProposerName('Phong')).toBe('Nguyễn Đình Phong');
+  });
+  test('bỏ dấu / khác hoa-thường vẫn khớp', () => {
+    expect(resolveProposerName('duong')).toBe('Nguyễn Thị Thùy Dương');
+    expect(resolveProposerName('  NGỌC ')).toBe('Nguyễn Bá Ngọc');
+  });
+  test('tên lạ -> giữ nguyên', () => {
+    expect(resolveProposerName('Trần Kỹ Thuật')).toBe('Trần Kỹ Thuật');
+    expect(resolveProposerName('')).toBe('');
   });
 });
