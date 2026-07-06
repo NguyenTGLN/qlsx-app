@@ -7,6 +7,11 @@ import { useTabPerm, useAuth } from '../../lib/AuthContext';
 import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, deriveKhaiBaoStatuses, cnvIdForLan, getEffectiveLan, buildLanKhaiBaoRecord, lanDefaultsFromRow } from '../../lib/warrantyProcessing';
 import fieldOptions from '../../data/caresoftFieldOptions.json';
 import ProcessingModal from './ProcessingModal';
+import WarrantyProposalModal from './WarrantyProposalModal';
+import WarrantyProposalPrint from '../../components/WarrantyProposalPrint';
+import { mapRowToProposal } from '../../lib/warrantyProposalMap';
+import { downloadProposalExcel } from '../../lib/warrantyProposalExcel';
+import { FileText } from 'lucide-react';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
 const fmtDateTime = (v) => v ? new Date(String(v).replace(/Z$/i, '')).toLocaleString('vi-VN') : '-';
@@ -671,9 +676,20 @@ const LIST_COLUMNS = [
   { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onCompleteSync={ctx.onCompleteSync} /> },
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
   { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} khaiBaoExt={ctx.khaiBaoExt} onSaveLan={ctx.onSaveLan} onSendLan={ctx.onSendLan} onAddLan={ctx.onAddLan} onCancelLan={ctx.onCancelLan} /> },
+  {
+    key: 'de_xuat_bh', label: 'Đề xuất BH', render: (r, ctx) => (
+      <button
+        onClick={(e) => { e.stopPropagation(); ctx.onProposal([r]); }}
+        title="Tạo phiếu đề xuất bảo hành"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', cursor: 'pointer', fontWeight: 700, fontSize: '0.7rem', whiteSpace: 'nowrap' }}
+      >
+        <FileText size={12} /> Đề xuất
+      </button>
+    )
+  },
 ];
 const TRUNCATE_KEYS = ['chi_tiết_lỗi', 'kết_quả_xử_lý', 'linh_kiện'];
-const DEFAULT_VISIBLE = ['phiếu_ghi', 'card_sp', 'card_ktv', 'card_kh', 'card_bh', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ', 'khai_báo'];
+const DEFAULT_VISIBLE = ['phiếu_ghi', 'de_xuat_bh', 'card_sp', 'card_ktv', 'card_kh', 'card_bh', 'trạng_thái_xử_lý', 'các_bước', 'trạng_thái_đồng_bộ', 'khai_báo'];
 
 export default function WarrantyProcessing() {
   const perm = useTabPerm('warranty', 'xuLy');
@@ -702,6 +718,9 @@ export default function WarrantyProcessing() {
   const [editing, setEditing] = useState(null);
   const [selectedIds, setSelectedIds] = useState(() => new Set()); // tick chọn phiếu để tải Excel / cập nhật hàng loạt (giữ qua các trang)
   const [khaiBaoExt, setKhaiBaoExt] = useState(() => new Map()); // map phiếu_ghi → dòng du_lieu_khai_bao__bao_hanh (trạng thái CNV)
+  const [proposalRows, setProposalRows] = useState(null); // dòng đang tạo phiếu đề xuất (null = đóng)
+  const [proposalNow, setProposalNow] = useState(null);   // mốc thời gian tạo (snapshot)
+  const [proposalBusy, setProposalBusy] = useState(false);
 
   // Cột đang hiện (giữ thứ tự đăng ký, bỏ qua key lạ trong localStorage cũ).
   const cols = LIST_COLUMNS.filter(c => visibleCols.includes(c.key));
@@ -733,11 +752,11 @@ export default function WarrantyProcessing() {
   // Cột mới (Form khai báo, Thông tin bảo hành): người đã dùng tab có visibleCols cũ nên
   // DEFAULT_VISIBLE không tự áp. Bật 1 lần cho mỗi trình duyệt; nếu sau đó user tự ẩn thì tôn trọng.
   useEffect(() => {
-    const FLAG = 'qlsx_wproc_newcols_seeded_v2';
+    const FLAG = 'qlsx_wproc_newcols_seeded_v3';
     if (localStorage.getItem(FLAG)) return;
     setVisibleCols(prev => {
       const next = [...prev];
-      for (const k of ['khai_báo', 'card_bh']) if (!next.includes(k)) next.push(k);
+      for (const k of ['khai_báo', 'card_bh', 'de_xuat_bh']) if (!next.includes(k)) next.push(k);
       return next;
     });
     localStorage.setItem(FLAG, '1');
@@ -1096,6 +1115,31 @@ export default function WarrantyProcessing() {
     XLSX.writeFile(wb, `XuLyPhieu_${new Date().getTime()}.xlsx`);
   };
 
+  // Mở modal tạo phiếu đề xuất BH (1 hoặc nhiều dòng). Chốt mốc thời gian tạo tại đây (snapshot).
+  const openProposal = (rowsArg) => {
+    const list = (rowsArg || []).filter(Boolean);
+    if (list.length === 0) { alert('Vui lòng chọn ít nhất 1 phiếu để tạo đề xuất!'); return; }
+    setProposalNow(new Date());
+    setProposalRows(list);
+  };
+  const closeProposal = () => { if (!proposalBusy) { setProposalRows(null); setProposalNow(null); } };
+  // In/PDF: vùng #wproc-print đã render sẵn theo proposalRows → chỉ cần gọi in.
+  const printProposal = () => { setTimeout(() => window.print(), 60); };
+  // Tải Excel theo mẫu.
+  const excelProposal = async () => {
+    setProposalBusy(true);
+    try {
+      await downloadProposalExcel(proposalRows, user, proposalNow || new Date());
+      setProposalRows(null); setProposalNow(null);
+    } catch (e) {
+      alert('Lỗi tạo Excel: ' + (e?.message || e));
+    } finally {
+      setProposalBusy(false);
+    }
+  };
+  // Danh sách phiếu đã tick (theo filtered) — cho nút hàng loạt.
+  const selectedRows = filtered.filter(r => selectedIds.has(r.id));
+
   if (loading && rows.length === 0) {
     return <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}><RefreshCw size={36} className="spin" color="#6366f1" /></div>;
   }
@@ -1127,6 +1171,16 @@ export default function WarrantyProcessing() {
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: '#475569', cursor: 'pointer', whiteSpace: 'nowrap' }}>
           <input type="checkbox" checked={showClosed} onChange={e => { setShowClosed(e.target.checked); setPage(1); }} /> Hiện cả phiếu đã đóng
         </label>
+
+        {/* Tạo phiếu đề xuất BH cho các phiếu đã tick (hàng loạt) */}
+        <button
+          onClick={() => openProposal(selectedRows)}
+          disabled={selectedIds.size === 0}
+          title={selectedIds.size === 0 ? 'Tick chọn phiếu để tạo đề xuất' : 'Tạo phiếu đề xuất BH cho các phiếu đã chọn'}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 0.8rem', border: 'none', borderRadius: '8px', background: selectedIds.size === 0 ? '#cbd5e1' : '#4f46e5', color: '#fff', cursor: selectedIds.size === 0 ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+        >
+          <FileText size={15} /> Đề xuất BH{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+        </button>
 
         {/* Ẩn / Hiện cột */}
         <div style={{ position: 'relative' }}>
@@ -1255,7 +1309,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isWide || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, onCancelLan: cancelLan, khaiBaoExt })}
+                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, onCancelLan: cancelLan, khaiBaoExt, onProposal: openProposal })}
                     </td>
                   );
                 })}
@@ -1280,6 +1334,35 @@ export default function WarrantyProcessing() {
           </div>
         </div>
       </div>
+
+      {/* CSS in cho phiếu đề xuất — ẩn mọi thứ trừ #wproc-print */}
+      <style>{`
+        @media print {
+          @page { size: A4 portrait; margin: 10mm; }
+          body * { visibility: hidden; }
+          #wproc-print, #wproc-print * { visibility: visible; }
+          #wproc-print { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
+      {/* Vùng in (ẩn ngoài màn hình lúc xem; hiện khi in). Mỗi phiếu 1 trang. */}
+      {proposalRows && (
+        <div id="wproc-print" style={{ position: 'absolute', left: '-99999px', top: 0, width: '210mm', background: '#fff' }}>
+          {proposalRows.map((r, i) => (
+            <div key={r.id ?? i} style={{ padding: '6mm 4mm', pageBreakAfter: i < proposalRows.length - 1 ? 'always' : 'auto' }}>
+              <WarrantyProposalPrint p={mapRowToProposal(r, user, proposalNow || undefined)} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {proposalRows && (
+        <WarrantyProposalModal
+          rows={proposalRows} currentUser={user} now={proposalNow || undefined} busy={proposalBusy}
+          onPrint={printProposal} onExcel={excelProposal} onClose={closeProposal}
+        />
+      )}
 
       {editing && <ProcessingModal row={editing} perm={perm} currentUser={user} onClose={() => setEditing(null)} onSave={handleSave} onSync={handleSync} />}
     </div>
