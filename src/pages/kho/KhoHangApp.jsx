@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useNavigate } from 'react-router-dom';
-import { supabase as db, fetchPageRows } from '../../lib/supabase';
+import { supabase as db, fetchPageRows, fetchAllRows } from '../../lib/supabase';
 import { useAuth, getTabPerm, canSeeTab } from '../../lib/AuthContext';
 import { Package, RefreshCw, Search, ChevronLeft, ChevronRight, Download, Database, Loader2, Trash2, Edit3, X, Check, Calendar, Eye, EyeOff, ChevronDown, Upload, Layers, List, GitMerge, Settings, ArrowUp, ArrowDown, Printer, LayoutGrid, Star, Truck } from 'lucide-react';
 import ModuleShell from '../../components/ModuleShell';
@@ -711,10 +711,15 @@ export default function KhoHangApp() {
   const exportCSV = async () => {
     setLoading(true);
     try {
-      let q = buildQuery(false);
-      if (sortCol) q = q.order(sortCol, { ascending: sortAsc });
-      q = q.limit(50000);
-      const { data } = await q;
+      // Lấy TẤT CẢ dòng khớp lọc (gom theo đợt 1000) — thay trần cứng 50.000 cũ.
+      // Tie-break id để các đợt không trùng/sót. Bảng lớn (vài trăm nghìn dòng) sẽ mất
+      // ít phút — lọc theo ngày để nhanh hơn nếu không cần toàn bộ.
+      const { data, error } = await fetchAllRows(() => {
+        let q = buildQuery(false);
+        if (sortCol) q = q.order(sortCol, { ascending: sortAsc });
+        return q.order('id', { ascending: true });
+      });
+      if (error) throw error;
       if (!data?.length) { alert('Không có dữ liệu'); setLoading(false); return; }
       const cols = Object.keys(data[0]).filter(k=>k!=='__');
       const header = cols.map(colLabel).join(',');

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase as db, fetchPageRows } from '../../lib/supabase';
+import { supabase as db, fetchPageRows, fetchAllRows } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { Search, ChevronLeft, ChevronRight, Download, Upload, FileDown, Loader2, Trash2, Edit3, X, Check, Eye } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -138,16 +138,19 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
       if (selectedKeys.size > 0) {
         exportData = data.filter(r => selectedKeys.has(r.id));
       } else {
-        let query = db.from('du_lieu_nhap').select('*').order('ngay_nhap', { ascending: false });
-        if (search) {
-          const terms = search.split(',').map(t => t.trim()).filter(Boolean);
-          if (terms.length > 0) {
-            query = query.in('ma_hang', terms);
+        // Lấy TẤT CẢ dòng khớp lọc (gom theo đợt 1000 — PostgREST chặn cứng 1000/request).
+        // Tie-break id để các đợt không trùng/sót khi nhiều dòng cùng ngày.
+        const { data: allData, error } = await fetchAllRows(() => {
+          let query = db.from('du_lieu_nhap').select('*');
+          if (search) {
+            const terms = search.split(',').map(t => t.trim()).filter(Boolean);
+            if (terms.length > 0) {
+              query = query.in('ma_hang', terms);
+            }
           }
-        }
-        query = applyDateFilter(query, dateRange, 'ngay_nhap');
-        
-        const { data: allData, error } = await query;
+          query = applyDateFilter(query, dateRange, 'ngay_nhap');
+          return query.order('ngay_nhap', { ascending: false }).order('id', { ascending: true });
+        });
         if (error) throw error;
         exportData = allData;
       }
