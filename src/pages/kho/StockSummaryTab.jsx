@@ -69,54 +69,23 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
   const fetchStockSummary = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch inventory stock (lấy toàn bộ vượt 1000 dòng)
-      let allStock = [];
-      let page = 0;
-      while (true) {
-        const { data: stockChunk, error: stockErr } = await db.from('inventory_stock').select(`
-          item_code,
-          quantity,
-          inventory_items ( item_name, unit, lead_time_days, backup_stock_days, min_stock_days )
-        `).range(page * 1000, (page + 1) * 1000 - 1);
-        if (stockErr) throw stockErr;
-        if (stockChunk) allStock = allStock.concat(stockChunk);
-        if (!stockChunk || stockChunk.length < 1000) break;
-        page++;
-      }
-
-      // 2. Fetch sales from View (rất nhanh vì Database đã tính sẵn)
-      const { data: salesSummary, error: salesErr } = await db.from('sales_90d_summary').select('*');
-      if (salesErr) throw salesErr;
-
-      const salesMap = {};
-      (salesSummary || []).forEach(r => {
-        if (r.ma_san_pham) {
-          salesMap[r.ma_san_pham] = Number(r.total_sales) || 0;
-        }
-      });
-
-      // Group stock by item_code
-      const summaryMap = {};
-      allStock.forEach(r => {
-        const code = r.item_code;
-        if (!summaryMap[code]) {
-          summaryMap[code] = {
-            item_code: code,
-            item_name: r.inventory_items?.item_name || '',
-            unit: r.inventory_items?.unit || '',
-            lead_time_days: Number(r.inventory_items?.lead_time_days) || 0,
-            backup_stock_days: Number(r.inventory_items?.backup_stock_days) || 0,
-            min_stock_days: Number(r.inventory_items?.min_stock_days) || 0,
-            total_quantity: 0
-          };
-        }
-        summaryMap[code].total_quantity += (Number(r.quantity) || 0);
-      });
+      // DB tổng hợp sẵn theo mã hàng (1 request, json — kèm tổng bán 90 ngày).
+      // Xem sql/perf_kho_instant.sql — thay vòng lặp kéo toàn bộ inventory_stock về group bằng JS.
+      const { data: summary, error: sumErr } = await db.rpc('get_stock_summary');
+      if (sumErr) throw new Error(sumErr.message + ' — nếu báo thiếu function, cần chạy sql/perf_kho_instant.sql trong Supabase SQL Editor');
 
       // Calculate days remaining and monthly avg
-      let formatted = Object.values(summaryMap).map(item => {
-        item.total_quantity = Math.round(item.total_quantity * 1000) / 1000;
-        const totalSales90d = salesMap[item.item_code] || 0;
+      let formatted = (summary || []).map(raw => {
+        const item = {
+          item_code: raw.item_code,
+          item_name: raw.item_name || '',
+          unit: raw.unit || '',
+          lead_time_days: Number(raw.lead_time_days) || 0,
+          backup_stock_days: Number(raw.backup_stock_days) || 0,
+          min_stock_days: Number(raw.min_stock_days) || 0,
+          total_quantity: Number(raw.total_quantity) || 0,
+        };
+        const totalSales90d = Number(raw.total_sales_90d) || 0;
         const avgMonthlySales = Math.round(totalSales90d / 3); // Trung bình tháng
         const avgDailySales = totalSales90d / 90;
         const daysRemaining = avgDailySales > 0 ? Math.round(item.total_quantity / avgDailySales) : null;
