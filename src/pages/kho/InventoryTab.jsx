@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase as db } from '../../lib/supabase';
+import { supabase as db, fetchAllRows } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
+import { useCachedFetch } from '../../lib/useCachedFetch';
+import { getCatalogItems } from '../../lib/catalogCache';
 import { Search, Loader2, RefreshCw, Package, Database, Download, Upload, Trash2, Edit3, X, Check, Printer, Calculator, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { todayLocal, parseImportDate } from '../../lib/dateUtils';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import { ColumnToggleModal, shortDate } from '../../components/WarehouseSharedUI';
-import { compareLocations } from '../../lib/locationSort';
 
 const INVENTORY_COLS = ['san_pham','dvt','location','import_date','quantity'];
 const INVENTORY_LABELS = { san_pham:'Sản phẩm', dvt:'ĐVT', location:'Vị trí', import_date:'Ngày nhập', quantity:'Tồn kho' };
@@ -38,6 +39,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printData, setPrintData] = useState([]);
   const [printShowStock, setPrintShowStock] = useState(false);
 
   // Column Toggle
@@ -50,28 +52,16 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
   const [showCodeSuggest, setShowCodeSuggest] = useState(false);
   const [showNameSuggest, setShowNameSuggest] = useState(false);
 
-  // Fetch product catalog for manual input suggestions
+  // Fetch product catalog for manual input suggestions (cache dùng chung, tải 1 lần/10')
   useEffect(() => {
-    const fetchCat = async () => {
-      let page = 0;
-      let all = [];
-      while(true) {
-        const { data } = await db.from('inventory_items').select('item_code, item_name, unit').range(page*1000, (page+1)*1000-1);
-        if(data) all = all.concat(data);
-        if(!data || data.length < 1000) break;
-        page++;
-      }
+    getCatalogItems().then(items => {
       const unique = [];
       const seen = new Set();
-      for(let d of all) {
-        if(!seen.has(d.item_code)) {
-          seen.add(d.item_code);
-          unique.push(d);
-        }
+      for (const d of items) {
+        if (!seen.has(d.item_code)) { seen.add(d.item_code); unique.push(d); }
       }
       setProductCatalog(unique);
-    };
-    fetchCat();
+    }).catch(e => console.warn('Không tải được danh mục:', e.message));
   }, []);
 
   // Reset page when filters change
@@ -92,58 +82,49 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
     return () => clearTimeout(t);
   }, [searchInput, prefixInput, searchText, filterPrefix]);
 
-  // Fetch unique locations once
-  useEffect(() => {
-    const fetchLocs = async () => {
-      let allLocs = [];
-      let page = 0;
-      while (true) {
-        const { data } = await db.from('inventory_stock').select('location').range(page * 1000, (page + 1) * 1000 - 1);
-        if (data) allLocs = allLocs.concat(data);
-        if (!data || data.length < 1000) break;
-        page++;
-      }
-      const unique = [...new Set(allLocs.map(d => d.location).filter(Boolean))];
-      setLocations(unique.sort(compareLocations));
-    };
-    fetchLocs();
-  }, []);
+  // Danh sách vị trí distinct — DB tính + sắp theo lộ trình kho, cache SWR (hiện ngay, nền tự làm mới)
+  const { data: locationsData } = useCachedFetch('kho:locations', async () => {
+    const { data, error } = await db.rpc('get_distinct_locations');
+    if (error) throw new Error(error.message + ' — cần chạy sql/perf_kho_instant.sql');
+    return data || [];
+  });
+  useEffect(() => { setLocations(locationsData || []); }, [locationsData]);
+
+  const [totalRows, setTotalRows] = useState(0);
+
+  // Query lọc dùng chung cho bảng / in / export — mọi lọc chạy trong DB
+  const buildStockQuery = useCallback((withCount = false) => {
+    let q = db.from('inventory_stock').select(
+      'id, item_code, item_name, unit, location, import_date, quantity',
+      withCount ? { count: 'estimated' } : {}
+    );
+    if (searchText.trim()) {
+      const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
+      if (terms.length > 0) q = q.in('item_code', terms); // lọc chính xác theo quy ước
+    }
+    if (filterPrefix.trim()) q = q.ilike('location', `${filterPrefix.trim()}%`);
+    if (filterLocation) q = q.eq('location', filterLocation);
+    return q;
+  }, [searchText, filterLocation, filterPrefix]);
 
   const fetchInventory = useCallback(async () => {
     setLoading(true);
     try {
-      let allFetched = [];
-      let currentOffset = 0;
-      const fetchSize = 1000;
+      // Sort server-side: 'location' → cột sinh location_key (đúng lộ trình dãy/tầng/ô, mọi quy mô)
+      const orderCol = sortCol === 'location' ? 'location_key' : sortCol;
+      let q = buildStockQuery(true);
+      if (orderCol) q = q.order(orderCol, { ascending: sortAsc, nullsFirst: false });
+      q = q.order('id', { ascending: true }); // tie-break để phân trang ổn định
+      q = q.range((page - 1) * pageSize, page * pageSize - 1);
 
-      while (true) {
-        let q = db.from('inventory_stock').select(`
-          id, item_code, item_name, unit, location, import_date, quantity
-        `);
-
-        if (searchText.trim()) {
-          const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
-          if (terms.length > 0) {
-            q = q.in('item_code', terms);
-          }
-        }
-        if (filterPrefix.trim()) {
-          q = q.ilike('location', `${filterPrefix.trim()}%`);
-        }
-        if (filterLocation) {
-          q = q.eq('location', filterLocation);
-        }
-
-        q = q.range(currentOffset, currentOffset + fetchSize - 1);
-        const { data, error } = await q;
-        if (error) throw error;
-
-        if (data) allFetched = allFetched.concat(data);
-        if (!data || data.length < fetchSize) break;
-        currentOffset += fetchSize;
+      const { data, count, error } = await q;
+      if (error) {
+        const msg = String(error.message || '');
+        throw new Error(msg + (msg.includes('location_key') ? ' — cần chạy sql/perf_kho_instant.sql trong Supabase SQL Editor' : ''));
       }
 
-      setAllData((allFetched || []).map(r => ({...r, quantity: Math.round(parseFloat(r.quantity || 0) * 1000) / 1000})));
+      setAllData((data || []).map(r => ({...r, quantity: Math.round(parseFloat(r.quantity || 0) * 1000) / 1000})));
+      if (count != null) setTotalRows(count);
       setSelectedKeys(new Set());
     } catch (e) {
       console.error(e);
@@ -151,37 +132,18 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
     } finally {
       setLoading(false);
     }
-  }, [searchText, filterLocation, filterPrefix]);
+  }, [buildStockQuery, sortCol, sortAsc, page, pageSize]);
 
-  const processedData = React.useMemo(() => {
-    let result = [...allData];
-    if (sortCol) {
-      result.sort((a, b) => {
-        let valA = a[sortCol] == null ? '' : a[sortCol];
-        let valB = b[sortCol] == null ? '' : b[sortCol];
-        
-        if (sortCol === 'location') {
-          // Dãy A→Z, tầng M-H-B-T-N-S, ô 1→20 (hàm chung locationSort)
-          const comp = compareLocations(valA, valB);
-          return sortAsc ? comp : -comp;
-        }
+  // Dữ liệu đã đúng trang + đúng thứ tự từ server
+  const rows = allData;
 
-        if (typeof valA === 'number' && typeof valB === 'number') {
-          return sortAsc ? valA - valB : valB - valA;
-        }
-        
-        valA = String(valA);
-        valB = String(valB);
-        // Use numeric: true for Natural Sorting (AH1, AH2, AH13)
-        const comp = valA.localeCompare(valB, 'vi', { numeric: true, sensitivity: 'base' });
-        return sortAsc ? comp : -comp;
-      });
-    }
-    return result;
-  }, [allData, sortCol, sortAsc]);
-
-  const totalRows = processedData.length;
-  const rows = processedData.slice((page - 1) * pageSize, page * pageSize);
+  // Tải TOÀN BỘ kết quả theo bộ lọc hiện tại (chỉ khi user bấm In/Export — có chủ đích)
+  const fetchAllFiltered = useCallback(async () => {
+    const { data, error } = await fetchAllRows(() =>
+      buildStockQuery(false).order('location_key', { ascending: true }));
+    if (error) throw error;
+    return (data || []).map(r => ({...r, quantity: Math.round(parseFloat(r.quantity || 0) * 1000) / 1000}));
+  }, [buildStockQuery]);
 
   useEffect(() => { fetchInventory(); }, [fetchInventory]);
 
@@ -220,16 +182,32 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
     } catch(e) { alert('Lỗi xóa: ' + e.message); }
   };
 
-  const handleExport = () => {
-    const dataToExport = (selectedKeys.size > 0 ? rows.filter(r => selectedKeys.has(r.id)) : processedData).map(r => {
-      const out = {};
-      Object.keys(colLabel).forEach(k => out[colLabel[k]] = r[k]);
-      return out;
-    });
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Ton_Kho");
-    XLSX.writeFile(wb, `Ton_Kho_Vi_Tri_${todayLocal()}.xlsx`);
+  const handleExport = async () => {
+    try {
+      // Có chọn dòng → xuất dòng đã chọn; không chọn → tải đủ toàn bộ theo bộ lọc rồi xuất
+      const source = selectedKeys.size > 0
+        ? rows.filter(r => selectedKeys.has(r.id))
+        : await fetchAllFiltered();
+      const dataToExport = source.map(r => {
+        const out = {};
+        Object.keys(colLabel).forEach(k => out[colLabel[k]] = r[k]);
+        return out;
+      });
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Ton_Kho");
+      XLSX.writeFile(wb, `Ton_Kho_Vi_Tri_${todayLocal()}.xlsx`);
+    } catch (e) { alert('Lỗi xuất Excel: ' + e.message); }
+  };
+
+  // Mở phiếu kiểm kê: tải đủ TOÀN BỘ dòng theo bộ lọc (đã sắp theo lộ trình kho) rồi mới hiện modal
+  const openPrintModal = async () => {
+    setLoading(true);
+    try {
+      setPrintData(await fetchAllFiltered());
+      setShowPrintModal(true);
+    } catch (e) { alert('Lỗi chuẩn bị phiếu in: ' + e.message); }
+    finally { setLoading(false); }
   };
 
   const handleSaveEdit = async (updatedRow) => {
@@ -511,7 +489,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
             </button>
             {perms.create && <button onClick={()=>setShowManualInput(true)} style={{...s.btn,padding:'0.4rem 0.75rem',flexShrink:0}}><Plus size={14}/>Thêm vị trí</button>}
             {perms.io && <button onClick={()=>setShowImport(true)} style={{...s.btn,background:'#e0f2fe',color:'#0369a1',border:'none',padding:'0.4rem 0.75rem',flexShrink:0}}><Upload size={14}/>Nhập Excel</button>}
-            <button onClick={()=>setShowPrintModal(true)} style={{...s.btn,padding:'0.4rem 0.75rem',flexShrink:0}}><Printer size={14}/>In phiếu</button>
+            <button onClick={openPrintModal} style={{...s.btn,padding:'0.4rem 0.75rem',flexShrink:0}}><Printer size={14}/>In phiếu</button>
             <button onClick={handleExport} disabled={loading} style={{...s.btn,background:'#10b981',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}><Download size={14}/>Xuất Excel</button>
           </>
         )}
@@ -721,7 +699,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
                 </tr>
               </thead>
               <tbody>
-                {processedData.map((row, i) => (
+                {printData.map((row, i) => (
                   <tr key={row.id}>
                     <td style={{border:'1px solid #000', padding:'6px', textAlign:'center'}}>{i+1}</td>
                     <td style={{border:'1px solid #000', padding:'6px'}}>{row.item_code}</td>
