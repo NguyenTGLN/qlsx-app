@@ -56,7 +56,7 @@ export default function SaveExportTab({ perms = { view: true, create: true, edit
   const fetchData = async () => {
     setLoading(true);
     try {
-      let query = db.from('luu_xuat').select('*', { count: 'exact' });
+      let query = db.from('luu_xuat').select('*', { count: 'estimated' });
       
       if (search) {
         const terms = search.split(',').map(t => t.trim()).filter(Boolean);

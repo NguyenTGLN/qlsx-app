@@ -95,7 +95,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
   const fetchData = async () => {
     setLoading(true);
     try {
-      let query = db.from('du_lieu_nhap').select('*', { count: 'exact' });
+      let query = db.from('du_lieu_nhap').select('*', { count: 'estimated' });
       
       if (search) {
         const terms = search.split(',').map(t => t.trim()).filter(Boolean);

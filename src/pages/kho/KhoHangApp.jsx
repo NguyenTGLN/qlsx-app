@@ -46,7 +46,7 @@ function AutoSuggest({ value, onChange, placeholder, columnName, isOpen, onToggl
     timerRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const { data } = await db.from('luu_xuat').select(columnName).ilike(columnName, `%${q}%`).limit(500);
+        const { data } = await db.from('luu_xuat').select(columnName).ilike(columnName, `%${q}%`).limit(50);
         setResults([...new Set((data||[]).map(r=>r[columnName]).filter(Boolean))].sort());
       } catch(e) { console.warn('Search err:', e); }
       setSearching(false);
@@ -62,7 +62,7 @@ function AutoSuggest({ value, onChange, placeholder, columnName, isOpen, onToggl
     if (results.length === 0 && !input) {
       setSearching(true);
       try {
-        const { data } = await db.from('luu_xuat').select(columnName).limit(200);
+        const { data } = await db.from('luu_xuat').select(columnName).limit(50);
         setResults([...new Set((data||[]).map(r=>r[columnName]).filter(Boolean))].sort());
       } catch(e) { console.warn(e); }
       setSearching(false);
@@ -599,7 +599,8 @@ export default function KhoHangApp() {
 
   // ── Build query with filters ──
   const buildQuery = useCallback((countOnly = false) => {
-    let q = db.from('luu_xuat').select('*', countOnly ? { count: 'exact', head: true } : {});
+    // count 'estimated': chính xác khi kết quả nhỏ, ước lượng planner khi lớn — không quét cả bảng triệu dòng
+    let q = db.from('luu_xuat').select('*', countOnly ? { count: 'estimated', head: true } : {});
 
     // Date filter
     q = applyDateFilter(q, dateRange, 'ngay_xuat');
