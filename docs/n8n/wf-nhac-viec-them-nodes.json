@@ -1,0 +1,174 @@
+{
+  "meta": {
+    "note": "CHUC NANG: cac node MOI can them vao workflow nhac viec hien co. Cach dung: mo workflow trong n8n -> Ctrl+A? KHONG. -> copy toan bo noi dung file nay -> dan (Ctrl+V) vao canvas workflow -> noi day theo docs/n8n/nhac-viec-workflows.md. Node Switch 'Dinh tuyen' dung de THAY node IF 'La cap nhat task?' (xoa IF cu sau khi noi lai)."
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cong_viec_den_han",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [48, 720],
+      "id": "9a1c7e30-2f4b-4c8a-b1d2-3e4f5a6b7c8d",
+      "name": "Webhook đến hạn",
+      "webhookId": "9a1c7e30-2f4b-4c8a-b1d2-3e4f5a6b7c8d"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  {
+                    "id": "rule-den-han",
+                    "leftValue": "={{ $('Webhook đến hạn').isExecuted }}",
+                    "rightValue": "",
+                    "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "den_han"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "conditions": [
+                  {
+                    "id": "rule-update",
+                    "leftValue": "={{ $('Webhook cập nhật task').isExecuted }}",
+                    "rightValue": "",
+                    "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "update"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "summary"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [544, 368],
+      "id": "1b2c3d4e-5f60-4711-8899-aabbccddeeff",
+      "name": "Định tuyến"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "nhan_vien",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "={{ $('Webhook đến hạn').first().json.body.assignee.name }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [784, 720],
+      "id": "2c3d4e5f-6071-4822-99aa-bbccddeeff00",
+      "name": "Lấy nhân viên (đến hạn)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": { "id": "kAOz6fNsa8UHk4Ws", "name": "Supabase account 2" }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "cong_viec_duoc_giao",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $('Webhook đến hạn').first().json.body.task.id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1024, 720],
+      "id": "3d4e5f60-7182-4933-aabb-ccddeeff0011",
+      "name": "Lấy công việc (đến hạn)",
+      "credentials": {
+        "supabaseApi": { "id": "kAOz6fNsa8UHk4Ws", "name": "Supabase account 2" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "tien_do",
+        "returnAll": true,
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook đến hạn').first().json.body.task.id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1264, 720],
+      "id": "4e5f6071-8293-4a44-bbcc-ddeeff001122",
+      "name": "Lấy tiến độ (đến hạn)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": { "id": "kAOz6fNsa8UHk4Ws", "name": "Supabase account 2" }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Thẻ \"đến hạn\" cho nhắc 60/30/5 phút — tự chứa CSS, chỉ phụ thuộc 3 node query + Webhook đến hạn.\nconst task = $('Lấy công việc (đến hạn)').first().json || {};\nconst body = $('Webhook đến hạn').first().json.body || {};\nlet nv = {};\ntry { nv = $('Lấy nhân viên (đến hạn)').first().json || {}; } catch (e) { nv = {}; }\nconst tienDo = $input.all().map(i => i.json).filter(r => r && r.task_id);\n\nconst moc = String(body.moc || '');\nconst p = n => String(n).padStart(2, '0');\nconst fmt = iso => { try { const d = new Date(iso); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch (e) { return iso; } };\n\nconst band = {\n  '60': { text: '⏰ CÒN DƯỚI 1 TIẾNG', color: '#f59e0b', bg: '#fffbeb' },\n  '30': { text: '⏰ CÒN DƯỚI 30 PHÚT', color: '#f97316', bg: '#fff7ed' },\n  '5':  { text: '🔥 CÒN DƯỚI 5 PHÚT',  color: '#ef4444', bg: '#fef2f2' }\n}[moc] || { text: '⏰ SẮP ĐẾN HẠN', color: '#f59e0b', bg: '#fffbeb' };\n\nconst assignee = task.name || (body.assignee && body.assignee.name) || 'Chưa giao';\nconst due = task.due_date ? fmt(task.due_date) : 'N/A';\nconst last = tienDo.length ? tienDo[tienDo.length - 1] : null;\nconst progress = last ? `${last.content} — ${fmt(last.time)} · ${last.name || ''}` : 'Chưa có cập nhật';\n\nconst html = `<!DOCTYPE html><html lang=\"vi\"><head><meta charset=\"UTF-8\"><style>\n  body,html{margin:0;padding:0;width:1920px;min-height:1080px;background:linear-gradient(160deg,#eef2ff,#f8fafc 45%,#ecfeff);font-family:'Segoe UI',Arial,sans-serif;}\n  .wrap{padding:60px 80px;}\n  .title{font-size:60px;font-weight:800;color:#1e293b;text-align:center;margin:0 0 40px;text-transform:uppercase;}\n  .banner{background:${band.bg};border:6px solid ${band.color};color:${band.color};font-size:64px;font-weight:800;text-align:center;padding:32px;border-radius:28px;margin-bottom:44px;}\n  .card{background:#fff;border-radius:28px;box-shadow:0 14px 40px rgba(30,41,59,.12);border-left:16px solid ${band.color};overflow:hidden;}\n  .row{display:flex;border-bottom:2px solid #eef2f7;}\n  .row:last-child{border-bottom:none;}\n  .lbl{width:460px;flex-shrink:0;background:#f1f5f9;color:#334155;font-size:38px;font-weight:700;padding:34px 40px;}\n  .val{flex:1;font-size:42px;color:#0f172a;padding:34px 44px;line-height:1.35;word-wrap:break-word;}\n  .val.strong{font-weight:800;}\n</style></head><body><div class=\"wrap\">\n  <div class=\"title\">Nhắc việc sắp đến hạn</div>\n  <div class=\"banner\">${band.text}</div>\n  <div class=\"card\">\n    <div class=\"row\"><div class=\"lbl\">📋 Công việc</div><div class=\"val strong\">${task.title || ''}</div></div>\n    <div class=\"row\"><div class=\"lbl\">⏰ Hạn chót</div><div class=\"val strong\" style=\"color:${band.color}\">${due}</div></div>\n    <div class=\"row\"><div class=\"lbl\">📈 Tiến độ gần nhất</div><div class=\"val\">${progress}</div></div>\n    <div class=\"row\"><div class=\"lbl\">👤 Người thực hiện</div><div class=\"val strong\">${assignee}</div></div>\n  </div>\n</div></body></html>`;\n\nconst mention = nv.id_zalo_oa ? `[@${nv.id_zalo_oa}] ` : '';\nreturn [{ json: { html, message_text: `${mention}${band.text} — Tốc độ nhé!` } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1504, 720],
+      "id": "5f607182-93a4-4b55-ccdd-eeff00112233",
+      "name": "Tạo thẻ đến hạn"
+    }
+  ],
+  "connections": {
+    "Định tuyến": {
+      "main": [
+        [ { "node": "Lấy nhân viên (đến hạn)", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Lấy nhân viên (đến hạn)": {
+      "main": [
+        [ { "node": "Lấy công việc (đến hạn)", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Lấy công việc (đến hạn)": {
+      "main": [
+        [ { "node": "Lấy tiến độ (đến hạn)", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Lấy tiến độ (đến hạn)": {
+      "main": [
+        [ { "node": "Tạo thẻ đến hạn", "type": "main", "index": 0 } ]
+      ]
+    }
+  }
+}

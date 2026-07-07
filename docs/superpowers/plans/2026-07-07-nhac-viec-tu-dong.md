@@ -30,7 +30,7 @@ Mọi lệnh SQL chạy tại **Supabase Dashboard → SQL Editor**. File `.sql`
 - Create: `supabase/reminders/05_schedule.sql`
 - Create: `supabase/reminders/99_rollback.sql`
 - Create: `supabase/reminders/README.md`
-- Create: `docs/n8n/wf-nhac-viec-updated.json` (workflow n8n đã thêm Switch + nhánh đến hạn)
+- Create: `docs/n8n/wf-nhac-viec-them-nodes.json` (workflow n8n đã thêm Switch + nhánh đến hạn)
 - Create: `docs/n8n/nhac-viec-workflows.md` (hướng dẫn import + chỉnh Code tổng hợp + bỏ 8h)
 
 ---
@@ -311,7 +311,7 @@ git commit -m "feat(nhac-viec): ham Job A kich hoat tong hop 8h"
 ## Task 6: Cập nhật workflow n8n (Switch + nhánh đến hạn + rỗng-vẫn-gửi)
 
 **Files:**
-- Create: `docs/n8n/wf-nhac-viec-updated.json`
+- Create: `docs/n8n/wf-nhac-viec-them-nodes.json`
 - Create: `docs/n8n/nhac-viec-workflows.md`
 
 > Nội dung JSON đầy đủ do người thực thi sinh từ workflow gốc người dùng cung cấp, áp dụng các thay đổi dưới đây. Vì cần toàn bộ ngữ cảnh workflow gốc, **bước này do Claude sinh trực tiếp** (không giao subagent).
@@ -339,7 +339,7 @@ git commit -m "feat(nhac-viec): ham Job A kich hoat tong hop 8h"
    }
    ```
 
-- [ ] **Step 1: Sinh file `docs/n8n/wf-nhac-viec-updated.json`** (workflow gốc + 4 thay đổi trên).
+- [ ] **Step 1: Sinh file `docs/n8n/wf-nhac-viec-them-nodes.json`** (workflow gốc + 4 thay đổi trên).
 - [ ] **Step 2: Sinh file `docs/n8n/nhac-viec-workflows.md`** — hướng dẫn: Import workflow (Import from File) → kiểm tra credentials (Supabase/Google Sheets/HCTI/httpBasicAuth) đã map → Activate → lấy URL `Webhook đến hạn`.
 - [ ] **Step 3: Test nhánh đến hạn (n8n test mode)**
   - Trong n8n bật **Listen for test event** ở `Webhook đến hạn` (URL `/webhook-test/cong_viec_den_han`, khớp `reminder_config.webhook_den_han`).
@@ -350,7 +350,7 @@ git commit -m "feat(nhac-viec): ham Job A kich hoat tong hop 8h"
 - [ ] **Step 6: Activate workflow** (đổi từ test → active).
 - [ ] **Step 7: Commit**
 ```bash
-git add docs/n8n/wf-nhac-viec-updated.json docs/n8n/nhac-viec-workflows.md
+git add docs/n8n/wf-nhac-viec-them-nodes.json docs/n8n/nhac-viec-workflows.md
 git commit -m "docs(nhac-viec): workflow n8n + runbook (Switch + nhanh den han)"
 ```
 
@@ -437,7 +437,7 @@ drop table if exists reminder_config;
 ## Áp lần đầu (SQL Editor, đúng thứ tự)
 00_extensions → 01_reminder_config → 02_cong_viec_nhac_log →
 03_fn_nhac_viec_den_han → 04_fn_nhac_viec_dang_thuc_hien → 05_schedule
-Rồi import docs/n8n/wf-nhac-viec-updated.json, Activate, bỏ triggerAtHour:8 trong lịch n8n.
+Rồi import docs/n8n/wf-nhac-viec-them-nodes.json, Activate, bỏ triggerAtHour:8 trong lịch n8n.
 
 ## Đổi test ↔ prod webhook đến hạn
 update reminder_config set value='<url>' where key='webhook_den_han';
