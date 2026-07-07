@@ -5,7 +5,7 @@ import { Search, Loader2, Calendar, FileText, Download, Upload, Trash2, Edit3, X
 import * as XLSX from 'xlsx';
 import DateRangeDropdown, { applyDateFilter } from '../../components/DateRangeDropdown';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
-import { shortDateTime, ColumnToggleModal } from '../../components/WarehouseSharedUI';
+import { shortDateTime, ColumnToggleModal, PageSizeSelect } from '../../components/WarehouseSharedUI';
 
 const TABLE_COLS = ['thoi_gian', 'ma_lenh', 'ma_tp', 'linh_kien', 'vi_tri', 'ton_truoc', 'sl_lay', 'ton_sau', 'nguoi_tao', 'ghi_chu'];
 const COL_LABELS = {
@@ -149,6 +149,7 @@ export default function PickingLogsTab() {
     <div style={{display:'flex', flexDirection:'column', flex:1, height:'100%', overflow:'hidden', position:'relative'}}>
       {/* Control Panel */}
       <div className="mobile-toolbar" style={{background:'#fff', borderBottom:'1px solid #e2e8f0', padding:'0.5rem', display:'flex', gap:'0.5rem', alignItems:'center', flexWrap:'nowrap', position:'sticky', top:0, zIndex:50, overflowX:'auto'}}>
+        <PageSizeSelect value={pageSize} onChange={setPageSize} />
         <div style={{minWidth:120, flexShrink:0, flex:1}}>
           <SearchAutoSuggest
             tableName="inventory_picking_logs"

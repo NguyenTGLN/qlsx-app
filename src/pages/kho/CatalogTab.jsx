@@ -5,7 +5,7 @@ import { invalidateCatalog } from '../../lib/catalogCache';
 import { Loader2, RefreshCw, Trash2, Edit3, Download, Upload, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
-import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
+import { ColumnToggleModal, PageSizeSelect } from '../../components/WarehouseSharedUI';
 import AddCatalogItemModal, { CATALOG_COL_LABEL as colLabel } from '../../components/AddCatalogItemModal';
 
 const CAT_COLS = ['san_pham','dvt','min_stock_days','backup_stock_days','warehouse','lead_time_days'];
@@ -211,6 +211,7 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
     <div style={{display:'flex',flexDirection:'column',flex:1,height:'100%',position:'relative'}}>
       {/* Sticky Toolbar */}
       <div style={{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0.5rem',display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'nowrap',position:'sticky',top:0,zIndex:50,overflowX:'auto'}}>
+        <PageSizeSelect value={pageSize} onChange={setPageSize} />
         <div style={{flex:1, minWidth:120}}>
           <SearchAutoSuggest
             tableName="inventory_items"

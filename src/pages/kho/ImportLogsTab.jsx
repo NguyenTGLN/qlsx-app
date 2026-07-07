@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import DateRangeDropdown, { applyDateFilter } from '../../components/DateRangeDropdown';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
+import { PageSizeSelect } from '../../components/WarehouseSharedUI';
 
 const shortDate = (d) => {
   if (!d) return '';
@@ -312,6 +313,7 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
     <div style={{display:'flex',flexDirection:'column',flex:1,height:'100%',position:'relative'}}>
       {/* Sticky Toolbar */}
       <div className="mobile-toolbar" style={{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0.5rem',display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'nowrap',position:'sticky',top:0,zIndex:50,overflowX:'auto'}}>
+        <PageSizeSelect value={pageSize} onChange={setPageSize} />
         <div style={{minWidth:120, flexShrink:0, flex:1}}>
           <SearchAutoSuggest
             tableName="du_lieu_nhap"

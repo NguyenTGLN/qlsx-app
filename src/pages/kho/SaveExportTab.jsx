@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import DateRangeDropdown, { applyDateFilter } from '../../components/DateRangeDropdown';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
-import { shortDate, ColumnToggleModal } from '../../components/WarehouseSharedUI';
+import { shortDate, ColumnToggleModal, PageSizeSelect } from '../../components/WarehouseSharedUI';
 
 const TABLE_COLS = ['ngay_xuat', 'san_pham', 'sl', 'ma_don_hang'];
 const COL_LABELS = { ngay_xuat: 'Ngày xuất', san_pham: 'Sản phẩm', sl: 'Số lượng', ma_don_hang: 'Mã ĐH' };
@@ -261,6 +261,7 @@ export default function SaveExportTab({ perms = { view: true, create: true, edit
     <div style={{display:'flex',flexDirection:'column',flex:1,height:'100%',position:'relative'}}>
       {/* Sticky Toolbar — Search + DateFilter + ColumnToggle only */}
       <div className="mobile-toolbar" style={{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0.5rem',display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'nowrap',position:'sticky',top:0,zIndex:50,overflowX:'auto'}}>
+        <PageSizeSelect value={pageSize} onChange={setPageSize} />
         <div style={{minWidth:120, flexShrink:0, flex:1}}>
           <SearchAutoSuggest
             tableName="luu_xuat"

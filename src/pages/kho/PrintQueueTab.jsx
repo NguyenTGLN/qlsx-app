@@ -4,6 +4,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { Printer, Search, Loader2, CheckCircle, Clock, RefreshCw, Check, X, CheckSquare, Square, AlertCircle } from 'lucide-react';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
+import { PageSizeSelect } from '../../components/WarehouseSharedUI';
 
 // notes phiếu nhập được lưu dạng "{lý do} - {nguồn}" (hoặc chỉ "{lý do}"); phiếu xuất chỉ có lý do.
 const splitNote = (n) => {
@@ -241,7 +242,9 @@ export default function PrintQueueTab() {
             <option value="PRINTED">Đã In</option>
             <option value="ALL">Tất cả</option>
           </select>
-          
+
+          <PageSizeSelect value={pageSize} onChange={setPageSize} style={{padding:'8px 12px', fontSize:'0.9rem'}} />
+
           <button onClick={loadData} style={{padding:'8px 12px', borderRadius:6, border:'1px solid #cbd5e1', background:'#fff', cursor:'pointer', display:'flex', alignItems:'center', gap:5}}>
             <RefreshCw size={16} className={loading ? "spin" : ""} color="#475569" /> Làm mới
           </button>

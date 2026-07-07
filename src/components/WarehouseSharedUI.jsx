@@ -28,6 +28,26 @@ export const shortDateTime = (d) => {
 };
 
 /**
+ * PageSizeSelect — ô chọn số dòng hiển thị mỗi trang.
+ * Đặt trên THANH CÔNG CỤ TRÊN CÙNG (luôn thấy) — trước đây ô này bị chôn ở thanh
+ * phân trang dưới đáy trang cao, người dùng phải cuộn hết mới thấy và bị thanh nút
+ * cố định che khuất. Giá trị đổi → các tab tự reset về trang 1 qua effect có sẵn.
+ */
+export const PAGE_SIZE_OPTIONS = [50, 100, 500, 1000, 5000, 10000];
+export function PageSizeSelect({ value, onChange, options = PAGE_SIZE_OPTIONS, style }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(Number(e.target.value))}
+      title="Số dòng hiển thị mỗi trang"
+      style={{ padding:'0.35rem 0.4rem', border:'1px solid #cbd5e1', borderRadius:7, fontSize:'0.75rem', fontWeight:600, outline:'none', background:'#fff', color:'#334155', cursor:'pointer', flexShrink:0, ...style }}
+    >
+      {options.map(n => <option key={n} value={n}>{n >= 1000 ? `${n / 1000}K` : n}/trang</option>)}
+    </select>
+  );
+}
+
+/**
  * ColumnToggleModal — Fixed Modal for toggling table columns (mobile-friendly)
  *
  * Props:

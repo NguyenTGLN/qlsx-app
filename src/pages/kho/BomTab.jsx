@@ -5,7 +5,7 @@ import { invalidateBomProducts } from '../../lib/catalogCache';
 import { Search, Loader2, RefreshCw, Trash2, Edit3, Download, Upload, X, Check, Printer } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
-import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
+import { ColumnToggleModal, PageSizeSelect } from '../../components/WarehouseSharedUI';
 
 const BOM_COLS = ['thanh_pham','linh_kien','dvt','quantity'];
 const BOM_LABELS = { thanh_pham:'Thành phẩm', linh_kien:'Linh kiện', dvt:'ĐVT', quantity:'Số lượng' };
@@ -428,6 +428,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
   return (
     <div style={{display:'flex',flexDirection:'column',flex:1,height:'100%',position:'relative'}}>
       <div className="mobile-toolbar" style={{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0.5rem',display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'nowrap',position:'sticky',top:0,zIndex:50,overflowX:'auto'}}>
+        <PageSizeSelect value={pageSize} onChange={setPageSize} />
         <div style={{minWidth:120, flexShrink:0, flex:1}}>
           <SearchAutoSuggest
             tableName="bom_items"

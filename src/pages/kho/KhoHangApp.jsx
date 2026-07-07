@@ -22,6 +22,7 @@ import PrintQueueTab from './PrintQueueTab';
 import SaveExportTab from './SaveExportTab';
 import BookInventoryTab from './BookInventoryTab';
 import SupplierTab from './SupplierTab';
+import { PageSizeSelect } from '../../components/WarehouseSharedUI';
 
 // ── AutoSuggest Component (live search from Supabase) ──
 function AutoSuggest({ value, onChange, placeholder, columnName, isOpen, onToggle }) {
@@ -904,7 +905,8 @@ export default function KhoHangApp() {
       ) : (
         <>
           {/* Filter row (below tab bar, always visible for 'xuat') */}
-      <div style={{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0.3rem 0.4rem',display:'flex',alignItems:'center',gap:4,flexWrap:'nowrap'}}>
+      <div style={{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0.3rem 0.4rem',display:'flex',alignItems:'center',gap:4,flexWrap:'nowrap',overflowX:'auto'}}>
+        <PageSizeSelect value={pageSize} onChange={setPageSize} />
         <DateRangeDropdown label="Ngày" value={dateRange} onChange={v => { setDateRange(v); setPage(1); }} />
         <div style={{flexShrink:0}}>
           <AutoSuggest value={filterSP} onChange={v=>{setFilterSP(v);setPage(1);}} placeholder="Mã SP" columnName="ma_san_pham" isOpen={openDropdown==='sp'} onToggle={v=>setOpenDropdown(v?'sp':null)}/>

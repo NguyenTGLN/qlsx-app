@@ -7,7 +7,7 @@ import { Search, Loader2, RefreshCw, Package, Database, Download, Upload, Trash2
 import * as XLSX from 'xlsx';
 import { todayLocal, parseImportDate } from '../../lib/dateUtils';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
-import { ColumnToggleModal, shortDate } from '../../components/WarehouseSharedUI';
+import { ColumnToggleModal, shortDate, PageSizeSelect } from '../../components/WarehouseSharedUI';
 
 const INVENTORY_COLS = ['san_pham','dvt','location','import_date','quantity'];
 const INVENTORY_LABELS = { san_pham:'Sản phẩm', dvt:'ĐVT', location:'Vị trí', import_date:'Ngày nhập', quantity:'Tồn kho' };
@@ -382,6 +382,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
     <div style={{display:'flex',flexDirection:'column',flex:1,height:'100%',position:'relative'}}>
       {/* Sticky Toolbar */}
       <div className="mobile-toolbar" style={{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0.5rem',display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'nowrap',position:'sticky',top:0,zIndex:50,overflowX:'auto'}}>
+        <PageSizeSelect value={pageSize} onChange={setPageSize} />
         <div style={{minWidth:120, flexShrink:0}}>
           <SearchAutoSuggest
             tableName="inventory_stock"
