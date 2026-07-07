@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, ShoppingCart, RefreshCw, XCircle, MoreHorizontal, ArrowLeft, Archive, Truck, X } from 'lucide-react';
 import { closeProposalWithShortfall } from '../../lib/dksxEngine';
+import { getCatalogItems, invalidateCatalog } from '../../lib/catalogCache';
 import { dlkImportCap } from '../../lib/proposalQty';
 import AddCatalogItemModal from '../../components/AddCatalogItemModal';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
@@ -245,23 +246,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
   // Load danh mục hàng hóa để auto suggest và danh sách phiếu sản xuất
   useEffect(() => {
     const loadData = async () => {
-      let allItems = [];
-      let from = 0;
-      let limit = 1000;
-      let hasMore = true;
-      while(hasMore) {
-         const { data: catData, error } = await db.from('inventory_items').select('item_code, item_name, unit').range(from, from + limit - 1);
-         if (error) {
-            console.error("Error fetching catalog:", error);
-            hasMore = false;
-         } else if (catData && catData.length > 0) {
-            allItems = [...allItems, ...catData];
-            from += limit;
-            if (catData.length < limit) hasMore = false;
-         } else {
-            hasMore = false;
-         }
-      }
+      const allItems = await getCatalogItems().catch(e => { console.error("Error fetching catalog:", e); return []; });
       setCatalog(allItems);
 
       const { data: ordersData } = await db.from('production_orders').select('id, order_code, product_code, status').order('created_at', { ascending: false });
@@ -1042,6 +1027,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
           onClose={()=>setAddItemCtx(null)}
           onSaved={(item)=>{
             setCatalog(prev => [...prev, item]);        // để lần tìm sau thấy ngay
+            invalidateCatalog();                        // cache dùng chung tải lại có mã mới
             handleSelectItem(addItemCtx.blockId, item); // tự thêm vào khối đang nhập
             setAddItemCtx(null);
           }}
