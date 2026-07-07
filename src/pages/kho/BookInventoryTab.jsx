@@ -59,17 +59,10 @@ export default function BookInventoryTab() {
       // 'Tất cả' (không chọn ngày) → kỳ rất rộng để mọi phát sinh đều tính trong kỳ.
       const p_start = dateRange.from || '1900-01-01';
       const p_end = dateRange.to || '2999-12-31';
-      // DB trả tối đa 1000 dòng/lần → lấy theo từng đợt cho đủ hết mã hàng.
-      let all = [];
-      let from = 0; const step = 1000;
-      while (true) {
-        const { data, error } = await db.rpc('get_book_inventory', { p_start, p_end }).range(from, from + step - 1);
-        if (error) throw error;
-        if (data) all = all.concat(data);
-        if (!data || data.length < step) break;
-        from += step;
-      }
-      setAllRows(all.map(r => ({
+      // 1 request duy nhất — DB tính 1 lần, trả json (hết cảnh mỗi trang tính lại từ đầu)
+      const { data: all, error } = await db.rpc('get_book_inventory_json', { p_start, p_end });
+      if (error) throw new Error(error.message + ' — nếu báo thiếu function, cần chạy sql/perf_kho_instant.sql trong Supabase SQL Editor');
+      setAllRows((all || []).map(r => ({
         item_code: r.item_code,
         item_name: r.item_name,
         ton_dau_ky: Number(r.ton_dau_ky) || 0,
