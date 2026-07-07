@@ -1,101 +1,90 @@
-# Nhắc việc tự động — Implementation Plan
+# Nhắc việc tự động — Implementation Plan (bản tích hợp workflow n8n thực tế)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Tự động nhắc việc qua Zalo (qua n8n) mà không cần mở app: 08:00 gửi danh sách việc đang thực hiện; và nhắc trước hạn từng việc ở 3 mốc 60/30/5 phút.
+**Goal:** Thêm nhắc việc tự động trước hạn 60/30/5 phút (mới) và đưa lịch 8:00 vào Supabase, tái dùng đúng chuỗi gửi ảnh Zalo + mention `id_zalo_oa` sẵn có trong workflow n8n của người dùng.
 
-**Architecture:** Toàn bộ hẹn giờ + truy vấn nằm trong Supabase bằng `pg_cron` (bộ hẹn giờ) và `pg_net` (POST webhook từ trong DB). Hai hàm SQL build payload và gọi webhook n8n; n8n chỉ định dạng tin và gửi vào nhóm Zalo. Không sửa app React, không deploy lại Netlify.
+**Architecture:** `pg_cron` (Supabase) hẹn giờ; `pg_net` POST vào 2 webhook n8n. Job B (mỗi phút) phát hiện việc vào băng 60/30/5 → POST vào **webhook mới `cong_viec_den_han`** → nhánh n8n mới dựng thẻ ảnh + mention. Job A (8:00) → POST vào **`Webhook tổng hợp` (a6fc08fc)** sẵn có → chuỗi ảnh tổng hợp. Không sửa app React.
 
-**Tech Stack:** PostgreSQL (Supabase), `pg_cron`, `pg_net`, n8n (Webhook + Code + Zalo send).
+**Tech Stack:** PostgreSQL (Supabase) `pg_cron`+`pg_net`; n8n (Switch, Webhook, Supabase, Code, HCTI, Zalo OA).
 
-**Spec:** [docs/superpowers/specs/2026-07-07-nhac-viec-tu-dong-design.md](../specs/2026-07-07-nhac-viec-tu-dong-design.md)
+**Spec:** [../specs/2026-07-07-nhac-viec-tu-dong-design.md](../specs/2026-07-07-nhac-viec-tu-dong-design.md) (xem mục *Revision 2026-07-07*)
+
+**Dữ kiện từ workflow thực tế:**
+- Nhóm Zalo: `deb64378401ba945f00a`. Mention: `[@<nhan_vien.id_zalo_oa>]`.
+- Trạng thái đang làm: `status in ('IN_PROGRESS','PENDING')`.
+- Webhook sẵn có: tổng hợp `a6fc08fc-dc4e-432e-9588-424d78470769`; nút Nhắc `47cc5412-40b2-4747-af7f-8d7090cb40c2`.
+- n8n webhook body nằm ở `$json.body`.
 
 ---
 
-## Cách áp SQL (dùng chung cho mọi task)
-
-Mọi lệnh SQL trong plan này chạy tại: **Supabase Dashboard → SQL Editor → New query → dán → Run**.
-Các file `.sql` trong repo là **bản gốc có phiên bản** (source of truth) — nội dung file y hệt lệnh bạn dán vào SQL Editor. Repo không tự đẩy lên Supabase; bạn dán tay.
+## Cách áp SQL (dùng chung)
+Mọi lệnh SQL chạy tại **Supabase Dashboard → SQL Editor**. File `.sql` trong repo là bản gốc; dán tay vào SQL Editor.
 
 ## File Structure
-
-- Create: `supabase/reminders/00_extensions.sql` — bật `pg_cron`, `pg_net`.
-- Create: `supabase/reminders/01_reminder_config.sql` — bảng cấu hình URL/secret + seed.
-- Create: `supabase/reminders/02_cong_viec_nhac_log.sql` — bảng chống gửi trùng.
-- Create: `supabase/reminders/03_fn_nhac_viec_dang_thuc_hien.sql` — hàm Job A (8:00).
-- Create: `supabase/reminders/04_fn_nhac_viec_den_han.sql` — hàm Job B (60/30/5).
-- Create: `supabase/reminders/05_schedule.sql` — đăng ký 2 cron job.
-- Create: `supabase/reminders/99_rollback.sql` — gỡ toàn bộ.
-- Create: `supabase/reminders/README.md` — cách áp / đổi test→prod / gỡ.
-- Create: `docs/n8n/nhac-viec-workflows.md` — runbook dựng 2 workflow n8n.
+- Create: `supabase/reminders/00_extensions.sql`
+- Create: `supabase/reminders/01_reminder_config.sql`
+- Create: `supabase/reminders/02_cong_viec_nhac_log.sql`
+- Create: `supabase/reminders/03_fn_nhac_viec_den_han.sql`  (Job B — 60/30/5)
+- Create: `supabase/reminders/04_fn_nhac_viec_dang_thuc_hien.sql` (Job A — 8:00)
+- Create: `supabase/reminders/05_schedule.sql`
+- Create: `supabase/reminders/99_rollback.sql`
+- Create: `supabase/reminders/README.md`
+- Create: `docs/n8n/wf-nhac-viec-updated.json` (workflow n8n đã thêm Switch + nhánh đến hạn)
+- Create: `docs/n8n/nhac-viec-workflows.md` (hướng dẫn import + chỉnh Code tổng hợp + bỏ 8h)
 
 ---
 
-## Task 0: Pre-flight — xác nhận kiểu `due_date` và extensions
+## Task 0: Pre-flight
 
-**Files:** không tạo file; chỉ chạy query khảo sát.
+**Files:** không tạo file.
 
-- [ ] **Step 1: Kiểm tra kiểu cột `due_date` và múi giờ**
+- [ ] **Step 1: Kiểu `due_date` + có cột `id_zalo_oa`**
 
-Chạy trong SQL Editor:
 ```sql
-select data_type
+select column_name, data_type
 from information_schema.columns
-where table_name='cong_viec_duoc_giao' and column_name='due_date';
+where table_name in ('cong_viec_duoc_giao','nhan_vien')
+  and column_name in ('due_date','id_zalo_oa','status','assignee_id');
 
-select id, due_date, (due_date)::timestamptz as as_tstz, now()
-from cong_viec_duoc_giao
-where due_date is not null
-limit 3;
+select id, name, id_zalo_oa from nhan_vien where id_zalo_oa is not null limit 3;
+select distinct status from cong_viec_duoc_giao;
 ```
 Expected:
-- `data_type` là `timestamp with time zone` (lý tưởng) **hoặc** `text`/`timestamp without time zone`.
-- `as_tstz` phải ra đúng thời điểm ISO đã lưu (chuỗi có hậu tố `Z`).
+- `cong_viec_duoc_giao.due_date` là `timestamp with time zone` hoặc `text` (ISO có `Z`).
+- `nhan_vien.id_zalo_oa` tồn tại (ít nhất vài NV có giá trị).
+- `status` gồm các giá trị trong tập `PENDING`/`IN_PROGRESS`/`COMPLETED`/`CANCELLED`.
 
-- [ ] **Step 2: Quyết định biểu thức thời gian dùng trong hàm**
+- [ ] **Step 2: Chốt biểu thức thời gian**
+- `timestamp with time zone` hoặc `text`(ISO+Z) → dùng `(due_date)::timestamptz`.
+- `timestamp without time zone` → dùng `((due_date)::timestamp at time zone 'UTC')`.
+Ghi lại. Không commit.
 
-- Nếu `data_type` = `timestamp with time zone` **hoặc** `text` (ISO có `Z`): dùng `(due_date)::timestamptz` như trong plan (không đổi gì).
-- Nếu `data_type` = `timestamp without time zone` (giờ UTC không tz): thay mọi `(due_date)::timestamptz` bằng `((due_date)::timestamp at time zone 'UTC')` trong Task 4 & 5.
-
-Ghi lại kết luận để dùng cho các task sau. **Không commit** (task khảo sát).
-
-- [ ] **Step 3: Kiểm tra extensions có sẵn**
+- [ ] **Step 3: Extensions khả dụng**
 
 ```sql
-select name, installed_version, default_version
-from pg_available_extensions
-where name in ('pg_cron','pg_net');
+select name from pg_available_extensions where name in ('pg_cron','pg_net');
 ```
-Expected: cả 2 dòng xuất hiện (installed_version có thể NULL nếu chưa bật — sẽ bật ở Task 1).
+Expected: 2 dòng.
 
 ---
 
-## Task 1: Bật extensions `pg_cron` + `pg_net`
+## Task 1: Bật extensions
 
-**Files:**
-- Create: `supabase/reminders/00_extensions.sql`
+**Files:** Create `supabase/reminders/00_extensions.sql`
 
-- [ ] **Step 1: Tạo file `supabase/reminders/00_extensions.sql`**
-
+- [ ] **Step 1: Tạo file**
 ```sql
--- Bật hẹn giờ trong DB + gọi HTTP từ DB.
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 ```
-
-- [ ] **Step 2: Áp lên Supabase**
-
-Dán nội dung file vào SQL Editor → Run. (Nếu báo quyền, bật qua Dashboard → Database → Extensions: tick `pg_cron`, `pg_net`.)
-
+- [ ] **Step 2: Áp** — dán vào SQL Editor → Run (hoặc Dashboard → Database → Extensions).
 - [ ] **Step 3: Xác minh**
-
 ```sql
 select extname from pg_extension where extname in ('pg_cron','pg_net') order by extname;
 ```
-Expected: 2 dòng — `pg_cron`, `pg_net`.
-
+Expected: `pg_cron`, `pg_net`.
 - [ ] **Step 4: Commit**
-
 ```bash
 git add supabase/reminders/00_extensions.sql
 git commit -m "feat(nhac-viec): bat pg_cron + pg_net"
@@ -103,197 +92,106 @@ git commit -m "feat(nhac-viec): bat pg_cron + pg_net"
 
 ---
 
-## Task 2: Bảng cấu hình `reminder_config` + seed
+## Task 2: Bảng cấu hình `reminder_config`
 
-**Files:**
-- Create: `supabase/reminders/01_reminder_config.sql`
+**Files:** Create `supabase/reminders/01_reminder_config.sql`
 
-- [ ] **Step 1: Xác nhận bảng chưa tồn tại (đỏ trước xanh)**
-
+- [ ] **Step 1: Xác nhận chưa tồn tại**
 ```sql
 select * from reminder_config;
 ```
 Expected: lỗi `relation "reminder_config" does not exist`.
 
-- [ ] **Step 2: Tạo file `supabase/reminders/01_reminder_config.sql`**
-
+- [ ] **Step 2: Tạo file**
 ```sql
 create table if not exists reminder_config (
   key   text primary key,
   value text not null
 );
 
--- URL webhook: 'den_han' để URL TEST khi đang dựng, đổi sang /webhook/ khi go-live (Task 8).
+-- webhook_den_han: URL TEST khi đang dựng n8n; đổi sang /webhook/ khi go-live (Task 8).
+-- webhook_dang_thuc_hien: webhook "tổng hợp" a6fc08fc SẴN CÓ (tái dùng chuỗi ảnh tổng hợp).
 insert into reminder_config(key, value) values
-  ('webhook_daily', 'https://thegioilocnuoc.site/webhook/cong_viec_dang_thuc_hien'),
-  ('webhook_due',   'https://thegioilocnuoc.site/webhook-test/cong_viec_den_han')
+  ('webhook_den_han',        'https://thegioilocnuoc.site/webhook-test/cong_viec_den_han'),
+  ('webhook_dang_thuc_hien', 'https://thegioilocnuoc.site/webhook/a6fc08fc-dc4e-432e-9588-424d78470769')
 on conflict (key) do update set value = excluded.value;
-
--- Secret sinh ngay trong DB (không lọt vào git). Chỉ tạo nếu chưa có.
-insert into reminder_config(key, value)
-select 'secret', gen_random_uuid()::text
-where not exists (select 1 from reminder_config where key='secret');
 ```
 
-- [ ] **Step 3: Áp lên Supabase** — dán file → Run.
-
-- [ ] **Step 4: Xác minh + lấy secret cho n8n**
-
+- [ ] **Step 3: Áp** — dán → Run.
+- [ ] **Step 4: Xác minh**
 ```sql
 select key, value from reminder_config order by key;
 ```
-Expected: 3 dòng (`secret`, `webhook_daily`, `webhook_due`). **Copy giá trị `secret`** để cấu hình n8n ở Task 6.
-
-- [ ] **Step 5: Commit** (file KHÔNG chứa secret thật vì secret sinh trong DB)
-
+Expected: 2 dòng đúng URL.
+- [ ] **Step 5: Commit**
 ```bash
 git add supabase/reminders/01_reminder_config.sql
-git commit -m "feat(nhac-viec): bang reminder_config + seed URL/secret"
+git commit -m "feat(nhac-viec): bang reminder_config (2 webhook)"
 ```
 
 ---
 
 ## Task 3: Bảng chống gửi trùng `cong_viec_nhac_log`
 
-**Files:**
-- Create: `supabase/reminders/02_cong_viec_nhac_log.sql`
+**Files:** Create `supabase/reminders/02_cong_viec_nhac_log.sql`
 
-- [ ] **Step 1: Xác nhận bảng chưa tồn tại**
-
+- [ ] **Step 1: Xác nhận chưa tồn tại**
 ```sql
 select * from cong_viec_nhac_log;
 ```
-Expected: lỗi `relation "cong_viec_nhac_log" does not exist`.
+Expected: lỗi `does not exist`.
 
-- [ ] **Step 2: Tạo file `supabase/reminders/02_cong_viec_nhac_log.sql`**
-
+- [ ] **Step 2: Tạo file**
 ```sql
 create table if not exists cong_viec_nhac_log (
   task_id      text        not null,
-  moc          text        not null,          -- '8H' | '60' | '30' | '5'
-  due_snapshot timestamptz not null,          -- hạn tại thời điểm nhắc (phát hiện đổi hạn)
+  moc          text        not null,      -- '60' | '30' | '5'
+  due_snapshot timestamptz not null,      -- hạn tại thời điểm nhắc (phát hiện đổi hạn)
   sent_at      timestamptz not null default now(),
   unique (task_id, moc, due_snapshot)
 );
 ```
-
-- [ ] **Step 3: Áp lên Supabase** — dán file → Run.
-
-- [ ] **Step 4: Xác minh idempotency của khoá UNIQUE**
-
+- [ ] **Step 3: Áp** — dán → Run.
+- [ ] **Step 4: Xác minh UNIQUE**
 ```sql
 insert into cong_viec_nhac_log(task_id,moc,due_snapshot) values ('TEST','60', now());
 insert into cong_viec_nhac_log(task_id,moc,due_snapshot) values ('TEST','60', now())
-  on conflict (task_id,moc,due_snapshot) do nothing;   -- không thêm dòng thứ 2 (khác now() thì mới thêm)
+  on conflict (task_id,moc,due_snapshot) do nothing;
 select count(*) from cong_viec_nhac_log where task_id='TEST';
 delete from cong_viec_nhac_log where task_id='TEST';
 ```
-Expected: cả 2 insert chạy không lỗi; nếu `now()` hai lần bằng nhau trong 1 transaction thì count=1. Sau `delete` bảng sạch dòng TEST.
-
+Expected: chạy không lỗi; dọn sạch dòng TEST.
 - [ ] **Step 5: Commit**
-
 ```bash
 git add supabase/reminders/02_cong_viec_nhac_log.sql
-git commit -m "feat(nhac-viec): bang cong_viec_nhac_log chong gui trung"
+git commit -m "feat(nhac-viec): bang cong_viec_nhac_log"
 ```
 
 ---
 
-## Task 4: Hàm Job A — danh sách việc đang thực hiện (8:00)
+## Task 4: Hàm Job B — nhắc trước hạn 60/30/5
 
-**Files:**
-- Create: `supabase/reminders/03_fn_nhac_viec_dang_thuc_hien.sql`
+**Files:** Create `supabase/reminders/03_fn_nhac_viec_den_han.sql`
 
-> Nếu Task 0 kết luận cột là `timestamp without time zone`, đổi `(t.due_date)::timestamptz` thành `((t.due_date)::timestamp at time zone 'UTC')` trong hàm dưới.
+> Nếu Task 0 kết luận `timestamp without time zone`: đổi cả 2 chỗ `(t.due_date)::timestamptz` → `((t.due_date)::timestamp at time zone 'UTC')`.
 
-- [ ] **Step 1: Tạo file `supabase/reminders/03_fn_nhac_viec_dang_thuc_hien.sql`**
-
-```sql
-create or replace function fn_nhac_viec_dang_thuc_hien() returns void
-language plpgsql security definer as $$
-declare
-  v_url text; v_secret text; v_tasks jsonb; v_count int;
-begin
-  select value into v_url    from reminder_config where key='webhook_daily';
-  select value into v_secret from reminder_config where key='secret';
-
-  select
-    coalesce(jsonb_agg(
-      jsonb_build_object(
-        'id', t.id, 'title', t.title, 'assignee_id', t.assignee_id,
-        'assignee_name', n.name, 'due_date', (t.due_date)::timestamptz, 'label', t.label
-      ) order by n.name nulls last, (t.due_date)::timestamptz nulls last
-    ), '[]'::jsonb),
-    count(*)
-  into v_tasks, v_count
-  from cong_viec_duoc_giao t
-  left join nhan_vien n on n.id = t.assignee_id
-  where t.status = 'IN_PROGRESS';
-
-  perform net.http_post(
-    url := v_url,
-    headers := jsonb_build_object('Content-Type','application/json','x-reminder-secret', v_secret),
-    body := jsonb_build_object('type','daily_8h','sent_at', now(), 'count', v_count, 'tasks', v_tasks)
-  );
-end $$;
-```
-
-- [ ] **Step 2: Áp lên Supabase** — dán file → Run.
-
-- [ ] **Step 3: Xác minh hàm tồn tại**
-
-```sql
-select proname from pg_proc where proname='fn_nhac_viec_dang_thuc_hien';
-```
-Expected: 1 dòng.
-
-- [ ] **Step 4: Chạy thử + kiểm tra POST đã được xếp hàng**
-
-```sql
-select fn_nhac_viec_dang_thuc_hien();
--- Đợi ~2 giây rồi xem phản hồi gần nhất của pg_net:
-select id, status_code, error_msg, created
-from net._http_response
-order by created desc
-limit 3;
-```
-Expected: có 1 dòng phản hồi mới. `status_code` = 200/404 tuỳ webhook n8n đã bật chưa (ở bước này chỉ cần thấy pg_net **gọi được ra ngoài**, không lỗi DNS/timeout). Payload thật sẽ kiểm ở Task 6 bằng n8n test mode.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add supabase/reminders/03_fn_nhac_viec_dang_thuc_hien.sql
-git commit -m "feat(nhac-viec): ham Job A gui viec dang thuc hien"
-```
-
----
-
-## Task 5: Hàm Job B — nhắc trước hạn 60/30/5
-
-**Files:**
-- Create: `supabase/reminders/04_fn_nhac_viec_den_han.sql`
-
-> Nếu Task 0 kết luận cột là `timestamp without time zone`, đổi cả 2 chỗ `(t.due_date)::timestamptz` thành `((t.due_date)::timestamp at time zone 'UTC')`.
-
-- [ ] **Step 1: Tạo file `supabase/reminders/04_fn_nhac_viec_den_han.sql`**
-
+- [ ] **Step 1: Tạo file**
 ```sql
 create or replace function fn_nhac_viec_den_han() returns void
 language plpgsql security definer as $$
 declare
-  v_url text; v_secret text; rec record;
+  v_url text; rec record;
 begin
-  select value into v_url    from reminder_config where key='webhook_due';
-  select value into v_secret from reminder_config where key='secret';
+  select value into v_url from reminder_config where key='webhook_den_han';
 
   for rec in
     with picked as (
-      select t.id, t.title, t.description, t.label, t.assignee_id,
-             (t.due_date)::timestamptz as due_ts, n.name as assignee_name,
+      select t.id, n.name as assignee_name,
+             (t.due_date)::timestamptz as due_ts,
              extract(epoch from ((t.due_date)::timestamptz - now())) / 60 as mins_left
       from cong_viec_duoc_giao t
       left join nhan_vien n on n.id = t.assignee_id
-      where t.status = 'IN_PROGRESS' and (t.due_date)::timestamptz > now()
+      where t.status in ('IN_PROGRESS','PENDING') and (t.due_date)::timestamptz > now()
     ),
     banded as (
       select *, case
@@ -311,29 +209,29 @@ begin
     )
     select b.* from ins join banded b on b.id = ins.task_id and b.moc = ins.moc
   loop
+    -- Body khớp shape webhook nút Nhắc (n8n đọc $json.body.task.id / .assignee.name) + thêm moc/minutes_left
     perform net.http_post(
       url := v_url,
-      headers := jsonb_build_object('Content-Type','application/json','x-reminder-secret', v_secret),
+      headers := jsonb_build_object('Content-Type','application/json'),
       body := jsonb_build_object(
-        'type','due_soon', 'moc', rec.moc, 'minutes_left', round(rec.mins_left), 'sent_at', now(),
-        'task', jsonb_build_object(
-          'id', rec.id, 'title', rec.title, 'description', rec.description,
-          'assignee_id', rec.assignee_id, 'assignee_name', rec.assignee_name,
-          'due_date', rec.due_ts, 'label', rec.label
-        )
+        'type','due_soon', 'moc', rec.moc, 'minutes_left', round(rec.mins_left),
+        'task', jsonb_build_object('id', rec.id),
+        'assignee', jsonb_build_object('name', rec.assignee_name)
       )
     );
   end loop;
 end $$;
 ```
 
-- [ ] **Step 2: Áp lên Supabase** — dán file → Run.
-
-- [ ] **Step 3: Tạo 1 việc thử rơi vào băng 60 và chạy hàm**
-
+- [ ] **Step 2: Áp** — dán → Run.
+- [ ] **Step 3: Xác minh hàm tồn tại**
 ```sql
--- Tạo việc test đáo hạn sau 59 phút. Dùng bộ cột giống app tạo việc để tránh vướng NOT NULL.
--- Nếu vẫn báo thiếu cột NOT NULL nào đó, thêm cột đó vào INSERT với giá trị mặc định hợp lý.
+select proname from pg_proc where proname='fn_nhac_viec_den_han';
+```
+Expected: 1 dòng.
+
+- [ ] **Step 4: Tạo việc test băng 60 + chạy hàm**
+```sql
 insert into cong_viec_duoc_giao
   (id, title, description, status, priority, label, assignee_id, progress, sort_order,
    created_date, due_date, recurrence_type)
@@ -344,204 +242,167 @@ on conflict (id) do update
   set status='IN_PROGRESS', due_date=(now() + interval '59 minutes')::text;
 
 select fn_nhac_viec_den_han();
-
 select task_id, moc, due_snapshot from cong_viec_nhac_log where task_id='CV-TEST';
+
+-- Kiểm tra pg_net đã gọi ra ngoài:
+select id, status_code, error_msg, created from net._http_response order by created desc limit 3;
 ```
-Expected: 1 dòng log `('CV-TEST','60', <hạn>)`.
+Expected: 1 dòng log `('CV-TEST','60',…)`; có 1 phản hồi pg_net mới (status_code 200/404 tuỳ webhook n8n đã bật chưa).
 
-- [ ] **Step 4: Kiểm tra chống trùng (chạy lại không gửi thêm)**
-
+- [ ] **Step 5: Chống trùng + chuyển băng**
 ```sql
-select fn_nhac_viec_den_han();
-select count(*) from cong_viec_nhac_log where task_id='CV-TEST' and moc='60';
-```
-Expected: `count = 1` (không phát sinh dòng thứ 2).
-
-- [ ] **Step 5: Kiểm tra chuyển băng 30 và 5**
-
-```sql
-update cong_viec_duoc_giao set due_date=(now() + interval '29 minutes')::text where id='CV-TEST';
-select fn_nhac_viec_den_han();
-update cong_viec_duoc_giao set due_date=(now() + interval '4 minutes')::text where id='CV-TEST';
-select fn_nhac_viec_den_han();
+select fn_nhac_viec_den_han();                                   -- không thêm log '60'
+update cong_viec_duoc_giao set due_date=(now()+interval '29 minutes')::text where id='CV-TEST';
+select fn_nhac_viec_den_han();                                   -- thêm '30'
+update cong_viec_duoc_giao set due_date=(now()+interval '4 minutes')::text where id='CV-TEST';
+select fn_nhac_viec_den_han();                                   -- thêm '5'
 select moc from cong_viec_nhac_log where task_id='CV-TEST' order by moc;
 ```
-Expected: 3 dòng `moc` = `30`, `5`, `60` (đủ 3 mốc).
+Expected: 3 dòng `30`, `5`, `60`.
 
-- [ ] **Step 6: Dọn dữ liệu test**
-
+- [ ] **Step 6: Dọn test**
 ```sql
 delete from cong_viec_nhac_log where task_id='CV-TEST';
 delete from cong_viec_duoc_giao where id='CV-TEST';
 ```
-Expected: xoá sạch việc & log test.
 
 - [ ] **Step 7: Commit**
-
 ```bash
-git add supabase/reminders/04_fn_nhac_viec_den_han.sql
-git commit -m "feat(nhac-viec): ham Job B nhac truoc han 60/30/5"
+git add supabase/reminders/03_fn_nhac_viec_den_han.sql
+git commit -m "feat(nhac-viec): ham Job B nhac 60/30/5 (status PENDING+IN_PROGRESS)"
 ```
 
 ---
 
-## Task 6: Dựng 2 workflow n8n + kiểm tra payload thật
+## Task 5: Hàm Job A — kích hoạt tổng hợp 8:00
+
+**Files:** Create `supabase/reminders/04_fn_nhac_viec_dang_thuc_hien.sql`
+
+- [ ] **Step 1: Tạo file**
+```sql
+-- Chỉ cần "chạm" webhook tổng hợp a6fc08fc; nhánh n8n tự query & dựng ảnh.
+create or replace function fn_nhac_viec_dang_thuc_hien() returns void
+language plpgsql security definer as $$
+declare v_url text;
+begin
+  select value into v_url from reminder_config where key='webhook_dang_thuc_hien';
+  perform net.http_post(
+    url := v_url,
+    headers := jsonb_build_object('Content-Type','application/json'),
+    body := jsonb_build_object('type','daily_8h','sent_at', now())
+  );
+end $$;
+```
+- [ ] **Step 2: Áp** — dán → Run.
+- [ ] **Step 3: Xác minh + chạy thử**
+```sql
+select fn_nhac_viec_dang_thuc_hien();
+select id, status_code, created from net._http_response order by created desc limit 3;
+```
+Expected: 1 phản hồi mới. (Nếu n8n workflow đang Active, nhóm Zalo sẽ nhận bảng tổng hợp.)
+- [ ] **Step 4: Commit**
+```bash
+git add supabase/reminders/04_fn_nhac_viec_dang_thuc_hien.sql
+git commit -m "feat(nhac-viec): ham Job A kich hoat tong hop 8h"
+```
+
+---
+
+## Task 6: Cập nhật workflow n8n (Switch + nhánh đến hạn + rỗng-vẫn-gửi)
 
 **Files:**
+- Create: `docs/n8n/wf-nhac-viec-updated.json`
 - Create: `docs/n8n/nhac-viec-workflows.md`
 
-- [ ] **Step 1: Tạo file `docs/n8n/nhac-viec-workflows.md`**
+> Nội dung JSON đầy đủ do người thực thi sinh từ workflow gốc người dùng cung cấp, áp dụng các thay đổi dưới đây. Vì cần toàn bộ ngữ cảnh workflow gốc, **bước này do Claude sinh trực tiếp** (không giao subagent).
 
-````markdown
-# Runbook n8n — Nhắc việc
-
-Secret lấy ở Supabase: `select value from reminder_config where key='secret';`
-Nhóm Zalo nhận: điền `GROUP_ID` nhóm "Công việc" của bạn vào Code node.
-
-## Workflow 1 — cong_viec_den_han (nhắc trước hạn)
-1. **Webhook** — Method POST, Path `cong_viec_den_han`.
-2. **IF (check secret)** — điều kiện: `{{$json.headers['x-reminder-secret']}}` **equals** `<SECRET>`.
-   - Nhánh false → **Respond to Webhook** 401 rồi dừng.
-3. **Code (build tin)** — nhánh true:
+**Thay đổi so với workflow gốc:**
+1. Thêm **Webhook đến hạn**: `httpMethod=POST`, `path=cong_viec_den_han`, `webhookId` mới; nối `Webhook đến hạn → Lấy token OA`.
+2. Thay node IF **`Là cập nhật task?`** bằng **Switch** `Định tuyến` (mode rules, 3 output):
+   - Output **den_han**: `{{ $('Webhook đến hạn').isExecuted }}` = true.
+   - Output **update**: `{{ $('Webhook cập nhật task').isExecuted }}` = true.
+   - **Fallback → summary** (bao gồm Schedule, Webhook tổng hợp, và Job A).
+   Nối lại: den_han → nhánh mới; update → `Lấy nhân viên (cập nhật)` (giữ nguyên); summary → `Lấy nhân viên` (giữ nguyên).
+3. Nhánh **đến hạn** (clone nhánh cập nhật, đổi tham chiếu sang `Webhook đến hạn`):
+   - `Lấy NV (đến hạn)` supabase get `nhan_vien` where `name = {{ $('Webhook đến hạn').first().json.body.assignee.name }}` →
+   - `Lấy CV (đến hạn)` supabase get `cong_viec_duoc_giao` where `id = {{ $('Webhook đến hạn').first().json.body.task.id }}` →
+   - `Lấy tiến độ (đến hạn)` supabase getAll `tien_do` where `task_id = {{ ...body.task.id }}` →
+   - `Tạo thẻ đến hạn` (Code — như "Tạo nội dung thẻ chi tiết" nhưng dòng Tình trạng lấy theo `body.moc`: `60→"⏰ Còn dưới 1 tiếng"`, `30→"Còn dưới 30 phút"`, `5→"🔥 Còn dưới 5 phút"`; mention `[@id_zalo_oa]`) →
+   - `Loop Over Items` (dùng chung).
+4. Sửa Code **`Tạo nội dung ảnh (tổng hợp + cá nhân)`**: nếu `tasks.length === 0`, đẩy 1 item thông báo rỗng:
    ```js
-   const p = $json.body ?? $json;
-   const t = p.task || {};
-   const w = { '60': 'còn dưới 1 tiếng', '30': 'còn dưới 30 phút', '5': 'còn dưới 5 phút' };
-   const due = t.due_date
-     ? new Date(t.due_date).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
-     : '—';
-   const message =
-     `⏰ NHẮC VIỆC (${w[p.moc] || 'sắp đến hạn'})\n` +
-     `• Việc: ${t.title}\n` +
-     `• Phụ trách: ${t.assignee_name || 'Chưa giao'}\n` +
-     `• Hạn: ${due}` +
-     (t.label ? `\n• Nhãn: ${t.label}` : '');
-   return [{ json: { group_id: 'GROUP_ID', message } }];
-   ```
-4. **Gửi Zalo** — dùng node gửi Zalo sẵn có của bạn (copy từ workflow "BC Zalo"): gửi `{{$json.message}}` vào `{{$json.group_id}}`.
-
-## Workflow 2 — cong_viec_dang_thuc_hien (8:00)
-1. **Webhook** — POST, Path `cong_viec_dang_thuc_hien`.
-2. **IF (check secret)** — như trên.
-3. **Code (build tin)**:
-   ```js
-   const p = $json.body ?? $json;
-   if (!p.count || p.count === 0) {
-     return [{ json: { group_id: 'GROUP_ID', message: '📋 8:00 — Hôm nay không có việc đang thực hiện.' } }];
+   if (out.length === 0) {
+     out.push({ json: {
+       html: buildTable('CÔNG VIỆC ĐANG THỰC HIỆN', []),
+       message_text: `[@${GROUP_ID}] 8:00 — Hôm nay không có việc đang thực hiện.`
+     }});
    }
-   const byPerson = {};
-   for (const t of p.tasks) { const k = t.assignee_name || 'Chưa giao'; (byPerson[k] ??= []).push(t); }
-   let message = `📋 CÔNG VIỆC ĐANG THỰC HIỆN (${p.count})\n`;
-   for (const [name, list] of Object.entries(byPerson)) {
-     message += `\n👤 ${name}:\n`;
-     for (const t of list) {
-       const due = t.due_date
-         ? new Date(t.due_date).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
-         : 'không hạn';
-       message += `  • ${t.title} (hạn: ${due})\n`;
-     }
-   }
-   return [{ json: { group_id: 'GROUP_ID', message: message.trim() } }];
    ```
-4. **Gửi Zalo** — như Workflow 1.
-````
 
-- [ ] **Step 2: Dựng 2 workflow trong n8n** theo runbook. Điền `SECRET` (từ Task 2) và `GROUP_ID` nhóm Công việc.
-
-- [ ] **Step 3: Test payload Job B qua n8n test mode**
-
-- Trong workflow `cong_viec_den_han`, bấm **Listen for test event** (URL trở thành `/webhook-test/cong_viec_den_han`, khớp `reminder_config.webhook_due` hiện tại).
-- Ở Supabase, chạy lại kịch bản Task 5 Step 3 (tạo `CV-TEST` 59 phút + `select fn_nhac_viec_den_han();`).
-- Expected: n8n nhận đúng 1 event; IF secret = true; Code ra message đúng định dạng. Dọn `CV-TEST` như Task 5 Step 6.
-
-- [ ] **Step 4: Test payload Job A**
-
-- Tạm đổi để test 8:00 mà không chờ tới giờ: trong workflow `cong_viec_dang_thuc_hien` bật **Listen for test event**, tạm đổi config sang URL test:
-  ```sql
-  update reminder_config set value='https://thegioilocnuoc.site/webhook-test/cong_viec_dang_thuc_hien' where key='webhook_daily';
-  select fn_nhac_viec_dang_thuc_hien();
-  ```
-- Expected: n8n nhận event `daily_8h` với mảng `tasks` + `count`. Kiểm tra cả trường hợp rỗng bằng cách tạm không có việc IN_PROGRESS (hoặc xem `count`).
-- Đổi `webhook_daily` trở lại URL production:
-  ```sql
-  update reminder_config set value='https://thegioilocnuoc.site/webhook/cong_viec_dang_thuc_hien' where key='webhook_daily';
-  ```
-
-- [ ] **Step 5: Kích hoạt (Activate) 2 workflow** trong n8n (chuyển từ test sang active để URL `/webhook/...` hoạt động).
-
-- [ ] **Step 6: Commit**
-
+- [ ] **Step 1: Sinh file `docs/n8n/wf-nhac-viec-updated.json`** (workflow gốc + 4 thay đổi trên).
+- [ ] **Step 2: Sinh file `docs/n8n/nhac-viec-workflows.md`** — hướng dẫn: Import workflow (Import from File) → kiểm tra credentials (Supabase/Google Sheets/HCTI/httpBasicAuth) đã map → Activate → lấy URL `Webhook đến hạn`.
+- [ ] **Step 3: Test nhánh đến hạn (n8n test mode)**
+  - Trong n8n bật **Listen for test event** ở `Webhook đến hạn` (URL `/webhook-test/cong_viec_den_han`, khớp `reminder_config.webhook_den_han`).
+  - Ở Supabase chạy lại Task 4 Step 4 (tạo CV-TEST 59 phút + `select fn_nhac_viec_den_han();`).
+  - Expected: n8n nhận event; Switch vào nhánh den_han; dựng thẻ "Còn dưới 1 tiếng"; ra ảnh. Dọn CV-TEST (Task 4 Step 6).
+- [ ] **Step 4: Test Job A** — `select fn_nhac_viec_dang_thuc_hien();` → nhóm nhận bảng tổng hợp; test cả trường hợp rỗng.
+- [ ] **Step 5: Bỏ 8h khỏi lịch n8n** — trong node `Schedule 8h & 17h` xoá `triggerAtHour: 8` (giữ 17h) để 8:00 do pg_cron điều khiển, tránh gửi trùng.
+- [ ] **Step 6: Activate workflow** (đổi từ test → active).
+- [ ] **Step 7: Commit**
 ```bash
-git add docs/n8n/nhac-viec-workflows.md
-git commit -m "docs(nhac-viec): runbook 2 workflow n8n"
+git add docs/n8n/wf-nhac-viec-updated.json docs/n8n/nhac-viec-workflows.md
+git commit -m "docs(nhac-viec): workflow n8n + runbook (Switch + nhanh den han)"
 ```
 
 ---
 
-## Task 7: Đăng ký 2 cron job
+## Task 7: Đăng ký cron job
 
-**Files:**
-- Create: `supabase/reminders/05_schedule.sql`
+**Files:** Create `supabase/reminders/05_schedule.sql`
 
-- [ ] **Step 1: Tạo file `supabase/reminders/05_schedule.sql`**
-
+- [ ] **Step 1: Tạo file**
 ```sql
--- Gỡ job cũ nếu chạy lại file (tránh trùng tên)
 select cron.unschedule('nhac_den_han') where exists (select 1 from cron.job where jobname='nhac_den_han');
 select cron.unschedule('nhac_8h')      where exists (select 1 from cron.job where jobname='nhac_8h');
 
 -- Job B: mỗi 1 phút
 select cron.schedule('nhac_den_han', '* * * * *', $$ select fn_nhac_viec_den_han(); $$);
-
--- Job A: 08:00 giờ VN = 01:00 UTC (VN không có DST)
+-- Job A: 08:00 giờ VN = 01:00 UTC
 select cron.schedule('nhac_8h', '0 1 * * *', $$ select fn_nhac_viec_dang_thuc_hien(); $$);
 ```
-
-- [ ] **Step 2: Áp lên Supabase** — dán file → Run.
-
-- [ ] **Step 3: Xác minh 2 job đã đăng ký**
-
+- [ ] **Step 2: Áp** — dán → Run.
+- [ ] **Step 3: Xác minh job**
 ```sql
 select jobname, schedule, active from cron.job where jobname in ('nhac_den_han','nhac_8h') order by jobname;
 ```
-Expected: 2 dòng, `active = true`, schedule đúng (`* * * * *` và `0 1 * * *`).
-
-- [ ] **Step 4: Xác minh Job B chạy tự động (đợi ~2 phút)**
-
+Expected: 2 dòng, `active=true`.
+- [ ] **Step 4: Job B chạy tự động (đợi ~2 phút)**
 ```sql
-select j.jobname, r.status, r.start_time, r.return_message
+select j.jobname, r.status, r.start_time
 from cron.job_run_details r join cron.job j on j.jobid=r.jobid
-where j.jobname='nhac_den_han'
-order by r.start_time desc limit 3;
+where j.jobname='nhac_den_han' order by r.start_time desc limit 3;
 ```
-Expected: có bản ghi `status='succeeded'` trong ~2 phút gần đây (không có việc tới hạn thì hàm vẫn chạy thành công, chỉ không gửi gì).
-
+Expected: có `status='succeeded'` gần đây.
 - [ ] **Step 5: Commit**
-
 ```bash
 git add supabase/reminders/05_schedule.sql
-git commit -m "feat(nhac-viec): dang ky cron job A (8h) + B (moi phut)"
+git commit -m "feat(nhac-viec): cron Job A (8h) + Job B (moi phut)"
 ```
 
 ---
 
-## Task 8: Go-live + rollback script + README
+## Task 8: Go-live + rollback + README
 
-**Files:**
-- Create: `supabase/reminders/99_rollback.sql`
-- Create: `supabase/reminders/README.md`
+**Files:** Create `supabase/reminders/99_rollback.sql`, `supabase/reminders/README.md`
 
-- [ ] **Step 1: Chuyển `webhook_due` sang URL production**
-
-Sau khi workflow `cong_viec_den_han` đã **Active** (Task 6 Step 5):
+- [ ] **Step 1: Đổi `webhook_den_han` sang URL production** (sau khi workflow Active)
 ```sql
-update reminder_config set value='https://thegioilocnuoc.site/webhook/cong_viec_den_han' where key='webhook_due';
+update reminder_config set value='https://thegioilocnuoc.site/webhook/cong_viec_den_han' where key='webhook_den_han';
 select key, value from reminder_config order by key;
 ```
-Expected: `webhook_due` đổi sang `/webhook/...` (bỏ `-test`).
+Expected: `webhook_den_han` bỏ `-test`.
 
-- [ ] **Step 2: End-to-end thật**
-
+- [ ] **Step 2: End-to-end thật (băng 5 phút)**
 ```sql
 insert into cong_viec_duoc_giao
   (id, title, description, status, priority, label, assignee_id, progress, sort_order,
@@ -552,14 +413,13 @@ values
 on conflict (id) do update
   set status='IN_PROGRESS', due_date=(now() + interval '4 minutes')::text;
 ```
-Đợi tới khi cron mỗi-phút chạy (≤1 phút). Expected: nhóm Zalo nhận tin "còn dưới 5 phút". Sau đó dọn:
+Đợi ≤1 phút (cron chạy). Expected: nhóm Zalo nhận thẻ "🔥 Còn dưới 5 phút". Dọn:
 ```sql
 delete from cong_viec_nhac_log where task_id='CV-TEST';
 delete from cong_viec_duoc_giao where id='CV-TEST';
 ```
 
-- [ ] **Step 3: Tạo file `supabase/reminders/99_rollback.sql`**
-
+- [ ] **Step 3: Tạo `supabase/reminders/99_rollback.sql`**
 ```sql
 select cron.unschedule('nhac_den_han') where exists (select 1 from cron.job where jobname='nhac_den_han');
 select cron.unschedule('nhac_8h')      where exists (select 1 from cron.job where jobname='nhac_8h');
@@ -567,57 +427,51 @@ drop function if exists fn_nhac_viec_den_han();
 drop function if exists fn_nhac_viec_dang_thuc_hien();
 drop table if exists cong_viec_nhac_log;
 drop table if exists reminder_config;
--- Không drop extension (có thể module khác đang dùng).
+-- Không drop extension; nhớ khôi phục triggerAtHour:8 trong lịch n8n nếu muốn quay lại.
 ```
 
-- [ ] **Step 4: Tạo file `supabase/reminders/README.md`**
-
+- [ ] **Step 4: Tạo `supabase/reminders/README.md`**
 ```markdown
-# Nhắc việc tự động (pg_cron + pg_net → n8n)
+# Nhắc việc tự động (pg_cron + pg_net → n8n image pipeline)
 
-## Áp lần đầu (dán từng file vào Supabase SQL Editor, đúng thứ tự)
-00_extensions.sql → 01_reminder_config.sql → 02_cong_viec_nhac_log.sql →
-03_fn_nhac_viec_dang_thuc_hien.sql → 04_fn_nhac_viec_den_han.sql → 05_schedule.sql
+## Áp lần đầu (SQL Editor, đúng thứ tự)
+00_extensions → 01_reminder_config → 02_cong_viec_nhac_log →
+03_fn_nhac_viec_den_han → 04_fn_nhac_viec_dang_thuc_hien → 05_schedule
+Rồi import docs/n8n/wf-nhac-viec-updated.json, Activate, bỏ triggerAtHour:8 trong lịch n8n.
 
-Sau đó dựng 2 workflow n8n theo ../../docs/n8n/nhac-viec-workflows.md và Activate.
+## Đổi test ↔ prod webhook đến hạn
+update reminder_config set value='<url>' where key='webhook_den_han';
 
-## Lấy secret cho n8n
-select value from reminder_config where key='secret';
+## Đổi mốc / giờ
+- Mốc 60/30/5: sửa CASE trong 03_fn_nhac_viec_den_han.sql rồi chạy lại.
+- Giờ 8:00: sửa '0 1 * * *' (UTC) trong 05_schedule.sql rồi chạy lại.
 
-## Đổi test ↔ production
-update reminder_config set value='<url>' where key='webhook_due';   -- hoặc webhook_daily
-
-## Đổi mốc nhắc / giờ chạy
-- Mốc 60/30/5: sửa CASE trong 04_fn_nhac_viec_den_han.sql rồi chạy lại file.
-- Giờ 8:00: sửa '0 1 * * *' (UTC) trong 05_schedule.sql rồi chạy lại file.
-
-## Gỡ toàn bộ
-Dán 99_rollback.sql vào SQL Editor.
+## Gỡ
+Dán 99_rollback.sql. Khôi phục triggerAtHour:8 trong node Schedule n8n nếu cần.
 
 ## Theo dõi
-select * from cron.job;                        -- các job
-select * from cron.job_run_details order by start_time desc limit 20;   -- lịch sử chạy
-select * from net._http_response order by created desc limit 20;        -- phản hồi webhook
+select * from cron.job;
+select * from cron.job_run_details order by start_time desc limit 20;
+select * from net._http_response order by created desc limit 20;
 ```
 
 - [ ] **Step 5: Commit**
-
 ```bash
 git add supabase/reminders/99_rollback.sql supabase/reminders/README.md
-git commit -m "docs(nhac-viec): rollback script + README van hanh"
+git commit -m "docs(nhac-viec): rollback + README van hanh"
 ```
 
 ---
 
-## Kiểm thử tổng (đối chiếu spec mục 10)
-- [x] Payload Job B qua n8n test — Task 6 Step 3
-- [x] Chống trùng — Task 5 Step 4
-- [x] Chuyển băng 60→30→5 — Task 5 Step 5
-- [x] Đổi hạn nhắc lại (due_snapshot khác) — bao trùm bởi UNIQUE key; kiểm nhanh: đổi `due_date` sang mốc mới rồi chạy hàm, log thêm dòng mới
-- [x] Job A rỗng vẫn gửi — Task 6 Step 4
-- [x] Cron chạy đúng nhịp — Task 7 Step 4
-- [x] Go-live prod URL — Task 8
+## Self-review đối chiếu spec (Revision)
+- [x] Tái dùng chuỗi ảnh + mention id_zalo_oa — Task 6
+- [x] Job B 60/30/5, status PENDING+IN_PROGRESS, payload khớp webhook — Task 4
+- [x] Job A 8:00 → webhook tổng hợp a6fc08fc, rỗng-vẫn-gửi — Task 5 + Task 6 Step 4
+- [x] Switch 3 nhánh, không phá 2 nhánh cũ — Task 6
+- [x] Bỏ trùng 8h ở lịch n8n — Task 6 Step 5
+- [x] Chống trùng + băng + go-live — Task 4/8
+- [x] Bỏ secret (khớp webhook mở hiện tại) — ghi chú spec Revision
 
-## Ghi chú vận hành
-- App **không đổi**; nếu sau này muốn Zalo cá nhân: thêm cột `nhan_vien.zalo_user_id`, sửa Code node n8n route theo `assignee_id` (payload đã có sẵn).
-- Bảng `cong_viec_nhac_log` chỉ lớn dần chậm; nếu cần, thêm job dọn log > 90 ngày sau.
+## Ghi chú
+- Bảng `cong_viec_nhac_log` chỉ lớn dần chậm; có thể thêm job dọn > 90 ngày sau.
+- Hardening tương lai: thêm `x-reminder-secret` cho cả 2 webhook + kiểm ở n8n.

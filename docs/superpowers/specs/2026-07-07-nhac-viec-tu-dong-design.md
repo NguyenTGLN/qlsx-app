@@ -165,6 +165,24 @@ Header mọi request: `Content-Type: application/json`, `x-reminder-secret: <sec
 
 ---
 
+## Revision 2026-07-07 (sau khi xem workflow n8n thực tế)
+
+Người dùng cung cấp workflow n8n đang chạy → điều chỉnh thiết kế để **tái dùng** hạ tầng có sẵn thay vì gửi text:
+
+- **Kênh gửi Zalo (đã có):** lấy token OA từ Google Sheet → dựng HTML → ảnh PNG qua HCTI.io → tải .jpg → upload OA → `POST https://openapi.zalo.me/v3.0/oa/group/message` vào nhóm `deb64378401ba945f00a`. Mention cá nhân bằng `[@<id_zalo_oa>]` với cột **`nhan_vien.id_zalo_oa`**.
+- **8:00 đã có sẵn:** node `Schedule 8h & 17h` + `Webhook tổng hợp` (a6fc08fc) đã dựng **ảnh bảng tổng hợp cả phòng + ảnh bảng từng người**. Nút "Nhắc" thủ công (`Webhook cập nhật task` 47cc5412) dựng **thẻ chi tiết 1 việc**.
+- **Trạng thái việc:** hệ thống coi cả `PENDING` và `IN_PROGRESS` là đang làm → Job B/Job A lọc `status in ('IN_PROGRESS','PENDING')` (thay vì chỉ IN_PROGRESS).
+
+**Thay đổi thiết kế:**
+1. **Bỏ payload text + `x-reminder-secret`.** Webhook hiện tại đang mở (dùng anon key công khai) → giữ nhất quán, không thêm secret ở bản này (ghi chú hardening sau).
+2. **Job B (60/30/5)** → POST payload dạng `{ "task": {"id":...}, "assignee": {"name":...}, "moc":"60", "minutes_left":58 }` tới **webhook mới** `cong_viec_den_han`. n8n nhánh mới re-query task+tiến độ+nhân viên (giống nhánh nút Nhắc) và dựng **thẻ ảnh** với dòng tình trạng "còn dưới 60/30/5 phút" + mention `id_zalo_oa`.
+3. **Job A (8:00)** → POST tối thiểu tới **`Webhook tổng hợp` a6fc08fc** (tái dùng chuỗi ảnh tổng hợp). Chỉnh Code node để khi **0 việc vẫn gửi** tin "hôm nay không có việc đang thực hiện". Khuyến nghị bỏ `triggerAtHour: 8` khỏi `Schedule 8h & 17h` (giữ 17h) để 8:00 do pg_cron điều khiển, tránh gửi trùng.
+4. **n8n:** thay node IF `Là cập nhật task?` bằng **Switch 3 nhánh** (đến hạn / cập nhật / tổng hợp); thêm `Webhook đến hạn` + nhánh thẻ "đến hạn"; cả hai nhánh cũ giữ nguyên. Giao workflow JSON đã cập nhật để import.
+
+`reminder_config` giữ 2 key: `webhook_den_han`, `webhook_dang_thuc_hien` (= URL a6fc08fc). Bỏ key `secret`.
+
+---
+
 ## Phụ lục A — Phác SQL (minh hoạ, bản đầy đủ nằm ở implementation plan)
 
 ```sql
