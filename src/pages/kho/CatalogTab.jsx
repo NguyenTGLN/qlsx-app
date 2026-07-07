@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase as db } from '../../lib/supabase';
+import { supabase as db, fetchPageRows } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
+import { invalidateCatalog } from '../../lib/catalogCache';
 import { Loader2, RefreshCw, Trash2, Edit3, Download, Upload, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
@@ -43,18 +44,22 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
   const fetchCatalog = useCallback(async () => {
     setLoading(true);
     try {
-      let q = db.from('inventory_items').select('*', { count: 'exact' });
+      const makeQ = () => {
+        let q = db.from('inventory_items').select('*', { count: 'exact' });
 
-      if (searchText.trim()) {
-        // Giá trị là các mã đã chọn từ gợi ý → lọc chính xác tuyệt đối theo mã HH
-        const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
-        if (terms.length > 0) q = q.in('item_code', terms);
-      }
+        if (searchText.trim()) {
+          // Giá trị là các mã đã chọn từ gợi ý → lọc chính xác tuyệt đối theo mã HH
+          const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
+          if (terms.length > 0) q = q.in('item_code', terms);
+        }
 
-      q = q.order(sortCol, { ascending: sortAsc });
-      q = q.range((page - 1) * pageSize, page * pageSize - 1);
+        // tie-break item_code (PK) để các đợt không trùng/sót
+        return q.order(sortCol, { ascending: sortAsc }).order('item_code', { ascending: true });
+      };
 
-      const { data, count, error } = await q;
+      // fetchPageRows: trang 5K/10K vượt trần 1000 dòng/request của PostgREST → gom từng đợt
+      const from = (page - 1) * pageSize;
+      const { data, count, error } = await fetchPageRows(makeQ, from, from + pageSize - 1);
       if (error) throw error;
 
       setTotalRows(count || 0);
@@ -93,6 +98,7 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
     try {
       const { error } = await db.from('inventory_items').delete().in('item_code', Array.from(selectedKeys));
       if (error) throw error;
+      invalidateCatalog(); // autosuggest ở Nhập kho/PSX/Tồn kho thấy thay đổi ngay
       fetchCatalog();
     } catch(e) { alert('Lỗi xóa: ' + e.message); }
   };
@@ -142,6 +148,7 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
     try {
       const { error } = await db.from('inventory_items').update(updatedRow).eq('item_code', updatedRow.item_code);
       if (error) throw error;
+      invalidateCatalog();
       setEditRow(null);
       fetchCatalog();
     } catch(e) { alert('Lỗi cập nhật: ' + e.message); }
@@ -185,6 +192,7 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
         if (error) throw error;
       }
       
+      invalidateCatalog();
       alert('Nhập dữ liệu thành công!');
       setShowImport(false);
       setImportFile(null);
@@ -339,7 +347,7 @@ export default function CatalogTab({ perms = { view: true, create: true, edit: t
       {showAdd && (
         <AddCatalogItemModal
           onClose={()=>setShowAdd(false)}
-          onSaved={()=>fetchCatalog()}
+          onSaved={()=>{ invalidateCatalog(); fetchCatalog(); }}
         />
       )}
 

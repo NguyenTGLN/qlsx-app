@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase as db } from '../../lib/supabase';
+import { supabase as db, sqlPackHint } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { Search, Loader2, RefreshCw, Download, Send, Factory, ExternalLink, ArrowUpDown, PackageCheck } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -72,7 +72,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
       // DB tổng hợp sẵn theo mã hàng (1 request, json — kèm tổng bán 90 ngày).
       // Xem sql/perf_kho_instant.sql — thay vòng lặp kéo toàn bộ inventory_stock về group bằng JS.
       const { data: summary, error: sumErr } = await db.rpc('get_stock_summary');
-      if (sumErr) throw new Error(sumErr.message + ' — nếu báo thiếu function, cần chạy sql/perf_kho_instant.sql trong Supabase SQL Editor');
+      if (sumErr) throw sqlPackHint(sumErr);
 
       // Calculate days remaining and monthly avg
       let formatted = (summary || []).map(raw => {

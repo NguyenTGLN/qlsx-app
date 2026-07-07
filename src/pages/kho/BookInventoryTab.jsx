@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { supabase as db } from '../../lib/supabase';
+import { supabase as db, sqlPackHint } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { Search, Loader2, RefreshCw, Printer, Download, X, Calculator } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -61,7 +61,7 @@ export default function BookInventoryTab() {
       const p_end = dateRange.to || '2999-12-31';
       // 1 request duy nhất — DB tính 1 lần, trả json (hết cảnh mỗi trang tính lại từ đầu)
       const { data: all, error } = await db.rpc('get_book_inventory_json', { p_start, p_end });
-      if (error) throw new Error(error.message + ' — nếu báo thiếu function, cần chạy sql/perf_kho_instant.sql trong Supabase SQL Editor');
+      if (error) throw sqlPackHint(error);
       setAllRows((all || []).map(r => ({
         item_code: r.item_code,
         item_name: r.item_name,

@@ -5,8 +5,7 @@ import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
 import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1, compareLocations, sortStockForFIFO, sortResultByLocation } from '../../lib/productionAlloc';
-import { dataCache } from '../../lib/dataCache';
-import { getCatalogItems } from '../../lib/catalogCache';
+import { getCatalogItems, getBomProducts } from '../../lib/catalogCache';
 
 // Làm tròn số lượng hiển thị tới 1 chữ số thập phân (khử nhiễu dấu phẩy động của mã dây, vd 284.30000000000007 → 284.3)
 const fmtQty = round1;
@@ -323,56 +322,10 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   }, [prodRows, prodDate, notes, priorityVTSX, orderCode, allocations, isShortage, orderCreated, mode, orderItems, generatedComponents, stockPool, prodFinishedItems]);
 
   useEffect(() => {
-    // Fetch unique products from BOM with pagination to bypass 1000 rows limit
-    const fetchProducts = async () => {
-      try {
-        // Danh sách thành phẩm từ BOM ít đổi → cache 10 phút, mở lại tab không tải lại
-        const CACHE_KEY = 'catalog:bom_products';
-        const CACHE_TTL = 10 * 60 * 1000;
-        let allData = dataCache.get(CACHE_KEY, CACHE_TTL);
-        if (!allData) {
-          allData = [];
-          let hasMore = true;
-          let from = 0;
-          const limit = 1000;
-
-          while (hasMore) {
-            const { data, error } = await db.from('bom_items')
-              .select('product_code, product_name, inventory_items!product_code(item_name)')
-              .range(from, from + limit - 1);
-
-            if (error) throw error;
-
-            if (data && data.length > 0) {
-              allData = allData.concat(data);
-              if (data.length < limit) {
-                hasMore = false;
-              } else {
-                from += limit;
-              }
-            } else {
-              hasMore = false;
-            }
-          }
-          dataCache.set(CACHE_KEY, allData);
-        }
-
-        const unique = [];
-        const map = new Set();
-        allData.forEach(d => {
-          if (!map.has(d.product_code)) {
-            map.add(d.product_code);
-            // Ưu tiên lấy tên chuẩn từ danh mục hàng hóa (inventory_items)
-            const realName = d.inventory_items?.item_name || d.product_name || '';
-            unique.push({ code: d.product_code, name: realName });
-          }
-        });
-        setProducts(unique.sort((a,b) => a.code.localeCompare(b.code)));
-      } catch (err) {
-        console.error("Error fetching BOM products:", err);
-      }
-    };
-    fetchProducts();
+    // Thành phẩm distinct từ BOM — cache dùng chung (getBomProducts), BOM tab sẽ invalidate khi sửa
+    getBomProducts()
+      .then(setProducts)
+      .catch(err => console.error("Error fetching BOM products:", err));
   }, []);
 
   const handleCalculate = async () => {
@@ -691,14 +644,9 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   // Dùng cả danh mục (không lọc theo tồn) để tìm được mọi mã kể cả tồn = 0 (vd BCCTV);
   // bước "Tính toán" vẫn kiểm tra tồn và cảnh báo "thiếu linh kiện" nếu không đủ.
   const loadStockItems = async () => {
+    // item_code là PK của inventory_items nên không cần dedup; catalog đã sắp theo item_code
     const items = await getCatalogItems().catch(() => []);
-    const uniqueItemsMap = new Map();
-    items.forEach(item => {
-       if (!uniqueItemsMap.has(item.item_code)) {
-          uniqueItemsMap.set(item.item_code, { code: item.item_code, name: item.item_name });
-       }
-    });
-    setStockItems(Array.from(uniqueItemsMap.values()).sort((a,b) => a.code.localeCompare(b.code)));
+    setStockItems(items.map(item => ({ code: item.item_code, name: item.item_name })));
   };
 
   const handleOpenManualExport = async () => {

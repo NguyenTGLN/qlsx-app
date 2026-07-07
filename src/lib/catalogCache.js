@@ -27,3 +27,36 @@ export async function getCatalogItems() {
 
 /** Gọi sau khi thêm/sửa/xóa mã trong danh mục để lần sau tải lại. */
 export function invalidateCatalog() { dataCache.invalidate(KEY); }
+
+// ── Danh sách thành phẩm từ BOM (cho picker Phiếu Sản Xuất) ──
+const BOM_KEY = 'catalog:bom_products';
+let bomInflight = null;
+
+/** Thành phẩm distinct từ bom_items [{code, name}] — cache 10', dedup in-flight. */
+export async function getBomProducts() {
+  const cached = dataCache.get(BOM_KEY, TTL);
+  if (cached) return cached;
+  if (bomInflight) return bomInflight;
+  bomInflight = (async () => {
+    try {
+      const { data, error } = await fetchAllRows(() =>
+        db.from('bom_items').select('product_code, product_name, inventory_items!product_code(item_name)'));
+      if (error) throw error;
+      const seen = new Set(); const unique = [];
+      for (const d of (data || [])) {
+        if (!seen.has(d.product_code)) {
+          seen.add(d.product_code);
+          // Ưu tiên tên chuẩn từ danh mục hàng hóa (inventory_items)
+          unique.push({ code: d.product_code, name: d.inventory_items?.item_name || d.product_name || '' });
+        }
+      }
+      unique.sort((a, b) => a.code.localeCompare(b.code));
+      dataCache.set(BOM_KEY, unique); // chỉ cache danh sách đã rút gọn, không giữ dòng BOM thô
+      return unique;
+    } finally { bomInflight = null; }
+  })();
+  return bomInflight;
+}
+
+/** Gọi sau khi thêm/sửa/xóa BOM để picker thành phẩm thấy thay đổi ngay. */
+export function invalidateBomProducts() { dataCache.invalidate(BOM_KEY); }

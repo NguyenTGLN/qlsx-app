@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useNavigate } from 'react-router-dom';
-import { supabase as db } from '../../lib/supabase';
+import { supabase as db, fetchPageRows } from '../../lib/supabase';
 import { useAuth, getTabPerm, canSeeTab } from '../../lib/AuthContext';
 import { Package, RefreshCw, Search, ChevronLeft, ChevronRight, Download, Database, Loader2, Trash2, Edit3, X, Check, Calendar, Eye, EyeOff, ChevronDown, Upload, Layers, List, GitMerge, Settings, ArrowUp, ArrowDown, Printer, LayoutGrid, Star, Truck } from 'lucide-react';
 import ModuleShell from '../../components/ModuleShell';
@@ -46,7 +46,8 @@ function AutoSuggest({ value, onChange, placeholder, columnName, isOpen, onToggl
     timerRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const { data } = await db.from('luu_xuat').select(columnName).ilike(columnName, `%${q}%`).limit(50);
+        // Lấy 500 dòng thô rồi mới dedup — cột lặp nhiều (1 mã bán nghìn lần), limit nhỏ sẽ chỉ ra 1-2 gợi ý
+        const { data } = await db.from('luu_xuat').select(columnName).ilike(columnName, `%${q}%`).limit(500);
         setResults([...new Set((data||[]).map(r=>r[columnName]).filter(Boolean))].sort());
       } catch(e) { console.warn('Search err:', e); }
       setSearching(false);
@@ -62,7 +63,7 @@ function AutoSuggest({ value, onChange, placeholder, columnName, isOpen, onToggl
     if (results.length === 0 && !input) {
       setSearching(true);
       try {
-        const { data } = await db.from('luu_xuat').select(columnName).limit(50);
+        const { data } = await db.from('luu_xuat').select(columnName).limit(200);
         setResults([...new Set((data||[]).map(r=>r[columnName]).filter(Boolean))].sort());
       } catch(e) { console.warn(e); }
       setSearching(false);
@@ -626,10 +627,14 @@ export default function KhoHangApp() {
     let currentStep = 'data';
     try {
       const from = (page - 1) * pageSize;
-      let q = buildQuery(false).range(from, from + pageSize - 1);
-      if (sortCol) q = q.order(sortCol, { ascending: sortAsc });
-
-      const { data, error } = await q;
+      // fetchPageRows: trang 5K/10K vượt trần 1000 dòng/request của PostgREST → gom từng đợt.
+      // Tie-break id để thứ tự ổn định giữa các đợt/trang (kể cả khi chưa chọn cột sort).
+      const makeQ = () => {
+        let q = buildQuery(false);
+        if (sortCol) q = q.order(sortCol, { ascending: sortAsc });
+        return q.order('id', { ascending: true });
+      };
+      const { data, error } = await fetchPageRows(makeQ, from, from + pageSize - 1);
       if (error) throw new Error(error.message || JSON.stringify(error));
 
       if (data?.length > 0 && columns.length === 0) {
@@ -639,10 +644,14 @@ export default function KhoHangApp() {
       setSelected(new Set());
       setLoading(false);
 
-      // Fetch count in background so it doesn't block data rendering or trigger timeout alerts
+      // Đếm chạy nền để không chặn hiển thị. Count 'estimated' có thể thấp hơn thực tế
+      // → kẹp dưới bằng số dòng đã thấy (+1 nếu trang đầy) để không khóa oan nút trang sau.
+      const got = (data || []).length;
+      const seen = from + got + (got === pageSize ? 1 : 0);
+      setTotalCount(c => Math.max(c, seen));
       buildQuery(true).then(({ count, error: countErr }) => {
         if (!countErr && count !== null) {
-          setTotalCount(count);
+          setTotalCount(Math.max(count, seen));
         }
       }).catch(() => {});
 

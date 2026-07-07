@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase as db, fetchAllRows } from '../../lib/supabase';
+import { supabase as db, fetchAllRows, fetchPageRows, sqlPackHint } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useCachedFetch } from '../../lib/useCachedFetch';
-import { getCatalogItems } from '../../lib/catalogCache';
+import { getCatalogItems, invalidateCatalog } from '../../lib/catalogCache';
 import { Search, Loader2, RefreshCw, Package, Database, Download, Upload, Trash2, Edit3, X, Check, Printer, Calculator, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { todayLocal, parseImportDate } from '../../lib/dateUtils';
@@ -26,7 +26,6 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
   const [searchText, setSearchText] = useState('');
   const [filterPrefix, setFilterPrefix] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
-  const [locations, setLocations] = useState([]);
   const [sortCol, setSortCol] = useState('item_code');
   const [sortAsc, setSortAsc] = useState(true);
   const [page, setPage] = useState(1);
@@ -52,20 +51,15 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
   const [showCodeSuggest, setShowCodeSuggest] = useState(false);
   const [showNameSuggest, setShowNameSuggest] = useState(false);
 
-  // Fetch product catalog for manual input suggestions (cache dùng chung, tải 1 lần/10')
+  // Fetch product catalog for manual input suggestions (cache dùng chung, tải 1 lần/10';
+  // item_code là PK nên không cần dedup)
   useEffect(() => {
-    getCatalogItems().then(items => {
-      const unique = [];
-      const seen = new Set();
-      for (const d of items) {
-        if (!seen.has(d.item_code)) { seen.add(d.item_code); unique.push(d); }
-      }
-      setProductCatalog(unique);
-    }).catch(e => console.warn('Không tải được danh mục:', e.message));
+    getCatalogItems().then(setProductCatalog)
+      .catch(e => console.warn('Không tải được danh mục:', e.message));
   }, []);
 
-  // Reset page when filters change
-  useEffect(() => { setPage(1); }, [searchText, filterLocation, filterPrefix, pageSize]);
+  // Reset page + selection when filters change (đổi trang/sort thì GIỮ selection để xóa/xuất nhiều trang)
+  useEffect(() => { setPage(1); setSelectedKeys(new Set()); }, [searchText, filterLocation, filterPrefix, pageSize]);
 
   // Debounce search and prefix
   useEffect(() => {
@@ -85,10 +79,10 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
   // Danh sách vị trí distinct — DB tính + sắp theo lộ trình kho, cache SWR (hiện ngay, nền tự làm mới)
   const { data: locationsData } = useCachedFetch('kho:locations', async () => {
     const { data, error } = await db.rpc('get_distinct_locations');
-    if (error) throw new Error(error.message + ' — cần chạy sql/perf_kho_instant.sql');
+    if (error) throw sqlPackHint(error);
     return data || [];
   });
-  useEffect(() => { setLocations(locationsData || []); }, [locationsData]);
+  const locations = locationsData || [];
 
   const [totalRows, setTotalRows] = useState(0);
 
@@ -112,20 +106,22 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
     try {
       // Sort server-side: 'location' → cột sinh location_key (đúng lộ trình dãy/tầng/ô, mọi quy mô)
       const orderCol = sortCol === 'location' ? 'location_key' : sortCol;
-      let q = buildStockQuery(true);
-      if (orderCol) q = q.order(orderCol, { ascending: sortAsc, nullsFirst: false });
-      q = q.order('id', { ascending: true }); // tie-break để phân trang ổn định
-      q = q.range((page - 1) * pageSize, page * pageSize - 1);
-
-      const { data, count, error } = await q;
-      if (error) {
-        const msg = String(error.message || '');
-        throw new Error(msg + (msg.includes('location_key') ? ' — cần chạy sql/perf_kho_instant.sql trong Supabase SQL Editor' : ''));
-      }
+      const makeQ = () => {
+        let q = buildStockQuery(true);
+        if (orderCol) q = q.order(orderCol, { ascending: sortAsc, nullsFirst: false });
+        return q.order('id', { ascending: true }); // tie-break để các đợt không trùng/sót dòng
+      };
+      // fetchPageRows: trang >1000 dòng phải gom từng đợt (PostgREST trần 1000/request)
+      const from = (page - 1) * pageSize;
+      const { data, count, error } = await fetchPageRows(makeQ, from, from + pageSize - 1);
+      if (error) throw sqlPackHint(error);
 
       setAllData((data || []).map(r => ({...r, quantity: Math.round(parseFloat(r.quantity || 0) * 1000) / 1000})));
-      if (count != null) setTotalRows(count);
-      setSelectedKeys(new Set());
+      // count 'estimated' có thể THẤP hơn thực tế → kẹp dưới bằng số dòng đã thấy,
+      // nếu trang đầy thì +1 để nút "Sau" không bị khóa oan trước khi hết dữ liệu.
+      const got = (data || []).length;
+      const seen = from + got + (got === pageSize ? 1 : 0);
+      setTotalRows(count != null ? Math.max(count, seen) : seen);
     } catch (e) {
       console.error(e);
       alert('Lỗi tải tồn kho: ' + e.message);
@@ -137,10 +133,13 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
   // Dữ liệu đã đúng trang + đúng thứ tự từ server
   const rows = allData;
 
-  // Tải TOÀN BỘ kết quả theo bộ lọc hiện tại (chỉ khi user bấm In/Export — có chủ đích)
-  const fetchAllFiltered = useCallback(async () => {
+  // Tải TOÀN BỘ kết quả theo bộ lọc hiện tại (chỉ khi user bấm In/Export — có chủ đích).
+  // Luôn kèm tie-break id để các đợt 1000 dòng không trùng/sót khi nhiều dòng cùng khóa sắp.
+  const fetchAllFiltered = useCallback(async (orderCol = 'location_key', asc = true) => {
     const { data, error } = await fetchAllRows(() =>
-      buildStockQuery(false).order('location_key', { ascending: true }));
+      buildStockQuery(false)
+        .order(orderCol, { ascending: asc, nullsFirst: false })
+        .order('id', { ascending: true }));
     if (error) throw error;
     return (data || []).map(r => ({...r, quantity: Math.round(parseFloat(r.quantity || 0) * 1000) / 1000}));
   }, [buildStockQuery]);
@@ -169,8 +168,13 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
     setSelectedKeys(next);
   };
   const toggleAll = () => {
-    if (selectedKeys.size === rows.length) setSelectedKeys(new Set());
-    else setSelectedKeys(new Set(rows.map(r => r.id)));
+    // Chỉ thêm/bỏ các dòng của TRANG hiện tại — không phá selection đã tick ở trang khác
+    const pageIds = rows.map(r => r.id);
+    const allSelected = pageIds.length > 0 && pageIds.every(id => selectedKeys.has(id));
+    const next = new Set(selectedKeys);
+    if (allSelected) pageIds.forEach(id => next.delete(id));
+    else pageIds.forEach(id => next.add(id));
+    setSelectedKeys(next);
   };
 
   const handleDelete = async () => {
@@ -184,10 +188,10 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
 
   const handleExport = async () => {
     try {
-      // Có chọn dòng → xuất dòng đã chọn; không chọn → tải đủ toàn bộ theo bộ lọc rồi xuất
-      const source = selectedKeys.size > 0
-        ? rows.filter(r => selectedKeys.has(r.id))
-        : await fetchAllFiltered();
+      // Tải đủ toàn bộ theo bộ lọc (đúng thứ tự đang xem); có chọn dòng → chỉ giữ các dòng
+      // đã tick — selection giờ tồn tại XUYÊN trang nên phải lọc trên tập đầy đủ.
+      const all = await fetchAllFiltered(sortCol === 'location' ? 'location_key' : (sortCol || 'location_key'), sortAsc);
+      const source = selectedKeys.size > 0 ? all.filter(r => selectedKeys.has(r.id)) : all;
       const dataToExport = source.map(r => {
         const out = {};
         Object.keys(colLabel).forEach(k => out[colLabel[k]] = r[k]);
@@ -297,6 +301,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
           if (uniqueCatalog.length > 0) {
             const { error: catErr } = await db.from('inventory_items').upsert(uniqueCatalog, { onConflict: 'item_code', ignoreDuplicates: true });
             if (catErr) console.warn("Lỗi tạo danh mục tự động:", catErr);
+            else invalidateCatalog(); // cache danh mục dùng chung thấy mã mới ngay
           }
           
           // Gộp các dòng cùng (mã + vị trí) NGAY TRONG FILE để không nhân đôi,
@@ -342,6 +347,7 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
         unit: manualInputData.unit.trim() || 'Cái'
       }], { onConflict: 'item_code', ignoreDuplicates: true });
       if (catErr) console.warn("Lỗi tạo danh mục:", catErr);
+      else invalidateCatalog(); // cache danh mục dùng chung thấy mã mới ngay
 
       const payload = {
         item_code: manualInputData.item_code.trim(),

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase as db } from '../../lib/supabase';
+import { supabase as db, fetchPageRows } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
+import { invalidateBomProducts } from '../../lib/catalogCache';
 import { Search, Loader2, RefreshCw, Trash2, Edit3, Download, Upload, X, Check, Printer } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
@@ -51,34 +52,37 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
   const fetchBom = useCallback(async () => {
     setLoading(true);
     try {
-      let q = db.from('bom_items').select(`
-        id,
-        product_code,
-        component_code,
-        unit,
-        quantity,
-        product_name,
-        inventory_items!bom_items_component_code_fkey ( item_name )
-      `, { count: 'exact' });
+      const makeQ = () => {
+        let q = db.from('bom_items').select(`
+          id,
+          product_code,
+          component_code,
+          unit,
+          quantity,
+          product_name,
+          inventory_items!bom_items_component_code_fkey ( item_name )
+        `, { count: 'exact' });
 
-      if (searchText.trim()) {
-        // Giá trị là các mã đã chọn từ gợi ý → lọc chính xác tuyệt đối, không khớp gần đúng
-        const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
-        if (terms.length > 0) {
-          const list = terms.map(t => `"${t}"`).join(',');
-          q = q.or(`product_code.in.(${list}),component_code.in.(${list})`);
+        if (searchText.trim()) {
+          // Giá trị là các mã đã chọn từ gợi ý → lọc chính xác tuyệt đối, không khớp gần đúng
+          const terms = searchText.split(',').map(t => t.trim()).filter(Boolean);
+          if (terms.length > 0) {
+            const list = terms.map(t => `"${t}"`).join(',');
+            q = q.or(`product_code.in.(${list}),component_code.in.(${list})`);
+          }
         }
-      }
 
-      if (sortCol === 'component_name') {
-        q = q.order('item_name', { foreignTable: 'inventory_items', ascending: sortAsc });
-      } else {
-        q = q.order(sortCol, { ascending: sortAsc });
-      }
+        if (sortCol === 'component_name') {
+          q = q.order('item_name', { foreignTable: 'inventory_items', ascending: sortAsc });
+        } else {
+          q = q.order(sortCol, { ascending: sortAsc });
+        }
+        return q.order('id', { ascending: true }); // tie-break: các đợt không trùng/sót
+      };
 
-      q = q.range((page - 1) * pageSize, page * pageSize - 1);
-
-      const { data, count, error } = await q;
+      // fetchPageRows: trang 5K/10K vượt trần 1000 dòng/request của PostgREST → gom từng đợt
+      const from = (page - 1) * pageSize;
+      const { data, count, error } = await fetchPageRows(makeQ, from, from + pageSize - 1);
       if (error) throw error;
 
       const formatted = data.map(r => ({
@@ -130,6 +134,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
     try {
       const { error } = await db.from('bom_items').delete().in('id', Array.from(selectedKeys));
       if (error) throw error;
+      invalidateBomProducts(); // picker thành phẩm ở Phiếu SX thấy thay đổi ngay
       fetchBom();
     } catch(e) { alert('Lỗi xóa: ' + e.message); }
   };
@@ -271,6 +276,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
       };
       const { error } = await db.from('bom_items').update(payload).eq('id', updatedRow.id);
       if (error) throw error;
+      invalidateBomProducts();
       setEditRow(null);
       fetchBom();
     } catch(e) { alert('Lỗi cập nhật: ' + e.message); }
@@ -394,6 +400,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
             if (error) throw error;
           }
           
+          invalidateBomProducts();
           alert('Nhập dữ liệu thành công!');
           setShowImport(false);
           setImportFile(null);

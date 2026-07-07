@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase as db } from '../../lib/supabase';
+import { supabase as db, fetchPageRows } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { Search, ChevronLeft, ChevronRight, Download, Upload, FileDown, Loader2, Trash2, Edit3, X, Check, Eye } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -95,31 +95,34 @@ export default function ImportLogsTab({ perms = { view: true, create: true, edit
   const fetchData = async () => {
     setLoading(true);
     try {
-      let query = db.from('du_lieu_nhap').select('*', { count: 'estimated' });
-      
-      if (search) {
-        const terms = search.split(',').map(t => t.trim()).filter(Boolean);
-        if (terms.length > 0) {
-          query = query.in('ma_hang', terms);
+      const makeQ = () => {
+        let query = db.from('du_lieu_nhap').select('*', { count: 'estimated' });
+
+        if (search) {
+          const terms = search.split(',').map(t => t.trim()).filter(Boolean);
+          if (terms.length > 0) {
+            query = query.in('ma_hang', terms);
+          }
         }
-      }
 
-      query = applyDateFilter(query, dateRange, 'ngay_nhap');
+        query = applyDateFilter(query, dateRange, 'ngay_nhap');
 
-      // Sort by latest
-      query = query.order('ngay_nhap', { ascending: false }).order('created_at', { ascending: false });
+        // Sort by latest + tie-break id (thứ tự ổn định giữa các đợt/trang)
+        return query.order('ngay_nhap', { ascending: false }).order('created_at', { ascending: false }).order('id', { ascending: true });
+      };
 
-      // Pagination
+      // fetchPageRows: trang 5K/10K vượt trần 1000 dòng/request của PostgREST → gom từng đợt
       const from = (page - 1) * pageSize;
-      const to = from + pageSize - 1;
-      query = query.range(from, to);
+      const { data: resultData, count, error } = await fetchPageRows(makeQ, from, from + pageSize - 1);
 
-      const { data: resultData, count, error } = await query;
-      
       if (error) throw error;
-      
+
       setData(resultData || []);
-      if (count !== null) setTotalCount(count);
+      // count 'estimated' có thể thấp hơn thực tế → kẹp dưới bằng số dòng đã thấy
+      const got = (resultData || []).length;
+      const seen = from + got + (got === pageSize ? 1 : 0);
+      if (count !== null) setTotalCount(Math.max(count, seen));
+      else setTotalCount(c => Math.max(c, seen));
       setSelectedKeys(new Set());
     } catch (e) {
       console.error("Lỗi tải dữ liệu nhập:", e);
