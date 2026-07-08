@@ -30,6 +30,7 @@ const WorkerInput = () => {
   const [submitting, setSubmitting] = useState(false);
   const [remainingQty, setRemainingQty] = useState(null);
   const [capacityOk, setCapacityOk] = useState(null); // null=đang tải | true | false
+  const [capacityErr, setCapacityErr] = useState(false); // true khi KHÔNG kiểm tra được định mức (lỗi mạng/DB)
   const [dailyLogs, setDailyLogs] = useState([]);
   
   const [locationsData, setLocationsData] = useState([]); 
@@ -62,10 +63,12 @@ const WorkerInput = () => {
         productCode = data?.product_code;
       }
       if (!productCode) { if (!cancelled) setCapacityOk(false); return; }
-      const { data } = await supabase.from('product_capacities')
+      const { data, error } = await supabase.from('product_capacities')
         .select('product_code, capacity_per_hour').eq('product_code', productCode).maybeSingle();
-      const ok = missingCapacities([productCode], data ? [data] : []).length === 0;
-      if (!cancelled) setCapacityOk(ok);
+      if (cancelled) return;
+      if (error) { setCapacityErr(true); return; } // không xác minh được → KHÔNG kết luận thiếu định mức; capacityOk giữ null (nút vẫn khoá)
+      setCapacityErr(false);
+      setCapacityOk(missingCapacities([productCode], data ? [data] : []).length === 0);
     })();
     return () => { cancelled = true; };
   }, [order]);
@@ -429,7 +432,11 @@ const WorkerInput = () => {
         </div>
       </div>
 
-      {capacityOk === false && (
+      {capacityErr ? (
+        <div style={{ margin: '1rem', padding: '0.75rem 1rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', color: '#92400e', fontWeight: 600, fontSize: '0.85rem' }}>
+          ⚠️ Không kiểm tra được định mức (lỗi kết nối). Vui lòng tải lại trang rồi thử lại.
+        </div>
+      ) : capacityOk === false && (
         <div style={{ margin: '1rem', padding: '0.75rem 1rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', color: '#991b1b', fontWeight: 600, fontSize: '0.85rem' }}>
           ⛔ Sản phẩm <strong>{order.product_code}</strong> chưa có định mức năng lực — không thể nhập tiến độ. Vui lòng nạp định mức ở Tổng Quan Sản Xuất → Định Mức.
         </div>
@@ -601,12 +608,14 @@ const WorkerInput = () => {
             disabled={!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)}
           >
             {!canSubmit ? 'Bạn không có quyền gửi báo cáo' : (
+              capacityErr ? 'Không kiểm tra được định mức' : (
+              capacityOk === null ? 'Đang kiểm tra định mức...' : (
               capacityOk === false ? 'Chưa có định mức — không thể gửi' : (
               submitting ? 'Đang gửi...' : (
                 isLoadingData ? 'Đang tải...' : (
                    remainingQty !== null && remainingQty <= 0 ? 'Lệnh hoàn thành' : `Phân Bổ & Gửi`
                 )
-              )))
+              )))))
             }
           </button>
         </form>
