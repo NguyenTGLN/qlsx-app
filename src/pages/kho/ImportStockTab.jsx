@@ -157,6 +157,8 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
   const [shortfallRows, setShortfallRows] = useState([]);   // các DLK vừa nhập còn thiếu so SL Đặt → hộp kết quả
   const [shortfallBusy, setShortfallBusy] = useState(false); // đang xử lý LC2
   const [successOrder, setSuccessOrder] = useState('');      // mã PNK vừa lưu → mở hộp kết quả (thay popup trình duyệt)
+  const [psxDateFilter, setPsxDateFilter] = useState('');    // lọc phiếu SX theo ngày (yyyy-mm-dd) trong ô "Thêm phiếu SX"
+  const [psxSearchFilter, setPsxSearchFilter] = useState(''); // lọc phiếu SX theo mã thành phẩm / mã phiếu
 
   const blockIdRef = useRef(1);
   const newBlockId = () => blockIdRef.current++;
@@ -249,7 +251,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
       const allItems = await getCatalogItems().catch(e => { console.error("Error fetching catalog:", e); return []; });
       setCatalog(allItems);
 
-      const { data: ordersData } = await db.from('production_orders').select('id, order_code, product_code, status').order('created_at', { ascending: false });
+      const { data: ordersData } = await db.from('production_orders').select('id, order_code, product_code, target_quantity, status, created_at').order('created_at', { ascending: false });
       if (ordersData) setAllOrders(ordersData);
 
       // Danh mục NCC cho ô chọn nhà cung cấp (nhỏ ~vài trăm dòng). Lỗi (bảng chưa tạo) → để trống, không chặn nhập.
@@ -259,6 +261,9 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
     };
     loadData();
   }, []);
+
+  // Reset bộ lọc chọn phiếu SX mỗi khi đổi loại phiếu (mở/đóng modal)
+  useEffect(() => { setPsxDateFilter(''); setPsxSearchFilter(''); }, [reason]);
 
   // Thêm 1 hàng hóa vào 1 khối (Nhập mua vào / Nhập mới / Khác)
   const handleSelectItem = async (blockId, catItem) => {
@@ -633,6 +638,22 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
 
   const showItemCheckbox = (reason === 'Nhập dư sản xuất' || reason === 'Nhập hoàn/hủy');
 
+  // Ngày của phiếu SX cho bộ lọc lịch: ưu tiên ngày nhúng trong mã (PSX-YYYYMMDD-… → 'YYYY-MM-DD');
+  // mã không đúng định dạng thì lùi về ngày tạo bản ghi (created_at).
+  const psxDateOf = (o) => {
+    const m = /(\d{4})(\d{2})(\d{2})/.exec(o.order_code || '');
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    return (o.created_at || '').slice(0, 10);
+  };
+
+  // Danh sách phiếu SX cho ô "Thêm phiếu SX" sau khi áp trạng thái + bộ lọc ngày/mã thành phẩm.
+  const psxSearch = psxSearchFilter.trim().toLowerCase();
+  const psxOptions = allOrders
+    .filter(o => reason === 'Nhập thành phẩm' ? true : (o.status === 'pending' || o.status === 'in_progress'))
+    .filter(o => !blocks.find(b => b.sourceValue === o.order_code))
+    .filter(o => !psxDateFilter || psxDateOf(o) === psxDateFilter)
+    .filter(o => !psxSearch || (o.product_code || '').toLowerCase().includes(psxSearch) || (o.order_code || '').toLowerCase().includes(psxSearch));
+
   // Tổng SL nhập theo (mã hàng, vị trí) trên TẤT CẢ các khối — để "Tồn sau" phản ánh
   // đúng kết quả gộp khi nhiều nguồn cùng đẩy 1 mã về cùng 1 vị trí (khớp executeImport).
   const locTotals = {};
@@ -803,19 +824,51 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
               {(reason === 'Nhập thành phẩm' || reason === 'Nhập dư sản xuất') && (
                 <div className="no-print" style={{marginBottom:'1.25rem', background:'#f8fafc', padding:'1rem', borderRadius:'0.75rem', border:'1px solid #e2e8f0'}}>
                   <label style={s.label}>Thêm phiếu SX <span style={{fontWeight:400, color:'#94a3b8'}}>(chọn nhiều lần để nhập nhiều phiếu cùng lúc)</span></label>
+
+                  {/* Bộ lọc: theo ngày (lịch) + theo mã thành phẩm — thu hẹp danh sách phiếu bên dưới */}
+                  <div style={{display:'flex', gap:8, flexWrap:'wrap', marginBottom:8}}>
+                    <input
+                      type="date"
+                      value={psxDateFilter}
+                      onChange={e => setPsxDateFilter(e.target.value)}
+                      title="Lọc theo ngày phiếu SX"
+                      style={{...s.input, padding:'6px 8px', width:'auto', flex:'0 0 auto'}}
+                    />
+                    <input
+                      type="text"
+                      value={psxSearchFilter}
+                      onChange={e => setPsxSearchFilter(e.target.value)}
+                      placeholder="Tìm mã thành phẩm..."
+                      style={{...s.input, padding:'6px 8px', flex:'1 1 140px', minWidth:120}}
+                    />
+                    {(psxDateFilter || psxSearchFilter) && (
+                      <button
+                        type="button"
+                        onClick={() => { setPsxDateFilter(''); setPsxSearchFilter(''); }}
+                        style={{...s.btn, background:'#e2e8f0', color:'#475569', padding:'6px 10px'}}
+                      >
+                        <X size={14}/> Xóa lọc
+                      </button>
+                    )}
+                  </div>
+
                   <select
                     style={{...s.input, padding:'8px', fontSize:'0.85rem'}}
                     value=""
                     onChange={e => { if (e.target.value) handleAddPSX(e.target.value); }}
                   >
-                    <option value="">-- Chọn phiếu SX để thêm --</option>
-                    {allOrders
-                      .filter(o => reason === 'Nhập thành phẩm' ? true : (o.status === 'pending' || o.status === 'in_progress'))
-                      .filter(o => !blocks.find(b => b.sourceValue === o.order_code))
-                      .map(o => (
-                        <option key={o.order_code} value={o.order_code}>{o.order_code}</option>
-                      ))}
+                    <option value="">-- Chọn phiếu SX để thêm ({psxOptions.length} phiếu) --</option>
+                    {psxOptions.map(o => (
+                      <option key={o.order_code} value={o.order_code}>
+                        {o.order_code} ({o.product_code || '—'}{o.target_quantity != null ? ` · SL ${o.target_quantity}` : ''})
+                      </option>
+                    ))}
                   </select>
+                  {psxOptions.length === 0 && (
+                    <div style={{fontSize:'0.75rem', color:'#ef4444', marginTop:6}}>
+                      Không có phiếu SX khớp bộ lọc{(psxDateFilter || psxSearchFilter) ? ' — thử xóa lọc.' : '.'}
+                    </div>
+                  )}
                 </div>
               )}
 
