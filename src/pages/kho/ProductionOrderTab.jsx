@@ -6,6 +6,7 @@ import { todayLocal } from '../../lib/dateUtils';
 import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
 import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1, compareLocations, sortStockForFIFO, sortResultByLocation } from '../../lib/productionAlloc';
 import { getCatalogItems, getBomProducts } from '../../lib/catalogCache';
+import { missingCapacities, capacityMap } from '../../lib/capacityGuard';
 
 // Làm tròn số lượng hiển thị tới 1 chữ số thập phân (khử nhiễu dấu phẩy động của mã dây, vd 284.30000000000007 → 284.3)
 const fmtQty = round1;
@@ -845,6 +846,24 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       alert('Dữ liệu phiếu sản xuất không hợp lệ (thiếu danh sách thành phẩm). Vui lòng bấm "← Quay lại" rồi tính toán lại.');
       return;
     }
+
+    // Guard 100% định mức thật: KHÔNG tạo Lệnh SX cho mã thiếu định mức (không dùng fallback 0.05)
+    let prodCapMap = null;
+    if (mode === 'production') {
+      const codes = [...new Set(prodFinishedItems.map(it => String(it.productCode || '').trim()).filter(Boolean))];
+      const { data: capRows, error: capErr } = await db.from('product_capacities')
+        .select('product_code, capacity_per_hour').in('product_code', codes);
+      if (capErr) { alert('Lỗi kiểm tra định mức: ' + capErr.message); return; }
+      const missing = missingCapacities(codes, capRows);
+      if (missing.length > 0) {
+        alert('Các mã sau CHƯA có định mức năng lực, không thể tạo Lệnh SX:\n- '
+          + missing.join('\n- ')
+          + '\n\nVui lòng nạp định mức ở Tổng Quan Sản Xuất → Định Mức trước.');
+        return;
+      }
+      prodCapMap = capacityMap(capRows);
+    }
+
     setIsProcessing(true);
     try {
       // 3. Trừ kho / Cộng kho trên DB
@@ -1021,9 +1040,9 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
         const orderUpserts = [];
         const wipInserts = [];
         for (const it of prodFinishedItems) {
-          const { data: capData } = await db.from('product_capacities')
-            .select('capacity_per_hour').eq('product_code', it.productCode).maybeSingle();
-          const stdTime = capData?.capacity_per_hour ? (1 / parseFloat(capData.capacity_per_hour)) : 0.05;
+          const cap = prodCapMap.get(String(it.productCode).trim());
+          if (!cap) throw new Error('Thiếu định mức cho mã ' + it.productCode); // pre-flight đã chặn; phòng thủ
+          const stdTime = 1 / cap;
           orderUpserts.push({
             order_code: it.orderCode,
             product_code: it.productCode,
