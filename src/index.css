@@ -231,4 +231,11 @@ input, select, textarea {
 
   /* Popup (dropdown lịch/đa chọn) không vượt quá bề ngang màn hình */
   .responsive-pop { width: calc(100vw - 1.5rem) !important; max-width: calc(100vw - 1.5rem) !important; }
+
+  /* Dòng "Xuất Kho Thủ Công": trên điện thoại KHÔNG dồn 5 ô vào 1 hàng chật.
+     Xếp lại: Mã SP full width → Tên full width → Số lượng + Lý do 2 cột → nút xoá góc phải. */
+  .manual-export-row { grid-template-columns: 1fr 1fr !important; }
+  .manual-export-row > .mer-code,
+  .manual-export-row > .mer-name { grid-column: 1 / -1 !important; }
+  .manual-export-row > .mer-del { grid-column: 1 / -1 !important; justify-self: end !important; }
 }

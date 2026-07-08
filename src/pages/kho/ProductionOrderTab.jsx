@@ -35,13 +35,43 @@ const SearchableSelect = ({ options, value, onChange, placeholder }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(-1);
+  // Neo dropdown bằng position:fixed để (1) không bị thân modal overflow:auto cắt cụt,
+  // (2) mở rộng chiều ngang cho dễ đọc mã + tên. Xem [[qlsx-modal-dropdown-clipping]].
+  const [pos, setPos] = useState(null); // {top,left,width,maxHeight}
   const ref = useRef(null);
+  const inputRef = useRef(null);
+
+  // Tính vị trí + kích thước dropdown theo ô input (viewport-based)
+  const recalc = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const vw = window.innerWidth;
+    // Rộng cho dễ xem: tối thiểu 300px (hoặc bằng ô input nếu ô rộng hơn), không vượt màn hình
+    const width = Math.min(Math.max(rect.width, 300), vw - 16);
+    let left = rect.left;
+    if (left + width > vw - 8) left = Math.max(8, vw - 8 - width);
+    const maxHeight = Math.max(200, Math.min(380, window.innerHeight - rect.bottom - 12));
+    setPos({ top: Math.round(rect.bottom + 4), left: Math.round(left), width: Math.round(width), maxHeight });
+  };
 
   useEffect(() => {
     const handleClickOutside = (e) => { if (ref.current && !ref.current.contains(e.target)) setIsOpen(false); };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Khi mở: tính vị trí và cập nhật lại khi cuộn (capture để bắt cuộn trong modal) / resize
+  useEffect(() => {
+    if (!isOpen) return;
+    recalc();
+    window.addEventListener('scroll', recalc, true);
+    window.addEventListener('resize', recalc);
+    return () => {
+      window.removeEventListener('scroll', recalc, true);
+      window.removeEventListener('resize', recalc);
+    };
+  }, [isOpen]);
 
   const selectedOpt = options.find(o => o.value === value);
   const displayVal = selectedOpt ? `${selectedOpt.value} - ${selectedOpt.label}` : '';
@@ -76,21 +106,22 @@ const SearchableSelect = ({ options, value, onChange, placeholder }) => {
 
   return (
     <div ref={ref} style={{position:'relative', width:'100%'}}>
-      <input 
-        style={s.input} 
-        placeholder={placeholder} 
-        value={isOpen ? search : displayVal} 
+      <input
+        ref={inputRef}
+        style={s.input}
+        placeholder={placeholder}
+        value={isOpen ? search : displayVal}
         onChange={e => { setSearch(e.target.value); setIsOpen(true); setFocusedIndex(-1); }}
         onClick={() => { setIsOpen(true); setSearch(''); setFocusedIndex(-1); }}
         onKeyDown={handleKeyDown}
       />
-      {isOpen && (
-        <div style={{position:'absolute', top:'100%', left:0, right:0, background:'#fff', border:'1px solid #e2e8f0', borderRadius:7, maxHeight:250, overflowY:'auto', zIndex:50, boxShadow:'0 4px 6px -1px rgba(0,0,0,0.1)'}}>
+      {isOpen && pos && (
+        <div style={{position:'fixed', top:pos.top, left:pos.left, width:pos.width, background:'#fff', border:'1px solid #e2e8f0', borderRadius:8, maxHeight:pos.maxHeight, overflowY:'auto', zIndex:10010, boxShadow:'0 12px 28px -6px rgba(0,0,0,0.30)'}}>
           {filtered.map((o, idx) => (
-            <div 
-              key={o.value} 
+            <div
+              key={o.value}
               style={{
-                padding:'8px 12px', cursor:'pointer', borderBottom:'1px solid #f1f5f9', fontSize:'0.8rem', color:'#334155',
+                padding:'10px 14px', cursor:'pointer', borderBottom:'1px solid #f1f5f9', fontSize:'0.9rem', color:'#334155', lineHeight:1.35,
                 background: focusedIndex === idx ? '#e0f2fe' : 'transparent'
               }}
               onMouseEnter={() => setFocusedIndex(idx)}
@@ -100,7 +131,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder }) => {
               <strong>{o.value}</strong> - {o.label}
             </div>
           ))}
-          {filtered.length === 0 && <div style={{padding:'8px 12px', color:'#94a3b8', fontSize:'0.8rem'}}>Không tìm thấy</div>}
+          {filtered.length === 0 && <div style={{padding:'10px 14px', color:'#94a3b8', fontSize:'0.9rem'}}>Không tìm thấy</div>}
         </div>
       )}
     </div>
@@ -1832,8 +1863,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
               const needRef = reasonNeedsOrderRef(row.reason);
               return (
                 <div key={row.id} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:'0.9rem', marginBottom:12, background:'#f8fafc' }}>
-                  <div style={{ display:'grid', gridTemplateColumns:'1.4fr 1.4fr 0.7fr 1.2fr auto', gap:10, alignItems:'end' }}>
-                    <div>
+                  <div className="manual-export-row" style={{ display:'grid', gridTemplateColumns:'1.4fr 1.4fr 0.7fr 1.2fr auto', gap:10, alignItems:'end' }}>
+                    <div className="mer-code">
                       <label style={s.label}>Mã SP / linh kiện</label>
                       <SearchableSelect
                         options={stockItems.map(p => ({value: p.code, label: p.name}))}
@@ -1844,24 +1875,24 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                         placeholder="Tìm mã hoặc tên..."
                       />
                     </div>
-                    <div>
+                    <div className="mer-name">
                       <label style={s.label}>Tên</label>
                       <input type="text" style={{...s.input, background:'#eef2f7', color:'#64748b'}} value={row.name} disabled />
                     </div>
-                    <div>
+                    <div className="mer-qty">
                       <label style={s.label}>Số lượng</label>
                       <input type="number" min="1" style={s.input} value={row.qty}
                         onChange={e => setManualRows(rs => rs.map((r, i) => i === idx ? { ...r, qty: e.target.value } : r))}
                         placeholder="SL..." />
                     </div>
-                    <div>
+                    <div className="mer-reason">
                       <label style={s.label}>Lý do xuất</label>
                       <select style={s.input} value={row.reason}
                         onChange={e => setManualRows(rs => rs.map((r, i) => i === idx ? { ...r, reason: e.target.value, orderRef: '' } : r))}>
                         {EXPORT_REASONS.map(opt => <option key={opt.label} value={opt.label}>{opt.label}</option>)}
                       </select>
                     </div>
-                    <button onClick={() => setManualRows(rs => rs.length > 1 ? rs.filter((_, i) => i !== idx) : [emptyManualRow()])}
+                    <button className="mer-del" onClick={() => setManualRows(rs => rs.length > 1 ? rs.filter((_, i) => i !== idx) : [emptyManualRow()])}
                       title="Xoá dòng"
                       style={{ height:38, width:38, borderRadius:8, border:'1px solid #fecaca', background:'#fef2f2', color:'#dc2626', cursor:'pointer', fontWeight:700 }}>✕</button>
                   </div>
