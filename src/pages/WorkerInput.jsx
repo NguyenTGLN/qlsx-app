@@ -3,6 +3,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Send, Clock, Users, PackageCheck, Info } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useTabPerm } from '../lib/AuthContext';
+import { missingCapacities } from '../lib/capacityGuard';
 
 const WorkerInput = () => {
   const navigate = useNavigate();
@@ -28,6 +29,8 @@ const WorkerInput = () => {
   const [totalTime, setTotalTime] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [remainingQty, setRemainingQty] = useState(null);
+  const [capacityOk, setCapacityOk] = useState(null); // null=đang tải | true | false
+  const [capacityErr, setCapacityErr] = useState(false); // true khi KHÔNG kiểm tra được định mức (lỗi mạng/DB)
   const [dailyLogs, setDailyLogs] = useState([]);
   
   const [locationsData, setLocationsData] = useState([]); 
@@ -46,6 +49,28 @@ const WorkerInput = () => {
              }
          });
     }
+  }, [order]);
+
+  // Guard 100% định mức thật: chặn nhập tiến độ nếu mã SP chưa có định mức (tra LIVE product_capacities)
+  useEffect(() => {
+    if (!order) return;
+    let cancelled = false;
+    (async () => {
+      let productCode = order.product_code;
+      if (!productCode && order.id) {
+        const { data } = await supabase.from('production_orders')
+          .select('product_code').eq('id', order.id).maybeSingle();
+        productCode = data?.product_code;
+      }
+      if (!productCode) { if (!cancelled) setCapacityOk(false); return; }
+      const { data, error } = await supabase.from('product_capacities')
+        .select('product_code, capacity_per_hour').eq('product_code', productCode).maybeSingle();
+      if (cancelled) return;
+      if (error) { setCapacityErr(true); return; } // không xác minh được → KHÔNG kết luận thiếu định mức; capacityOk giữ null (nút vẫn khoá)
+      setCapacityErr(false);
+      setCapacityOk(missingCapacities([productCode], data ? [data] : []).length === 0);
+    })();
+    return () => { cancelled = true; };
   }, [order]);
 
   // Lấy danh sách thợ
@@ -213,6 +238,10 @@ const WorkerInput = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!order) return;
+    if (capacityOk !== true) {
+      alert('Sản phẩm này chưa có định mức năng lực — không thể nhập tiến độ.\nVui lòng nạp định mức ở Tổng Quan Sản Xuất → Định Mức trước.');
+      return;
+    }
     if (isLoadingData) {
         alert("Đang kiểm tra dữ liệu máy chủ, vui lòng đợi...");
         return;
@@ -403,6 +432,16 @@ const WorkerInput = () => {
         </div>
       </div>
 
+      {capacityErr ? (
+        <div style={{ margin: '1rem', padding: '0.75rem 1rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', color: '#92400e', fontWeight: 600, fontSize: '0.85rem' }}>
+          ⚠️ Không kiểm tra được định mức (lỗi kết nối). Vui lòng tải lại trang rồi thử lại.
+        </div>
+      ) : capacityOk === false && (
+        <div style={{ margin: '1rem', padding: '0.75rem 1rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', color: '#991b1b', fontWeight: 600, fontSize: '0.85rem' }}>
+          ⛔ Sản phẩm <strong>{order.product_code}</strong> chưa có định mức năng lực — không thể nhập tiến độ. Vui lòng nạp định mức ở Tổng Quan Sản Xuất → Định Mức.
+        </div>
+      )}
+
       <main style={styles.main}>
         <form onSubmit={handleSubmit} style={styles.formCard} className="glass-panel">
           
@@ -565,16 +604,19 @@ const WorkerInput = () => {
           <button
             type="submit"
             className="btn-primary"
-            style={{ width: '100%', padding: '1rem', fontSize: '1rem', marginTop: '0.5rem', background: (!canSubmit || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? '#cbd5e1' : 'var(--accent-gradient)', border: 'none', cursor: (!canSubmit || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? 'not-allowed' : 'pointer' }}
-            disabled={!canSubmit || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)}
+            style={{ width: '100%', padding: '1rem', fontSize: '1rem', marginTop: '0.5rem', background: (!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? '#cbd5e1' : 'var(--accent-gradient)', border: 'none', cursor: (!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? 'not-allowed' : 'pointer' }}
+            disabled={!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)}
           >
             {!canSubmit ? 'Bạn không có quyền gửi báo cáo' : (
+              capacityErr ? 'Không kiểm tra được định mức' : (
+              capacityOk === null ? 'Đang kiểm tra định mức...' : (
+              capacityOk === false ? 'Chưa có định mức — không thể gửi' : (
               submitting ? 'Đang gửi...' : (
                 isLoadingData ? 'Đang tải...' : (
                    remainingQty !== null && remainingQty <= 0 ? 'Lệnh hoàn thành' : `Phân Bổ & Gửi`
                 )
-              )
-            )}
+              )))))
+            }
           </button>
         </form>
       </main>
