@@ -20,9 +20,11 @@ const stdTime = capData?.capacity_per_hour ? (1 / parseFloat(capData.capacity_pe
 
 ## 2. Mục tiêu / Ngoài phạm vi
 
+**Nguyên tắc bao trùm:** **100% dùng định mức THẬT — không áp định mức mặc định ở bất kỳ đâu.** Không có "số dự phòng". Đã xác minh: nơi duy nhất trong toàn bộ `src` còn áp mặc định là `ProductionOrderTab.jsx:1026` (`: 0.05`); các đường khác (AdminDashboard `processOrdersUpload`) đã chỉ tạo lệnh cho mã có định mức, không bịa số.
+
 **Mục tiêu:**
-1. Không có định mức ⇒ **không thể tạo Lệnh SX** và **không thể nhập tiến độ** cho mã đó (bỏ hẳn fallback 0.05).
-2. Sau khi nạp lại bảng định mức chuẩn (Excel thật, người dùng tự nạp qua UI) ⇒ **tính lại toàn bộ** dữ liệu cũ: `standard_time_per_unit` trên mọi lệnh + `performance_rate` trên mọi log.
+1. Không có định mức ⇒ **không thể tạo Lệnh SX** và **không thể nhập tiến độ** cho mã đó (bỏ hẳn fallback 0.05, không thay bằng số mặc định nào khác).
+2. Sau khi nạp lại bảng định mức chuẩn (Excel thật, người dùng tự nạp qua UI) ⇒ **tính lại toàn bộ** dữ liệu cũ: `standard_time_per_unit` trên mọi lệnh + `performance_rate` trên mọi log. **Không được để sót dòng nào còn giữ 0.05.**
 
 **Ngoài phạm vi (YAGNI):**
 - Không đổi nguồn tính hiệu suất live của `WorkerInput` (vẫn dùng `order.standard_time_per_unit` snapshot — sau guard/recalc thì snapshot = số thật).
@@ -68,7 +70,7 @@ Thực hiện bằng **1 file SQL chạy 1 lần trong Supabase SQL Editor** (kh
 1. Người dùng nạp Excel định mức → `product_capacities` có dữ liệu chuẩn.
 2. Chạy file SQL `sql/recalc_dinh_muc_hieu_suat.sql` gồm các bước bọc trong transaction:
    - **B0 — Backup:** `CREATE TABLE bak_production_orders_YYYYMMDD AS SELECT * FROM production_orders;` và tương tự cho `production_logs` (để rollback).
-   - **B1 — Báo cáo mã chưa khớp:** `SELECT DISTINCT o.product_code FROM production_orders o LEFT JOIN product_capacities pc ON pc.product_code = o.product_code WHERE pc.product_code IS NULL OR pc.capacity_per_hour IS NULL OR pc.capacity_per_hour <= 0;` → các mã này **giữ nguyên số cũ**; người dùng bổ sung vào Excel rồi nạp lại + chạy lại.
+   - **B1 — GATE bắt buộc phủ 100%:** `SELECT DISTINCT o.product_code FROM production_orders o LEFT JOIN product_capacities pc ON pc.product_code = o.product_code WHERE pc.product_code IS NULL OR pc.capacity_per_hour IS NULL OR pc.capacity_per_hour <= 0;` → nếu truy vấn này **trả về bất kỳ dòng nào**, **DỪNG** (ROLLBACK / không COMMIT): còn mã chưa có định mức thật. Người dùng bổ sung mã đó vào Excel định mức, nạp lại, rồi chạy lại SQL. Chỉ khi B1 trả **0 dòng** mới được COMMIT — đảm bảo không sót 0.05 nào. (Ghi chú: mọi `production_orders.product_code` đều là mã SP thật theo từng thành phẩm, không phải mã gộp như `SAN_XUAT` — placeholder đó chỉ dùng cho hiển thị `du_lieu_nhap`/picking, nên phủ 100% là khả thi.)
    - **B2 — Cập nhật lệnh:** `UPDATE production_orders o SET standard_time_per_unit = 1.0 / pc.capacity_per_hour FROM product_capacities pc WHERE pc.product_code = o.product_code AND pc.capacity_per_hour > 0;`
    - **B3 — Tính lại log:** `UPDATE production_logs l SET performance_rate = ROUND( (l.actual_quantity / NULLIF(l.actual_time_spent,0)) * (1.0 / pc.capacity_per_hour) * 100 ) FROM production_orders o, product_capacities pc WHERE l.order_id = o.id AND o.product_code = pc.product_code AND pc.capacity_per_hour > 0 AND l.actual_time_spent > 0;`
      - Đúng công thức gốc app: `perf = (qtyPerPerson / timeHrs) * standard_time * 100`, trong đó `actual_quantity = qtyPerPerson`, `actual_time_spent = timeHrs`, `standard_time = 1/capacity_per_hour`.
@@ -89,6 +91,7 @@ Thực hiện bằng **1 file SQL chạy 1 lần trong Supabase SQL Editor** (kh
 - **SQL B:** chạy bản SELECT read-only đối chiếu cũ/mới; sau khi người dùng nạp Excel thật thì chạy trên bản backup/transaction và kiểm chứng B4 trước COMMIT.
 
 ## 8. Rủi ro
-- Excel định mức không phủ hết mã trong lệnh cũ → mã đó giữ 0.05; B1 báo cáo để xử lý.
-- Log có `actual_time_spent = 0`/null → bỏ qua trong B3 (tránh chia 0), giữ nguyên số cũ.
+- Excel định mức không phủ hết mã trong lệnh cũ → B1 là GATE bắt buộc: DỪNG, không COMMIT, người dùng bổ sung định mức thật rồi chạy lại. Tuyệt đối không để mã nào giữ 0.05.
+- Log có `actual_time_spent = 0`/null → không tính được hiệu suất thật. B3 bỏ qua (tránh chia 0); các log này cần rà tay (số giờ sai từ lúc nhập). Liệt kê chúng trong B4 để người dùng biết.
 - Deploy sai quy trình (quên copy dist) → guard không lên; nhắc rõ ở bước triển khai.
+- **Giai đoạn chuyển tiếp:** sau khi deploy guard nhưng TRƯỚC khi nạp Excel định mức, `product_capacities` vẫn rỗng ⇒ WorkerInput chặn **toàn bộ** nhập tiến độ và Phiếu Lệnh chặn tạo lệnh SX. Đây là hành vi đúng theo yêu cầu "100% định mức thật", nhưng cần nạp định mức ngay sau deploy để không gián đoạn sản xuất.
