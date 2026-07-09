@@ -1803,7 +1803,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
               <Edit3 size={24} color="#7c3aed"/> Nhập Đơn Hàng Tay
             </h3>
             <p style={{ margin:'0 0 1.25rem 0', fontSize:'0.8rem', color:'#64748b' }}>
-              Mỗi dòng là 1 mã sản phẩm của 1 đơn hàng. Dòng mới tự lấy Mã đơn hàng của dòng trên — gõ mã mới khi sang đơn khác.
+              Mỗi đơn hàng gồm Mã đơn hàng (gõ 1 lần) và nhiều mã sản phẩm. Bấm "+ Thêm mã sản phẩm" để thêm mã trong cùng đơn, "+ Thêm đơn hàng" để nhập đơn khác.
             </p>
 
             {manualOrders.map((order, oIdx) => (
