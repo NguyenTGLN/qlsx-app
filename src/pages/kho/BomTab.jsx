@@ -134,6 +134,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
   const [addLines, setAddLines] = useState([]); // [{key, component_code, component_name, unit, quantity}]
   const [addSaving, setAddSaving] = useState(false);
   const lineKeyRef = useRef(0);
+  const addProductReqRef = useRef(0); // chặn response cũ ghi đè existingComps khi đổi SP giữa chừng
 
   // Reset page on search
   useEffect(() => { setPage(1); }, [searchText, pageSize]);
@@ -505,6 +506,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
   const newBomLine = () => ({ key: ++lineKeyRef.current, component_code: '', component_name: '', unit: '', quantity: '' });
 
   const openAddBom = async () => {
+    addProductReqRef.current++;
     setAddProduct(null);
     setExistingComps(new Set());
     setAddLines([newBomLine()]);
@@ -518,19 +520,23 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
   };
 
   const pickAddProduct = async (it) => {
+    const reqId = ++addProductReqRef.current;
     const product = { code: it.item_code, name: it.item_name || '' };
     setAddProduct(product);
+    setExistingComps(new Set()); // reset ngay, tránh giữ set của SP cũ trong lúc tải
     try {
       const { data, error } = await db.from('bom_items').select('component_code').eq('product_code', product.code);
+      if (reqId !== addProductReqRef.current) return; // SP đã đổi giữa chừng → bỏ response cũ
       if (error) throw error;
       setExistingComps(new Set((data || []).map(r => r.component_code)));
     } catch (e) {
+      if (reqId !== addProductReqRef.current) return;
       setExistingComps(new Set());
       console.warn('Không tải được BOM sẵn có:', e.message);
     }
   };
 
-  const clearAddProduct = () => { setAddProduct(null); setExistingComps(new Set()); };
+  const clearAddProduct = () => { addProductReqRef.current++; setAddProduct(null); setExistingComps(new Set()); };
 
   const setBomLine = (key, patch) => setAddLines(ls => ls.map(l => l.key === key ? { ...l, ...patch } : l));
   const removeBomLine = (key) => setAddLines(ls => (ls.length > 1 ? ls.filter(l => l.key !== key) : ls));
@@ -542,7 +548,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
   });
 
   const saveAddBom = async () => {
-    const v = validateManualBom(addProduct, addLines);
+    const v = validateManualBom(addProduct, addLines, existingComps);
     if (!v.ok) { alert(v.error); return; }
     const { inserts, skipped } = buildBomInserts(addProduct, addLines, existingComps);
     if (inserts.length === 0) { alert('Tất cả linh kiện đã có sẵn cho sản phẩm này.'); return; }
@@ -884,7 +890,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
             {/* Header */}
             <div style={{padding:'1rem 1.25rem',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <h3 style={{margin:0,fontSize:'1rem',display:'flex',alignItems:'center',gap:8}}><Plus size={18} color="#15803d"/> Thêm BOM thủ công</h3>
-              <button onClick={()=>setShowAddBom(false)} style={{border:'none',background:'none',cursor:'pointer',color:'#94a3b8',padding:4}}><X size={18}/></button>
+              <button onClick={()=>setShowAddBom(false)} disabled={addSaving} style={{border:'none',background:'none',cursor:addSaving?'not-allowed':'pointer',color:'#94a3b8',padding:4,opacity:addSaving?0.5:1}}><X size={18}/></button>
             </div>
 
             {/* Body */}
@@ -941,11 +947,11 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
                     <div style={{display:'flex',gap:8,alignItems:'center',paddingLeft:26}}>
                       <div style={{display:'flex',flexDirection:'column',gap:2}}>
                         <span style={{fontSize:'0.65rem',color:'#94a3b8',fontWeight:600}}>ĐVT</span>
-                        <input value={line.unit} onChange={e=>setBomLine(line.key,{unit:e.target.value})} placeholder="ĐVT" style={{...s.input,width:80}} />
+                        <input value={line.unit} onChange={e=>setBomLine(line.key,{unit:e.target.value})} placeholder="ĐVT" disabled={isExisting} style={{...s.input,width:80,opacity:isExisting?0.5:1}} />
                       </div>
                       <div style={{display:'flex',flexDirection:'column',gap:2}}>
                         <span style={{fontSize:'0.65rem',color:'#94a3b8',fontWeight:600}}>Số lượng</span>
-                        <input type="number" value={line.quantity} onChange={e=>setBomLine(line.key,{quantity:e.target.value})} placeholder="SL" style={{...s.input,width:100}} />
+                        <input type="number" value={line.quantity} onChange={e=>setBomLine(line.key,{quantity:e.target.value})} placeholder="SL" disabled={isExisting} style={{...s.input,width:100,opacity:isExisting?0.5:1}} />
                       </div>
                       {isExisting && <span style={{fontSize:'0.7rem',color:'#dc2626',fontWeight:600,alignSelf:'flex-end',paddingBottom:6}}>đã có — sẽ bỏ qua</span>}
                     </div>
@@ -956,7 +962,7 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
 
             {/* Footer */}
             <div style={{padding:'0.75rem 1.25rem',borderTop:'1px solid #f1f5f9',display:'flex',justifyContent:'flex-end',gap:10,background:'#f8fafc'}}>
-              <button onClick={()=>setShowAddBom(false)} style={s.btn}>Hủy</button>
+              <button onClick={()=>setShowAddBom(false)} disabled={addSaving} style={{...s.btn,opacity:addSaving?0.5:1}}>Hủy</button>
               <button onClick={saveAddBom} disabled={addSaving} style={{...s.btn,background:'#16a34a',color:'#fff',border:'none',opacity:addSaving?0.6:1}}>
                 {addSaving ? <Loader2 size={14} style={{animation:'spin 1s linear infinite'}}/> : <Check size={14}/>} Lưu BOM
               </button>

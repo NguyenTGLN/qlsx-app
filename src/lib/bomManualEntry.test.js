@@ -34,6 +34,23 @@ describe('validateManualBom', () => {
     const r = validateManualBom(prod, [{ component_code: 'LK1', quantity: '2.5' }]);
     expect(r.ok).toBe(true);
   });
+
+  it('không bắt buộc số lượng cho linh kiện đã có sẵn (sẽ bỏ qua)', () => {
+    const r = validateManualBom(prod, [
+      { component_code: 'LK1', quantity: '' },
+      { component_code: 'LK2', quantity: '3' },
+    ], new Set(['LK1']));
+    expect(r.ok).toBe(true);
+  });
+
+  it('vẫn báo lỗi số lượng cho linh kiện MỚI dù có linh kiện đã tồn tại', () => {
+    const r = validateManualBom(prod, [
+      { component_code: 'LK1', quantity: '' },
+      { component_code: 'LK2', quantity: '0' },
+    ], new Set(['LK1']));
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/LK2/);
+  });
 });
 
 describe('buildBomInserts', () => {

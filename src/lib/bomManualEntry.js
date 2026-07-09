@@ -6,15 +6,18 @@
 // existingComps : Set<string> | string[] — mã linh kiện ĐÃ có sẵn trong DB cho thành phẩm này.
 
 /** Kiểm tra dữ liệu nhập trước khi lưu. Trả { ok:true } hoặc { ok:false, error }. */
-export function validateManualBom(product, lines) {
+export function validateManualBom(product, lines, existingComps = []) {
   if (!product || !product.code) {
     return { ok: false, error: 'Chưa chọn mã thành phẩm.' };
   }
+  const existing = existingComps instanceof Set ? existingComps : new Set(existingComps);
   const chosen = (lines || []).filter(l => (l.component_code || '').trim());
   if (chosen.length === 0) {
     return { ok: false, error: 'Chưa chọn linh kiện nào.' };
   }
-  const bad = chosen.filter(l => {
+  // Chỉ kiểm tra số lượng cho linh kiện SẼ được thêm (bỏ qua linh kiện đã có sẵn — sẽ bị skip khi lưu)
+  const toCheck = chosen.filter(l => !existing.has((l.component_code || '').trim()));
+  const bad = toCheck.filter(l => {
     const q = parseFloat(l.quantity);
     return isNaN(q) || q <= 0;
   });
