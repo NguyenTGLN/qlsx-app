@@ -7,6 +7,7 @@ import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/expor
 import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1, compareLocations, sortStockForFIFO, sortResultByLocation } from '../../lib/productionAlloc';
 import { getCatalogItems, getBomProducts } from '../../lib/catalogCache';
 import { missingCapacities, capacityMap } from '../../lib/capacityGuard';
+import { parseManualOrders } from '../../lib/manualOrderParse';
 
 // Làm tròn số lượng hiển thị tới 1 chữ số thập phân (khử nhiễu dấu phẩy động của mã dây, vd 284.30000000000007 → 284.3)
 const fmtQty = round1;
@@ -19,9 +20,10 @@ const emptyManualRow = () => ({ id: ++__manualRowSeq, code: '', name: '', qty: '
 let __prodRowSeq = 0;
 const emptyProdRow = () => ({ id: ++__prodRowSeq, code: '', name: '', qty: 1 });
 
-// id ổn định cho từng dòng đơn hàng nhập tay
-let __manualOrderRowSeq = 0;
-const emptyManualOrderRow = (orderCode = '') => ({ id: ++__manualOrderRowSeq, orderCode, code: '', name: '', qty: '', unit: '' });
+// id ổn định cho từng đơn hàng / mã SP nhập tay (React key, giữ focus khi thêm-xoá)
+let __manualOrderSeq = 0;
+const emptyManualProduct = () => ({ id: ++__manualOrderSeq, code: '', name: '', qty: '', unit: '' });
+const emptyManualOrder = () => ({ id: ++__manualOrderSeq, orderCode: '', products: [emptyManualProduct()] });
 
 const s = {
   btn: { display:'flex',alignItems:'center',gap:5,padding:'0.5rem 1rem',borderRadius:7,border:'none',background:'#0891b2',cursor:'pointer',fontSize:'0.85rem',fontWeight:600,color:'#fff',transition:'all 0.15s' },
@@ -316,7 +318,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   // States for Manual Order Entry — nhập đơn hàng tay (thay cho file Excel), nhiều đơn / nhiều dòng
   const [showDeliveryChoiceModal, setShowDeliveryChoiceModal] = useState(false);
   const [showManualOrderModal, setShowManualOrderModal] = useState(false);
-  const [manualOrderRows, setManualOrderRows] = useState([emptyManualOrderRow()]);
+  const [manualOrders, setManualOrders] = useState([emptyManualOrder()]);
 
   // States for Disassemble Modal
   const [showDisassembleModal, setShowDisassembleModal] = useState(false);
@@ -697,40 +699,32 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const handleOpenManualOrder = () => {
     setShowDeliveryChoiceModal(false);
     setShowManualOrderModal(true);
-    setManualOrderRows([emptyManualOrderRow()]);
+    setManualOrders([emptyManualOrder()]);
     loadStockItems();
   };
 
-  // Dòng mới mặc định lấy mã đơn hàng của dòng trên — nhập 1 đơn nhiều mã SP chỉ gõ mã ĐH 1 lần
-  const addManualOrderRow = () =>
-    setManualOrderRows(rs => [...rs, emptyManualOrderRow(rs[rs.length - 1]?.orderCode || '')]);
+  // Thao tác trên nhóm đơn hàng nhập tay (cập nhật bất biến theo id)
+  const addManualOrder = () => setManualOrders(os => [...os, emptyManualOrder()]);
+  const removeManualOrder = (orderId) =>
+    setManualOrders(os => os.length > 1 ? os.filter(o => o.id !== orderId) : os);
+  const setManualOrderCode = (orderId, val) =>
+    setManualOrders(os => os.map(o => o.id === orderId ? { ...o, orderCode: val } : o));
+  const addManualProduct = (orderId) =>
+    setManualOrders(os => os.map(o => o.id === orderId ? { ...o, products: [...o.products, emptyManualProduct()] } : o));
+  const removeManualProduct = (orderId, prodId) =>
+    setManualOrders(os => os.map(o => o.id === orderId
+      ? { ...o, products: o.products.length > 1 ? o.products.filter(p => p.id !== prodId) : o.products }
+      : o));
+  const setManualProductField = (orderId, prodId, patch) =>
+    setManualOrders(os => os.map(o => o.id === orderId
+      ? { ...o, products: o.products.map(p => p.id === prodId ? { ...p, ...patch } : p) }
+      : o));
 
   const handleCalculateManualOrder = () => {
-    // Fill-down mã đơn hàng như file Excel: dòng để trống dùng mã của dòng trên
-    let currentOrderCode = '';
-    const parsedItems = [];
-    for (let i = 0; i < manualOrderRows.length; i++) {
-      const r = manualOrderRows[i];
-      const typedOrderCode = String(r.orderCode || '').trim();
-      if (typedOrderCode) currentOrderCode = typedOrderCode;
-      const code = String(r.code || '').trim();
-      const qty = Number(r.qty);
-      if (!code && !String(r.qty || '').trim()) continue; // dòng trống — bỏ qua
-      if (!currentOrderCode) return alert(`Dòng ${i + 1}: thiếu Mã đơn hàng.`);
-      if (!code) return alert(`Dòng ${i + 1}: thiếu Mã sản phẩm.`);
-      if (isNaN(qty) || qty <= 0) return alert(`Dòng ${i + 1}: Số lượng phải lớn hơn 0.`);
-      parsedItems.push({
-        orderCode: currentOrderCode,
-        productCode: code,
-        productName: r.name || '',
-        qty,
-        unit: String(r.unit || '').trim(),
-      });
-    }
-    if (parsedItems.length === 0) return alert('Vui lòng nhập ít nhất 1 dòng có Mã đơn hàng, Mã sản phẩm và Số lượng hợp lệ!');
-
+    const { items, error } = parseManualOrders(manualOrders);
+    if (error) return alert(error);
     setShowManualOrderModal(false);
-    checkDuplicatesAndCalculate(parsedItems);
+    checkDuplicatesAndCalculate(items);
   };
 
   const handleCalculateManualExport = async () => {
@@ -1215,7 +1209,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     setMode('disassemble');
     setAllocations(null);
     setOrderCreated(false);
-    
+    setIsShortage(false); // Phân rã đã validate SL <= tồn ở trên → không bao giờ thiếu; reset cờ cũ để không khoá nút Lưu
+
     try {
       // Create code PPR
       const todayStr = new Date(prodDate).toISOString().split('T')[0].replace(/-/g, '');
@@ -1322,6 +1317,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const handleResetToCards = () => {
     setAllocations(null);
     setOrderCreated(false);
+    setIsShortage(false); // xoá cờ thiếu cũ khi về lưới thẻ, tránh khoá nút Lưu ở phiếu mới
     setMode('production');
     setProdRows([emptyProdRow()]);
     setProdFinishedItems([]);
@@ -1810,52 +1806,72 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
               Mỗi dòng là 1 mã sản phẩm của 1 đơn hàng. Dòng mới tự lấy Mã đơn hàng của dòng trên — gõ mã mới khi sang đơn khác.
             </p>
 
-            {manualOrderRows.map((row, idx) => (
-              <div key={row.id} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:'0.9rem', marginBottom:12, background:'#f8fafc' }}>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1.4fr 1.4fr 0.6fr 0.55fr auto', gap:10, alignItems:'end' }}>
-                  <div>
-                    <label style={s.label}>Mã đơn hàng</label>
-                    <input type="text" style={s.input} value={row.orderCode}
-                      onChange={e => setManualOrderRows(rs => rs.map((r, i) => i === idx ? { ...r, orderCode: e.target.value } : r))}
-                      placeholder="VD: DH-001" />
-                  </div>
-                  <div>
-                    <label style={s.label}>Mã sản phẩm</label>
-                    <SearchableSelect
-                      options={stockItems.map(p => ({value: p.code, label: p.name}))}
-                      value={row.code}
-                      onChange={(val) => setManualOrderRows(rs => rs.map((r, i) => i === idx
-                        ? { ...r, code: val, name: stockItems.find(p => p.code === val)?.name || '' }
-                        : r))}
-                      placeholder="Tìm mã hoặc tên..."
-                    />
-                  </div>
-                  <div>
-                    <label style={s.label}>Tên</label>
-                    <input type="text" style={{...s.input, background:'#eef2f7', color:'#64748b'}} value={row.name} disabled />
-                  </div>
-                  <div>
-                    <label style={s.label}>Số lượng</label>
-                    <input type="number" min="1" step="any" style={s.input} value={row.qty}
-                      onChange={e => setManualOrderRows(rs => rs.map((r, i) => i === idx ? { ...r, qty: e.target.value } : r))}
-                      placeholder="SL..." />
-                  </div>
-                  <div>
-                    <label style={s.label}>Đơn vị</label>
-                    <input type="text" style={s.input} value={row.unit}
-                      onChange={e => setManualOrderRows(rs => rs.map((r, i) => i === idx ? { ...r, unit: e.target.value } : r))}
-                      placeholder="Cái" />
-                  </div>
-                  <button onClick={() => setManualOrderRows(rs => rs.length > 1 ? rs.filter((_, i) => i !== idx) : [emptyManualOrderRow()])}
-                    title="Xoá dòng"
-                    style={{ height:38, width:38, borderRadius:8, border:'1px solid #fecaca', background:'#fef2f2', color:'#dc2626', cursor:'pointer', fontWeight:700 }}>✕</button>
+            {manualOrders.map((order, oIdx) => (
+              <div key={order.id} style={{ border:'1px solid #ddd6fe', borderRadius:12, padding:'0.9rem', marginBottom:14, background:'#faf7ff' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                  <span style={{ fontSize:'0.8rem', fontWeight:700, color:'#7c3aed' }}>Đơn hàng #{oIdx + 1}</span>
+                  {manualOrders.length > 1 && (
+                    <button onClick={() => removeManualOrder(order.id)} title="Xoá đơn hàng"
+                      style={{ height:30, padding:'0 10px', borderRadius:8, border:'1px solid #fecaca', background:'#fef2f2', color:'#dc2626', cursor:'pointer', fontWeight:700, fontSize:'0.75rem' }}>✕ Xoá đơn</button>
+                  )}
                 </div>
+
+                <div style={{ marginBottom:10 }}>
+                  <label style={s.label}>Mã đơn hàng</label>
+                  <input type="text" style={s.input} value={order.orderCode}
+                    onChange={e => setManualOrderCode(order.id, e.target.value)}
+                    placeholder="VD: DH-001" />
+                </div>
+
+                {order.products.map((row, pIdx) => (
+                  <div key={row.id} style={{ border:'1px solid #e2e8f0', borderRadius:10, padding:'0.75rem', marginBottom:8, background:'#fff' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+                      <span style={{ fontSize:'0.72rem', fontWeight:600, color:'#94a3b8' }}>Sản phẩm {pIdx + 1}</span>
+                      {order.products.length > 1 && (
+                        <button onClick={() => removeManualProduct(order.id, row.id)} title="Xoá mã sản phẩm"
+                          style={{ height:26, width:26, borderRadius:7, border:'1px solid #fecaca', background:'#fef2f2', color:'#dc2626', cursor:'pointer', fontWeight:700 }}>✕</button>
+                      )}
+                    </div>
+                    <div className="manual-order-row" style={{ display:'grid', gridTemplateColumns:'1.4fr 1.4fr 0.6fr 0.55fr', gap:10, alignItems:'end' }}>
+                      <div className="mor-code">
+                        <label style={s.label}>Mã sản phẩm</label>
+                        <SearchableSelect
+                          options={stockItems.map(p => ({value: p.code, label: p.name}))}
+                          value={row.code}
+                          onChange={(val) => setManualProductField(order.id, row.id, { code: val, name: stockItems.find(p => p.code === val)?.name || '' })}
+                          placeholder="Tìm mã hoặc tên..."
+                        />
+                      </div>
+                      <div className="mor-name">
+                        <label style={s.label}>Tên</label>
+                        <input type="text" style={{...s.input, background:'#eef2f7', color:'#64748b'}} value={row.name} disabled />
+                      </div>
+                      <div className="mor-qty">
+                        <label style={s.label}>Số lượng</label>
+                        <input type="number" min="1" step="any" style={s.input} value={row.qty}
+                          onChange={e => setManualProductField(order.id, row.id, { qty: e.target.value })}
+                          placeholder="SL..." />
+                      </div>
+                      <div className="mor-unit">
+                        <label style={s.label}>Đơn vị</label>
+                        <input type="text" style={s.input} value={row.unit}
+                          onChange={e => setManualProductField(order.id, row.id, { unit: e.target.value })}
+                          placeholder="Cái" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <button onClick={() => addManualProduct(order.id)}
+                  style={{ padding:'0.4rem 0.9rem', borderRadius:8, border:'1px dashed #7c3aed', background:'#fff', color:'#7c3aed', fontWeight:700, cursor:'pointer', fontSize:'0.8rem' }}>
+                  + Thêm mã sản phẩm
+                </button>
               </div>
             ))}
 
-            <button onClick={addManualOrderRow}
-              style={{ padding:'0.5rem 1rem', borderRadius:8, border:'1px dashed #7c3aed', background:'#faf5ff', color:'#7c3aed', fontWeight:700, cursor:'pointer', marginBottom:10 }}>
-              + Thêm dòng
+            <button onClick={addManualOrder}
+              style={{ padding:'0.55rem 1rem', borderRadius:8, border:'1px dashed #94a3b8', background:'#f8fafc', color:'#475569', fontWeight:700, cursor:'pointer', marginBottom:10, width:'100%' }}>
+              + Thêm đơn hàng
             </button>
 
             <div style={{ display:'flex', justifyContent:'flex-end', gap:'1rem', marginTop:15 }}>
