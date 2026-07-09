@@ -238,4 +238,10 @@ input, select, textarea {
   .manual-export-row > .mer-code,
   .manual-export-row > .mer-name { grid-column: 1 / -1 !important; }
   .manual-export-row > .mer-del { grid-column: 1 / -1 !important; justify-self: end !important; }
+
+  /* Ô "Sản phẩm" trong "Nhập Đơn Hàng Tay": trên điện thoại KHÔNG dồn 4 ô vào 1 hàng chật.
+     Xếp lại: Mã SP full → Tên full → Số lượng + Đơn vị 2 cột. (Mã đơn hàng nằm ở đầu khối, luôn full.) */
+  .manual-order-row { grid-template-columns: 1fr 1fr !important; }
+  .manual-order-row > .mor-code,
+  .manual-order-row > .mor-name { grid-column: 1 / -1 !important; }
 }
