@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase as db, fetchPageRows } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
-import { invalidateBomProducts } from '../../lib/catalogCache';
-import { Search, Loader2, RefreshCw, Trash2, Edit3, Download, Upload, X, Check, Printer } from 'lucide-react';
+import { invalidateBomProducts, getCatalogItems } from '../../lib/catalogCache';
+import { Search, Loader2, RefreshCw, Trash2, Edit3, Download, Upload, X, Check, Printer, Plus } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import { ColumnToggleModal, PageSizeSelect } from '../../components/WarehouseSharedUI';
+import { validateManualBom, buildBomInserts } from '../../lib/bomManualEntry';
 
 const BOM_COLS = ['thanh_pham','linh_kien','dvt','quantity'];
 const BOM_LABELS = { thanh_pham:'Thành phẩm', linh_kien:'Linh kiện', dvt:'ĐVT', quantity:'Số lượng' };
@@ -14,6 +15,85 @@ const s = {
   btn: { display:'flex',alignItems:'center',gap:5,padding:'0.35rem 0.75rem',borderRadius:7,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',fontSize:'0.78rem',fontWeight:600,color:'#475569',transition:'all 0.15s' },
   input: { padding:'0.35rem 0.6rem',border:'1px solid #e2e8f0',borderRadius:7,fontSize:'0.8rem',outline:'none',background:'#f8fafc',color:'#334155' },
 };
+
+// Ô chọn 1 mã hàng từ Danh mục hàng hóa — gõ để lọc gợi ý (theo mã + tên).
+// Dropdown dùng position:fixed neo theo input để KHÔNG bị vùng cuộn của modal cắt cụt.
+function CatalogItemPicker({ items, placeholder, onSelect, excludeCodes }) {
+  const [input, setInput] = useState('');
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const wrapRef = useRef(null);
+
+  const updatePos = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const gap = 4, margin = 12;
+    const spaceBelow = window.innerHeight - r.bottom - margin;
+    setPos({ top: r.bottom + gap, left: r.left, width: r.width, maxHeight: Math.max(160, Math.min(320, spaceBelow)) });
+  }, []);
+
+  useEffect(() => {
+    const handler = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    updatePos();
+    const onMove = () => updatePos();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [open, updatePos]);
+
+  const q = input.toLowerCase();
+  const exclude = excludeCodes instanceof Set ? excludeCodes : new Set(excludeCodes || []);
+  const results = (items || []).filter(it =>
+    !exclude.has(it.item_code) && (
+      (it.item_code || '').toLowerCase().includes(q) ||
+      (it.item_name || '').toLowerCase().includes(q)
+    )
+  ).slice(0, 50);
+
+  const pick = (it) => { onSelect(it); setInput(''); setOpen(false); };
+
+  return (
+    <div style={{ position:'relative', width:'100%' }} ref={wrapRef}>
+      <div style={{ display:'flex', alignItems:'center', background:'#f8fafc', border:'1px solid #cbd5e1', borderRadius:6, padding:'6px 10px' }}>
+        <Search size={15} color="#94a3b8" />
+        <input
+          value={input}
+          onChange={e => { setInput(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          style={{ border:'none', outline:'none', background:'transparent', width:'100%', fontSize:'0.82rem', paddingLeft:8 }}
+        />
+      </div>
+      {open && input && pos && (
+        <div style={{ position:'fixed', top:pos.top, left:pos.left, width:pos.width, background:'#fff', border:'1px solid #cbd5e1', borderRadius:6, maxHeight:pos.maxHeight, overflow:'auto', zIndex:200, boxShadow:'0 10px 15px -3px rgba(0,0,0,0.1)' }}>
+          {results.length === 0 ? (
+            <div style={{ padding:10, fontSize:'0.8rem', color:'#64748b', textAlign:'center' }}>Không tìm thấy kết quả</div>
+          ) : results.map((it, idx) => (
+            <div
+              key={idx}
+              onClick={() => pick(it)}
+              style={{ padding:'8px 12px', borderBottom:'1px solid #f1f5f9', cursor:'pointer', fontSize:'0.8rem' }}
+              onMouseEnter={e => e.currentTarget.style.background='#f1f5f9'}
+              onMouseLeave={e => e.currentTarget.style.background=''}
+            >
+              <b>{it.item_code}</b> — {it.item_name}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function BomTab({ perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   // const PAGE_SIZE = 50;
