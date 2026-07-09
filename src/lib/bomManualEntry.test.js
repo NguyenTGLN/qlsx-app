@@ -71,12 +71,13 @@ describe('buildBomInserts', () => {
   });
 
   it('bỏ dòng chưa chọn linh kiện, ép quantity về số', () => {
-    const { inserts } = buildBomInserts(prod, [
+    const { inserts, skipped } = buildBomInserts(prod, [
       { component_code: '', unit: '', quantity: '' },
       { component_code: 'LK9', unit: 'Cái', quantity: '3' },
     ], new Set());
     expect(inserts).toHaveLength(1);
     expect(inserts[0]).toMatchObject({ component_code: 'LK9', quantity: 3 });
+    expect(skipped).toBe(0);
   });
 
   it('chấp nhận existingComps là mảng', () => {
