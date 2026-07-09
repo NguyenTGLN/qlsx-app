@@ -126,6 +126,15 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
   const [printBomLoading, setPrintBomLoading] = useState(false);
   const printBomReqRef = useRef(0); // chặn response cũ ghi đè khi đổi sản phẩm giữa chừng
 
+  // Thêm BOM thủ công
+  const [showAddBom, setShowAddBom] = useState(false);
+  const [catalogItems, setCatalogItems] = useState([]);
+  const [addProduct, setAddProduct] = useState(null); // {code, name}
+  const [existingComps, setExistingComps] = useState(new Set());
+  const [addLines, setAddLines] = useState([]); // [{key, component_code, component_name, unit, quantity}]
+  const [addSaving, setAddSaving] = useState(false);
+  const lineKeyRef = useRef(0);
+
   // Reset page on search
   useEffect(() => { setPage(1); }, [searchText, pageSize]);
 
@@ -492,6 +501,72 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
     }
   };
 
+  // --- Thêm BOM thủ công ---
+  const newBomLine = () => ({ key: ++lineKeyRef.current, component_code: '', component_name: '', unit: '', quantity: '' });
+
+  const openAddBom = async () => {
+    setAddProduct(null);
+    setExistingComps(new Set());
+    setAddLines([newBomLine()]);
+    setShowAddBom(true);
+    try {
+      const items = await getCatalogItems();
+      setCatalogItems(items || []);
+    } catch (e) {
+      alert('Lỗi tải danh mục hàng hóa: ' + e.message);
+    }
+  };
+
+  const pickAddProduct = async (it) => {
+    const product = { code: it.item_code, name: it.item_name || '' };
+    setAddProduct(product);
+    try {
+      const { data, error } = await db.from('bom_items').select('component_code').eq('product_code', product.code);
+      if (error) throw error;
+      setExistingComps(new Set((data || []).map(r => r.component_code)));
+    } catch (e) {
+      setExistingComps(new Set());
+      console.warn('Không tải được BOM sẵn có:', e.message);
+    }
+  };
+
+  const clearAddProduct = () => { setAddProduct(null); setExistingComps(new Set()); };
+
+  const setBomLine = (key, patch) => setAddLines(ls => ls.map(l => l.key === key ? { ...l, ...patch } : l));
+  const removeBomLine = (key) => setAddLines(ls => (ls.length > 1 ? ls.filter(l => l.key !== key) : ls));
+  const addBomLine = () => setAddLines(ls => [...ls, newBomLine()]);
+  const pickComponent = (key, it) => setBomLine(key, {
+    component_code: it.item_code,
+    component_name: it.item_name || '',
+    unit: it.unit || '',
+  });
+
+  const saveAddBom = async () => {
+    const v = validateManualBom(addProduct, addLines);
+    if (!v.ok) { alert(v.error); return; }
+    const { inserts, skipped } = buildBomInserts(addProduct, addLines, existingComps);
+    if (inserts.length === 0) { alert('Tất cả linh kiện đã có sẵn cho sản phẩm này.'); return; }
+    setAddSaving(true);
+    try {
+      const { error } = await db.from('bom_items').insert(inserts);
+      if (error) throw error;
+      invalidateBomProducts();
+      const code = addProduct.code;
+      setShowAddBom(false);
+      setAddProduct(null);
+      setAddLines([]);
+      setExistingComps(new Set());
+      let msg = `Đã thêm ${inserts.length} linh kiện cho ${code}.`;
+      if (skipped > 0) msg += `\nBỏ qua ${skipped} linh kiện trùng (đã có sẵn).`;
+      alert(msg);
+      fetchBom();
+    } catch (e) {
+      alert('Lỗi thêm BOM: ' + e.message);
+    } finally {
+      setAddSaving(false);
+    }
+  };
+
   const vis = (col) => !hiddenCols.has(col);
   const visCount = BOM_COLS.filter(c => vis(c)).length + 2;
 
@@ -633,6 +708,9 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
             <button onClick={openPrintBom} style={{...s.btn, background:'#ede9fe', color:'#6d28d9', border:'none', padding:'0.4rem 0.75rem', flexShrink:0}}>
               <Printer size={14}/> In BOM
             </button>
+            {perms.create && <button onClick={openAddBom} style={{...s.btn, background:'#dcfce7', color:'#15803d', border:'none', padding:'0.4rem 0.75rem', flexShrink:0}}>
+              <Plus size={14}/> Thêm BOM
+            </button>}
             <button onClick={handleExport} disabled={loading} style={{...s.btn,background:'#10b981',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}><Download size={14}/>Xuất Excel</button>
           </>
         )}
@@ -793,6 +871,94 @@ export default function BomTab({ perms = { view: true, create: true, edit: true,
               <button onClick={()=>setShowImport(false)} style={s.btn}>Hủy</button>
               <button onClick={executeImport} disabled={importing||!importFile} style={{...s.btn, background:'#10b981', color:'#fff'}}>
                 {importing ? <Loader2 size={14} style={{animation:'spin 1s linear infinite'}}/> : <Upload size={14}/>} Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Thêm BOM thủ công */}
+      {showAddBom && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:'1rem'}}>
+          <div style={{background:'#fff',borderRadius:12,width:'100%',maxWidth:560,boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)',display:'flex',flexDirection:'column',maxHeight:'88vh'}}>
+            {/* Header */}
+            <div style={{padding:'1rem 1.25rem',borderBottom:'1px solid #f1f5f9',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <h3 style={{margin:0,fontSize:'1rem',display:'flex',alignItems:'center',gap:8}}><Plus size={18} color="#15803d"/> Thêm BOM thủ công</h3>
+              <button onClick={()=>setShowAddBom(false)} style={{border:'none',background:'none',cursor:'pointer',color:'#94a3b8',padding:4}}><X size={18}/></button>
+            </div>
+
+            {/* Body */}
+            <div style={{padding:'1rem 1.25rem',overflowY:'auto',flex:1}}>
+              {/* Chọn thành phẩm */}
+              <label style={{display:'block',fontSize:'0.75rem',fontWeight:700,color:'#64748b',marginBottom:6}}>Mã thành phẩm</label>
+              {addProduct ? (
+                <div style={{display:'flex',alignItems:'center',gap:8,background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:8,padding:'8px 10px'}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,color:'#15803d',fontSize:'0.85rem'}}>{addProduct.code}</div>
+                    {addProduct.name && <div style={{fontSize:'0.72rem',color:'#64748b',fontStyle:'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{addProduct.name}</div>}
+                  </div>
+                  <button onClick={clearAddProduct} title="Đổi thành phẩm" style={{background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex',padding:2}}><X size={16}/></button>
+                </div>
+              ) : (
+                <CatalogItemPicker items={catalogItems} placeholder="Gõ mã hoặc tên thành phẩm..." onSelect={pickAddProduct} />
+              )}
+
+              {/* Cảnh báo đã có BOM */}
+              {addProduct && existingComps.size > 0 && (
+                <div style={{marginTop:8,background:'#fffbeb',border:'1px solid #fde68a',borderRadius:8,padding:'8px 10px',fontSize:'0.75rem',color:'#92400e'}}>
+                  Sản phẩm này đã có BOM với <b>{existingComps.size}</b> linh kiện — các mã trùng sẽ được bỏ qua khi lưu.
+                </div>
+              )}
+
+              {/* Danh sách linh kiện */}
+              <div style={{marginTop:16,display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                <label style={{fontSize:'0.75rem',fontWeight:700,color:'#64748b'}}>Linh kiện</label>
+                <button onClick={addBomLine} style={{...s.btn,padding:'0.25rem 0.6rem',fontSize:'0.72rem',color:'#15803d',borderColor:'#bbf7d0'}}><Plus size={13}/> Thêm linh kiện</button>
+              </div>
+
+              {addLines.map((line, li) => {
+                const chosenOthers = new Set(addLines.filter(l => l.key !== line.key).map(l => l.component_code).filter(Boolean));
+                const isExisting = line.component_code && existingComps.has(line.component_code);
+                return (
+                  <div key={line.key} style={{border:'1px solid #e2e8f0',borderRadius:8,padding:'8px 10px',marginBottom:8,background:'#fff'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                      <span style={{fontSize:'0.7rem',color:'#94a3b8',fontWeight:700,width:18,flexShrink:0}}>{li + 1}</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        {line.component_code ? (
+                          <div style={{display:'flex',alignItems:'center',gap:8,background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:6,padding:'6px 10px'}}>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontWeight:700,color:'#334155',fontSize:'0.82rem'}}>{line.component_code}</div>
+                              {line.component_name && <div style={{fontSize:'0.7rem',color:'#64748b',fontStyle:'italic',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{line.component_name}</div>}
+                            </div>
+                            <button onClick={()=>setBomLine(line.key,{component_code:'',component_name:'',unit:''})} title="Đổi linh kiện" style={{background:'none',border:'none',cursor:'pointer',color:'#94a3b8',display:'flex',padding:2}}><X size={15}/></button>
+                          </div>
+                        ) : (
+                          <CatalogItemPicker items={catalogItems} placeholder="Gõ mã hoặc tên linh kiện..." excludeCodes={chosenOthers} onSelect={(it)=>pickComponent(line.key, it)} />
+                        )}
+                      </div>
+                      <button onClick={()=>removeBomLine(line.key)} disabled={addLines.length<=1} title="Xóa dòng" style={{background:'none',border:'none',cursor:addLines.length<=1?'not-allowed':'pointer',color:addLines.length<=1?'#e2e8f0':'#ef4444',display:'flex',padding:2,flexShrink:0}}><Trash2 size={16}/></button>
+                    </div>
+                    <div style={{display:'flex',gap:8,alignItems:'center',paddingLeft:26}}>
+                      <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                        <span style={{fontSize:'0.65rem',color:'#94a3b8',fontWeight:600}}>ĐVT</span>
+                        <input value={line.unit} onChange={e=>setBomLine(line.key,{unit:e.target.value})} placeholder="ĐVT" style={{...s.input,width:80}} />
+                      </div>
+                      <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                        <span style={{fontSize:'0.65rem',color:'#94a3b8',fontWeight:600}}>Số lượng</span>
+                        <input type="number" value={line.quantity} onChange={e=>setBomLine(line.key,{quantity:e.target.value})} placeholder="SL" style={{...s.input,width:100}} />
+                      </div>
+                      {isExisting && <span style={{fontSize:'0.7rem',color:'#dc2626',fontWeight:600,alignSelf:'flex-end',paddingBottom:6}}>đã có — sẽ bỏ qua</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div style={{padding:'0.75rem 1.25rem',borderTop:'1px solid #f1f5f9',display:'flex',justifyContent:'flex-end',gap:10,background:'#f8fafc'}}>
+              <button onClick={()=>setShowAddBom(false)} style={s.btn}>Hủy</button>
+              <button onClick={saveAddBom} disabled={addSaving} style={{...s.btn,background:'#16a34a',color:'#fff',border:'none',opacity:addSaving?0.6:1}}>
+                {addSaving ? <Loader2 size={14} style={{animation:'spin 1s linear infinite'}}/> : <Check size={14}/>} Lưu BOM
               </button>
             </div>
           </div>
