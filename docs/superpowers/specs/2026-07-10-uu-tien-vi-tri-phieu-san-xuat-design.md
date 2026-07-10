@@ -19,10 +19,12 @@ nguyên tắc nền.
 
 ## Quyết định đã chốt
 
-1. **Đặt bộ chọn vị trí ưu tiên ở MÀN KẾT QUẢ, dùng chung mọi loại phiếu.** Sau khi tính xong
-   (sản xuất / đơn hàng Excel / đơn hàng nhập tay / xuất kho tay), hiện panel "Ưu tiên vị trí"
-   phía trên bảng kết quả. Tick vị trí + bấm **"Tính lại theo vị trí ưu tiên"** → bảng cập nhật.
+1. **Đặt bộ chọn vị trí ưu tiên ở MÀN KẾT QUẢ, cho phiếu sản xuất + đơn hàng.** Sau khi tính
+   xong (sản xuất / đơn hàng Excel / đơn hàng nhập tay), hiện panel "Ưu tiên vị trí" phía trên
+   bảng kết quả. Tick vị trí + bấm **"Tính lại theo vị trí ưu tiên"** → bảng cập nhật.
    → Phủ được cả đường Excel (vốn không có bước tùy chọn trước khi tính).
+   **KHÔNG áp cho "Xuất Kho Thủ Công"** (`manual_export`): panel không hiện, vòng lặp phân bổ
+   của nó giữ NGUYÊN, không refactor.
 2. **Danh sách vị trí = các vị trí đang có tồn của mặt hàng trong phiếu** — lấy từ `stockPool`
    (đã có sẵn trong state ngay sau khi tính, không query thêm).
 3. **Giữ nguyên ô tick SX11** trong modal sản xuất (preset nhanh, chỉ áp cho sản xuất).
@@ -56,8 +58,9 @@ Chữ ký: `opts = { priorityVTSX, priorityLocations = [], phieuCode }`. Tương
 tick gì → `applyPriorityOrder` trả copy nguyên thứ tự → hành vi y hệt hiện nay.
 
 ### `allocateExport(demandRows, stockData, opts)` — MỚI, thuần, có test
-Rút gọn 2 vòng lặp phân bổ **trùng lặp** đang nằm trong `handleCalculateDelivery` và
-`handleCalculateManualExport` thành 1 hàm chung (giảm trùng code, để "tính lần đầu" == "tính lại"):
+Rút gọn vòng lặp phân bổ trong `handleCalculateDelivery` thành hàm thuần (để "tính lần đầu"
+== "tính lại", và có test). `handleCalculateManualExport` GIỮ NGUYÊN vòng lặp nội tuyến —
+không dùng hàm này (ngoài phạm vi):
 ```js
 export function allocateExport(demandRows, stockData, opts = {}) {
   const { priorityLocations = [] } = opts;
@@ -81,15 +84,14 @@ export function allocateExport(demandRows, stockData, opts = {}) {
   return { result, isShortage };
 }
 ```
-- `...d` giữ passthrough (name/unit/reason/type/orderRef) cho delivery & manual.
-- `working` chia sẻ giữa các dòng → nhiều dòng cùng mã (manual) trừ dồn đúng.
+- `...d` giữ passthrough (name/unit) cho delivery.
+- `working` chia sẻ giữa các dòng → nhiều dòng cùng mã trừ dồn đúng.
 
-### Refactor các handler dùng `allocateExport`
+### Refactor handler dùng `allocateExport`
 - `handleCalculateDelivery`: thay vòng lặp nội tuyến bằng
   `const { result, isShortage } = allocateExport(componentsRequired, stockData, { priorityLocations })`.
-- `handleCalculateManualExport`: dùng `allocateExport(rowsAsDemand, stockData, { priorityLocations })`
-  với `rowsAsDemand = rows.map(r => ({ code:r.code, name:r.name, unit:'', requiredQty:Number(r.qty), reason:r.reason, type:reasonType(r.reason), orderRef:r.orderRef||'' }))`.
-  Phần build `orderItemsArr` tách riêng (map từ `rows`, không phụ thuộc phân bổ) — giữ nguyên.
+  (`priorityLocations` rỗng ở lần tính đầu.)
+- `handleCalculateManualExport`: **không đổi**.
 
 ## State + recompute — `ProductionOrderTab`
 
@@ -100,17 +102,18 @@ const [recomputeDemand, setRecomputeDemand] = useState(null);     // demand đã
 ```
 Persist `prod_priorityLocations`, `prod_recomputeDemand` cùng chỗ với `prod_allocations`
 (để sống qua chuyển tab). **Reset `priorityLocations=[]`** ở đầu mỗi lần tính mới
-(`handleCalculate`, `handleCalculateDelivery`, `handleCalculateManualExport`).
+(`handleCalculate`, `handleCalculateDelivery`).
 
-Mỗi handler tính toán: sau khi có `demand`, `setRecomputeDemand({ mode, demand })` (production:
-`componentsRequired`; delivery: `Object.values(demandMap)`; manual: `rowsAsDemand`).
+Handler production & delivery: sau khi có `demand`, `setRecomputeDemand({ mode, demand })`
+(production: `componentsRequired`; delivery: `Object.values(demandMap)`).
+`handleCalculateManualExport` KHÔNG set (mode này không có panel).
 
 `recomputeWithPriority()`:
 1. Rebuild stock từ `stockPool` (giữ thứ tự FIFO trong từng mã):
    `Object.entries(stockPool).flatMap(([item_code, rows]) => rows.map(r => ({ id:r.id, item_code, location:r.location, quantity:r.quantity })))`.
 2. Theo `recomputeDemand.mode`:
    - `production`: `allocateFIFO(demand, stock, { priorityVTSX, priorityLocations, phieuCode: orderCode })`.
-   - `delivery` | `manual_export`: `allocateExport(demand, stock, { priorityLocations })`.
+   - `delivery`: `allocateExport(demand, stock, { priorityLocations })`.
 3. `setAllocations(sortResultByLocation(result)); setIsShortage(isShortage)`.
    (Không đụng `orderItems` — không đổi theo vị trí.)
 
@@ -120,7 +123,7 @@ Mỗi handler tính toán: sau khi có `demand`, `setRecomputeDemand({ mode, dem
 
 Đặt ngay dưới header kết quả ([dòng ~1414](../../../src/pages/kho/ProductionOrderTab.jsx)),
 là `<div className="no-print">` (không in ra phiếu), chỉ hiện khi
-`mode ∈ {production, delivery, manual_export}` và có `allocations`.
+`mode ∈ {production, delivery}` và có `allocations`.
 
 Nội dung:
 - Tiêu đề "Ưu tiên lấy ở vị trí" + gợi ý ngắn.
@@ -148,11 +151,12 @@ Nội dung:
   chọn đúng thứ tự 3 nhóm; (c) khớp chính xác ('HH2' không kéo 'HH20'); (d) không tick → nguyên thứ tự.
 - `allocateFIFO`: test cũ giữ nguyên + 1 test `priorityLocations` ưu tiên trước FIFO nền.
 - `allocateExport`: (a) loại trừ `SX9-*`; (b) nhiều dòng cùng mã trừ dồn đúng; (c) `priorityLocations`
-  ưu tiên trước; (d) đánh dấu thiếu khi không đủ; (e) giữ passthrough reason/type/orderRef.
+  ưu tiên trước; (d) đánh dấu thiếu khi không đủ; (e) giữ passthrough name/unit.
 
 ## Ngoài phạm vi (YAGNI)
 
 - Không đổi nguyên tắc nền sang "ít số lượng trước".
 - Không ưu tiên theo dãy/khu (prefix).
-- Không áp SX11 preset cho delivery/manual (chỉ vị trí tự chọn).
+- Không áp SX11 preset cho delivery (chỉ vị trí tự chọn).
+- **"Xuất Kho Thủ Công" (`manual_export`) không có panel ưu tiên** — giữ nguyên vòng lặp nội tuyến.
 - Mode `disassemble` (phân rã) không có panel ưu tiên.
