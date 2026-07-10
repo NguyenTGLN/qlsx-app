@@ -250,6 +250,44 @@ const EditAllocationModal = ({ comp, poolRows, onSave, onClose }) => {
   );
 };
 
+// Bộ chọn nhiều vị trí ưu tiên: ô lọc + danh sách checkbox cuộn trong khung (KHÔNG dropdown
+// nổi để tránh bị cắt cụt), vị trí đã chọn hiện thành chip bỏ được. Xem [[qlsx-modal-dropdown-clipping]].
+const PriorityLocationPicker = ({ options, selected, onChange }) => {
+  const [q, setQ] = useState('');
+  const sel = new Set(selected);
+  const qs = removeTones(q);
+  const filtered = options.filter(o => removeTones(o.location).includes(qs));
+  const toggle = (loc) => {
+    if (sel.has(loc)) onChange(selected.filter(l => l !== loc));
+    else onChange([...selected, loc]);
+  };
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:8 }}>
+          {selected.map(loc => (
+            <span key={loc} style={{ display:'inline-flex', alignItems:'center', gap:4, background:'#e0f2fe', color:'#0369a1', borderRadius:999, padding:'2px 8px', fontSize:'0.75rem', fontWeight:600 }}>
+              {loc}
+              <button onClick={() => toggle(loc)} title="Bỏ" style={{ border:'none', background:'transparent', color:'#0369a1', cursor:'pointer', fontWeight:700, lineHeight:1 }}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Gõ để lọc vị trí..." style={s.input} />
+      <div style={{ marginTop:6, maxHeight:220, overflowY:'auto', border:'1px solid #e2e8f0', borderRadius:8 }}>
+        {filtered.map(o => (
+          <label key={o.location} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 10px', borderBottom:'1px solid #f1f5f9', fontSize:'0.8rem', cursor:'pointer', color:'#334155' }}>
+            <input type="checkbox" checked={sel.has(o.location)} onChange={() => toggle(o.location)} />
+            <strong>{o.location}</strong>
+            <span style={{ color:'#94a3b8', marginLeft:'auto' }}>tồn: {fmtQty(o.totalQty)} · {o.codeCount} mã</span>
+          </label>
+        ))}
+        {filtered.length === 0 && <div style={{ padding:'8px 10px', color:'#94a3b8', fontSize:'0.8rem' }}>Không có vị trí</div>}
+      </div>
+    </div>
+  );
+};
+
 export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { view: true, create: true, edit: true, delete: true, io: true } } = {}) {
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState([]);
@@ -1445,6 +1483,39 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
       {/* Main Print Area */}
       <main style={{flex:1,padding:'0',overflowY:'auto',background:'#f1f5f9'}}>
+        {(mode === 'production' || mode === 'delivery') && allocations && (
+          <div className="no-print" style={{ maxWidth:800, margin:'1rem auto 0', background:'#fff', border:'1px solid #bae6fd', borderRadius:12, padding:'1rem' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+              <Package size={18} color="#0891b2"/>
+              <strong style={{ color:'#0f172a', fontSize:'0.9rem' }}>Ưu tiên lấy ở vị trí</strong>
+            </div>
+            <p style={{ fontSize:'0.78rem', color:'#64748b', margin:'0 0 10px' }}>
+              Tick các vị trí muốn lấy trước rồi bấm "Tính lại". Vị trí đã chọn được ưu tiên; phần còn lại vẫn theo nguyên tắc FIFO như thường.
+            </p>
+            <PriorityLocationPicker
+              options={priorityLocOptions}
+              selected={priorityLocations}
+              onChange={setPriorityLocations}
+            />
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:10, marginTop:12 }}>
+              {priorityLocations.length > 0 && (
+                <button
+                  onClick={() => { setPriorityLocations([]); recomputeWithPriority([]); }}
+                  style={{ ...s.btn, background:'#f1f5f9', color:'#475569', border:'1px solid #e2e8f0' }}
+                >
+                  Bỏ ưu tiên
+                </button>
+              )}
+              <button
+                onClick={() => recomputeWithPriority(priorityLocations)}
+                disabled={priorityLocations.length === 0}
+                style={{ ...s.btn, ...(priorityLocations.length === 0 ? s.btnDisabled : {}) }}
+              >
+                Tính lại theo vị trí ưu tiên
+              </button>
+            </div>
+          </div>
+        )}
         {mode === 'delivery' && isShortage && affectedOrderItems.length > 0 && (
           <div className="no-print" style={{maxWidth:800, margin:'1rem auto 0', background:'#fff', border:'1px solid #fecaca', borderRadius:12, padding:'1rem'}}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
