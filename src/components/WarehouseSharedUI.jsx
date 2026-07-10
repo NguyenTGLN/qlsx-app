@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Eye } from 'lucide-react';
 
 /**
@@ -80,7 +81,9 @@ export function ColumnToggleModal({ columns, labels = {}, hiddenCols, setHiddenC
         )}
       </button>
 
-      {open && (
+      {/* Portal ra document.body: nếu render inline, overlay position:fixed bị thanh
+          công cụ cha (sticky + overflow) cắt cụt trên iOS Safari (Android thì không). */}
+      {open && createPortal((
         <div style={{
           position: 'fixed', inset: 0, zIndex: 99999,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
@@ -119,7 +122,7 @@ export function ColumnToggleModal({ columns, labels = {}, hiddenCols, setHiddenC
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }

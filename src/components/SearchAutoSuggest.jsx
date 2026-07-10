@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, ChevronDown } from 'lucide-react';
 import { supabase as db } from '../lib/supabase';
 
@@ -31,15 +32,20 @@ export default function SearchAutoSuggest({
   const [searching, setSearching] = useState(false);
   const timerRef = useRef(null);
   const wrapRef = useRef(null);
+  const panelRef = useRef(null);  // overlay modal (render qua portal, NẰM NGOÀI wrapRef)
 
   const selectedSet = new Set(value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
   const mainCol = displayColumn || searchColumns[0];
 
-  // Click outside → close
+  // Click outside → close. Overlay được portal ra body nên phải loại trừ cả panelRef,
+  // nếu không mousedown trong modal (ô nhập, ô tick) sẽ bị coi là "click ngoài" → đóng
+  // modal trước khi thao tác chạy.
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+      if (wrapRef.current && wrapRef.current.contains(e.target)) return;
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -171,9 +177,11 @@ export default function SearchAutoSuggest({
         <ChevronDown size={12} color="#94a3b8" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
       </div>
 
-      {/* Dropdown — Fixed Modal for mobile compatibility */}
-      {open && (
-        <div style={{
+      {/* Dropdown — Fixed Modal cho mobile. Render qua Portal ra document.body để KHÔNG
+          bị kẹt trong containing-block / vùng cuộn của thanh công cụ cha (sticky + overflow),
+          vốn khiến iOS Safari cắt cụt overlay position:fixed (Android/Chrome thì không). */}
+      {open && createPortal((
+        <div ref={panelRef} style={{
           position: 'fixed',
           inset: 0,
           zIndex: 99999,
@@ -284,7 +292,7 @@ export default function SearchAutoSuggest({
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }
