@@ -382,6 +382,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     setMode('production');
     setAllocations(null);
     setOrderCreated(false);
+    setPriorityLocations([]); // phiếu mới: bỏ lựa chọn ưu tiên cũ
 
     try {
       // 0. Tạo mã phiếu PSX-YYYYMMDD-NN
@@ -448,10 +449,13 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       });
       setStockPool(pool);
 
-      // 4. Phân bổ FIFO 1 lần trên nhu cầu tổng
+      // 4. Phân bổ FIFO 1 lần trên nhu cầu tổng (lần đầu chưa có ưu tiên vị trí tự chọn)
       const { result, isShortage: hasShortage } = allocateFIFO(componentsRequired, stockData, {
-        priorityVTSX, phieuCode: generatedCode,
+        priorityVTSX, priorityLocations: [], phieuCode: generatedCode,
       });
+
+      // Lưu ngữ cảnh để "Tính lại theo vị trí ưu tiên"
+      setRecomputeDemand({ mode: 'production', demand: componentsRequired });
 
       // Sắp các dòng phiếu theo lộ trình lấy hàng (vị trí dãy→tầng→ô, đặc biệt/hết hàng xuống cuối)
       setAllocations(sortResultByLocation(result));
