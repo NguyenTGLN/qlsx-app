@@ -81,7 +81,7 @@ export function applyPriorityOrder(stockRows, { priorityVTSX = false, priorityLo
 // Phân bổ FIFO. stockData nên đã sort sẵn (import_date asc, quantity asc).
 // componentsRequired: [{ code, name, unit, requiredQty }]
 // stockData: [{ id, item_code, location, quantity }]
-// opts: { priorityVTSX?: bool, phieuCode?: string }
+// opts: { priorityVTSX?: bool, priorityLocations?: string[], phieuCode?: string }
 // → { result: [{ ...comp, allocations, missing, isShortage }], isShortage }
 export function allocateFIFO(componentsRequired, stockData, opts = {}) {
   const { priorityVTSX = false, priorityLocations = [], phieuCode = '' } = opts;

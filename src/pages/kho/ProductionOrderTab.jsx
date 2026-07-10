@@ -1379,16 +1379,18 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   // Delivery loại bỏ SX9-* (đơn hàng không lấy ở kho dở dang).
   const priorityLocOptions = React.useMemo(() => {
     const byLoc = {};
-    Object.values(stockPool || {}).forEach(rows => {
+    Object.entries(stockPool || {}).forEach(([itemCode, rows]) => {
       (rows || []).forEach(r => {
         if (!(r.quantity > 0)) return;
         if (mode === 'delivery' && String(r.location || '').startsWith('SX9-')) return;
-        if (!byLoc[r.location]) byLoc[r.location] = { location: r.location, totalQty: 0, codeCount: 0 };
+        if (!byLoc[r.location]) byLoc[r.location] = { location: r.location, totalQty: 0, codes: new Set() };
         byLoc[r.location].totalQty += r.quantity;
-        byLoc[r.location].codeCount += 1;
+        byLoc[r.location].codes.add(itemCode);
       });
     });
-    return Object.values(byLoc).sort((a, b) => compareLocations(a.location, b.location));
+    return Object.values(byLoc)
+      .map(o => ({ location: o.location, totalQty: o.totalQty, codeCount: o.codes.size }))
+      .sort((a, b) => compareLocations(a.location, b.location));
   }, [stockPool, mode]);
 
   // Tính lại phân bổ với danh sách vị trí ưu tiên `locs` (dựng lại tồn GỐC từ stockPool).
@@ -1483,7 +1485,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
 
       {/* Main Print Area */}
       <main style={{flex:1,padding:'0',overflowY:'auto',background:'#f1f5f9'}}>
-        {(mode === 'production' || mode === 'delivery') && allocations && (
+        {(mode === 'production' || mode === 'delivery') && allocations && recomputeDemand && !orderCreated && (
           <div className="no-print" style={{ maxWidth:800, margin:'1rem auto 0', background:'#fff', border:'1px solid #bae6fd', borderRadius:12, padding:'1rem' }}>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
               <Package size={18} color="#0891b2"/>
