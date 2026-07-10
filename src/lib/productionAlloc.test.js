@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1, sortStockForFIFO, sortResultByLocation } from './productionAlloc';
+import { aggregateComponentDemand, allocateFIFO, applyPriorityOrder, buildFinishedItems, round1, sortStockForFIFO, sortResultByLocation } from './productionAlloc';
 
 describe('sortResultByLocation', () => {
   it('các dòng phiếu sắp theo vị trí lấy đầu tiên (dãy→tầng→ô); đặc biệt rồi hết hàng xuống cuối', () => {
@@ -156,5 +156,43 @@ describe('buildFinishedItems', () => {
       [{ code: 'SP-A', name: 'A', qty: 10 }, { code: 'SP-B', name: 'B', qty: 5 }], 'PSX-X-02');
     expect(out.map(o => o.orderCode)).toEqual(['PSX-X-02.1', 'PSX-X-02.2']);
     expect(out[1]).toMatchObject({ productCode: 'SP-B', qty: 5 });
+  });
+});
+
+describe('applyPriorityOrder', () => {
+  it('đưa vị trí tự chọn lên trước, giữ thứ tự nền trong nhóm', () => {
+    const stock = [
+      { id: 1, item_code: 'A', location: 'HH1', quantity: 5 },
+      { id: 2, item_code: 'A', location: 'HH2', quantity: 5 },
+      { id: 3, item_code: 'A', location: 'HH3', quantity: 5 },
+    ];
+    const out = applyPriorityOrder(stock, { priorityLocations: ['HH3'] });
+    expect(out.map(s => s.location)).toEqual(['HH3', 'HH1', 'HH2']);
+  });
+
+  it('SX11 (khi bật) trước, rồi vị trí tự chọn, rồi phần còn lại', () => {
+    const stock = [
+      { id: 1, item_code: 'A', location: 'HH1', quantity: 5 },     // còn lại
+      { id: 2, item_code: 'A', location: 'HH2', quantity: 5 },     // tự chọn
+      { id: 3, item_code: 'A', location: 'SX11-01', quantity: 5 }, // SX11
+    ];
+    const out = applyPriorityOrder(stock, { priorityVTSX: true, priorityLocations: ['HH2'] });
+    expect(out.map(s => s.location)).toEqual(['SX11-01', 'HH2', 'HH1']);
+  });
+
+  it('khớp chính xác — HH2 không kéo theo HH20', () => {
+    const stock = [
+      { id: 1, item_code: 'A', location: 'HH20', quantity: 5 },
+      { id: 2, item_code: 'A', location: 'HH2', quantity: 5 },
+    ];
+    const out = applyPriorityOrder(stock, { priorityLocations: ['HH2'] });
+    expect(out.map(s => s.location)).toEqual(['HH2', 'HH20']);
+  });
+
+  it('không tick gì → giữ nguyên thứ tự, trả mảng mới (không mutate)', () => {
+    const stock = [{ id: 1, location: 'HH2' }, { id: 2, location: 'HH1' }];
+    const out = applyPriorityOrder(stock, {});
+    expect(out.map(s => s.location)).toEqual(['HH2', 'HH1']);
+    expect(out).not.toBe(stock);
   });
 });

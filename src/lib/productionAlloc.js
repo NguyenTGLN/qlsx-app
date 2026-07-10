@@ -60,6 +60,24 @@ export function sortResultByLocation(result) {
   });
 }
 
+// Xếp tồn theo 3 nhóm ưu tiên, GIỮ ổn định thứ tự nền (FIFO) trong mỗi nhóm:
+//   Nhóm 1: kho VTSX SX11- (chỉ khi priorityVTSX)
+//   Nhóm 2: vị trí người dùng tự chọn (khớp CHÍNH XÁC theo Set)
+//   Nhóm 3: phần còn lại
+// Không bật ưu tiên nào → trả bản sao nguyên thứ tự.
+export function applyPriorityOrder(stockRows, { priorityVTSX = false, priorityLocations = [] } = {}) {
+  const priSet = new Set(priorityLocations || []);
+  const isSX11 = (s) => s.location && s.location.startsWith('SX11-');
+  if (!priorityVTSX && priSet.size === 0) return [...(stockRows || [])];
+  const t0 = [], t1 = [], t2 = [];
+  for (const s of (stockRows || [])) {
+    if (priorityVTSX && isSX11(s)) t0.push(s);
+    else if (priSet.has(s.location)) t1.push(s);
+    else t2.push(s);
+  }
+  return [...t0, ...t1, ...t2];
+}
+
 // Phân bổ FIFO. stockData nên đã sort sẵn (import_date asc, quantity asc).
 // componentsRequired: [{ code, name, unit, requiredQty }]
 // stockData: [{ id, item_code, location, quantity }]
