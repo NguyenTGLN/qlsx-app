@@ -303,9 +303,11 @@ function startOfTodayTs() {
   return d.getTime();
 }
 
-export async function computeNeededDates() {
+// `preStockMap` (tuỳ chọn): tồn hàng hóa đã tải sẵn (item_code→SL) để tránh quét lại
+// inventory_stock lần nữa khi caller đã cần bản đồ tồn cho mục đích khác.
+export async function computeNeededDates(preStockMap = null) {
   const [stockMap, bomMap, salesRes] = await Promise.all([
-    loadComponentStock(),
+    preStockMap ? Promise.resolve(preStockMap) : loadComponentStock(),
     loadBomMap(),
     db.from('sales_90d_summary').select('ma_san_pham, total_sales'),
   ]);

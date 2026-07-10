@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { capacityMap, missingCapacities } from './capacityGuard';
+import { capacityMap, missingCapacities, dedupeByProductCode } from './capacityGuard';
 
 describe('capacityMap', () => {
   it('chỉ nhận dòng có capacity_per_hour > 0', () => {
@@ -43,5 +43,31 @@ describe('missingCapacities', () => {
       { product_code: 'B', capacity_per_hour: 5 },
     ];
     expect(missingCapacities(['A', 'B'], caps)).toEqual([]);
+  });
+});
+
+describe('dedupeByProductCode', () => {
+  it('gộp trùng mã trong 1 batch, giữ giá trị dòng cuối (last-wins), giữ thứ tự lần đầu', () => {
+    const out = dedupeByProductCode([
+      { product_code: 'A', capacity_per_hour: 2 },
+      { product_code: 'B', capacity_per_hour: 5 },
+      { product_code: 'A', capacity_per_hour: 4 },
+    ]);
+    expect(out).toEqual([
+      { product_code: 'A', capacity_per_hour: 4 },
+      { product_code: 'B', capacity_per_hour: 5 },
+    ]);
+  });
+  it('trim mã trước khi so trùng ( A === A )', () => {
+    const out = dedupeByProductCode([
+      { product_code: ' A ', capacity_per_hour: 2 },
+      { product_code: 'A', capacity_per_hour: 4 },
+    ]);
+    expect(out).toEqual([{ product_code: 'A', capacity_per_hour: 4 }]);
+  });
+  it('bỏ dòng mã rỗng; đầu vào null/undefined → mảng rỗng', () => {
+    expect(dedupeByProductCode([{ product_code: '  ', capacity_per_hour: 1 }])).toEqual([]);
+    expect(dedupeByProductCode(null)).toEqual([]);
+    expect(dedupeByProductCode(undefined)).toEqual([]);
   });
 });

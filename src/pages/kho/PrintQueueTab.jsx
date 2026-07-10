@@ -5,6 +5,7 @@ import { Printer, Search, Loader2, CheckCircle, Clock, RefreshCw, Check, X, Chec
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
 import { PageSizeSelect } from '../../components/WarehouseSharedUI';
+import DateRangeDropdown from '../../components/DateRangeDropdown';
 
 // notes phiếu nhập được lưu dạng "{lý do} - {nguồn}" (hoặc chỉ "{lý do}"); phiếu xuất chỉ có lý do.
 const splitNote = (n) => {
@@ -13,12 +14,18 @@ const splitNote = (n) => {
   return idx < 0 ? { reason: s, source: '' } : { reason: s.slice(0, idx).trim(), source: s.slice(idx + 3).trim() };
 };
 const uniqJoin = (arr) => [...new Set(arr.filter(Boolean))].join(', ');
+// created_at (timestamp) -> YYYY-MM-DD theo giờ địa phương, để so với khoảng ngày (from/to) của DateRangeDropdown.
+const toLocalDate = (ts) => {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
 
 export default function PrintQueueTab() {
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState('UNPRINTED'); // UNPRINTED, PRINTED, ALL
   const [search, setSearch] = useState('');
+  const [dateRange, setDateRange] = useState({ preset: 'Tất cả', from: '', to: '' }); // lọc theo Ngày Lập (created_at)
   
   // Selection state
   const [selected, setSelected] = useState(new Set());
@@ -64,7 +71,9 @@ export default function PrintQueueTab() {
         }
       });
       
-      const allOrders = Array.from(orderMap.values());
+      // Sắp xếp theo Ngày Lập từ mới đến cũ (không phụ thuộc thứ tự gom Map).
+      const allOrders = Array.from(orderMap.values())
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       setOrders(allOrders);
       // Clean up selection if order is no longer in the list (or changed status)
       // For simplicity, we just clear selection on reload
@@ -80,11 +89,16 @@ export default function PrintQueueTab() {
     loadData();
   }, []);
 
-  useEffect(() => { setPage(1); }, [filter, search, pageSize]);
+  useEffect(() => { setPage(1); }, [filter, search, pageSize, dateRange]);
 
   const filteredOrders = orders.filter(o => {
     if (filter === 'UNPRINTED' && o.is_printed) return false;
     if (filter === 'PRINTED' && !o.is_printed) return false;
+    if (dateRange.preset !== 'Tất cả') {
+      const d = toLocalDate(o.created_at);
+      if (dateRange.from && d < dateRange.from) return false;
+      if (dateRange.to && d > dateRange.to) return false;
+    }
     if (search) {
       const terms = search.toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
       if (terms.length > 0 && !terms.some(t => o.order_code.toLowerCase() === t)) return false;
@@ -232,8 +246,10 @@ export default function PrintQueueTab() {
             value={search}
             onChange={v => setSearch(v)}
           />
-          
-          <select 
+
+          <DateRangeDropdown label="Ngày lập" value={dateRange} onChange={setDateRange} alignRight={true} />
+
+          <select
             value={filter} 
             onChange={e => setFilter(e.target.value)}
             style={{padding:'8px 12px', borderRadius:6, border:'1px solid #cbd5e1', outline:'none', fontSize:'0.9rem', background:'#fff'}}
@@ -402,7 +418,7 @@ export default function PrintQueueTab() {
               sl: Math.abs(Number(it.quantity_taken) || 0),
               kho: it.location,
               ghiChu: it.notes || '',
-              maDonHang: '', // picking-log không lưu mã đơn hàng riêng → để trống điền tay
+              maDonHang: it.ma_don_hang || '', // mã đơn hàng nhập tay (Khác/Nhập mới) đã lưu ở picking-log
             }));
             // Địa chỉ + SĐT lấy từ NCC theo tên nguồn (nếu khớp), không có thì bỏ trống
             const ncc = source ? nccMap[source.trim().toLowerCase()] : null;

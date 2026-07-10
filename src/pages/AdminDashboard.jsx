@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { LayoutDashboard, CheckCircle, TrendingUp, Users, RefreshCw, Plus, X, Upload, Download, Package, Activity, Smartphone, Edit, Trash2, BarChart2, ArrowUpRight, ArrowDownRight, Minus, ClipboardList, CalendarClock } from 'lucide-react';
 import ModuleShell, { TabButton } from '../components/ModuleShell';
 import { supabase, fetchAllRows } from '../lib/supabase';
+import { dedupeByProductCode } from '../lib/capacityGuard';
 import { dataCache } from '../lib/dataCache';
 import { useTabPerm } from '../lib/AuthContext';
 import * as XLSX from 'xlsx';
@@ -230,10 +231,16 @@ const AdminDashboard = () => {
             alert("File không đúng định dạng. Yêu cầu Cột: 'Mã SP', 'Tên SP', 'Thời gian chuẩn (Giờ/SP)'"); return;
         }
 
-        const { error } = await supabase.from('product_capacities').upsert(formattedData, { onConflict: 'product_code' });
+        // Gộp trùng Mã SP ngay trong file (dòng cuối ghi đè) — nếu không, Postgres báo lỗi
+        // "ON CONFLICT DO UPDATE command cannot affect row a second time".
+        const uniqueData = dedupeByProductCode(formattedData);
+        const dupCount = formattedData.length - uniqueData.length;
+
+        const { error } = await supabase.from('product_capacities').upsert(uniqueData, { onConflict: 'product_code' });
         if (error) throw error;
-        
-        alert(`Đã nạp thành công định mức cho ${formattedData.length} mã SP!`);
+
+        alert(`Đã nạp thành công định mức cho ${uniqueData.length} mã SP!`
+          + (dupCount > 0 ? `\n(Đã gộp ${dupCount} dòng trùng Mã SP trong file — giữ giá trị của dòng cuối cùng.)` : ''));
         fetchAllData();
       } catch (err) { alert('Lỗi: ' + err.message); }
       e.target.value = '';

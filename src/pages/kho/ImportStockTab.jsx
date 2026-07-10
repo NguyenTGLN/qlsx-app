@@ -141,6 +141,17 @@ function NccPicker({ value, suppliers, onPick, onClear }) {
   );
 }
 
+// Mã đơn hàng để in vào cột "Mã đơn hàng" của phiếu, theo loại nguồn của khối:
+//  - 'none'  (Khác / Nhập mới)     → mã nhập tay (orderCode)
+//  - 'ncc'   (Nhập mua vào)        → mã DLK đề xuất
+//  - 'order' (Nhập hoàn/hủy)       → mã đơn hàng (sourceValue, tra từ luu_xuat)
+// psx (Nhập thành phẩm / dư SX) không phải mã đơn hàng nên bỏ trống.
+const blockOrderCode = (b) =>
+  (b.orderCode && b.orderCode.trim())
+  || (b.dlkCode && b.dlkCode.trim())
+  || (b.sourceType === 'order' && b.sourceValue ? String(b.sourceValue).trim() : '')
+  || '';
+
 export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComplete, perms = { view: true, create: true, edit: true, delete: true, io: true }, catalogCreatePerm = false }) {
   const [catalog, setCatalog] = useState([]);
   const [suppliers, setSuppliers] = useState([]);   // danh mục NCC cho ô gõ-tìm gợi ý
@@ -496,11 +507,14 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
               if (!mainLocation) mainLocation = loc.location;
               const key = item.code + '||' + loc.location;
               if (!agg[key]) {
-                agg[key] = { code: item.code, name: item.name, unit: item.unit, location: loc.location, id: loc.id || null, current_qty: Number(loc.current_qty) || 0, sumImport: 0, sources: new Set() };
+                agg[key] = { code: item.code, name: item.name, unit: item.unit, location: loc.location, id: loc.id || null, current_qty: Number(loc.current_qty) || 0, sumImport: 0, sources: new Set(), orderCodes: new Set() };
               }
               if (!agg[key].id && loc.id) { agg[key].id = loc.id; agg[key].current_qty = Number(loc.current_qty) || 0; }
               agg[key].sumImport += q;
               if (b.sourceValue) agg[key].sources.add(b.sourceValue);
+              // Mã đơn hàng (nhập tay / DLK / hoàn-hủy) — khớp cột "Mã đơn hàng" trên bản in.
+              const donCode = blockOrderCode(b);
+              if (donCode) agg[key].orderCodes.add(donCode);
             }
           }
 
@@ -557,7 +571,8 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
           quantity_taken: a.sumImport,
           quantity_after: after,
           created_by: userStr,
-          notes: srcStr ? `${reason} - ${srcStr}` : reason
+          notes: srcStr ? `${reason} - ${srcStr}` : reason,
+          ma_don_hang: a.orderCodes.size > 0 ? [...a.orderCodes].join(', ') : null
         });
       }
 
@@ -908,7 +923,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
                         it.locations.filter(loc => (Number(loc.import_qty) || 0) > 0).map(loc => ({
                           ma: it.code, ten: it.name, dvt: it.unit || '',
                           sl: Number(loc.import_qty) || 0, kho: loc.location,
-                          maDonHang: b.orderCode || b.dlkCode || '',
+                          maDonHang: blockOrderCode(b),
                         }))
                       )
                     )}

@@ -3,13 +3,13 @@ import { supabase as db } from '../../lib/supabase';
 import { Loader2, RefreshCw, Download, Trash2, XCircle, ShoppingCart, Archive } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
-import { computeNeededDates } from '../../lib/dksxEngine';
+import { computeNeededDates, loadComponentStock } from '../../lib/dksxEngine';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
 
 // Các cột data có thể ẩn/hiện (cột "#" và "Thao tác" luôn hiện)
-const TABLE_COLS = ['urgency','dlk_code','san_pham','unit','ngay_de_xuat','ngay_du_kien','needed_ts','calculated_qty','actual_qty','received','con_lai','tien_do','note'];
-const COL_LABELS_MAP = { urgency:'Khẩn cấp', dlk_code:'Mã DLK', san_pham:'Sản phẩm', unit:'ĐVT', ngay_de_xuat:'Ngày ĐX', ngay_du_kien:'Dự kiến về', needed_ts:'Ngày cần về', calculated_qty:'SL ĐX', actual_qty:'SL Đặt', received:'Đã nhập', con_lai:'Còn lại', tien_do:'Tiến độ', note:'Ghi chú' };
+const TABLE_COLS = ['urgency','dlk_code','san_pham','unit','ngay_de_xuat','ngay_du_kien','needed_ts','stock_now','calculated_qty','actual_qty','received','con_lai','tien_do','note'];
+const COL_LABELS_MAP = { urgency:'Khẩn cấp', dlk_code:'Mã DLK', san_pham:'Sản phẩm', unit:'ĐVT', ngay_de_xuat:'Ngày ĐX', ngay_du_kien:'Dự kiến về', needed_ts:'Ngày cần về', stock_now:'Tồn kho', calculated_qty:'SL ĐX', actual_qty:'SL Đặt', received:'Đã nhập', con_lai:'Còn lại', tien_do:'Tiến độ', note:'Ghi chú' };
 
 const TIEN_DO_OPTIONS = ['Mới','Chờ duyệt','Đã đặt','Đang vận chuyển','Đã về kho'];
 // Mỗi tiến độ một màu riêng (dùng cho dropdown + bộ lọc)
@@ -104,11 +104,14 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
         formatted = formatted.filter(r => ['Đã về kho đủ','Đã về kho thiếu','Hủy'].includes(r.auto_trang_thai));
       }
 
-      // Ngày cần về kho + số ngày còn lại (tính realtime)
-      const needed = await computeNeededDates();
+      // Tồn kho hiện tại (tồn hàng hóa theo mã, gồm cả WIP SX9 — khớp tab Tồn HH)
+      // + Ngày cần về kho + số ngày còn lại (tính realtime). Quét inventory_stock 1 lần,
+      // dùng lại bản đồ tồn cho computeNeededDates để không quét lặp.
+      const stockMap = await loadComponentStock();
+      const needed = await computeNeededDates(stockMap);
       formatted = formatted.map(r => {
         const nd = needed[r.item_code];
-        return { ...r, needed_ts: nd ? nd.neededTs : null, days_left: nd ? nd.daysLeft : null };
+        return { ...r, stock_now: stockMap[r.item_code] || 0, needed_ts: nd ? nd.neededTs : null, days_left: nd ? nd.daysLeft : null };
       });
 
       setRows(formatted);
@@ -205,6 +208,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
       'ĐVT': r.unit,
       'Ngày đề xuất': r.ngay_de_xuat,
       'Ngày dự kiến về': r.ngay_du_kien,
+      'Tồn kho hiện tại': r.stock_now,
       'SL đề xuất TT': r.calculated_qty,
       'SL thực đặt': r.actual_qty,
       'SL đã nhập về': r.received,
@@ -213,7 +217,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
       'Ghi chú': r.note,
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{wch:5},{wch:16},{wch:14},{wch:36},{wch:7},{wch:13},{wch:14},{wch:12},{wch:12},{wch:12},{wch:18},{wch:20},{wch:30}];
+    ws['!cols'] = [{wch:5},{wch:16},{wch:14},{wch:36},{wch:7},{wch:13},{wch:14},{wch:14},{wch:12},{wch:12},{wch:12},{wch:18},{wch:20},{wch:30}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'DLK_de_xuat');
     XLSX.writeFile(wb, `DLK_de_xuat_${todayLocal()}.xlsx`);
@@ -235,6 +239,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
     switch (col) {
       case 'urgency': return r.days_left;
       case 'needed_ts': return r.needed_ts;
+      case 'stock_now': return Number(r.stock_now) || 0;
       case 'calculated_qty': return Number(r.calculated_qty) || 0;
       case 'actual_qty': return Number(r.actual_qty) || 0;
       case 'received': return Number(r.received) || 0;
@@ -322,6 +327,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                   {vis('ngay_de_xuat') && <th onClick={()=>handleSort('ngay_de_xuat')} style={sortTh(sortCol==='ngay_de_xuat')}>Ngày ĐX{sortInd('ngay_de_xuat')}</th>}
                   {vis('ngay_du_kien') && <th onClick={()=>handleSort('ngay_du_kien')} style={sortTh(sortCol==='ngay_du_kien')}>Dự kiến về{sortInd('ngay_du_kien')}</th>}
                   {vis('needed_ts') && <th onClick={()=>handleSort('needed_ts')} style={sortTh(sortCol==='needed_ts')}>Ngày cần về{sortInd('needed_ts')}</th>}
+                  {vis('stock_now') && <th onClick={()=>handleSort('stock_now')} style={{...sortTh(sortCol==='stock_now'),textAlign:'right'}} title="Tồn kho hiện tại (tồn hàng hóa theo mã, gồm cả hàng dở dang SX9)">Tồn kho{sortInd('stock_now')}</th>}
                   {vis('calculated_qty') && <th onClick={()=>handleSort('calculated_qty')} style={{...sortTh(sortCol==='calculated_qty'),textAlign:'right'}}>SL ĐX{sortInd('calculated_qty')}</th>}
                   {vis('actual_qty') && <th onClick={()=>handleSort('actual_qty')} style={{...sortTh(sortCol==='actual_qty'),textAlign:'right'}}>SL Đặt{sortInd('actual_qty')}</th>}
                   {vis('received') && <th onClick={()=>handleSort('received')} style={{...sortTh(sortCol==='received'),textAlign:'right'}}>Đã nhập{sortInd('received')}</th>}
@@ -369,6 +375,9 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                       </td>}
                       {vis('needed_ts') && <td style={{...td,whiteSpace:'nowrap',fontWeight:600,color: row.days_left!==null&&row.days_left<7?'#dc2626':'#475569'}}>
                         {row.needed_ts ? new Date(row.needed_ts).toLocaleDateString('vi-VN') : '—'}
+                      </td>}
+                      {vis('stock_now') && <td style={{...td,textAlign:'right',fontWeight:600,color:(Number(row.stock_now)||0)>0?'#0f766e':'#cbd5e1'}}>
+                        {(Number(row.stock_now)||0) > 0 ? Number(row.stock_now).toLocaleString('vi-VN') : '—'}
                       </td>}
                       {vis('calculated_qty') && <td style={{...td,textAlign:'right',color:'#64748b'}}>{Number(row.calculated_qty).toLocaleString('vi-VN')}</td>}
                       {vis('actual_qty') && <td style={{...td,textAlign:'right'}}>

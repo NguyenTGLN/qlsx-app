@@ -12,6 +12,20 @@ export function capacityMap(capRows) {
   return m;
 }
 
+// Gộp trùng theo product_code trong CÙNG một batch: dòng SAU ghi đè dòng TRƯỚC
+// (last-wins), giữ thứ tự xuất hiện lần đầu, trim + bỏ mã rỗng.
+// BẮT BUỘC trước khi upsert onConflict:'product_code' — nếu batch có 2 dòng trùng
+// khoá, Postgres báo lỗi "ON CONFLICT DO UPDATE command cannot affect row a second time".
+export function dedupeByProductCode(rows) {
+  const m = new Map();
+  for (const r of rows || []) {
+    const code = String(r?.product_code || '').trim();
+    if (!code) continue;
+    m.set(code, { ...r, product_code: code });
+  }
+  return [...m.values()];
+}
+
 // Trả về mảng mã (unique, giữ thứ tự, đã trim) KHÔNG có định mức hợp lệ trong capRows.
 export function missingCapacities(codes, capRows) {
   const m = capacityMap(capRows);
