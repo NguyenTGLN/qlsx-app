@@ -4,7 +4,7 @@ import { Search, Loader2, Play, Printer, AlertCircle, CheckCircle, Package, Uplo
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
-import { aggregateComponentDemand, allocateFIFO, buildFinishedItems, round1, compareLocations, sortStockForFIFO, sortResultByLocation } from '../../lib/productionAlloc';
+import { aggregateComponentDemand, allocateFIFO, allocateExport, buildFinishedItems, round1, compareLocations, sortStockForFIFO, sortResultByLocation } from '../../lib/productionAlloc';
 import { getCatalogItems, getBomProducts } from '../../lib/catalogCache';
 import { missingCapacities, capacityMap } from '../../lib/capacityGuard';
 import { parseManualOrders } from '../../lib/manualOrderParse';
@@ -278,6 +278,14 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const [prodDate, setProdDate] = useState(() => localStorage.getItem('prod_date') || todayLocal());
   const [notes, setNotes] = useState(() => localStorage.getItem('prod_notes') || '');
   const [priorityVTSX, setPriorityVTSX] = useState(() => localStorage.getItem('prod_priorityVTSX') === 'true');
+  // Ưu tiên lấy ở vị trí tự chọn (màn kết quả) — mảng chuỗi vị trí, khớp chính xác
+  const [priorityLocations, setPriorityLocations] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('prod_priorityLocations')) || []; } catch { return []; }
+  });
+  // Ngữ cảnh để "Tính lại theo vị trí ưu tiên": { mode, demand } đã dùng khi tính
+  const [recomputeDemand, setRecomputeDemand] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('prod_recomputeDemand')) || null; } catch { return null; }
+  });
 
   // Result State — always start with card grid (allocations=null)
   const [allocations, setAllocations] = useState(null);
@@ -342,6 +350,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     localStorage.setItem('prod_date', prodDate);
     localStorage.setItem('prod_notes', notes);
     localStorage.setItem('prod_priorityVTSX', priorityVTSX);
+    localStorage.setItem('prod_priorityLocations', JSON.stringify(priorityLocations));
     localStorage.setItem('prod_orderCode', orderCode);
     if (allocations) {
       localStorage.setItem('prod_allocations', JSON.stringify(allocations));
@@ -352,8 +361,9 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       localStorage.setItem('prod_generatedComponents', JSON.stringify(generatedComponents));
       localStorage.setItem('prod_stockPool', JSON.stringify(stockPool));
       localStorage.setItem('prod_finishedItems', JSON.stringify(prodFinishedItems));
+      localStorage.setItem('prod_recomputeDemand', JSON.stringify(recomputeDemand));
     }
-  }, [prodRows, prodDate, notes, priorityVTSX, orderCode, allocations, isShortage, orderCreated, mode, orderItems, generatedComponents, stockPool, prodFinishedItems]);
+  }, [prodRows, prodDate, notes, priorityVTSX, orderCode, allocations, isShortage, orderCreated, mode, orderItems, generatedComponents, stockPool, prodFinishedItems, priorityLocations, recomputeDemand]);
 
   useEffect(() => {
     // Thành phẩm distinct từ BOM — cache dùng chung (getBomProducts), BOM tab sẽ invalidate khi sửa
