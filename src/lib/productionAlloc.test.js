@@ -135,6 +135,16 @@ describe('allocateFIFO', () => {
     expect(result[0].allocations[0]).toMatchObject({ stock_id: 2, location: 'SX11-01' });
   });
 
+  it('ưu tiên vị trí tự chọn trước FIFO nền', () => {
+    const s = [
+      { id: 1, item_code: 'A', location: 'HH1', quantity: 5 }, // FIFO đứng đầu
+      { id: 2, item_code: 'A', location: 'HH2', quantity: 5 },
+    ];
+    const { result } = allocateFIFO(
+      [{ code: 'A', name: 'a', unit: '', requiredQty: 5 }], s, { priorityLocations: ['HH2'] });
+    expect(result[0].allocations[0]).toMatchObject({ stock_id: 2, location: 'HH2' });
+  });
+
   it('SL âm (tháo máy) nhập ngược vào SX9 của phiếu', () => {
     const { result, isShortage } = allocateFIFO(
       [{ code: 'A', name: 'a', unit: '', requiredQty: -3 }], [], { phieuCode: 'PSX-X-01' });

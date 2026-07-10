@@ -84,13 +84,9 @@ export function applyPriorityOrder(stockRows, { priorityVTSX = false, priorityLo
 // opts: { priorityVTSX?: bool, phieuCode?: string }
 // → { result: [{ ...comp, allocations, missing, isShortage }], isShortage }
 export function allocateFIFO(componentsRequired, stockData, opts = {}) {
-  const { priorityVTSX = false, phieuCode = '' } = opts;
-  let available = JSON.parse(JSON.stringify(stockData || [])); // copy để trừ dần, không mutate gốc
-  if (priorityVTSX) {
-    const pri = available.filter(s => s.location && s.location.startsWith('SX11-'));
-    const norm = available.filter(s => !(s.location && s.location.startsWith('SX11-')));
-    available = [...pri, ...norm];
-  }
+  const { priorityVTSX = false, priorityLocations = [], phieuCode = '' } = opts;
+  // copy để trừ dần (không mutate gốc) rồi xếp theo nhóm ưu tiên
+  let available = applyPriorityOrder(JSON.parse(JSON.stringify(stockData || [])), { priorityVTSX, priorityLocations });
 
   let isShortage = false;
   const result = [];
