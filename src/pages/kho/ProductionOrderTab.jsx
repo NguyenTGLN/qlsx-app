@@ -591,6 +591,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     setLoading(true);
     setAllocations(null);
     setOrderCreated(false);
+    setPriorityLocations([]); // đơn mới / tính lại: bỏ lựa chọn ưu tiên cũ
 
     try {
       const todayStr = new Date(prodDate).toISOString().split('T')[0].replace(/-/g, '');
@@ -637,30 +638,11 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       });
       setStockPool(pool);
 
-      const availableStock = JSON.parse(JSON.stringify(stockData || []));
-      let hasShortage = false;
-      const result = [];
+      // Phân bổ đơn hàng qua hàm chung (loại SX9-*); lần đầu chưa có ưu tiên vị trí
+      const { result, isShortage: hasShortage } = allocateExport(componentsRequired, stockData, { priorityLocations: [] });
 
-      componentsRequired.forEach(comp => {
-        let qtyNeeded = comp.requiredQty;
-        // Xuất bán/đơn hàng KHÔNG lấy từ kho sản xuất (SX9-*, hàng đang dở dang).
-        const compStockRows = availableStock.filter(s => s.item_code === comp.code && s.quantity > 0 && !String(s.location || '').startsWith('SX9-'));
-        const compAllocations = [];
-        
-        for (let i = 0; i < compStockRows.length && qtyNeeded > 0; i++) {
-          const row = compStockRows[i];
-          const take = Math.min(row.quantity, qtyNeeded);
-          row.quantity -= take;
-          qtyNeeded -= take;
-          compAllocations.push({
-            stock_id: row.id, location: row.location, before: row.quantity + take, taken: take, remaining: row.quantity
-          });
-        }
-        if (qtyNeeded > 0) hasShortage = true;
-        // Vị trí trong 1 dòng sắp theo dãy→tầng→ô cho dễ đi lấy hàng
-        compAllocations.sort((x, y) => compareLocations(x.location, y.location));
-        result.push({ ...comp, allocations: compAllocations, missing: qtyNeeded, isShortage: qtyNeeded > 0 });
-      });
+      // Lưu ngữ cảnh để "Tính lại theo vị trí ưu tiên"
+      setRecomputeDemand({ mode: 'delivery', demand: componentsRequired });
 
       // Sắp các dòng phiếu theo lộ trình lấy hàng (vị trí dãy→tầng→ô, đặc biệt/hết hàng xuống cuối)
       setAllocations(sortResultByLocation(result));
