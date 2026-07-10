@@ -1,125 +1,158 @@
-# Ưu tiên lấy ở vị trí tự chọn khi làm Phiếu Sản Xuất — Design
+# Ưu tiên lấy ở vị trí tự chọn (Sản xuất + Đơn hàng) — Design
 
 **Ngày:** 2026-07-10
 **File chính:** `src/pages/kho/ProductionOrderTab.jsx`, `src/lib/productionAlloc.js`
-**Tab:** Kho Hàng → PSX → "Lệnh Sản Xuất"
+**Tab:** Kho Hàng → PSX → "Lệnh Sản Xuất" / "Nhập Đơn Hàng" / "Xuất Kho Thủ Công"
 
 ## Bối cảnh
 
-Modal "Lệnh Sản Xuất" hiện có sẵn ô tick **"Ưu tiên lấy kho VTSX (SX11-...)"**. Khi bật,
-`handleCalculate` truyền `priorityVTSX: true` vào [`allocateFIFO`](../../../src/lib/productionAlloc.js);
-hàm này đẩy các dòng tồn có `location` bắt đầu bằng `SX11-` lên **lấy trước**, phần còn lại
-vẫn theo nguyên tắc nền.
+Modal "Lệnh Sản Xuất" có sẵn ô tick **"Ưu tiên lấy kho VTSX (SX11-...)"**. Khi bật,
+`handleCalculate` truyền `priorityVTSX: true` vào [`allocateFIFO`](../../../src/lib/productionAlloc.js),
+đẩy các dòng tồn `location` bắt đầu `SX11-` lên **lấy trước**, phần còn lại theo nguyên tắc nền.
 
-Nguyên tắc nền (giữ nguyên, KHÔNG đổi trong feature này) do `sortStockForFIFO` quyết định:
-**ngày nhập cũ trước (FIFO) → cùng ngày thì theo thứ tự vị trí (dãy A→Z, tầng M-H-B-T-N-S,
-ô 1→20)**. (Lưu ý: KHÔNG phải "vị trí ít số lượng hơn ưu tiên" — đây là hiểu nhầm cần ghi rõ.)
+Nguyên tắc nền (GIỮ NGUYÊN) do `sortStockForFIFO`: **ngày nhập cũ trước (FIFO) → cùng ngày
+thì theo thứ tự vị trí (dãy A→Z, tầng M-H-B-T-N-S, ô 1→20)**. (KHÔNG phải "ít số lượng ưu tiên".)
 
-Người dùng muốn **tổng quát hóa** cơ chế ưu tiên: thay vì cứng `SX11-`, cho phép **tự tick
-chọn 1 hoặc nhiều vị trí** làm ưu tiên. Sau khi ưu tiên các vị trí đã chọn, phần còn lại vẫn
-áp dụng đúng nguyên tắc nền đang chạy.
+Người dùng muốn **tự tick chọn 1 hay nhiều vị trí** làm ưu tiên, áp cho **cả phiếu sản xuất
+LẪN đơn hàng** (Excel + nhập tay). Sau khi ưu tiên các vị trí đã chọn, phần còn lại vẫn theo
+nguyên tắc nền.
 
 ## Quyết định đã chốt
 
-1. **Nguồn danh sách vị trí = chỉ những vị trí đang có tồn của linh kiện trong phiếu.**
-   Người dùng nhập thành phẩm + SL trước; khi bấm "Tìm vị trí", app tính nhu cầu linh kiện
-   (BOM) + query tồn 1 lần rồi CHỈ hiện các vị trí thực sự đang chứa các linh kiện đó.
-2. **Giữ nguyên ô tick SX11 cũ** + thêm phần chọn vị trí tự chọn độc lập bên dưới.
-3. **Thứ tự ưu tiên khi bật cả hai:** SX11 → vị trí tự chọn → phần còn lại (3 nhóm).
-4. **Khớp chính xác từng vị trí** đã tick (dùng `Set` + so sánh bằng, KHÔNG theo dãy/khu,
-   KHÔNG `includes`/`startsWith`). Đúng quy ước lọc chính xác của app.
-5. **Trong mỗi nhóm giữ nguyên thứ tự FIFO nền** (không sắp lại).
-6. **Phạm vi: chỉ phiếu sản xuất** (`handleCalculate` → "Tính toán bốc dỡ"). Luồng xuất đơn
-   hàng (`handleCalculateDelivery`) và xuất kho tay (`handleCalculateManualExport`) KHÔNG đụng.
+1. **Đặt bộ chọn vị trí ưu tiên ở MÀN KẾT QUẢ, dùng chung mọi loại phiếu.** Sau khi tính xong
+   (sản xuất / đơn hàng Excel / đơn hàng nhập tay / xuất kho tay), hiện panel "Ưu tiên vị trí"
+   phía trên bảng kết quả. Tick vị trí + bấm **"Tính lại theo vị trí ưu tiên"** → bảng cập nhật.
+   → Phủ được cả đường Excel (vốn không có bước tùy chọn trước khi tính).
+2. **Danh sách vị trí = các vị trí đang có tồn của mặt hàng trong phiếu** — lấy từ `stockPool`
+   (đã có sẵn trong state ngay sau khi tính, không query thêm).
+3. **Giữ nguyên ô tick SX11** trong modal sản xuất (preset nhanh, chỉ áp cho sản xuất).
+4. **Thứ tự ưu tiên:** SX11 (chỉ mode sản xuất, nếu bật) → vị trí tự chọn → phần còn lại.
+5. **Khớp chính xác từng vị trí** đã tick (`Set` + so sánh bằng; KHÔNG dãy/khu, KHÔNG
+   `includes`/`startsWith`). Đúng quy ước lọc chính xác của app.
+6. **Trong mỗi nhóm giữ nguyên thứ tự FIFO nền** (không sắp lại).
 
-## Thay đổi logic lõi — `allocateFIFO`
+## Logic lõi — `src/lib/productionAlloc.js`
 
-Thêm opt `priorityLocations` (mảng chuỗi vị trí). Xếp tồn `available` thành 3 nhóm bằng
-filter+concat (giữ ổn định thứ tự nền, giống cách `priorityVTSX` đang làm):
-
+### `applyPriorityOrder(stockRows, opts)` — MỚI, thuần, có test
+Gộp tồn thành 3 nhóm, giữ ổn định thứ tự nền trong mỗi nhóm (filter+concat):
 ```js
-export function allocateFIFO(componentsRequired, stockData, opts = {}) {
-  const { priorityVTSX = false, priorityLocations = [], phieuCode = '' } = opts;
-  let available = JSON.parse(JSON.stringify(stockData || []));
+export function applyPriorityOrder(stockRows, { priorityVTSX = false, priorityLocations = [] } = {}) {
   const priSet = new Set(priorityLocations || []);
   const isSX11 = (s) => s.location && s.location.startsWith('SX11-');
-  if (priorityVTSX || priSet.size) {
-    const t0 = [], t1 = [], t2 = [];
-    for (const s of available) {
-      if (priorityVTSX && isSX11(s)) t0.push(s);        // Nhóm 1: SX11 (khi bật SX11)
-      else if (priSet.has(s.location)) t1.push(s);      // Nhóm 2: vị trí tự chọn
-      else t2.push(s);                                  // Nhóm 3: phần còn lại
-    }
-    available = [...t0, ...t1, ...t2];
+  if (!priorityVTSX && priSet.size === 0) return [...(stockRows || [])];
+  const t0 = [], t1 = [], t2 = [];
+  for (const s of (stockRows || [])) {
+    if (priorityVTSX && isSX11(s)) t0.push(s);       // Nhóm 1: SX11 (chỉ khi bật)
+    else if (priSet.has(s.location)) t1.push(s);     // Nhóm 2: vị trí tự chọn
+    else t2.push(s);                                 // Nhóm 3: phần còn lại
   }
-  // ... phần còn lại giữ nguyên (vòng lặp phân bổ, SL âm → SX9, sort hiển thị theo vị trí)
+  return [...t0, ...t1, ...t2];
 }
 ```
 
-Ghi chú tương thích ngược:
-- `priorityLocations` mặc định `[]` → không tick gì thì `priSet.size === 0` và `priorityVTSX
-  === false` ⇒ bỏ qua khối gộp nhóm, hành vi y hệt hiện nay.
-- Test cũ "ưu tiên kho SX11- khi priorityVTSX" vẫn đúng (t0=[SX11], t1=[], t2=[rest]).
-- Vị trí tự chọn trùng SX11 và đang bật SX11 → rơi vào t0 (vẫn được ưu tiên, không nhân đôi).
+### `allocateFIFO` — thêm opt `priorityLocations`
+Thay khối SX11 nội tuyến hiện tại bằng `available = applyPriorityOrder(available, { priorityVTSX, priorityLocations })`.
+Chữ ký: `opts = { priorityVTSX, priorityLocations = [], phieuCode }`. Tương thích ngược: không
+tick gì → `applyPriorityOrder` trả copy nguyên thứ tự → hành vi y hệt hiện nay.
 
-## UI — modal Lệnh Sản Xuất
-
-State mới trong `ProductionOrderTab`:
+### `allocateExport(demandRows, stockData, opts)` — MỚI, thuần, có test
+Rút gọn 2 vòng lặp phân bổ **trùng lặp** đang nằm trong `handleCalculateDelivery` và
+`handleCalculateManualExport` thành 1 hàm chung (giảm trùng code, để "tính lần đầu" == "tính lại"):
 ```js
-const [priorityLocEnabled, setPriorityLocEnabled] = useState(() => localStorage.getItem('prod_priorityLocEnabled') === 'true');
-const [priorityLocations, setPriorityLocations] = useState(() => { try { return JSON.parse(localStorage.getItem('prod_priorityLocations')) || []; } catch { return []; } }); // mảng chuỗi vị trí đã chọn
-const [priorityLocOptions, setPriorityLocOptions] = useState(null); // null=chưa tìm; []=đã tìm, rỗng
-const [loadingPriorityLoc, setLoadingPriorityLoc] = useState(false);
+export function allocateExport(demandRows, stockData, opts = {}) {
+  const { priorityLocations = [] } = opts;
+  const working = applyPriorityOrder(JSON.parse(JSON.stringify(stockData || [])), { priorityLocations });
+  let isShortage = false;
+  const result = [];
+  for (const d of demandRows) {
+    let qtyNeeded = Number(d.requiredQty);
+    // Xuất bán/đơn hàng KHÔNG lấy từ kho sản xuất dở dang (SX9-*)
+    const rows = working.filter(s => s.item_code === d.code && s.quantity > 0 && !String(s.location || '').startsWith('SX9-'));
+    const allocs = [];
+    for (let i = 0; i < rows.length && qtyNeeded > 0; i++) {
+      const r = rows[i]; const take = Math.min(r.quantity, qtyNeeded);
+      const before = r.quantity; r.quantity -= take; qtyNeeded -= take;
+      allocs.push({ stock_id: r.id, location: r.location, before, taken: take, remaining: r.quantity });
+    }
+    if (qtyNeeded > 0) isShortage = true;
+    allocs.sort((x, y) => compareLocations(x.location, y.location)); // hiển thị theo lộ trình
+    result.push({ ...d, requiredQty: Number(d.requiredQty), allocations: allocs, missing: qtyNeeded, isShortage: qtyNeeded > 0 });
+  }
+  return { result, isShortage };
+}
 ```
-Persist `prod_priorityLocEnabled`, `prod_priorityLocations` trong effect lưu localStorage
-hiện có (cùng chỗ với `prod_priorityVTSX`).
+- `...d` giữ passthrough (name/unit/reason/type/orderRef) cho delivery & manual.
+- `working` chia sẻ giữa các dòng → nhiều dòng cùng mã (manual) trừ dồn đúng.
 
-Dưới ô tick SX11 (dòng ~1737), thêm:
-- Ô tick **"Ưu tiên lấy ở vị trí tự chọn"** → khi bật, hiện nút **"🔍 Tìm vị trí"**.
-- Bấm "Tìm vị trí" → gọi `loadPriorityLocationOptions()`:
-  1. Lấy `rows` hợp lệ từ `prodRows` (giống đầu `handleCalculate`); rỗng → alert "Nhập thành
-     phẩm + SL trước".
-  2. Query `bom_items` theo mã SP → `aggregateComponentDemand` → `compCodes`.
-  3. Query `inventory_stock` where `item_code in compCodes and quantity > 0`.
-  4. Gom distinct theo `location`: mỗi vị trí = `{ location, totalQty, codeCount }`
-     (tổng tồn linh kiện & số mã linh kiện tại vị trí đó, để người dùng dễ chọn).
-  5. Sắp bằng `compareLocations`; set vào `priorityLocOptions`.
-- Component nội bộ **`PriorityLocationPicker`** (co-located, giống `SearchableSelect`/
-  `EditAllocationModal`): ô tìm kiếm gõ lọc (tone-insensitive qua `removeTones`) + danh sách
-  **checkbox** cuộn trong khung (maxHeight ~220px, KHÔNG dropdown nổi để tránh lỗi cắt cụt
-  trong modal [[qlsx-modal-dropdown-clipping]]). Mỗi dòng: `[✓] <vị trí>  (tồn: X · N mã)`.
-  Vị trí đã chọn hiển thị thành các **chip bỏ được** phía trên danh sách.
+### Refactor các handler dùng `allocateExport`
+- `handleCalculateDelivery`: thay vòng lặp nội tuyến bằng
+  `const { result, isShortage } = allocateExport(componentsRequired, stockData, { priorityLocations })`.
+- `handleCalculateManualExport`: dùng `allocateExport(rowsAsDemand, stockData, { priorityLocations })`
+  với `rowsAsDemand = rows.map(r => ({ code:r.code, name:r.name, unit:'', requiredQty:Number(r.qty), reason:r.reason, type:reasonType(r.reason), orderRef:r.orderRef||'' }))`.
+  Phần build `orderItemsArr` tách riêng (map từ `rows`, không phụ thuộc phân bổ) — giữ nguyên.
 
-`handleCalculate` (dòng ~442): truyền thêm `priorityLocations` vào `allocateFIFO`:
+## State + recompute — `ProductionOrderTab`
+
+State mới:
 ```js
-const { result, isShortage: hasShortage } = allocateFIFO(componentsRequired, stockData, {
-  priorityVTSX,
-  priorityLocations: priorityLocEnabled ? priorityLocations : [],
-  phieuCode: generatedCode,
-});
+const [priorityLocations, setPriorityLocations] = useState([]);   // vị trí tự chọn (mảng chuỗi)
+const [recomputeDemand, setRecomputeDemand] = useState(null);     // demand đã dùng để tính (theo mode)
 ```
+Persist `prod_priorityLocations`, `prod_recomputeDemand` cùng chỗ với `prod_allocations`
+(để sống qua chuyển tab). **Reset `priorityLocations=[]`** ở đầu mỗi lần tính mới
+(`handleCalculate`, `handleCalculateDelivery`, `handleCalculateManualExport`).
+
+Mỗi handler tính toán: sau khi có `demand`, `setRecomputeDemand({ mode, demand })` (production:
+`componentsRequired`; delivery: `Object.values(demandMap)`; manual: `rowsAsDemand`).
+
+`recomputeWithPriority()`:
+1. Rebuild stock từ `stockPool` (giữ thứ tự FIFO trong từng mã):
+   `Object.entries(stockPool).flatMap(([item_code, rows]) => rows.map(r => ({ id:r.id, item_code, location:r.location, quantity:r.quantity })))`.
+2. Theo `recomputeDemand.mode`:
+   - `production`: `allocateFIFO(demand, stock, { priorityVTSX, priorityLocations, phieuCode: orderCode })`.
+   - `delivery` | `manual_export`: `allocateExport(demand, stock, { priorityLocations })`.
+3. `setAllocations(sortResultByLocation(result)); setIsShortage(isShortage)`.
+   (Không đụng `orderItems` — không đổi theo vị trí.)
+
+> Lưu ý `stockPool` là tồn GỐC (trước khi trừ) → tính lại luôn từ đầu, đúng.
+
+## UI — panel "Ưu tiên vị trí" ở màn kết quả
+
+Đặt ngay dưới header kết quả ([dòng ~1414](../../../src/pages/kho/ProductionOrderTab.jsx)),
+là `<div className="no-print">` (không in ra phiếu), chỉ hiện khi
+`mode ∈ {production, delivery, manual_export}` và có `allocations`.
+
+Nội dung:
+- Tiêu đề "Ưu tiên lấy ở vị trí" + gợi ý ngắn.
+- Options = distinct location từ `stockPool`: `{ location, totalQty, codeCount }`, sắp theo
+  `compareLocations`. **Với delivery/manual loại bỏ `SX9-*`** (phân bổ vốn không lấy ở đó).
+- Component nội bộ `PriorityLocationPicker`: ô tìm kiếm (tone-insensitive `removeTones`) +
+  danh sách **checkbox** cuộn trong khung (maxHeight ~220px, KHÔNG dropdown nổi — tránh lỗi cắt
+  cụt trong modal [[qlsx-modal-dropdown-clipping]]). Mỗi dòng `[✓] <vị trí> (tồn: X · N mã)`.
+  Vị trí đã chọn = các **chip bỏ được** phía trên.
+- Nút **"Tính lại theo vị trí ưu tiên"** (disabled khi `priorityLocations` rỗng) → gọi
+  `recomputeWithPriority()`. Nút phụ "Bỏ ưu tiên" → `setPriorityLocations([])` + tính lại.
 
 ## Edge cases
 
-- Bật "vị trí tự chọn" nhưng chưa tick vị trí nào (hoặc chưa bấm Tìm) → `priorityLocations`
-  rỗng → không ảnh hưởng phân bổ.
-- Đổi thành phẩm sau khi đã chọn vị trí → giữ nguyên lựa chọn cũ; vị trí nào không còn chứa
-  linh kiện cần thì tự động vô hại (rơi vào nhóm 3). Không cần xoá cứng.
-- Vị trí đã chọn hết tồn khi phân bổ → không lấy được ở đó, tự chuyển xuống theo thứ tự — như
-  hành vi thiếu hàng hiện tại.
+- Chưa tick vị trí nào → không ảnh hưởng (giống hiện nay).
+- Vị trí đã chọn hết tồn khi phân bổ → không lấy được ở đó, chuyển xuống theo thứ tự (như xử
+  lý thiếu hàng hiện tại).
+- Bấm "Tính lại" nhiều lần → luôn tính từ `stockPool` gốc, không cộng dồn sai.
+- Delivery đang có sẵn luồng "xoá đơn thiếu & tính lại" → độc lập, không xung đột (đều gọi lại
+  từ đầu). Ưu tiên vị trí tính trên toàn bộ đơn hiện có.
 
 ## Kiểm thử — `src/lib/productionAlloc.test.js`
 
-Thêm vào `describe('allocateFIFO')`:
-1. **Ưu tiên vị trí tự chọn trước FIFO nền:** stock 2 vị trí, chọn vị trí đứng sau trong FIFO
-   → alloc đầu tiên là vị trí đã chọn.
-2. **Kết hợp SX11 + tự chọn đúng thứ tự 3 nhóm:** có SX11, có vị trí tự chọn, có vị trí thường
-   → thứ tự lấy SX11 → tự chọn → thường.
-3. **Khớp chính xác:** chọn `HH2` KHÔNG kéo theo `HH20`.
-4. (Regression) không tick gì → giữ nguyên thứ tự `sortStockForFIFO`.
+- `applyPriorityOrder`: (a) vị trí tự chọn lên trước, giữ FIFO nền trong nhóm; (b) SX11 + tự
+  chọn đúng thứ tự 3 nhóm; (c) khớp chính xác ('HH2' không kéo 'HH20'); (d) không tick → nguyên thứ tự.
+- `allocateFIFO`: test cũ giữ nguyên + 1 test `priorityLocations` ưu tiên trước FIFO nền.
+- `allocateExport`: (a) loại trừ `SX9-*`; (b) nhiều dòng cùng mã trừ dồn đúng; (c) `priorityLocations`
+  ưu tiên trước; (d) đánh dấu thiếu khi không đủ; (e) giữ passthrough reason/type/orderRef.
 
 ## Ngoài phạm vi (YAGNI)
 
 - Không đổi nguyên tắc nền sang "ít số lượng trước".
 - Không ưu tiên theo dãy/khu (prefix).
-- Không áp cho luồng xuất đơn hàng / xuất kho tay.
+- Không áp SX11 preset cho delivery/manual (chỉ vị trí tự chọn).
+- Mode `disassemble` (phân rã) không có panel ưu tiên.
