@@ -1322,6 +1322,8 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     setGeneratedComponents([]);
     setStockPool({});
     setEditingCompIdx(null);
+    setPriorityLocations([]);
+    setRecomputeDemand(null);
   };
 
   // Lưu phân bổ sửa tay vào allocations[compIdx] rồi tính lại trạng thái thiếu toàn cục
@@ -1333,6 +1335,38 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     setAllocations(sortResultByLocation(next));
     setIsShortage(next.some(c => c.isShortage));
     setEditingCompIdx(null);
+  };
+
+  // Danh sách vị trí để chọn ưu tiên = các vị trí đang có tồn của hàng trong phiếu (từ stockPool).
+  // Delivery loại bỏ SX9-* (đơn hàng không lấy ở kho dở dang).
+  const priorityLocOptions = React.useMemo(() => {
+    const byLoc = {};
+    Object.values(stockPool || {}).forEach(rows => {
+      (rows || []).forEach(r => {
+        if (!(r.quantity > 0)) return;
+        if (mode === 'delivery' && String(r.location || '').startsWith('SX9-')) return;
+        if (!byLoc[r.location]) byLoc[r.location] = { location: r.location, totalQty: 0, codeCount: 0 };
+        byLoc[r.location].totalQty += r.quantity;
+        byLoc[r.location].codeCount += 1;
+      });
+    });
+    return Object.values(byLoc).sort((a, b) => compareLocations(a.location, b.location));
+  }, [stockPool, mode]);
+
+  // Tính lại phân bổ với danh sách vị trí ưu tiên `locs` (dựng lại tồn GỐC từ stockPool).
+  const recomputeWithPriority = (locs) => {
+    if (!recomputeDemand) return;
+    const stock = Object.entries(stockPool || {}).flatMap(([item_code, rows]) =>
+      (rows || []).map(r => ({ id: r.id, item_code, location: r.location, quantity: r.quantity }))
+    );
+    let out;
+    if (recomputeDemand.mode === 'production') {
+      out = allocateFIFO(recomputeDemand.demand, stock, { priorityVTSX, priorityLocations: locs, phieuCode: orderCode });
+    } else {
+      out = allocateExport(recomputeDemand.demand, stock, { priorityLocations: locs });
+    }
+    setAllocations(sortResultByLocation(out.result));
+    setIsShortage(out.isShortage);
   };
 
   return (
