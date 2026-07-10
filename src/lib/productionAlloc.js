@@ -127,6 +127,36 @@ export function allocateFIFO(componentsRequired, stockData, opts = {}) {
   return { result, isShortage };
 }
 
+// Phân bổ cho XUẤT (đơn hàng / xuất bán): KHÔNG lấy từ kho SX dở dang (SX9-*).
+// Dùng chung 1 bản tồn "working" trừ dần → nhiều dòng cùng mã trừ dồn đúng.
+// demandRows: [{ code, name, unit, requiredQty, ...passthrough }]
+// stockData nên đã sort FIFO. opts: { priorityLocations? }
+// → { result: [{ ...demandRow, requiredQty, allocations, missing, isShortage }], isShortage }
+export function allocateExport(demandRows, stockData, opts = {}) {
+  const { priorityLocations = [] } = opts;
+  const working = applyPriorityOrder(JSON.parse(JSON.stringify(stockData || [])), { priorityLocations });
+  let isShortage = false;
+  const result = [];
+  for (const d of demandRows) {
+    let qtyNeeded = Number(d.requiredQty);
+    const rows = working.filter(s => s.item_code === d.code && s.quantity > 0 && !String(s.location || '').startsWith('SX9-'));
+    const allocs = [];
+    for (let i = 0; i < rows.length && qtyNeeded > 0; i++) {
+      const r = rows[i];
+      const take = Math.min(r.quantity, qtyNeeded);
+      const before = r.quantity;
+      r.quantity -= take;
+      qtyNeeded -= take;
+      allocs.push({ stock_id: r.id, location: r.location, before, taken: take, remaining: r.quantity });
+    }
+    if (qtyNeeded > 0) isShortage = true;
+    // Hiển thị vị trí trong 1 dòng theo lộ trình đi lấy (dãy→tầng→ô)
+    allocs.sort((x, y) => compareLocations(x.location, y.location));
+    result.push({ ...d, requiredQty: Number(d.requiredQty), allocations: allocs, missing: qtyNeeded, isShortage: qtyNeeded > 0 });
+  }
+  return { result, isShortage };
+}
+
 // Sinh danh sách lệnh con từ các dòng thành phẩm + mã phiếu chung.
 // 1 dòng → dùng đúng mã phiếu (không hậu tố). Nhiều dòng → phiếu.1, phiếu.2, ...
 // rows: [{ code, name, qty }] → [{ orderCode, productCode, productName, qty }]

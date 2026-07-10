@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { aggregateComponentDemand, allocateFIFO, applyPriorityOrder, buildFinishedItems, round1, sortStockForFIFO, sortResultByLocation } from './productionAlloc';
+import { aggregateComponentDemand, allocateExport, allocateFIFO, applyPriorityOrder, buildFinishedItems, round1, sortStockForFIFO, sortResultByLocation } from './productionAlloc';
 
 describe('sortResultByLocation', () => {
   it('các dòng phiếu sắp theo vị trí lấy đầu tiên (dãy→tầng→ô); đặc biệt rồi hết hàng xuống cuối', () => {
@@ -204,5 +204,53 @@ describe('applyPriorityOrder', () => {
     const out = applyPriorityOrder(stock, {});
     expect(out.map(s => s.location)).toEqual(['HH2', 'HH1']);
     expect(out).not.toBe(stock);
+  });
+});
+
+describe('allocateExport', () => {
+  const stock = [
+    { id: 1, item_code: 'A', location: 'HH1', quantity: 10 },
+    { id: 2, item_code: 'A', location: 'SX9-PSX-1', quantity: 100 }, // WIP, KHÔNG được lấy
+    { id: 3, item_code: 'A', location: 'HH2', quantity: 10 },
+  ];
+
+  it('không lấy từ kho sản xuất dở dang (SX9-*)', () => {
+    const { result, isShortage } = allocateExport(
+      [{ code: 'A', name: 'a', unit: '', requiredQty: 15 }], stock, {});
+    expect(isShortage).toBe(false);
+    const locs = result[0].allocations.map(a => a.location);
+    expect(locs).not.toContain('SX9-PSX-1');
+    expect(locs.sort()).toEqual(['HH1', 'HH2']);
+  });
+
+  it('nhiều dòng cùng mã trừ dồn trên cùng bản tồn', () => {
+    const { result, isShortage } = allocateExport(
+      [
+        { code: 'A', name: 'a', unit: '', requiredQty: 8 },
+        { code: 'A', name: 'a', unit: '', requiredQty: 8 },
+      ],
+      [{ id: 1, item_code: 'A', location: 'HH1', quantity: 10 }],
+      {});
+    expect(result[0].missing).toBe(0); // dòng 1 lấy 8/10
+    expect(result[1].missing).toBe(6); // dòng 2 chỉ còn 2 → thiếu 6
+    expect(isShortage).toBe(true);
+  });
+
+  it('ưu tiên vị trí tự chọn trước', () => {
+    const { result } = allocateExport(
+      [{ code: 'A', name: 'a', unit: '', requiredQty: 10 }],
+      [
+        { id: 1, item_code: 'A', location: 'HH1', quantity: 10 },
+        { id: 2, item_code: 'A', location: 'HH2', quantity: 10 },
+      ],
+      { priorityLocations: ['HH2'] });
+    expect(result[0].allocations[0]).toMatchObject({ stock_id: 2, location: 'HH2' });
+  });
+
+  it('giữ passthrough name/unit', () => {
+    const { result } = allocateExport(
+      [{ code: 'A', name: 'Vat tu A', unit: 'cai', requiredQty: 1 }],
+      [{ id: 1, item_code: 'A', location: 'HH1', quantity: 5 }], {});
+    expect(result[0]).toMatchObject({ code: 'A', name: 'Vat tu A', unit: 'cai' });
   });
 });
