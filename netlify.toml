@@ -1,0 +1,25 @@
+# Cấu hình build cho Netlify — tự động deploy mỗi khi có code push lên GitHub.
+# Không cần kéo-thả thủ công nữa.
+
+[build]
+  # Lệnh build ra bản production
+  command = "npm run build"
+  # Thư mục Netlify sẽ đưa lên web sau khi build
+  publish = "dist"
+
+[build.environment]
+  # Cố định phiên bản Node để build ổn định (khớp với môi trường phát triển)
+  NODE_VERSION = "22"
+
+# SPA fallback: mọi đường dẫn (/kho, /cskh, /bao-hanh...) trả về index.html
+# để không bị lỗi 404 khi tải lại trang (F5). Trùng ý với public/_redirects.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# GHI CHÚ VỀ 2 LOẠI LINK:
+# - Bản chính (link production) chỉ cập nhật khi nhánh mặc định (master) thay đổi,
+#   tức là khi bạn MERGE một Pull Request. Sửa chưa merge KHÔNG đụng bản chính.
+# - Mỗi Pull Request được Netlify tạo một "Deploy Preview" = link tạm riêng để
+#   xem thử bản chưa xác nhận, không ảnh hưởng bản chính. (Netlify bật sẵn mặc định.)
