@@ -8,6 +8,11 @@ export default defineConfig({
     tailwindcss(),
     react()
   ],
-  // Honor PORT env (dùng cho preview/tooling tự gán cổng); để trống → Vite tự chọn mặc định
-  server: process.env.PORT ? { port: Number(process.env.PORT) } : undefined,
+  // Honor PORT env (dùng cho preview/tooling tự gán cổng); để trống → Vite tự chọn mặc định.
+  // host: true + allowedHosts: true để preview qua proxy (Claude Code web) truy cập được.
+  server: {
+    host: true,
+    allowedHosts: true,
+    ...(process.env.PORT ? { port: Number(process.env.PORT) } : {}),
+  },
 })
