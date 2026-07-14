@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabase';
+import { setSession, clearSession, getSessionUser } from './authToken';
 import { getTabPerm as _getTabPerm, canSeeTab as _canSeeTab, canSeeModule as _canSeeModule, migrateLegacyToTabPerms } from './permRegistry';
 
 // ============================================================
@@ -139,85 +140,52 @@ export function hasModuleAccess(user, moduleKey) {
 // 🔑 Auth Context
 // ============================================================
 
-const STORAGE_KEY = 'qlsx_auth';
-
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Auto-login from saved credentials
+  // Khôi phục phiên từ token đã lưu (không gọi mạng, không lưu mật khẩu thô)
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const { id, pw } = JSON.parse(saved);
-        if (id && pw) {
-          supabase.from('nhan_vien').select('*').ilike('id', id).eq('password', pw).single()
-            .then(({ data, error }) => {
-              if (!error && data) {
-                data.role = data.role ? data.role.toUpperCase() : 'AGENT';
-                setUser(withMigratedPerms(data));
-              } else {
-                localStorage.removeItem(STORAGE_KEY);
-              }
-            })
-            .finally(() => setLoading(false));
-          return;
-        }
-      } catch (_) { /* ignore */ }
+    const u = getSessionUser();
+    if (u) {
+      u.role = u.role ? u.role.toUpperCase() : 'AGENT';
+      setUser(withMigratedPerms(u));
     }
     setLoading(false);
   }, []);
 
   const login = useCallback(async (id, password, remember = false) => {
-    const { data, error } = await supabase
-      .from('nhan_vien').select('*').ilike('id', id).eq('password', password).single();
-
-    if (error) {
-      // Lỗi do timeout hoặc fetch error (dự án bị tạm dừng)
-      if (error.message && (error.message.includes('quá chậm') || error.message.includes('fetch') || error.message.includes('Failed to fetch'))) {
-        throw new Error('Không thể kết nối đến máy chủ. Máy chủ có thể đang ngủ, vui lòng thử lại sau.');
+    const { data, error } = await supabase.rpc('dang_nhap', {
+      p_id: id, p_pw: password, p_remember: remember,
+    });
+    if (error || !data?.token) {
+      const msg = error?.message || '';
+      if (msg.includes('quá chậm') || msg.includes('fetch') || msg.includes('Failed to fetch')) {
+        throw new Error('Không thể kết nối đến máy chủ. Vui lòng thử lại sau.');
       }
       throw new Error('Mã nhân viên hoặc mật khẩu không đúng!');
     }
-    
-    if (!data) {
-      throw new Error('Mã nhân viên hoặc mật khẩu không đúng!');
-    }
 
-    data.role = data.role ? data.role.toUpperCase() : 'AGENT';
-    setUser(withMigratedPerms(data));
+    const u = { ...data.user, role: (data.user.role || 'AGENT').toUpperCase() };
+    setSession({ token: data.token, exp: data.exp, user: u });
+    setUser(withMigratedPerms(u));
 
-    // Lưu credentials
-    const authData = JSON.stringify({ id: data.id, pw: password });
-    localStorage.setItem(STORAGE_KEY, authData);
-    // Legacy keys — giữ tương thích cho các module cũ chưa migrate
-    localStorage.setItem('workerId', data.id);
-    localStorage.setItem('workerCode', data.id);
-    localStorage.setItem('workerName', data.name);
-    localStorage.setItem('workerRole', data.role === 'ADMIN' ? 'admin' : 'worker');
-    localStorage.setItem('qlcv_auth', authData);
-    localStorage.setItem('qlsx_remember_auth', authData);
+    // Legacy keys — giữ tương thích các module cũ
+    localStorage.setItem('workerId', u.id);
+    localStorage.setItem('workerCode', u.id);
+    localStorage.setItem('workerName', u.name);
+    localStorage.setItem('workerRole', u.role === 'ADMIN' ? 'admin' : 'worker');
 
-    if (!remember) {
-      // Nếu không ghi nhớ, ta vẫn lưu cho session hiện tại
-      // nhưng đánh dấu để không auto-login lần sau
-    }
-
-    return data;
+    return u;
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem('qlcv_auth');
-    localStorage.removeItem('qlsx_remember_auth');
-    localStorage.removeItem('workerId');
-    localStorage.removeItem('workerCode');
-    localStorage.removeItem('workerName');
-    localStorage.removeItem('workerRole');
+    clearSession();
+    ['qlcv_auth', 'qlsx_remember_auth', 'qlsx_auth', 'workerId', 'workerCode', 'workerName', 'workerRole']
+      .forEach(k => localStorage.removeItem(k));
   }, []);
 
   const value = {

@@ -25,15 +25,24 @@ describe('sortResultByLocation', () => {
 });
 
 describe('sortStockForFIFO', () => {
-  it('ngày nhập cũ trước; cùng ngày thì vị trí (dãy/tầng/ô); chưa có ngày xếp cuối', () => {
+  it('ngày nhập cũ trước; cùng ngày thì SL ít hơn trước; chưa có ngày xếp cuối', () => {
     const out = sortStockForFIFO([
-      { location: 'HH10', import_date: '2026-06-01' },
-      { location: 'BH1', import_date: '2026-05-01' },
-      { location: 'HH2', import_date: '2026-06-01' },
-      { location: 'CH1', import_date: null },
+      { location: 'HH10', import_date: '2026-06-01', quantity: 3 },
+      { location: 'BH1', import_date: '2026-05-01', quantity: 50 },
+      { location: 'HH2', import_date: '2026-06-01', quantity: 8 },
+      { location: 'CH1', import_date: null, quantity: 1 },
     ]);
-    // BH1 nhập cũ nhất → đầu; cùng ngày 06-01: HH2 < HH10; CH1 chưa có ngày → cuối
-    expect(out.map(r => r.location)).toEqual(['BH1', 'HH2', 'HH10', 'CH1']);
+    // BH1 nhập cũ nhất → đầu; cùng ngày 06-01: HH10 (SL 3) trước HH2 (SL 8); CH1 chưa có ngày → cuối
+    expect(out.map(r => r.location)).toEqual(['BH1', 'HH10', 'HH2', 'CH1']);
+  });
+
+  it('cùng ngày nhập và cùng SL thì mới xét vị trí (dãy/tầng/ô)', () => {
+    const out = sortStockForFIFO([
+      { location: 'HH10', import_date: '2026-06-01', quantity: 5 },
+      { location: 'HH2', import_date: '2026-06-01', quantity: 5 },
+      { location: 'EM1', import_date: '2026-06-01', quantity: 5 },
+    ]);
+    expect(out.map(r => r.location)).toEqual(['EM1', 'HH2', 'HH10']);
   });
 
   it('không mutate mảng gốc', () => {

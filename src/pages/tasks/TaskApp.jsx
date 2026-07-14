@@ -201,10 +201,15 @@ import { useNavigate } from 'react-router-dom';
     }
 
     async function apiCreateUser(form) {
-      const { error } = await db.from('nhan_vien').insert(form)
+      const { password, ...row } = form;                 // tách password khỏi cột bảng
+      const { error } = await db.from('nhan_vien').insert(row)
       if (error) {
         if (error.message.includes('duplicate')||error.message.includes('unique')) throw new Error(`Mã nhân viên "${form.id}" đã tồn tại.`)
         throw error
+      }
+      if (password) {
+        const { error: pErr } = await db.rpc('dat_mat_khau', { p_id: form.id, p_pw: password });
+        if (pErr) throw new Error('Tạo NV xong nhưng đặt mật khẩu lỗi: ' + pErr.message);
       }
     }
 
@@ -1172,15 +1177,20 @@ import { useNavigate } from 'react-router-dom';
           const originalId = form.originalId;
           const idChanged = form.id !== originalId;
           const data = {name:form.name, role:form.role, avatar:form.avatar, permissions:form.permissions||null};
-          if (form.password) data.password = form.password;
 
           if (idChanged) {
             const {data:oldRow, error:fetchErr} = await db.from('nhan_vien').select('*').eq('id', originalId).single();
             if (fetchErr) throw new Error('Không tìm thấy NV: ' + fetchErr.message);
-            const newUser = {...oldRow, ...data, id: form.id};
-            if (form.password) newUser.password = form.password;
+            const { password:_omit, ...oldNoPw } = oldRow;          // không mang cột password (sẽ bị bỏ)
+            const newUser = {...oldNoPw, ...data, id: form.id};
             const {error:insErr} = await db.from('nhan_vien').insert(newUser);
             if (insErr) throw new Error('Lỗi tạo ID: ' + insErr.message);
+            const {error:cpErr} = await db.rpc('sao_chep_secret', { p_from: originalId, p_to: form.id });
+            if (cpErr) throw new Error('Lỗi chuyển mật khẩu: ' + cpErr.message);
+            if (form.password) {
+              const {error:pErr} = await db.rpc('dat_mat_khau', { p_id: form.id, p_pw: form.password });
+              if (pErr) throw new Error('Lỗi đặt mật khẩu: ' + pErr.message);
+            }
             await db.from('cong_viec_duoc_giao').update({assignee_id: form.id}).eq('assignee_id', originalId);
             await db.from('cong_viec_duoc_giao').update({updated_by: form.id}).eq('updated_by', originalId);
             await db.from('tien_do').update({updated_by_id: form.id}).eq('updated_by_id', originalId);
@@ -1195,15 +1205,18 @@ import { useNavigate } from 'react-router-dom';
             if (me.id === originalId) setMe(prev => ({...prev, ...data, id: form.id}));
           } else {
             await apiUpdateUser(originalId, data);
+            if (form.password) {
+              const {error:pErr} = await db.rpc('dat_mat_khau', { p_id: originalId, p_pw: form.password });
+              if (pErr) throw new Error('Lỗi đổi mật khẩu: ' + pErr.message);
+            }
             setUsers(us => us.map(u => u.id === originalId ? {...u,...data} : u));
             setTasks(ts => ts.map(t => t.assignee_id === originalId ? {...t, assignee:{...t.assignee,...data}} : t));
             if (me.id === originalId) setMe(prev => ({...prev, ...data}));
           }
           toast('Đã cập nhật nhân viên!');
         } else {
-          const newForm = {id:form.id, name:form.name, password:form.password, role:form.role, avatar:form.avatar, permissions:form.permissions||null};
-          await apiCreateUser(newForm);
-          setUsers(us => [...us, newForm]);
+          await apiCreateUser({id:form.id, name:form.name, password:form.password, role:form.role, avatar:form.avatar, permissions:form.permissions||null});
+          setUsers(us => [...us, {id:form.id, name:form.name, role:form.role, avatar:form.avatar, permissions:form.permissions||null}]);
           toast(`Đã thêm nhân viên ${form.name}!`);
         }
       }

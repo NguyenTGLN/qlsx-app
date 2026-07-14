@@ -32,7 +32,8 @@ export function aggregateComponentDemand(rows, bomByProduct) {
 }
 
 // Sắp xếp tồn kho trước khi phân bổ: FIFO theo ngày nhập (cũ trước, chưa có ngày xếp cuối),
-// cùng ngày nhập thì lấy theo vị trí (dãy A→Z, tầng M-H-B-T-N-S, ô 1→20).
+// cùng ngày nhập thì ưu tiên vị trí có SỐ LƯỢNG ÍT hơn (vét sạch ô lẻ trước),
+// cùng số lượng mới lấy theo vị trí (dãy A→Z, tầng M-H-B-T-N-S, ô 1→20).
 export function sortStockForFIFO(stockData) {
   return [...(stockData || [])].sort((a, b) => {
     const da = a.import_date || '', db = b.import_date || '';
@@ -41,6 +42,8 @@ export function sortStockForFIFO(stockData) {
       if (!db) return -1;
       return da < db ? -1 : 1;
     }
+    const qa = Number(a.quantity) || 0, qb = Number(b.quantity) || 0;
+    if (qa !== qb) return qa - qb;
     return compareLocations(a.location, b.location);
   });
 }
@@ -78,7 +81,8 @@ export function applyPriorityOrder(stockRows, { priorityVTSX = false, priorityLo
   return [...t0, ...t1, ...t2];
 }
 
-// Phân bổ FIFO. stockData nên đã sort sẵn (import_date asc, quantity asc).
+// Phân bổ FIFO. stockData nên đã sort sẵn bằng sortStockForFIFO
+// (import_date asc → quantity asc → vị trí).
 // componentsRequired: [{ code, name, unit, requiredQty }]
 // stockData: [{ id, item_code, location, quantity }]
 // opts: { priorityVTSX?: bool, priorityLocations?: string[], phieuCode?: string }

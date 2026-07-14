@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getAccessToken } from './authToken';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ngwkzicrnspeggunsblr.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nd2t6aWNybnNwZWdndW5zYmxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMTU4MTgsImV4cCI6MjA4NzY5MTgxOH0.XgxezghOyUYgr370Ge13VN_V2r-PfR4BEq7JDDF4Pts';
@@ -22,6 +23,9 @@ const customFetch = (url, options) => {
 };
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  // Chưa đăng nhập → trả anon key (chỉ gọi được RPC dang_nhap).
+  // Đã đăng nhập → trả JWT ⇒ toàn bộ query tự mang token, không sửa nơi gọi.
+  accessToken: async () => getAccessToken() || supabaseAnonKey,
   global: { fetch: customFetch }
 });
 
