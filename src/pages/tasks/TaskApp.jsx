@@ -8,7 +8,11 @@ import { useNavigate } from 'react-router-dom';
     import { MODULE_PERMS, ALL_PERMS, canSeeTab, getTabPerm } from '../../lib/AuthContext';
     import { PERM_REGISTRY, ALL_CAPS, CAP_LABEL, tabKey, migrateLegacyToTabPerms } from '../../lib/permRegistry';
     import ModuleShell, { TabButton } from '../../components/ModuleShell';
-    import { ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart } from 'lucide-react';
+    import {
+      ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart,
+      ListChecks, Loader2, CheckCircle2, AlertTriangle, Send, Search,
+      Clock, MessageSquare, Factory, UserPlus, Users as UsersIcon,
+    } from 'lucide-react';
 
     // ============================================================
     // ⚙️  CẤU HÌNH
@@ -337,9 +341,14 @@ import { useNavigate } from 'react-router-dom';
       return h('div',{className:'mb-3 sm:mb-4'}, h('label',{className:'block text-[10px] sm:text-xs font-bold text-gray-500 mb-1 sm:mb-1.5 uppercase tracking-wide'}, label, required&&h('span',{className:'text-red-500 ml-0.5'},'*')), children)
     }
 
+    // Badge trạng thái: chấm màu + nhãn chữ (không bao giờ chỉ dùng màu trần)
+    const STATUS_DOT = { IN_PROGRESS:'bg-blue-500', COMPLETED:'bg-emerald-500', CANCELLED:'bg-red-400' }
     function StatusBadge({status}) {
       const c = STATUS_CFG[status]||STATUS_CFG.IN_PROGRESS
-      return h('span',{className:`inline-flex items-center px-2 py-0.5 rounded text-[10px] sm:text-xs font-semibold ${c.cls}`},c.label)
+      return h('span',{className:`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] sm:text-xs font-semibold whitespace-nowrap ${c.cls}`},
+        h('span',{className:`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[status]||'bg-gray-400'}`}),
+        c.label
+      )
     }
 
     function CompactWarning({due_date, status, completed_date}) {
@@ -362,20 +371,34 @@ import { useNavigate } from 'react-router-dom';
          return h('span', {className: 'text-emerald-500 font-bold text-[10px] sm:text-[11px]'}, '✓');
       }
 
-      if (d < 0) return h('span', {className: 'font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded text-[10px] sm:text-[11px]'}, -d); 
-      if (d === 0) return h('span', {className: 'font-bold text-yellow-600 bg-yellow-50 px-1.5 py-0.5 rounded text-[10px] sm:text-[11px]'}, '-'); 
-      return h('span', {className: 'font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px] sm:text-[11px]'}, d); 
+      // Hiện chữ rõ nghĩa thay con số trần (số 4 đỏ không ai hiểu là "trễ 4 ngày")
+      if (d < 0) return h('span', {className: 'font-bold text-red-700 bg-red-50 px-1.5 py-0.5 rounded text-[9px] sm:text-[11px] whitespace-nowrap'}, `Trễ ${-d} ngày`);
+      if (d === 0) return h('span', {className: 'font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded text-[9px] sm:text-[11px] whitespace-nowrap'}, 'Hạn hôm nay');
+      return h('span', {className: 'font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[9px] sm:text-[11px] whitespace-nowrap'}, `Còn ${d} ngày`);
     }
 
+    const AVATAR_SZ = {
+      sm: 'w-4 h-4 sm:w-6 sm:h-6 text-[8px] sm:text-xs',
+      md: 'w-12 h-12 sm:w-14 sm:h-14 text-sm sm:text-base',
+      lg: 'w-14 h-14 sm:w-[72px] sm:h-[72px] text-lg sm:text-xl',
+    }
     function Avatar({user, size='sm'}) {
-      if (!user) return h('div',{className:`${size==='sm'?'w-4 h-4 sm:w-6 sm:h-6':'w-8 h-8'} rounded-full bg-gray-100 flex-shrink-0`})
-      const sz = size==='sm'?'w-4 h-4 sm:w-6 sm:h-6 text-[8px] sm:text-xs':'w-8 h-8 text-sm'
-      if (user.avatar) return h('img',{src:user.avatar,className:`${sz} rounded-full object-cover flex-shrink-0`})
+      const sz = AVATAR_SZ[size] || AVATAR_SZ.sm
+      if (!user) return h('div',{className:`${sz} rounded-full bg-gray-100 flex-shrink-0`})
+      if (user.avatar) return h('img',{src:user.avatar, alt:user.name||'', className:`${sz} rounded-full object-cover flex-shrink-0 ring-1 ring-gray-200`})
       const name = user.name || '?';
       const initials = name.trim().split(' ').map(w=>w[0]).slice(-2).join('').toUpperCase() || '?'
       const pal = ['bg-blue-500','bg-yellow-500','bg-red-500','bg-emerald-500']
       const col = pal[(user.id||'').charCodeAt(0)%pal.length] || 'bg-gray-400'
       return h('div',{className:`${sz} rounded-full ${col} text-white flex items-center justify-center font-bold flex-shrink-0`},initials)
+    }
+
+    // Avatar to + tên bên dưới (dùng ở thẻ việc / cột Người trong bảng)
+    function AvatarName({user, size='md', className=''}) {
+      return h('div',{className:`flex flex-col items-center gap-0.5 min-w-0 ${className}`},
+        h(Avatar,{user, size}),
+        h('span',{className:'text-[9px] sm:text-[10px] font-bold text-gray-700 text-center leading-tight truncate w-full'}, user?.name || 'Chưa giao')
+      )
     }
 
     const IconBell = () => h('svg',{className:'w-3 h-3 sm:w-3.5 sm:h-3.5', fill:'currentColor', viewBox:'0 0 20 20'}, h('path',{d:'M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z'}))
@@ -580,13 +603,12 @@ import { useNavigate } from 'react-router-dom';
         });
       };
 
-      const groupedTasks = users.map(u => ({
-        user: u,
-        tasks: sortDashboardTasks(activeTasks.filter(t => t.assignee_id === u.id))
-      })).filter(g => g.tasks.length > 0);
+      // Việc đang thực hiện: 1 danh sách phẳng (khẩn nhất trước), người nhận hiện ngay trên thẻ.
+      // Bỏ kiểu chia mỗi nhân viên 1 section riêng — tốn chỗ và khó quét khi mỗi người chỉ 1-2 việc.
+      const dashActiveTasks = sortDashboardTasks([...activeTasks]);
 
-      const unassignedTasks = activeTasks.filter(t => !t.assignee_id);
-      if(unassignedTasks.length > 0) groupedTasks.push({ user: { id: null, name: 'Chưa giao' }, tasks: sortDashboardTasks(unassignedTasks) });
+      // Bảng nhân viên: sắp A-Z theo tên (có dấu tiếng Việt) để dễ dò tìm
+      const sortedUserStats = [...userStats].sort((a, b) => a.name.localeCompare(b.name, 'vi'));
 
       const getLatestUpdate = (t) => {
         if (!t.progressUpdates || t.progressUpdates.length === 0) return '—'
@@ -596,17 +618,30 @@ import { useNavigate } from 'react-router-dom';
       const thClass = "text-[9px] sm:text-[11px] font-bold text-gray-500 uppercase tracking-tighter border-b border-gray-100 px-1.5 py-1.5 sm:py-2"
       const tdClass = "text-[10px] sm:text-[12px] px-1.5 py-1.5 sm:py-2 border-b border-gray-50"
 
-      return h('div', {className: 'space-y-3 sm:space-y-4 fade-in pb-24'},
-        h('div', {className: 'bg-white rounded-xl border border-gray-200 shadow-sm px-2 sm:px-3 py-2 w-full flex items-center justify-between gap-2'},
-          h('div', {className: 'flex items-center gap-1 sm:gap-2 flex-wrap'},
-            h('span', {className: 'text-[10px] sm:text-xs font-bold text-gray-400 uppercase tracking-widest shrink-0'}, 'Tổng:'),
-            h('span', {className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-bold bg-gray-100 text-gray-700'}, `📋 ${stats.total}`),
-            h('span', {className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-bold bg-blue-100 text-blue-700'}, `⚡ Làm: ${stats.inProgress}`),
-            h('span', {className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-bold bg-emerald-100 text-emerald-700'}, `✓ Xong: ${stats.done}`),
-            stats.late > 0 && h('span', {className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-bold bg-red-100 text-red-700 animate-pulse'}, `🔥 Trễ: ${stats.late}`),
-            stats.canceled > 0 && h('span', {className: 'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] sm:text-xs font-bold bg-gray-100 text-gray-400 hidden sm:inline-flex'}, `✕ Hủy: ${stats.canceled}`),
-          ),
-          h('button', {className: btn.primary + ' shrink-0 !px-2 sm:!px-3 !py-1.5 text-[10px] sm:text-xs', onClick: async () => {
+      // Ô KPI: nhãn nhỏ + con số lớn + icon nền tint (không emoji, số dùng token chữ chính)
+      const StatTile = ({label, value, icon: TileIcon, tone, sub}) => {
+        const tones = {
+          slate:   { box:'bg-slate-100 text-slate-500',   val:'text-gray-900' },
+          blue:    { box:'bg-blue-50 text-blue-600',      val:'text-gray-900' },
+          emerald: { box:'bg-emerald-50 text-emerald-600',val:'text-gray-900' },
+          red:     { box:'bg-red-50 text-red-600',        val: value > 0 ? 'text-red-600' : 'text-gray-900' },
+        }
+        const t = tones[tone] || tones.slate
+        return h('div', {className: 'bg-white rounded-xl border border-gray-200 shadow-sm px-3 py-2.5 sm:px-4 sm:py-3 flex items-center gap-2.5 sm:gap-3 min-w-0'},
+          h('div', {className: `w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center shrink-0 ${t.box}`}, h(TileIcon, {size: 18})),
+          h('div', {className: 'min-w-0'},
+            h('p', {className: 'text-[10px] sm:text-xs font-semibold text-gray-500 truncate'}, label),
+            h('p', {className: `text-lg sm:text-2xl font-bold leading-tight ${t.val}`}, value,
+              sub && h('span', {className: 'ml-1.5 text-[10px] sm:text-xs font-semibold text-gray-400'}, sub)
+            )
+          )
+        )
+      }
+
+      return h('div', {className: 'space-y-3 sm:space-y-4 fade-in pb-24 max-w-[1400px] mx-auto w-full'},
+        h('div', {className: 'flex items-center justify-between gap-2'},
+          h('h1', {className: 'text-sm sm:text-lg font-bold text-gray-900 tracking-tight'}, 'Tổng quan công việc'),
+          h('button', {className: btn.primary + ' shrink-0 !px-2.5 sm:!px-3 !py-1.5 text-[10px] sm:text-xs flex items-center gap-1.5', onClick: async () => {
             const WEBHOOK_URL = 'https://thegioilocnuoc.site/webhook/a6fc08fc-dc4e-432e-9588-424d78470769';
             const payload = {
               timestamp: new Date().toISOString(),
@@ -619,92 +654,69 @@ import { useNavigate } from 'react-router-dom';
               const res = await fetch(WEBHOOK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
               alert(res.ok ? '✅ Đã gửi báo cáo thành công!' : '❌ Gửi thất bại: ' + res.status);
             } catch(e) { alert('❌ Lỗi kết nối: ' + e.message); }
-          }}, 'Gửi báo cáo'),
+          }}, h(Send, {size: 13}), 'Gửi báo cáo'),
+        ),
+
+        // Hàng KPI tổng
+        h('div', {className: 'grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3'},
+          h(StatTile, {label: 'Tổng công việc', value: stats.total, icon: ListChecks, tone: 'slate', sub: stats.canceled > 0 ? `(${stats.canceled} đã hủy)` : null}),
+          h(StatTile, {label: 'Đang thực hiện', value: stats.inProgress, icon: Loader2, tone: 'blue'}),
+          h(StatTile, {label: 'Hoàn thành', value: stats.done, icon: CheckCircle2, tone: 'emerald'}),
+          h(StatTile, {label: 'Trễ hạn', value: stats.late, icon: AlertTriangle, tone: 'red'}),
         ),
 
         h('div', {className: 'bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden'},
-          h('div', {className: 'px-2 sm:px-3 py-1.5 sm:py-3 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center'}, 
-            h('span', {className: 'text-[10px] sm:text-sm font-bold text-gray-800 uppercase tracking-wide'}, 'THỐNG KÊ NHÂN VIÊN'),
-            currentUser?.role === ROLE.ADMIN && h('button', {onClick: onAddUser, className: 'text-[9px] sm:text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 font-bold'}, '+ Thêm NV')
+          h('div', {className: 'px-3 py-2 sm:py-2.5 border-b border-gray-100 flex justify-between items-center'},
+            h('div', {className: 'flex items-center gap-1.5'},
+              h(UsersIcon, {size: 14, className: 'text-gray-400'}),
+              h('span', {className: 'text-[11px] sm:text-sm font-bold text-gray-800'}, 'Thống kê nhân viên')
+            ),
+            currentUser?.role === ROLE.ADMIN && h('button', {onClick: onAddUser, className: 'flex items-center gap-1 text-[9px] sm:text-xs bg-blue-600 text-white px-2 py-1 rounded-md hover:bg-blue-700 font-semibold transition-colors'}, h(UserPlus, {size: 12}), 'Thêm NV')
           ),
-          h('div', {className: 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-3 bg-gray-50/30'},
-            userStats.map(u =>
-              h('div', {
-                  key: u.id,
-                  onClick: () => onUserClick(u.id),
-                  className: 'bg-white border border-gray-100 hover:border-blue-300 hover:shadow-md rounded-xl p-3 cursor-pointer transition-all flex flex-col relative group shadow-sm'
-                },
-                h('div', {className: 'flex items-center justify-between mb-3'},
-                  h('div', {className: 'flex items-center gap-2 overflow-hidden'},
-                    h(Avatar, {user: u, size: 'sm'}),
-                    h('span', {className: 'font-bold text-emerald-700 truncate text-[11px] sm:text-[13px]'}, u.name)
-                  ),
-                  currentUser?.role === ROLE.ADMIN && h('button', {
-                    onClick: (e) => { e.stopPropagation(); onEditUser(u); },
-                    className: 'text-gray-400 hover:text-blue-600 p-1 opacity-0 md:opacity-0 md:group-hover:opacity-100 transition-opacity rounded hover:bg-blue-50',
-                    title: 'Sửa'
-                  }, h(IconEdit))
-                ),
-                h('div', {className: 'grid grid-cols-2 gap-2 mt-auto'},
-                  h('div', {className: 'flex flex-col bg-gray-50 rounded-lg p-1.5 items-center justify-center'},
-                    h('span', {className: 'text-[9px] text-gray-500 font-bold uppercase tracking-wider'}, 'Tổng'),
-                    h('span', {className: 'text-[13px] font-bold text-gray-800'}, u.total)
-                  ),
-                  h('div', {className: 'flex flex-col bg-blue-50 rounded-lg p-1.5 items-center justify-center'},
-                    h('span', {className: 'text-[9px] text-blue-600 font-bold uppercase tracking-wider'}, 'Làm'),
-                    h('span', {className: 'text-[13px] font-bold text-blue-700'}, u.active)
-                  ),
-                  h('div', {className: 'flex flex-col bg-emerald-50 rounded-lg p-1.5 items-center justify-center'},
-                    h('span', {className: 'text-[9px] text-emerald-600 font-bold uppercase tracking-wider'}, 'Xong'),
-                    h('span', {className: 'text-[13px] font-bold text-emerald-700'}, u.done)
-                  ),
-                  h('div', {className: `flex flex-col rounded-lg p-1.5 items-center justify-center ${u.late > 0 ? 'bg-red-50' : 'bg-gray-50'}`},
-                    h('span', {className: `text-[9px] font-bold uppercase tracking-wider ${u.late > 0 ? 'text-red-500' : 'text-gray-500'}`}, 'Trễ'),
-                    h('span', {className: `text-[13px] font-bold ${u.late > 0 ? 'text-red-600' : 'text-gray-500'}`}, u.late)
-                  )
-                )
-              )
-            )
-          )
-        ),
-
-        h('div', {className: 'space-y-3'},
-          groupedTasks.map(group => 
-            h('div', {key: group.user.id || 'unassigned', className: 'bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden'},
-              h('div', {className: 'px-2 sm:px-3 py-1.5 sm:py-2 bg-blue-50/70 border-b border-blue-100 flex items-center gap-1.5 sm:gap-2 cursor-pointer', onClick: () => group.user.id && onUserClick(group.user.id)},
-                group.user.id ? h(Avatar, {user: group.user, size: 'sm'}) : h('div',{className:'w-4 h-4 bg-gray-200 rounded-full flex items-center justify-center text-[9px] font-bold'}, '?'),
-                h('span', {className: 'font-bold text-[10px] sm:text-[13px] text-blue-900 uppercase tracking-tight'}, group.user.name),
-                h('span', {className: 'bg-blue-100 text-blue-700 text-[8px] sm:text-[10px] px-1 py-0.5 rounded font-bold'}, group.tasks.length)
-              ),
-              h('div', {className: 'p-2 sm:p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3 bg-gray-50/30'},
-                group.tasks.map(t => {
-                  const d = daysFrom(t.due_date);
-                  let borderColorClass = 'border-gray-200';
-                  let titleColorClass = 'text-gray-800';
-                  if (d !== null) {
-                      if (d < 0) { borderColorClass = 'border-red-200'; titleColorClass = 'text-red-700'; }
-                      else if (d === 0) { borderColorClass = 'border-yellow-200'; titleColorClass = 'text-yellow-700'; }
-                      else if (d > 0) { borderColorClass = 'border-emerald-200'; titleColorClass = 'text-emerald-700'; }
-                  }
-                  
-                  return h('div', {
-                      key: t.id,
-                      onClick: () => onDetail(t),
-                      className: `bg-white border ${borderColorClass} hover:border-blue-300 hover:shadow-md rounded-xl p-2.5 sm:p-3 cursor-pointer transition-all flex flex-col gap-2 relative shadow-sm`
-                    },
-                    h('div', {className: 'flex justify-between items-start gap-2'},
-                      h('span', {className: `font-bold text-[11px] sm:text-[13px] line-clamp-2 ${titleColorClass}`}, t.title),
-                      h('div', {className: 'shrink-0'}, h(CompactWarning, {due_date: t.due_date, status: t.status, completed_date: t.completed_date}))
-                    ),
-                    h('div', {className: 'flex flex-col gap-1 mt-auto pt-2 border-t border-gray-50'},
-                      h('div', {className: 'flex items-center gap-1.5 text-[10px] sm:text-[11px] text-gray-500 font-medium'},
-                        h('span', null, '⏳ Hạn:'),
-                        h('span', {className: 'text-gray-700 font-bold'}, t.due_date ? fmtDateStr(t.due_date) : '—')
-                      ),
-                      h('div', {className: 'flex items-start gap-1.5 text-[10px] sm:text-[11px] text-gray-500 font-medium'},
-                        h('span', {className: 'shrink-0 mt-0.5'}, '💬 Cập nhật:'),
-                        h('span', {className: 'text-gray-700 line-clamp-2 italic'}, getLatestUpdate(t))
+          // Bảng gọn: tên nhân viên là cột đầu, đậm, luôn thấy ngay; sắp theo trễ/đang làm nhiều nhất
+          h('div', {className: 'w-full overflow-x-auto'},
+            h('table', {className: 'w-full min-w-[480px]'},
+              h('thead', null, h('tr', {className: 'border-b border-gray-200'},
+                h('th', {className: thClass + ' text-left w-[30%]'}, 'NHÂN VIÊN'),
+                h('th', {className: thClass + ' text-left w-[34%]'}, 'HOÀN THÀNH'),
+                h('th', {className: thClass + ' text-center w-[14%]'}, 'ĐANG LÀM'),
+                h('th', {className: thClass + ' text-center w-[12%]'}, 'TRỄ'),
+                h('th', {className: thClass + ' w-[10%]'}, '')
+              )),
+              h('tbody', null,
+                sortedUserStats.map(u => {
+                  const pctDone = u.total > 0 ? Math.round((u.done / u.total) * 100) : 0
+                  return h('tr', {key: u.id, onClick: () => onUserClick(u.id), className: 'table-row-hover cursor-pointer group border-b border-gray-50'},
+                    h('td', {className: tdClass},
+                      h('div', {className: 'flex items-center gap-2 min-w-0'},
+                        h(Avatar, {user: u, size: 'sm'}),
+                        h('span', {className: 'font-bold text-gray-900 truncate text-[11px] sm:text-[13px]'}, u.name)
                       )
+                    ),
+                    h('td', {className: tdClass},
+                      h('div', {className: 'flex items-center gap-2'},
+                        h('div', {className: 'flex-1 h-1.5 rounded-full bg-emerald-100 overflow-hidden min-w-[60px]'},
+                          h('div', {className: 'h-full rounded-full bg-emerald-500', style: {width: `${pctDone}%`}})
+                        ),
+                        h('span', {className: 'text-[10px] sm:text-[11px] font-bold text-gray-700 whitespace-nowrap w-[52px] text-right'}, `${u.done}/${u.total}`)
+                      )
+                    ),
+                    h('td', {className: tdClass + ' text-center'},
+                      u.active > 0
+                        ? h('span', {className: 'inline-block min-w-[24px] text-[11px] sm:text-xs font-bold text-blue-700 bg-blue-50 rounded-md px-1.5 py-0.5'}, u.active)
+                        : h('span', {className: 'text-[11px] text-gray-300 font-semibold'}, '0')
+                    ),
+                    h('td', {className: tdClass + ' text-center'},
+                      u.late > 0
+                        ? h('span', {className: 'inline-block min-w-[24px] text-[11px] sm:text-xs font-bold text-red-700 bg-red-50 rounded-md px-1.5 py-0.5'}, u.late)
+                        : h('span', {className: 'text-[11px] text-gray-300 font-semibold'}, '0')
+                    ),
+                    h('td', {className: tdClass + ' text-right'},
+                      currentUser?.role === ROLE.ADMIN && h('button', {
+                        onClick: (e) => { e.stopPropagation(); onEditUser(u); },
+                        className: 'text-gray-300 hover:text-blue-600 p-1 rounded hover:bg-blue-50 transition-colors',
+                        title: 'Sửa nhân viên'
+                      }, h(IconEdit))
                     )
                   )
                 })
@@ -713,31 +725,83 @@ import { useNavigate } from 'react-router-dom';
           )
         ),
 
+        // Việc đang thực hiện: 1 lưới phẳng, người nhận nổi bật trên từng thẻ
+        h('div', {className: 'bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden'},
+          h('div', {className: 'px-3 py-2 sm:py-2.5 border-b border-gray-100 flex items-center gap-1.5'},
+            h(Loader2, {size: 14, className: 'text-blue-500'}),
+            h('span', {className: 'text-[11px] sm:text-sm font-bold text-gray-800'}, 'Việc đang thực hiện'),
+            h('span', {className: 'bg-blue-50 text-blue-700 text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-md font-bold'}, dashActiveTasks.length)
+          ),
+          dashActiveTasks.length === 0
+            ? h('p', {className: 'text-center text-gray-400 py-8 text-xs font-semibold'}, 'Không có việc nào đang thực hiện.')
+            : h('div', {className: 'p-2.5 sm:p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-2.5'},
+                dashActiveTasks.map(t => {
+                  const d = daysFrom(t.due_date);
+                  // Màu hạn chỉ ở viền trái + badge; chữ giữ token chính
+                  let accent = '#cbd5e1';
+                  if (d !== null) {
+                      if (d < 0) accent = '#dc2626';
+                      else if (d === 0) accent = '#d97706';
+                      else accent = '#059669';
+                  }
+
+                  return h('div', {
+                      key: t.id,
+                      onClick: () => onDetail(t),
+                      style: {borderLeft: `3px solid ${accent}`},
+                      className: 'bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md rounded-lg p-2.5 sm:p-3 cursor-pointer transition-all flex gap-2.5 relative shadow-sm'
+                    },
+                    // Avatar to + tên bên dưới, đứng riêng cột trái
+                    h(AvatarName, {user: t.assignee, className: 'w-11 sm:w-14 shrink-0 pt-0.5'}),
+                    h('div', {className: 'flex-1 min-w-0 flex flex-col gap-1.5'},
+                      h('div', {className: 'flex items-start justify-between gap-2'},
+                        h('span', {className: 'font-bold text-[12px] sm:text-[13px] line-clamp-2 text-gray-900'}, t.title),
+                        h('div', {className: 'shrink-0'}, h(CompactWarning, {due_date: t.due_date, status: t.status, completed_date: t.completed_date}))
+                      ),
+                      h('div', {className: 'flex flex-col gap-1 mt-auto pt-1.5 border-t border-gray-100'},
+                        h('div', {className: 'flex items-center gap-1.5 text-[10px] sm:text-[11px] text-gray-500 font-medium'},
+                          h(Clock, {size: 11, className: 'shrink-0 text-gray-400'}),
+                          h('span', null, 'Hạn:'),
+                          h('span', {className: 'text-gray-800 font-bold'}, t.due_date ? fmtDateStr(t.due_date) : 'Chưa đặt')
+                        ),
+                        h('div', {className: 'flex items-start gap-1.5 text-[10px] sm:text-[11px] text-gray-500 font-medium'},
+                          h(MessageSquare, {size: 11, className: 'shrink-0 mt-0.5 text-gray-400'}),
+                          h('span', {className: 'text-gray-700 line-clamp-2'}, getLatestUpdate(t))
+                        )
+                      )
+                    )
+                  )
+                })
+              )
+        ),
+
         // Khối hiển thị Phiếu Sản Xuất Còn Nợ
         h('div', {className: 'bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden'},
-          h('div', {className: 'px-2 sm:px-3 py-1.5 sm:py-3 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center'}, 
-            h('span', {className: 'text-[10px] sm:text-sm font-bold text-gray-800 uppercase tracking-wide'}, 'PHIẾU SẢN XUẤT CÒN NỢ')
+          h('div', {className: 'px-3 py-2 sm:py-2.5 border-b border-gray-100 flex items-center gap-1.5'},
+            h(Factory, {size: 14, className: 'text-gray-400'}),
+            h('span', {className: 'text-[11px] sm:text-sm font-bold text-gray-800'}, 'Phiếu sản xuất còn nợ'),
+            pendingOrders.length > 0 && h('span', {className: 'bg-red-50 text-red-600 text-[9px] sm:text-[10px] px-1.5 py-0.5 rounded-md font-bold'}, pendingOrders.length)
           ),
           h('div', {className: 'w-full max-h-[300px] overflow-y-auto'},
             h('table', {className: 'w-full table-fixed text-left'},
-              h('thead', {className: 'sticky top-0 bg-white'}, h('tr', null,
-                h('th', {className: thClass + ' w-[25%]'}, 'MÃ LỆNH'), 
-                h('th', {className: thClass + ' w-[25%]'}, 'SẢN PHẨM'), 
+              h('thead', {className: 'sticky top-0 bg-gray-50'}, h('tr', null,
+                h('th', {className: thClass + ' w-[25%]'}, 'MÃ LỆNH'),
+                h('th', {className: thClass + ' w-[25%]'}, 'SẢN PHẨM'),
                 h('th', {className: thClass + ' w-[25%] text-center'}, 'ĐÃ LÀM / MỤC TIÊU'),
                 h('th', {className: thClass + ' w-[25%] text-center'}, 'CÒN NỢ')
               )),
               h('tbody', null, pendingOrders.length > 0 ? pendingOrders.map(o => {
                   return h('tr', {key: o.id, className: 'table-row-hover'},
-                    h('td', {className: tdClass + ' font-bold text-blue-800 truncate', title: o.order_code}, o.order_code || o.id.split('-')[0]),
-                    h('td', {className: tdClass + ' truncate font-semibold'}, o.product_code),
-                    h('td', {className: tdClass + ' text-center'}, 
-                        h('span', {className:'text-emerald-600 font-bold'}, Number(o.produced.toFixed(1))), 
-                        ' / ', 
+                    h('td', {className: tdClass + ' font-bold text-gray-900 truncate', title: o.order_code}, o.order_code || o.id.split('-')[0]),
+                    h('td', {className: tdClass + ' truncate font-semibold text-gray-700'}, o.product_code),
+                    h('td', {className: tdClass + ' text-center'},
+                        h('span', {className:'text-gray-900 font-bold'}, Number(o.produced.toFixed(1))),
+                        h('span', {className:'text-gray-400'}, ' / '),
                         h('span', {className:'text-gray-500 font-medium'}, o.target_quantity)
                     ),
-                    h('td', {className: tdClass + ' text-center font-bold text-red-500'}, Number(o.remaining.toFixed(1)))
+                    h('td', {className: tdClass + ' text-center font-bold text-red-600'}, Number(o.remaining.toFixed(1)))
                   )
-              }) : h('tr', null, h('td', {colSpan: 4, className: 'text-center text-gray-500 py-4 text-xs font-semibold'}, 'Tuyệt vời! Không có phiếu sản xuất nào đang nợ.')))
+              }) : h('tr', null, h('td', {colSpan: 4, className: 'text-center text-gray-400 py-6 text-xs font-semibold'}, 'Không có phiếu sản xuất nào đang nợ.')))
             )
           )
         )
@@ -760,36 +824,40 @@ import { useNavigate } from 'react-router-dom';
         if (!a.due_date && !b.due_date) return 0; if (!a.due_date) return 1; if (!b.due_date) return -1
         return new Date(a.due_date) - new Date(b.due_date)
       })
-      const thClass = "text-left text-[9px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-1.5 sm:py-2 bg-blue-50 text-blue-800 tracking-tighter uppercase"; const tdClass = "px-1.5 sm:px-2 py-1.5 sm:py-2 truncate text-[10px] sm:text-[12px]"
+      const thClass = "text-left text-[9px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-2 bg-gray-50 text-gray-500 tracking-wide uppercase"; const tdClass = "px-1.5 sm:px-2 py-1.5 sm:py-2 truncate text-[10px] sm:text-[12px]"
 
-      return h('div',null,
-        h('div',{className:'flex gap-1 mb-3 flex-wrap items-center w-full justify-between'},
-          h('div', {className:'flex gap-1 items-center flex-1'},
-             h('input',{className:inp+' min-w-[100px] !px-2 !py-1 text-[10px]',value:search,onChange:e=>setSearch(e.target.value),placeholder:'🔍 Tìm...'}),
-             h('select',{className:sel+' w-auto !px-2 !py-1 text-[10px]',value:stFilter,onChange:e=>setStFilter(e.target.value)}, h('option',{value:'ALL'},'Tất cả TT'), Object.entries(STATUS_CFG).map(([k,v])=>h('option',{key:k,value:k},v.label))),
-             isAdmin && h('select',{className:sel+' w-auto !px-2 !py-1 text-[10px]',value:assFilter,onChange:e=>setAssFilter(e.target.value)}, h('option',{value:'ALL'},'Tất cả NV'), users.map(u=>h('option',{key:u.id,value:u.id},u.name)))
+      return h('div',{className:'max-w-[1400px] mx-auto w-full'},
+        h('div',{className:'flex gap-1.5 mb-3 flex-wrap items-center w-full justify-between'},
+          h('div', {className:'flex gap-1.5 items-center flex-1 flex-wrap'},
+             h('div',{className:'relative w-[180px] sm:w-[220px] shrink-0'},
+               h(Search,{size:13, className:'absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none'}),
+               h('input',{className:inp+' !pl-7 !px-2 !py-1.5 text-[11px]',value:search,onChange:e=>setSearch(e.target.value),placeholder:'Tìm việc, người, nhãn...'})
+             ),
+             h('select',{className:sel+' !w-auto !px-2 !py-1.5 text-[11px]',value:stFilter,onChange:e=>setStFilter(e.target.value)}, h('option',{value:'ALL'},'Tất cả trạng thái'), Object.entries(STATUS_CFG).map(([k,v])=>h('option',{key:k,value:k},v.label))),
+             isAdmin && h('select',{className:sel+' !w-auto !px-2 !py-1.5 text-[11px]',value:assFilter,onChange:e=>setAssFilter(e.target.value)}, h('option',{value:'ALL'},'Tất cả nhân viên'), users.map(u=>h('option',{key:u.id,value:u.id},u.name))),
+             h('span',{className:'text-[10px] sm:text-[11px] text-gray-400 font-semibold whitespace-nowrap'}, `${filtered.length} việc`)
           ),
-          isAdmin && h('button', {onClick: onBulkDelete, className: btn.danger + ' flex items-center gap-1 !px-2 !py-1 text-[10px] sm:text-xs'}, h(IconTrash), 'Dọn việc đã hủy')
+          isAdmin && h('button', {onClick: onBulkDelete, className: btn.danger + ' flex items-center gap-1 !px-2 !py-1.5 text-[10px] sm:text-xs'}, h(IconTrash), 'Dọn việc đã hủy')
         ),
         h('div',{className:'bg-white rounded-xl border border-gray-200 shadow-sm w-full overflow-hidden'},
           h('table',{className:'w-full table-fixed'},
-            h('thead',null, h('tr',{className:'border-b border-gray-100'},
-                h('th',{className:`${thClass} w-[34%] sm:w-[30%]`}, 'VIỆC'),
-                h('th',{className:`${thClass} w-[15%] sm:w-[15%]`}, 'NGƯỜI'),
-                h('th',{className:`${thClass} w-[8%] text-center`}, 'TT'),
-                h('th',{className:`${thClass} w-[15%] text-center`}, 'HẠN'),
-                h('th',{className:`${thClass} w-[20%] sm:w-[22%]`}, 'CẬP NHẬT'),
+            h('thead',null, h('tr',{className:'border-b border-gray-200'},
+                h('th',{className:`${thClass} w-[30%] sm:w-[28%]`}, 'Công việc'),
+                h('th',{className:`${thClass} w-[15%] sm:w-[14%]`}, 'Người'),
+                h('th',{className:`${thClass} w-[12%] sm:w-[13%]`}, 'Trạng thái'),
+                h('th',{className:`${thClass} w-[13%] text-center`}, 'Hạn'),
+                h('th',{className:`${thClass} w-[22%]`}, 'Cập nhật'),
                 canDelete && h('th',{className:`${thClass} w-[8%] text-center`}, '')
             )),
             h('tbody',null,
               filtered.length===0 ? h('tr',null,h('td',{colSpan:canDelete?6:5,className:'text-center text-gray-400 py-10 text-[11px]'},'Không tìm thấy công việc nào'))
                 : filtered.map(t=>
-                    h('tr',{key:t.id, className:'border-b border-gray-50 cursor-pointer table-row-hover group', onClick:()=>onDetail(t)},
+                    h('tr',{key:t.id, className:'border-b border-gray-100 cursor-pointer table-row-hover group', onClick:()=>onDetail(t)},
                       h('td',{className:tdClass}, h('div',{className:'font-bold text-gray-900 truncate'},t.title)),
-                      h('td',{className:tdClass}, h('div',{className:'flex items-center gap-1'}, h(Avatar,{user:t.assignee,size:'sm'}), h('span',{className:'text-emerald-600 font-bold truncate'},t.assignee?.name||'—'))),
-                      h('td',{className:tdClass+' text-center'}, h('div', {className: `w-1.5 h-1.5 mx-auto rounded-full ${t.status===STATUS.IN_PROGRESS?'bg-blue-500':t.status===STATUS.COMPLETED?'bg-emerald-500':t.status===STATUS.CANCELLED?'bg-red-500':'bg-gray-300'}`})),
+                      h('td',{className:tdClass}, h(AvatarName,{user:t.assignee, size:'md', className:'mx-auto max-w-[70px]'})),
+                      h('td',{className:tdClass}, h(StatusBadge,{status:t.status})),
                       h('td',{className:tdClass+' text-center'}, h(CompactWarning,{due_date:t.due_date,status:t.status, completed_date:t.completed_date})),
-                      h('td',{className:tdClass+' text-gray-500'}, t.progressUpdates?.length ? t.progressUpdates[t.progressUpdates.length - 1].content : '—'),
+                      h('td',{className:tdClass+' text-gray-500'}, t.progressUpdates?.length ? t.progressUpdates[t.progressUpdates.length - 1].content : 'Chưa cập nhật'),
                       canDelete && h('td',{className:tdClass+' text-center'}, h('button',{onClick:(e)=>{e.stopPropagation(); onDelete(t)},className:'text-gray-300 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors', title:'Xóa'}, h(IconTrash)))
                     )
                   )
@@ -803,7 +871,9 @@ import { useNavigate } from 'react-router-dom';
     // USER TASK BOARD COMPONENT
     // ============================================================
     function UserTaskBoard({user, tasks, onBack, onDetail, onEdit, onUpdate, onRemind, onDelete, currentUser}) {
-      const [tab, setTab] = useState('ALL');
+      // Mặc định mở tab "Đang làm"; nếu người này không có việc đang làm thì về "Tất cả" (tránh mở trang trống)
+      const [tab, setTab] = useState(() =>
+        tasks.some(t => t.assignee_id === user.id && t.status === STATUS.IN_PROGRESS) ? 'ACTIVE' : 'ALL');
       const isAdmin = currentUser.role === ROLE.ADMIN;
       const tPerm = getTabPerm(currentUser, 'tasks', 'tasks');
       const canDelete = tPerm.delete;
@@ -854,6 +924,7 @@ import { useNavigate } from 'react-router-dom';
       return h('div', {className: 'max-w-7xl mx-auto fade-in pb-24'},
         h('div', {className: 'flex items-center gap-1.5 sm:gap-4 mb-3 sm:mb-6 w-full'},
            onBack && h('button', {onClick: onBack, className: 'w-7 h-7 sm:w-10 sm:h-10 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-600 transition-colors text-lg sm:text-xl shrink-0'}, '←'),
+           h(Avatar, {user, size: 'lg'}),
            h('div', {className: 'truncate flex-1'},
              h('h2', {className: 'text-sm sm:text-2xl font-bold text-gray-900 truncate'}, user.name),
              h('p', {className: 'text-[9px] sm:text-sm text-gray-500 font-medium'}, `${activeTasks.length} việc đang làm`)
@@ -1261,7 +1332,7 @@ import { useNavigate } from 'react-router-dom';
       },
         h(ToastList,{list:toasts}),
 
-        h('main',{style:{flex:1,width:'100%',overflowX:'hidden',padding:view==='menu'?'1rem':'0.75rem',background:'#f8fafc',minHeight:'calc(100vh - 90px)',paddingBottom:'4rem', display:'flex', flexDirection:'column'}},
+        h('main',{style:{flex:1,width:'100%',overflowX:'hidden',padding:view==='menu'?'1rem 1rem 4rem':'0.75rem 0.75rem 4rem',background:'var(--bg-primary)',minHeight:'calc(100vh - 90px)', display:'flex', flexDirection:'column'}},
           busy ? h('div',{className:'flex items-center justify-center h-64'}, h('div',{className:'text-blue-500 font-bold animate-pulse text-sm'},'Đang tải...'))
                : view==='menu' ? h('div', {
                    style: {
@@ -1293,7 +1364,7 @@ import { useNavigate } from 'react-router-dom';
                : view==='dashboard'&&canSeeTab(me,'tasks','dashboard') ? h(Dashboard, {tasks, users, currentUser: me, pendingOrders, onUserClick:handleUserClick, onDetail:t=>setDetailTask(t), onAddUser: ()=>setUserModal({}), onEditUser: u=>setUserModal({user:u})})
                : view==='work_report' && canSeeTab(me,'tasks','work_report') ? h(WorkReport)
                : view==='tasks' && assFilter !== 'ALL' ? h(UserTaskBoard, { user: users.find(u=>u.id===assFilter) || me, tasks, currentUser: me, onBack: canSeeTab(me,'tasks','dashboard') ? () => { setView('dashboard'); setAssFilter('ALL'); } : null, onDetail: t=>setDetailTask(t), onEdit: t=>setTaskModal({task:t}), onUpdate: handleUpdateTask, onRemind: handleRemind, onDelete: handleDeleteTask })
-               : view==='tasks' && assFilter === 'ALL' ? h('div',null, h('div',{className:'flex items-center justify-between mb-4'}, h('h1',{className:'text-sm sm:text-xl font-bold text-gray-900'}, 'Tất cả công việc'), h('button',{onClick:()=>{dataCache.invalidate(TASK_CACHE_KEY);bootstrap(me,true);},className:btn.secondary+' px-2 py-1 text-[10px] sm:text-xs'},'↻ Làm mới')), h(TaskTable,{ tasks, users, currentUser:me, assFilter, setAssFilter, onEdit: t=>setTaskModal({task:t}), onDetail:t=>setDetailTask(t), onDelete:handleDeleteTask, onBulkDelete:handleBulkDelete }))
+               : view==='tasks' && assFilter === 'ALL' ? h('div',null, h('div',{className:'flex items-center justify-between mb-4 max-w-[1400px] mx-auto w-full'}, h('h1',{className:'text-sm sm:text-xl font-bold text-gray-900'}, 'Tất cả công việc'), h('button',{onClick:()=>{dataCache.invalidate(TASK_CACHE_KEY);bootstrap(me,true);},className:btn.secondary+' px-2 py-1 text-[10px] sm:text-xs'},'↻ Làm mới')), h(TaskTable,{ tasks, users, currentUser:me, assFilter, setAssFilter, onEdit: t=>setTaskModal({task:t}), onDetail:t=>setDetailTask(t), onDelete:handleDeleteTask, onBulkDelete:handleBulkDelete }))
                : null
         ),
 
@@ -1320,7 +1391,7 @@ import { useNavigate } from 'react-router-dom';
             onClick: () => navigate('/quality?action=new'),
             style: {
               display: 'flex', alignItems: 'center', gap: '6px',
-              background: 'linear-gradient(135deg,#dc2626,#f87171)',
+              background: '#dc2626',
               color: '#fff', border: 'none',
               borderRadius: '8px', padding: '0.45rem 0.7rem',
               fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
@@ -1339,7 +1410,7 @@ import { useNavigate } from 'react-router-dom';
             onClick: () => setShowZaloModal(true),
             style: {
               display: 'flex', alignItems: 'center', gap: '6px',
-              background: 'linear-gradient(135deg,#0068ff,#06b6d4)',
+              background: '#0068ff',
               color: '#fff', border: 'none',
               borderRadius: '8px', padding: '0.45rem 0.7rem',
               fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',

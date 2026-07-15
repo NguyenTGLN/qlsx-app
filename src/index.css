@@ -319,9 +319,22 @@ input, select, textarea {
   .manual-order-row > .mor-name { grid-column: 1 / -1 !important; }
 }
 
+/* ── Helpers dùng chung cho các view dữ liệu (tasks/report...) ──
+   Các class này được JSX tham chiếu từ trước nhưng chưa từng định nghĩa. */
+.fade-in { animation: fadeIn 0.25s ease-out both; }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.fade-up { animation: fadeUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.table-row-hover { transition: background 0.12s ease; }
+.table-row-hover:hover { background: #f8fafc; }
+.hide-scroll { scrollbar-width: none; }
+.hide-scroll::-webkit-scrollbar { display: none; }
+
 /* ── Giảm chuyển động theo cài đặt hệ điều hành (a11y) ── */
 @media (prefers-reduced-motion: reduce) {
-  .animate-fade-in { animation: none; }
+  .animate-fade-in, .fade-in, .fade-up { animation: none; }
   .wf-card, .btn-primary { transition: none; }
   .wf-card:hover { transform: none; }
 }

@@ -1,6 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
-import { Calendar, Filter, Package, Users, ClipboardList, ShieldAlert, CheckCircle, Clock } from 'lucide-react';
+import { Calendar, Filter, Package, Users, ClipboardList, ShieldAlert, CheckCircle, Clock, Target, Zap } from 'lucide-react';
+
+// Avatar tròn: ảnh thật nếu có, không thì chữ cái đầu tên trên nền gradient brand
+function RepAvatar({ name, avatar, size = 40 }) {
+  const initials = (name || '?').trim().split(' ').map(w => w[0]).slice(-2).join('').toUpperCase() || '?';
+  const common = { width: size, height: size, borderRadius: '50%', flexShrink: 0 };
+  if (avatar) {
+    return <img src={avatar} alt={name || ''} style={{ ...common, objectFit: 'cover', boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)' }} />;
+  }
+  return (
+    <div style={{ ...common, background: 'var(--accent-gradient)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: size * 0.38 }}>
+      {initials}
+    </div>
+  );
+}
 
 export default function WorkReport() {
   const [activeTab, setActiveTab] = useState('general'); // 'general', 'ngoc', 'phong'
@@ -13,6 +27,7 @@ export default function WorkReport() {
   const [allTasks, setAllTasks] = useState([]);
   const [allWarranties, setAllWarranties] = useState([]);
   const [staffMap, setStaffMap] = useState({});
+  const [avatarMap, setAvatarMap] = useState({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -75,7 +90,7 @@ export default function WorkReport() {
          { data: wData },
          { data: tdLogs }
       ] = await Promise.all([
-         supabase.from('nhan_vien').select('id, name'),
+         supabase.from('nhan_vien').select('id, name, avatar'),
          pQuery,
          fetchAllRows(() => supabase.from('cong_viec_duoc_giao').select('*')),
          supabase.from('phieu_bao_hanh').select('*').order('thời_điểm_cập_nhật', {ascending: false}).limit(2500),
@@ -91,8 +106,10 @@ export default function WorkReport() {
       });
 
       const sMap = {};
-      (nvData || []).forEach(n => { sMap[n.id] = n.name; });
+      const aMap = {};
+      (nvData || []).forEach(n => { sMap[n.id] = n.name; aMap[n.id] = n.avatar || ''; });
       setStaffMap(sMap);
+      setAvatarMap(aMap);
       // Attach latest_update from tien_do into each task
       const tasksWithUpdates = (tLogs || []).map(t => ({
          ...t,
@@ -107,7 +124,7 @@ export default function WorkReport() {
       let overallProductQty = {};
       
       const genStaffMap = new Map((nvData||[]).map(nv => [nv.id, {
-        name: nv.name, prodQty: 0, prodDetails: [], tasksDone: 0, tasksTotal: 0, prodPerf: [], tasksDoneList: [], tasksOnTime: 0
+        name: nv.name, avatar: nv.avatar || '', prodQty: 0, prodDetails: [], tasksDone: 0, tasksTotal: 0, prodPerf: [], tasksDoneList: [], tasksOnTime: 0
       }]));
 
       (pLogs || []).forEach(log => {
@@ -297,23 +314,45 @@ export default function WorkReport() {
   };
 
   const styles = {
-    reportToolbar: { display: 'flex', gap: '0.8rem', background: '#fff', padding: '1rem', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', flexWrap: 'wrap', alignItems: 'center' },
-    dateSelect: { padding: '0.5rem 1.8rem 0.5rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '0.85rem', color: '#1e293b', fontWeight: 600, minWidth: '150px' },
-    dateInput: { padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', color: '#1e293b' },
-    tabButton: (isActive) => ({ padding: '0.6rem 1.2rem', fontWeight: isActive ? 700 : 500, color: isActive ? '#fff' : '#64748b', background: isActive ? '#3b82f6' : 'transparent', border: 'none', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }),
-    statCard: { background: '#fff', padding: '1.5rem', borderRadius: '16px', display: 'flex', alignItems: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', flex: '1 1 200px' },
-    statIcon: (color) => ({ width: '48px', height: '48px', borderRadius: '12px', background: `${color}15`, color, display: 'flex', alignItems: 'center', justifyContent: 'center' }),
-    statTitle: { margin: 0, fontSize: '0.85rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' },
-    statValue: { margin: '0.2rem 0 0 0', fontSize: '1.75rem', fontWeight: 800, color: '#1e293b', lineHeight: 1 },
-    tableTh: { padding: '0.8rem 1rem', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: '0.75rem', textTransform: 'uppercase', borderBottom: '2px solid #f1f5f9' },
-    tableTd: { padding: '0.8rem 1rem', fontSize: '0.75rem', color: '#334155', borderBottom: '1px solid #f1f5f9' }
+    reportToolbar: { display: 'flex', gap: '0.8rem', background: '#fff', padding: '1rem', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', flexWrap: 'wrap', alignItems: 'center' },
+    dateSelect: { padding: '0.5rem 1.8rem 0.5rem 0.9rem', borderRadius: 10, border: '1px solid var(--border-strong)', background: '#fff', fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, minWidth: '150px', cursor: 'pointer' },
+    dateInput: { padding: '0.5rem 0.9rem', borderRadius: 10, border: '1px solid var(--border-strong)', fontSize: '0.85rem', color: 'var(--text-primary)' },
+    // Tab dạng segmented control: nền slate, tab active nổi trắng
+    tabButton: (isActive) => ({
+      padding: '0.45rem 1.1rem', fontWeight: isActive ? 700 : 500, fontSize: '0.85rem',
+      color: isActive ? 'var(--primary-color)' : 'var(--text-secondary)',
+      background: isActive ? '#fff' : 'transparent',
+      border: 'none', borderRadius: 8, cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap',
+      boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
+    }),
+    statCard: { background: '#fff', padding: '1.1rem 1.25rem', borderRadius: 14, display: 'flex', alignItems: 'center', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', flex: '1 1 200px' },
+    statIcon: (color) => ({ width: 42, height: 42, borderRadius: 11, background: `${color}14`, color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }),
+    statTitle: { margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 },
+    statValue: { margin: '0.2rem 0 0 0', fontSize: '1.6rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1 },
+    tableTh: { padding: '0.8rem 1rem', textAlign: 'left', fontWeight: 600, color: 'var(--text-secondary)', fontSize: '0.72rem', textTransform: 'uppercase', borderBottom: '1px solid var(--border-color)', background: '#f8fafc' },
+    tableTd: { padding: '0.8rem 1rem', fontSize: '0.78rem', color: 'var(--text-primary)', borderBottom: '1px solid #f1f5f9' },
+    // Chip hạng thi đua trong card nhân viên (icon + nhãn, không emoji)
+    rankChip: (bg, fg) => ({ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, color: fg, padding: '0.2rem 0.55rem', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap' }),
   };
 
   const renderPersonalTab = (nameKeyword) => {
       const pData = getPersonalData(nameKeyword);
+      // Tìm nhân viên khớp keyword để lấy avatar + tên đầy đủ cho header
+      const matchId = Object.keys(staffMap).find(id => (staffMap[id] || '').toLowerCase().includes(nameKeyword.toLowerCase()));
+      const repName = matchId ? staffMap[matchId] : nameKeyword;
+      const repAvatar = matchId ? avatarMap[matchId] : '';
 
       return (
          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Header nhân viên: avatar to + tên + vai trò báo cáo */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', background: '#fff', padding: '0.85rem 1.1rem', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+               <RepAvatar name={repName} avatar={repAvatar} size={64} />
+               <div style={{ minWidth: 0 }}>
+                  <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>{repName}</h2>
+                  <p style={{ margin: '0.15rem 0 0', fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 500 }}>Báo cáo công việc &amp; bảo hành cá nhân</p>
+               </div>
+            </div>
+
             {/* Top Cards */}
               <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '1.2rem'}}>
                 
@@ -381,10 +420,11 @@ export default function WorkReport() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(500px, 1fr))', gap: '1.5rem' }}>
                 {/* Active Tasks Listing */}
-                <div style={{ background: '#f8fafc', borderRadius: '12px', padding: '1.5rem', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02), 0 1px 3px rgba(0,0,0,0.05)' }}>
+                <div style={{ background: '#fff', borderRadius: 14, padding: '1.25rem', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                      <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#1e293b' }}>Danh Sách Việc Đang Nhận / Đang Làm</h3>
+                      <Clock size={18} color="#2563eb" />
+                      <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Việc đang nhận / đang làm</h3>
+                      <span style={{ background: '#eff6ff', color: '#1d4ed8', fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999 }}>{pData.activeTasks.length}</span>
                    </div>
                    
                    {pData.activeTasks.length === 0 ? (
@@ -393,12 +433,11 @@ export default function WorkReport() {
                       <div style={{ height: 'calc(100vh - 360px)', minHeight: '500px', overflowY: 'auto', paddingRight: '0.5rem' }}>
                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', paddingBottom: '1rem' }}>
                             {pData.activeTasks.map((task, idx) => {
-                               
+
                                const taskName = task.title || task.ten_viec || task.name || 'Công việc không tên';
                                let statusNode = null;
                                let limitDateStr = '-- : --';
-                               let statusColor = '#3b82f6';
-                               let bgAccent = '#eff6ff';
+                               let statusColor = '#94a3b8';
 
                                if (task.due_date) {
                                   let limit = new Date(task.due_date);
@@ -406,44 +445,42 @@ export default function WorkReport() {
                                      const formattedDate = limit.toLocaleDateString('vi-VN');
                                      const formattedTime = limit.toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'});
                                      limitDateStr = `${formattedTime} - ${formattedDate}`;
-                                     
+
                                      const today = new Date(); today.setHours(0, 0, 0, 0); limit.setHours(0, 0, 0, 0);
                                      const diffDays = Math.floor((today.getTime() - limit.getTime()) / 86400000);
-                                     
+
                                      if (diffDays > 0) {
-                                        statusColor = '#ef4444'; bgAccent = '#fef2f2';
-                                        statusNode = <span style={{ fontWeight: 800, fontSize: '0.7rem', color: '#fff', background: '#ef4444', padding: '4px 10px', borderRadius: '12px', letterSpacing: '0.5px' }}>QUÁ HẠN {diffDays} NGÀY</span>;
+                                        statusColor = '#dc2626';
+                                        statusNode = <span style={{ fontWeight: 700, fontSize: '0.7rem', color: '#b91c1c', background: '#fee2e2', padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap' }}>Quá hạn {diffDays} ngày</span>;
                                      } else if (diffDays === 0) {
-                                        statusColor = '#f59e0b'; bgAccent = '#fffbeb';
-                                        statusNode = <span style={{ fontWeight: 800, fontSize: '0.7rem', color: '#fff', background: '#f59e0b', padding: '4px 10px', borderRadius: '12px', letterSpacing: '0.5px' }}>HẠN HÔM NAY</span>;
+                                        statusColor = '#d97706';
+                                        statusNode = <span style={{ fontWeight: 700, fontSize: '0.7rem', color: '#92400e', background: '#fef3c7', padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap' }}>Hạn hôm nay</span>;
                                      } else {
-                                        statusColor = '#10b981'; bgAccent = '#ecfdf5';
-                                        statusNode = <span style={{ fontWeight: 800, fontSize: '0.7rem', color: '#fff', background: '#10b981', padding: '4px 10px', borderRadius: '12px', letterSpacing: '0.5px' }}>CÒN {Math.abs(diffDays)} NGÀY</span>;
+                                        statusColor = '#059669';
+                                        statusNode = <span style={{ fontWeight: 700, fontSize: '0.7rem', color: '#065f46', background: '#d1fae5', padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap' }}>Còn {Math.abs(diffDays)} ngày</span>;
                                      }
                                   }
                                } else {
-                                  statusNode = <span style={{ fontWeight: 800, fontSize: '0.7rem', color: '#64748b', background: '#e2e8f0', padding: '4px 10px', borderRadius: '12px', letterSpacing: '0.5px' }}>KHÔNG CÓ HẠN</span>;
+                                  statusNode = <span style={{ fontWeight: 700, fontSize: '0.7rem', color: '#475569', background: '#f1f5f9', padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap' }}>Không có hạn</span>;
                                }
 
                                const latestCmt = task.latest_update || task.latest_comment || task.comment || null;
 
                                return (
-                                  <div key={idx} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', transition: 'all 0.2s', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-                                      <div style={{ background: bgAccent, borderBottom: `1px solid ${statusColor}20`, padding: '1rem 1.25rem 2.5rem 1.25rem', position: 'relative' }}>
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>{statusNode}</div>
-                                          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1e293b', lineHeight:'1.4', marginTop: '0.5rem' }}>{taskName}</div>
+                                  <div key={idx} style={{ background: '#fff', border: '1px solid var(--border-color)', borderLeft: `3px solid ${statusColor}`, borderRadius: 12, padding: '0.9rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', boxShadow: 'var(--shadow-sm)' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                                          <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: '1.4', flex: 1, minWidth: 0 }}>{taskName}</div>
+                                          <div>{statusNode}</div>
                                       </div>
 
-                                      <div style={{ padding: '0 1.25rem 1.25rem 1.25rem', marginTop: '-1.5rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '0.75rem', borderRadius: '10px', boxShadow: '0 4px 6px rgba(0,0,0,0.03)', marginBottom: '1rem', zIndex: 1, position: 'relative' }}>
-                                              <p style={{ margin: '0 0 0.3rem 0', fontSize: '0.65rem', fontWeight: 800, color: statusColor, textTransform: 'uppercase' }}>Tiến độ gần nhất</p>
-                                              <p style={{ margin: 0, fontSize: '0.85rem', color: latestCmt ? '#334155' : '#94a3b8', fontWeight: latestCmt ? 600 : 400, fontStyle: latestCmt ? 'normal' : 'italic' }}>{latestCmt || 'Chưa cập nhật...'}</p>
-                                          </div>
-                                          
-                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
-                                             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#64748b' }}>Deadline</span>
-                                             <span style={{ fontSize: '0.8rem', color: '#0f172a', fontWeight: 800 }}>{limitDateStr}</span>
-                                          </div>
+                                      <div style={{ background: '#f8fafc', border: '1px solid var(--border-color)', padding: '0.6rem 0.75rem', borderRadius: 8 }}>
+                                          <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Tiến độ gần nhất</p>
+                                          <p style={{ margin: 0, fontSize: '0.85rem', color: latestCmt ? 'var(--text-primary)' : 'var(--text-tertiary)', fontWeight: latestCmt ? 600 : 400, fontStyle: latestCmt ? 'normal' : 'italic' }}>{latestCmt || 'Chưa cập nhật...'}</p>
+                                      </div>
+
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)' }}><Clock size={12} /> Hạn chót</span>
+                                         <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 700 }}>{limitDateStr}</span>
                                       </div>
                                   </div>
                                );
@@ -454,10 +491,11 @@ export default function WorkReport() {
                 </div>
 
                 {/* Warranties Table */}
-                <div style={{ background: '#fff', borderRadius: '12px', padding: '1.5rem', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                <div style={{ background: '#fff', borderRadius: 14, padding: '1.25rem', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                      <ShieldAlert color="#f59e0b" size={20} />
-                      <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#1e293b' }}>Danh sách Bảo Hành</h3>
+                      <ShieldAlert color="#d97706" size={18} />
+                      <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Danh sách bảo hành</h3>
+                      <span style={{ background: '#fef3c7', color: '#92400e', fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999 }}>{pData.warranties.length}</span>
                    </div>
 
                    {pData.warranties.length === 0 ? (
@@ -466,42 +504,40 @@ export default function WorkReport() {
                       <div style={{ height: 'calc(100vh - 360px)', minHeight: '500px', overflowY: 'auto', paddingRight: '0.5rem' }}>
                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', paddingBottom: '1rem' }}>
                             {pData.warranties.map((w, idx) => {
-                               const bgColors = ['#eff6ff', '#fdf2f8', '#fefce8', '#f0fdf4', '#faf5ff', '#fff7ed', '#f1f5f9'];
-                               const borderColors = ['#bfdbfe', '#fbcfe8', '#fef08a', '#bbf7d0', '#e9d5ff', '#fed7aa', '#cbd5e1'];
-                               const headerColors = ['#3b82f6', '#ec4899', '#eab308', '#22c55e', '#a855f7', '#f97316', '#64748b'];
-                               const bg = bgColors[idx % bgColors.length];
-                               const brd = borderColors[idx % borderColors.length];
-                               const hdr = headerColors[idx % headerColors.length];
-                               
-                               const ageNode = (() => {
-                                    if (w._age === undefined || w._age < 0) return <span style={{ fontWeight: 800, fontSize: '0.75rem', color: '#fff', background: 'rgba(0,0,0,0.2)', padding: '3px 8px', borderRadius: '12px' }}>N/A</span>;
-                                    return <span style={{ fontWeight: 800, fontSize: '0.7rem', color: '#fff', background: '#3b82f6', padding: '4px 10px', borderRadius: '12px' }}>Qua {w._age} ngày</span>;
-                                 })();
-
-                                 const stRaw = w['trạng_thái_phiếu_ghi'] || w['trang_thai_phieu_ghi'] || w.status || w.trang_thai || '';
+                               const stRaw = w['trạng_thái_phiếu_ghi'] || w['trang_thai_phieu_ghi'] || w.status || w.trang_thai || '';
                                const stL = String(stRaw).toLowerCase();
                                const isCompleted = stL.includes('solved') || stL.includes('close');
-                               const wStatusBadge = isCompleted 
-                                 ? <span style={{fontSize: '0.65rem', background: '#10b981', color: '#fff', padding: '3px 6px', borderRadius: '4px', fontWeight: 800}}>HOÀN THÀNH</span>
-                                 : <span style={{fontSize: '0.65rem', background: '#f59e0b', color: '#fff', padding: '3px 6px', borderRadius: '4px', fontWeight: 800}}>ĐANG XỬ LÝ</span>;
+
+                               // Chip tuổi phiếu: cảnh báo dần theo số ngày tồn (slate → amber → red)
+                               const ageNode = (() => {
+                                    if (w._age === undefined || w._age < 0) return <span style={{ fontWeight: 700, fontSize: '0.7rem', color: 'var(--text-tertiary)', background: '#f1f5f9', padding: '3px 8px', borderRadius: 999 }}>N/A</span>;
+                                    let bg = '#f1f5f9', fg = '#475569';
+                                    if (!isCompleted && w._age > 14) { bg = '#fee2e2'; fg = '#b91c1c'; }
+                                    else if (!isCompleted && w._age > 7) { bg = '#fef3c7'; fg = '#92400e'; }
+                                    return <span style={{ fontWeight: 700, fontSize: '0.7rem', color: fg, background: bg, padding: '3px 8px', borderRadius: 999, whiteSpace: 'nowrap' }}>Qua {w._age} ngày</span>;
+                                 })();
+
+                               const wStatusBadge = isCompleted
+                                 ? <span style={{fontSize: '0.68rem', background: '#d1fae5', color: '#065f46', padding: '3px 8px', borderRadius: 999, fontWeight: 700}}>Hoàn thành</span>
+                                 : <span style={{fontSize: '0.68rem', background: '#fef3c7', color: '#92400e', padding: '3px 8px', borderRadius: 999, fontWeight: 700}}>Đang xử lý</span>;
 
                                return (
-                                  <div key={idx} style={{ background: bg, border: `1px solid ${brd}`, borderRadius: '12px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', transition: 'all 0.2s' }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                          <div style={{ fontSize: '1.05rem', fontWeight: 800, color: hdr, flex: 1, paddingRight: '0.5rem' }}>{w.mã_sản_phẩm || w.ma_san_pham || 'Không mã SP'}</div>
+                                  <div key={idx} style={{ background: '#fff', border: '1px solid var(--border-color)', borderLeft: `3px solid ${isCompleted ? '#059669' : '#d97706'}`, borderRadius: 12, padding: '0.9rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', boxShadow: 'var(--shadow-sm)' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                                          <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', flex: 1, minWidth: 0 }}>{w.mã_sản_phẩm || w.ma_san_pham || 'Không mã SP'}</div>
                                           <div>{ageNode}</div>
                                       </div>
-                                      
-                                      <div style={{ background: 'rgba(255,255,255,0.6)', padding: '0.75rem', borderRadius: '6px', minHeight: '50px', border: '1px solid rgba(0,0,0,0.03)' }}>
-                                          <p style={{ margin: '0 0 0.3rem 0', fontSize: '0.7rem', fontWeight: 800, color: '#64748b' }}>CHI TIẾT LỖI:</p>
-                                          <p style={{ margin: 0, fontSize: '0.9rem', color: '#ef4444', fontWeight: 700, lineHeight: '1.3' }}>{w.chi_tiết_lỗi || w.chi_tiet_loi || '-'}</p>
+
+                                      <div style={{ background: '#f8fafc', padding: '0.6rem 0.75rem', borderRadius: 8, minHeight: '48px', border: '1px solid var(--border-color)' }}>
+                                          <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.65rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Chi tiết lỗi</p>
+                                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 600, lineHeight: '1.35' }}>{w.chi_tiết_lỗi || w.chi_tiet_loi || '-'}</p>
                                       </div>
-                                      
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '0.4rem' }}>
+
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '0.2rem' }}>
                                          <div style={{ display: 'flex', alignItems: 'center' }}>{wStatusBadge}</div>
                                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                             <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600 }}>Lắp đặt:</span>
-                                             <span style={{ fontSize: '0.85rem', color: '#1e293b', fontWeight: 800 }}>{w.ngày_lắp_đặt ? w.ngày_lắp_đặt.substring(0, 10) : 'N/A'}</span>
+                                             <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Lắp đặt:</span>
+                                             <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 700 }}>{w.ngày_lắp_đặt ? w.ngày_lắp_đặt.substring(0, 10) : 'N/A'}</span>
                                          </div>
                                       </div>
                                   </div>
@@ -517,23 +553,28 @@ export default function WorkReport() {
       );
   };
 
-if (loading) return <div style={{padding: '2rem', textAlign: 'center'}}>Đang tải báo cáo...</div>;
+if (loading) return (
+    <div style={{padding: '3rem 2rem', textAlign: 'center', color: 'var(--text-secondary)'}}>
+      <div className="spin" style={{width: 36, height: 36, border: '3px solid #e2e8f0', borderTopColor: 'var(--primary-color)', borderRadius: '50%', margin: '0 auto 0.8rem'}} />
+      <p style={{fontWeight: 600, fontSize: '0.9rem'}}>Đang tải báo cáo...</p>
+    </div>
+  );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', background: '#f1f5f9', minHeight: '100vh', padding: '1rem' }}>
-      
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', background: 'var(--bg-primary)', minHeight: '100vh', padding: '1rem', maxWidth: 1400, margin: '0 auto', width: '100%' }}>
+
       {/* HEADER: Tabs & Tools */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: '#fff', padding: '1rem', borderRadius: '12px', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem', borderBottom: '1px solid #f1f5f9' }}>
-            <button style={styles.tabButton(activeTab === 'general')} onClick={() => setActiveTab('general')}>Tổng hợp Chung</button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', background: '#fff', padding: '0.85rem 1rem', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
+         <div className="hide-scroll" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, overflowX: 'auto', background: '#f1f5f9', padding: 4, borderRadius: 10, alignSelf: 'flex-start', maxWidth: '100%' }}>
+            <button style={styles.tabButton(activeTab === 'general')} onClick={() => setActiveTab('general')}>Tổng hợp chung</button>
             <button style={styles.tabButton(activeTab === 'ngoc')} onClick={() => setActiveTab('ngoc')}>Báo cáo Ngọc</button>
             <button style={styles.tabButton(activeTab === 'phong')} onClick={() => setActiveTab('phong')}>Báo cáo Phong</button>
          </div>
 
-         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-            <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#64748b'}}>
-               <Filter size={16} />
-               <span style={{fontWeight: 600, fontSize: '0.85rem'}}>Khoảng T.Gian (Bảo hành & SP):</span>
+         <div className="filter-bar" style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', flexWrap: 'wrap' }}>
+            <div style={{display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)'}}>
+               <Filter size={15} />
+               <span style={{fontWeight: 600, fontSize: '0.82rem'}}>Khoảng thời gian (bảo hành & sản phẩm):</span>
             </div>
             <select value={workReportFilter} onChange={e => setWorkReportFilter(e.target.value)} style={styles.dateSelect}>
                <option value="today">Hôm nay</option>
@@ -544,11 +585,11 @@ if (loading) return <div style={{padding: '2rem', textAlign: 'center'}}>Đang t�
                <option value="all">Tất cả</option>
                <option value="custom">Tuỳ chọn...</option>
             </select>
-            
+
             {workReportFilter === 'custom' && (
                <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
                   <input type="date" value={workReportDates.start} onChange={e => setWorkReportDates({...workReportDates, start: e.target.value})} style={styles.dateInput} />
-                  <span style={{color: '#94a3b8'}}>-</span>
+                  <span style={{color: 'var(--text-tertiary)'}}>-</span>
                   <input type="date" value={workReportDates.end} onChange={e => setWorkReportDates({...workReportDates, end: e.target.value})} style={styles.dateInput} />
                </div>
             )}
@@ -563,22 +604,27 @@ if (loading) return <div style={{padding: '2rem', textAlign: 'center'}}>Đang t�
               <div style={styles.statIcon('var(--primary-color)')}><ClipboardList size={20} /></div>
               <div style={{ marginLeft: '1rem' }}><p style={styles.statTitle}>Công Việc Giao</p><p style={styles.statValue}>{workOverallStats.tasksDone} / {workOverallStats.tasksTotal}</p></div>
             </div>
-            <div style={styles.statCard}>
+            <div style={{...styles.statCard, flex: '2 1 320px'}}>
               <div style={styles.statIcon('var(--success-color)')}><Package size={20} /></div>
-              <div style={{ marginLeft: '1rem', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                 <div style={{flexShrink: 0}}>
-                     <p style={styles.statTitle}>Sản Lượng SX</p>
-                     <p style={{...styles.statValue, margin: '0.2rem 0 0 0'}}>{Number(workOverallStats.prodQty.toFixed(1))}</p>
-                 </div>
-                 {workOverallStats.overallProductQty && Object.keys(workOverallStats.overallProductQty).length > 0 && (
-                    <div style={{display:'flex', gap:'0.4rem', flexWrap:'wrap', flex: 1, justifyContent: 'flex-end', marginLeft: '1rem', maxWidth: '66%'}}>
-                       {Object.entries(workOverallStats.overallProductQty).map(([code, qty]) => (
-                          <span key={code} style={{fontSize:'0.75rem', background:'#f1f5f9', padding:'0.3rem 0.6rem', borderRadius:'12px', color:'#475569', fontWeight:600, border:'1px solid #e2e8f0', whiteSpace: 'nowrap'}}>
-                            {code}: <span style={{color:'#10b981'}}>{Number(qty.toFixed(1))}</span>
-                          </span>
-                       ))}
-                    </div>
-                 )}
+              <div style={{ marginLeft: '1rem', flex: 1, minWidth: 0 }}>
+                 <p style={styles.statTitle}>Sản Lượng SX</p>
+                 <p style={{...styles.statValue, margin: '0.2rem 0 0 0'}}>{Number(workOverallStats.prodQty.toFixed(1))} <span style={{fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600}}>SP</span></p>
+                 {workOverallStats.overallProductQty && Object.keys(workOverallStats.overallProductQty).length > 0 && (() => {
+                    // Chỉ hiện 6 mã nhiều nhất, còn lại gộp "+N mã khác" để card không vỡ layout
+                    const entries = Object.entries(workOverallStats.overallProductQty).sort((a, b) => b[1] - a[1]);
+                    const shown = entries.slice(0, 6);
+                    const more = entries.length - shown.length;
+                    return (
+                       <div style={{display:'flex', gap:'0.35rem', flexWrap:'wrap', marginTop: '0.5rem'}}>
+                          {shown.map(([code, qty]) => (
+                             <span key={code} style={{fontSize:'0.72rem', background:'#f1f5f9', padding:'0.25rem 0.55rem', borderRadius:999, color:'#475569', fontWeight:600, whiteSpace: 'nowrap'}}>
+                               {code}: <span style={{color:'#0f172a', fontWeight:700}}>{Number(qty.toFixed(1))}</span>
+                             </span>
+                          ))}
+                          {more > 0 && <span style={{fontSize:'0.72rem', background:'#eff6ff', padding:'0.25rem 0.55rem', borderRadius:999, color:'#1d4ed8', fontWeight:700, whiteSpace: 'nowrap'}}>+{more} mã khác</span>}
+                       </div>
+                    );
+                 })()}
               </div>
             </div>
             <div style={styles.statCard}>
@@ -599,77 +645,97 @@ if (loading) return <div style={{padding: '2rem', textAlign: 'center'}}>Đang t�
           </div>
           
           {/* GRID */}
-          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem'}}>
+          <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: '1rem'}}>
              {workReportData.map(st => (
-               <div key={st.name} style={{background: '#fff', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', border: '1px solid #edf2f7'}}>
-                  <div style={{background: 'linear-gradient(135deg, #1e3a8a, #3b82f6)', padding: '1rem 1.2rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap'}}>
-                     <h3 style={{fontSize: '1.25rem', margin: 0, fontWeight: 800, color: '#ffffff', letterSpacing: '0.02em'}}>{st.name}</h3>
-                     <div style={{display: 'flex', gap: '0.4rem'}}>
-                        {st.taskRank && (
-                          <span title="Hạng chuẩn xác hạn Công việc" style={{background:'#f59e0b', color:'#fff', padding:'0.2rem 0.6rem', borderRadius:'20px', fontSize:'0.75rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.2rem', boxShadow:'0 2px 4px rgba(0,0,0,0.1)'}}>
-                             🎯 Top {st.taskRank}
+               <div key={st.name} style={{background: '#fff', borderRadius: 14, overflow: 'hidden', boxShadow: 'var(--shadow-sm)', display: 'flex', flexDirection: 'column', border: '1px solid var(--border-color)'}}>
+                  <div style={{padding: '0.85rem 1.1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', borderBottom: '1px solid var(--border-color)'}}>
+                     <RepAvatar name={st.name} avatar={st.avatar} size={52} />
+                     <h3 style={{fontSize: '1.05rem', margin: 0, fontWeight: 700, color: 'var(--text-primary)', flex: 1, minWidth: 0}}>{st.name}</h3>
+                     {/* Chỉ gắn huy hiệu top 3 — gắn hạng cho tất cả làm chip mất ý nghĩa */}
+                     <div style={{display: 'flex', gap: '0.35rem'}}>
+                        {st.taskRank && st.taskRank <= 3 && (
+                          <span title="Top chuẩn xác hạn công việc" style={styles.rankChip('#fef3c7', '#92400e')}>
+                             <Target size={12} /> Top {st.taskRank} đúng hạn
                           </span>
                         )}
-                        {st.perfRank && (
-                          <span title="Hạng Hiệu suất Sản xuất" style={{background:'#10b981', color:'#fff', padding:'0.2rem 0.6rem', borderRadius:'20px', fontSize:'0.75rem', fontWeight:700, display:'flex', alignItems:'center', gap:'0.2rem', boxShadow:'0 2px 4px rgba(0,0,0,0.1)'}}>
-                             ⚡ Top {st.perfRank}
+                        {st.perfRank && st.perfRank <= 3 && (
+                          <span title="Top hiệu suất sản xuất" style={styles.rankChip('#d1fae5', '#065f46')}>
+                             <Zap size={12} /> Top {st.perfRank} hiệu suất
                           </span>
                         )}
                      </div>
                   </div>
-                  
-                  <div style={{padding: '1.2rem', display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1}}>
+
+                  <div style={{padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.9rem', flex: 1}}>
                      {st.tasksTotal > 0 && (
-                       <div style={{padding: '1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0'}}>
-                         <div style={{display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.5rem'}}>
-                            <ClipboardList size={18} color="#3b82f6"/>
-                            <p style={{margin: 0, fontSize: '1rem', fontWeight:600, color: '#3b82f6'}}>Công Việc Nội Bộ</p>
+                       <div style={{padding: '0.85rem 1rem', background: '#f8fafc', borderRadius: 10, border: '1px solid var(--border-color)'}}>
+                         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.5rem', marginBottom:'0.6rem'}}>
+                            <div style={{display:'flex', alignItems:'center', gap:'0.45rem'}}>
+                               <ClipboardList size={16} color="#2563eb"/>
+                               <p style={{margin: 0, fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)'}}>Công việc nội bộ</p>
+                            </div>
+                            <span style={{fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-primary)'}}>{st.tasksDone} / {st.tasksTotal}</span>
                          </div>
-                         <p style={{margin: '0.2rem 0', fontSize: '0.9rem', fontWeight: 600, color: st.tasksDone === st.tasksTotal ? '#10b981' : '#1e293b'}}>Hoàn thành: {st.tasksDone} / {st.tasksTotal}</p>
-                         
+                         {/* Thanh tiến độ hoàn thành */}
+                         <div style={{height: 6, borderRadius: 999, background: '#dbeafe', overflow: 'hidden', marginBottom: '0.6rem'}}>
+                            <div style={{height: '100%', borderRadius: 999, background: '#2563eb', width: `${st.tasksTotal > 0 ? Math.round((st.tasksDone / st.tasksTotal) * 100) : 0}%`, transition: 'width 0.3s'}} />
+                         </div>
+
                          {st.tasksDone > 0 && (() => {
                             const rate = st.tasksOnTime / st.tasksDone;
-                            let bg = 'rgba(234, 67, 53, 0.1)', border = '#ef4444', color = '#ef4444';
-                            if (rate >= 0.8) { bg = 'rgba(16, 185, 129, 0.1)'; border = '#10b981'; color = '#10b981'; }
-                            else if (rate >= 0.5) { bg = 'rgba(245, 158, 11, 0.1)'; border = '#f59e0b'; color = '#d97706'; }
+                            let bg = '#fee2e2', color = '#b91c1c';
+                            if (rate >= 0.8) { bg = '#d1fae5'; color = '#065f46'; }
+                            else if (rate >= 0.5) { bg = '#fef3c7'; color = '#92400e'; }
                             return (
                                 <div style={{
-                                    display: 'inline-block', marginTop: '0.4rem', marginBottom: '0.4rem',
-                                    padding: '0.3rem 0.6rem', borderRadius: '6px',
-                                    background: bg, border: `1px solid ${border}`,
-                                    fontSize: '0.8rem', fontWeight: 700, color: color
+                                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    padding: '0.25rem 0.55rem', borderRadius: 999,
+                                    background: bg,
+                                    fontSize: '0.75rem', fontWeight: 700, color: color
                                 }}>
-                                   🎯 Đúng hạn: {st.tasksOnTime} / {st.tasksDone} ({Math.round(rate * 100)}%)
+                                   <Target size={12} /> Đúng hạn: {st.tasksOnTime} / {st.tasksDone} ({Math.round(rate * 100)}%)
                                 </div>
                             );
                          })()}
-                         
-                         {st.tasksDoneList && st.tasksDoneList.length > 0 && (
-                           <ul style={{margin: '0.5rem 0 0 0', paddingLeft: '1.2rem', fontSize: '0.85rem', color: '#64748b', maxHeight: '120px', overflowY: 'auto', background:'#fff', padding:'0.5rem 1rem', borderRadius:'6px', border:'1px solid #e2e8f0'}}>
-                             {st.tasksDoneList.map((t, idx) => <li key={idx} style={{marginBottom:'0.3rem', lineHeight: '1.3'}}>{t}</li>)}
-                           </ul>
-                         )}
+
+                         {st.tasksDoneList && st.tasksDoneList.length > 0 && (() => {
+                            // Gom việc trùng tên (VD "Báo cáo công việc cuối ngày" x5) và chỉ hiện 5 dòng đầu
+                            const counted = new Map();
+                            st.tasksDoneList.forEach(t => counted.set(t, (counted.get(t) || 0) + 1));
+                            const items = [...counted.entries()];
+                            const shown = items.slice(0, 5);
+                            const more = items.length - shown.length;
+                            return (
+                              <ul style={{margin: '0.6rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', background:'#fff', padding:'0.5rem 0.9rem 0.5rem 1.6rem', borderRadius: 8, border:'1px solid var(--border-color)'}}>
+                                {shown.map(([t, n], idx) => (
+                                  <li key={idx} style={{marginBottom:'0.25rem', lineHeight: '1.35'}}>
+                                    {t}{n > 1 && <span style={{color: 'var(--text-tertiary)', fontWeight: 700}}> ×{n}</span>}
+                                  </li>
+                                ))}
+                                {more > 0 && <li style={{listStyle: 'none', marginLeft: '-1.2rem', color: '#1d4ed8', fontWeight: 700, fontSize: '0.75rem'}}>+{more} việc khác</li>}
+                              </ul>
+                            );
+                         })()}
                        </div>
                      )}
                      {st.prodQty > 0 && (
-                       <div style={{padding: '1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', flex: 1}}>
-                         <div style={{display:'flex', alignItems:'center', gap:'0.5rem', marginBottom:'0.5rem'}}>
-                            <Package size={18} color="#10b981"/>
-                            <p style={{margin: 0, fontSize: '1rem', fontWeight:600, color: '#10b981'}}>Sản Xuất</p>
+                       <div style={{padding: '0.85rem 1rem', background: '#f8fafc', borderRadius: 10, border: '1px solid var(--border-color)', flex: 1}}>
+                         <div style={{display:'flex', alignItems:'center', gap:'0.45rem', marginBottom:'0.5rem'}}>
+                            <Package size={16} color="#059669"/>
+                            <p style={{margin: 0, fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)'}}>Sản xuất</p>
                          </div>
-                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                            <div>
-                               <p style={{margin: '0', fontSize: '0.85rem', color: '#64748b'}}>Thực hiện:</p>
-                               <ul style={{margin: '0.2rem 0', padding: 0, listStyle: 'none', fontSize: '0.85rem', color: '#1e293b', fontWeight: 600}}>
+                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'0.75rem'}}>
+                            <div style={{minWidth: 0}}>
+                               <ul style={{margin: 0, padding: 0, listStyle: 'none', fontSize: '0.82rem', color: 'var(--text-primary)', fontWeight: 600}}>
                                   {st.prodDetails.map((p, idx) => (
-                                     <li key={idx}>{p.code}: <span style={{color: '#10b981'}}>{Number(p.qty.toFixed(1))} SP</span></li>
+                                     <li key={idx} style={{marginBottom: 2}}>{p.code}: <span style={{fontWeight: 700}}>{Number(p.qty.toFixed(1))} SP</span></li>
                                   ))}
                                </ul>
-                               <p style={{margin: '0.5rem 0 0 0', fontSize: '0.9rem', color: '#64748b'}}>Hiệu suất: <strong style={{color:'#1e293b'}}>{st.avgPerf ? Math.round(st.avgPerf) + '%' : 'N/A'}</strong></p>
+                               <p style={{margin: '0.45rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)'}}>Hiệu suất: <strong style={{color: 'var(--text-primary)'}}>{st.avgPerf ? Math.round(st.avgPerf) + '%' : 'N/A'}</strong></p>
                             </div>
-                            <div style={{textAlign:'right'}}>
-                              <p style={{margin: 0, fontSize: '0.85rem', color: '#94a3b8'}}>Sản lượng</p>
-                              <p style={{margin: 0, fontSize: '1.35rem', fontWeight: 800, color: '#10b981', lineHeight: 1}}>{Number(st.prodQty.toFixed(1))} <span style={{fontSize:'0.9rem'}}>SP</span></p>
+                            <div style={{textAlign:'right', flexShrink: 0}}>
+                              <p style={{margin: 0, fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 600}}>Sản lượng</p>
+                              <p style={{margin: 0, fontSize: '1.45rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1}}>{Number(st.prodQty.toFixed(1))} <span style={{fontSize:'0.8rem', color: 'var(--text-secondary)', fontWeight: 600}}>SP</span></p>
                             </div>
                          </div>
                        </div>

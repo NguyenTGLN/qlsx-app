@@ -33,3 +33,6 @@ qlsx-deploy-moi.zip
 *.njsproj
 *.sln
 *.sw?
+
+# Anh goc avatar (ban nen da o public/avatars/)
+/avatar/
