@@ -163,6 +163,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
   // block = { id, sourceType:'psx'|'order'|'ncc'|'none', sourceValue, dlkCode, items:[...] }
   const [blocks, setBlocks] = useState([]);
   const [pasteCodes, setPasteCodes] = useState('');   // ô dán nhiều mã đơn cho Nhập hoàn/hủy
+  const [hoanHuyMatches, setHoanHuyMatches] = useState([]);  // khi gõ 6 số cuối khớp nhiều mã đơn → cho user click chọn
   const [openDlkList, setOpenDlkList] = useState([]);  // danh sách DLK đang mở để chọn (Nhập mua vào)
   const [allOrders, setAllOrders] = useState([]);
   const [shortfallRows, setShortfallRows] = useState([]);   // các DLK vừa nhập còn thiếu so SL Đặt → hộp kết quả
@@ -353,11 +354,50 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
     setLoading(false);
   };
 
-  // Nhập hoàn/hủy: dán nhiều mã đơn cách nhau bằng dấu cách → mỗi mã 1 khối
+  // Gom các dòng luu_xuat của 1 mã đơn thành 1 khối (mỗi mã hàng 1 dòng)
+  const buildHoanHuyBlock = async (fullCode, rows) => {
+    const grouped = {};
+    rows.forEach(item => {
+      if (!grouped[item.ma_san_pham]) grouped[item.ma_san_pham] = { code: item.ma_san_pham, name: item.ten_san_pham, returnedQty: item.so_luong, unit: 'Cái', locations: [] };
+      else grouped[item.ma_san_pham].returnedQty += item.so_luong;
+    });
+    const items = await attachUnitsAndStock(Object.values(grouped));
+    return { id: newBlockId(), sourceType: 'order', sourceValue: fullCode, dlkCode: '', items };
+  };
+
+  // Nhập hoàn/hủy:
+  //  - Dán NHIỀU mã đơn cách nhau bằng dấu cách → mỗi mã khớp CHÍNH XÁC, 1 khối/mã.
+  //  - Nhập 1 mã (không có dấu cách)            → khớp theo ĐUÔI (VD gõ 6 số cuối):
+  //    khớp đúng 1 đơn → nạp thẳng; khớp nhiều đơn → đổ vào hoanHuyMatches cho user click chọn.
   const handleFetchHoanHuy = async () => {
     const raw = (pasteCodes || '').trim();
     if (!raw) return alert("Vui lòng nhập Mã đơn hàng!");
     const codes = [...new Set(raw.split(/\s+/).map(c => c.trim().toUpperCase()).filter(Boolean))];
+
+    // --- Chế độ 1 mã: tìm theo ĐUÔI (khớp mã đơn kết thúc bằng chuỗi đã gõ) ---
+    if (codes.length === 1) {
+      const suffix = codes[0];
+      setHoanHuyMatches([]);
+      setLoading(true);
+      const { data, error } = await db.from('luu_xuat').select('*').ilike('ma_don_hang', '%' + suffix);
+      setLoading(false);
+      if (error || !data || data.length === 0) return alert("Không tìm thấy dữ liệu cho: " + suffix);
+      const distinct = [...new Set(data.map(r => r.ma_don_hang))];
+      if (distinct.length === 1) {
+        const fullCode = distinct[0];
+        if (blocks.find(b => b.sourceValue === fullCode)) { setPasteCodes(''); return alert("Đã có sẵn mã đơn: " + fullCode); }
+        const block = await buildHoanHuyBlock(fullCode, data);
+        setBlocks(prev => [...prev, block]);
+        setPasteCodes('');
+        return;
+      }
+      // Khớp nhiều mã đơn → hiện danh sách để user click chọn 1 đơn
+      setHoanHuyMatches(distinct.map(code => ({ code, lines: data.filter(r => r.ma_don_hang === code).length })));
+      return;
+    }
+
+    // --- Chế độ nhiều mã: khớp CHÍNH XÁC tuyệt đối như cũ ---
+    setHoanHuyMatches([]);
     setLoading(true);
     const newBlocks = [];
     const missing = [];
@@ -367,13 +407,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
       const { data, error } = await db.from('luu_xuat').select('*').eq('ma_don_hang', code);
       if (error) { missing.push(code); continue; }
       if (!data || data.length === 0) { missing.push(code); continue; }
-      const grouped = {};
-      data.forEach(item => {
-        if (!grouped[item.ma_san_pham]) grouped[item.ma_san_pham] = { code: item.ma_san_pham, name: item.ten_san_pham, returnedQty: item.so_luong, unit: 'Cái', locations: [] };
-        else grouped[item.ma_san_pham].returnedQty += item.so_luong;
-      });
-      const items = await attachUnitsAndStock(Object.values(grouped));
-      newBlocks.push({ id: newBlockId(), sourceType: 'order', sourceValue: code, dlkCode: '', items });
+      newBlocks.push(await buildHoanHuyBlock(code, data));
     }
     if (newBlocks.length > 0) setBlocks(prev => [...prev, ...newBlocks]);
     setPasteCodes('');
@@ -382,6 +416,19 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
     if (missing.length) msgs.push("Không tìm thấy dữ liệu cho: " + missing.join(', '));
     if (skipped.length) msgs.push("Đã có sẵn (bỏ qua): " + skipped.join(', '));
     if (msgs.length) alert(msgs.join('\n'));
+  };
+
+  // Click chọn 1 mã đơn từ danh sách khớp (khi gõ 6 số cuối trùng nhiều đơn)
+  const pickHoanHuyMatch = async (fullCode) => {
+    setHoanHuyMatches([]);
+    if (blocks.find(b => b.sourceValue === fullCode)) { setPasteCodes(''); return alert("Đã có sẵn mã đơn: " + fullCode); }
+    setLoading(true);
+    const { data, error } = await db.from('luu_xuat').select('*').eq('ma_don_hang', fullCode);
+    setLoading(false);
+    if (error || !data || data.length === 0) return alert("Không tìm thấy dữ liệu cho: " + fullCode);
+    const block = await buildHoanHuyBlock(fullCode, data);
+    setBlocks(prev => [...prev, block]);
+    setPasteCodes('');
   };
 
   // --- Cập nhật item trong block ---
@@ -889,19 +936,39 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
 
               {reason === 'Nhập hoàn/hủy' && (
                 <div className="no-print" style={{marginBottom:'1.25rem', background:'#f8fafc', padding:'1rem', borderRadius:'0.75rem', border:'1px solid #e2e8f0'}}>
-                  <label style={s.label}>Mã đơn hàng <span style={{fontWeight:400, color:'#94a3b8'}}>(dán nhiều mã, cách nhau bằng dấu cách)</span></label>
+                  <label style={s.label}>Mã đơn hàng <span style={{fontWeight:400, color:'#94a3b8'}}>(nhiều mã: cách nhau bằng dấu cách · 1 mã: gõ được 6 số cuối)</span></label>
                   <div style={{display:'flex', gap:5}}>
                     <input
                       style={{...s.input, padding:'8px'}}
                       value={pasteCodes}
-                      onChange={e=>setPasteCodes(e.target.value.toUpperCase())}
+                      onChange={e=>{ setPasteCodes(e.target.value.toUpperCase()); if (hoanHuyMatches.length) setHoanHuyMatches([]); }}
                       onKeyDown={e => { if (e.key === 'Enter') handleFetchHoanHuy(); }}
-                      placeholder="VD: DH01 DH02 DH03"
+                      placeholder="Nhiều mã: DH01 DH02 · 1 mã: 6 số cuối, VD 001234"
                     />
                     <button onClick={handleFetchHoanHuy} style={{...s.btn, background:'#0284c7', color:'#fff', padding:'8px 12px'}}>
                       <Search size={16}/>
                     </button>
                   </div>
+                  {hoanHuyMatches.length > 0 && (
+                    <div style={{marginTop:8, border:'1px solid #cbd5e1', borderRadius:'0.5rem', background:'#fff', overflow:'hidden'}}>
+                      <div style={{padding:'6px 10px', fontSize:'0.78rem', color:'#475569', background:'#f1f5f9', borderBottom:'1px solid #e2e8f0'}}>
+                        Khớp <b>{hoanHuyMatches.length}</b> mã đơn — chọn 1 đơn:
+                      </div>
+                      {hoanHuyMatches.map(m => (
+                        <button
+                          key={m.code}
+                          type="button"
+                          onClick={() => pickHoanHuyMatch(m.code)}
+                          style={{display:'flex', justifyContent:'space-between', alignItems:'center', width:'100%', textAlign:'left', padding:'8px 10px', background:'#fff', border:'none', borderBottom:'1px solid #f1f5f9', cursor:'pointer', fontSize:'0.85rem'}}
+                          onMouseEnter={e => e.currentTarget.style.background = '#eff6ff'}
+                          onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                        >
+                          <span style={{fontWeight:600, color:'#0f172a'}}>{m.code}</span>
+                          <span style={{fontSize:'0.75rem', color:'#94a3b8'}}>{m.lines} mã hàng</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

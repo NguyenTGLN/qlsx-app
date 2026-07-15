@@ -74,6 +74,21 @@ import { useNavigate } from 'react-router-dom';
       const dt = new Date(d)
       return `${pad(dt.getDate())}/${pad(dt.getMonth()+1)}`
     }
+    // UTC ISO -> chuỗi cho ô <input type="datetime-local"> theo giờ máy (VN).
+    // Dùng khi PRE-FILL form sửa: KHÔNG được cắt chuỗi UTC thô (sẽ lệch -7).
+    const toLocalInput = iso => {
+      if (!iso) return ''
+      const d = new Date(iso)
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+    }
+    // UTC ISO -> "HH:mm dd/MM/yyyy" theo GIỜ VIỆT NAM (ép Asia/Ho_Chi_Minh, không phụ thuộc TZ trình duyệt).
+    // Gửi kèm payload nhắc việc để n8n in thẳng, khỏi phải cộng +7.
+    const fmtDueVN = iso => {
+      if (!iso) return null
+      const p = new Intl.DateTimeFormat('en-GB', { timeZone:'Asia/Ho_Chi_Minh', hour12:false, day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }).formatToParts(new Date(iso))
+      const g = t => p.find(x=>x.type===t)?.value
+      return `${g('hour')}:${g('minute')} ${g('day')}/${g('month')}/${g('year')}`
+    }
 
     function daysFrom(d) {
       if (!d) return null
@@ -917,7 +932,7 @@ import { useNavigate } from 'react-router-dom';
       const canChangeAssignee = hasPerm(currentUser,'change_assignee');
       const canEditRecurrence = hasPerm(currentUser,'edit_recurrence');
       
-      const [f, setF] = useState({ title: task?.title||'', description: task?.description||'', label: task?.label||'', assignee_id: task?.assignee_id||'', due_date: task?.due_date ? task.due_date.slice(0,16) : '', recurrence_type: task?.recurrence_type||RECUR.NONE, status: task?.status||STATUS.IN_PROGRESS })
+      const [f, setF] = useState({ title: task?.title||'', description: task?.description||'', label: task?.label||'', assignee_id: task?.assignee_id||'', due_date: toLocalInput(task?.due_date), recurrence_type: task?.recurrence_type||RECUR.NONE, status: task?.status||STATUS.IN_PROGRESS })
       const [busy, setBusy] = useState(false); const set = (k,v) => setF(p=>({...p,[k]:v}))
 
       async function submit(e) {
@@ -1165,10 +1180,10 @@ import { useNavigate } from 'react-router-dom';
           timestamp: upd.last_reminded_date,
           sender: { id: me.id, name: me.name, role: me.role },
           assignee: { id: assignee?.id||null, name: assignee?.name||'Chưa giao', email: assignee?.email||null },
-          task: { id: task.id, title: task.title, status: task.status, priority: task.priority, due_date: task.due_date, description: task.description }
+          task: { id: task.id, title: task.title, status: task.status, priority: task.priority, due_date: task.due_date, due_at_vn: fmtDueVN(task.due_date), description: task.description }
         };
         try { await fetch('https://thegioilocnuoc.site/webhook/47cc5412-40b2-4747-af7f-8d7090cb40c2', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(remindPayload)}); } catch(_) {}
-        await callWebhook({type:'reminder',task:{...task,...upd},sender:me});
+        await callWebhook({type:'reminder',task:{...task,...upd,due_at_vn:fmtDueVN(task.due_date)},sender:me});
         toast('Đã nhắc việc!');
       }
 
