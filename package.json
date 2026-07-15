@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@fontsource/be-vietnam-pro": "^5.2.8",
     "@supabase/supabase-js": "^2.100.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

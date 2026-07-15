@@ -344,7 +344,7 @@ const inputStyle = {
   border: '1.5px solid #e2e8f0', borderRadius: '8px',
   fontSize: '0.9rem', color: '#1e293b',
   outline: 'none', boxSizing: 'border-box',
-  fontFamily: "'Inter', 'Segoe UI', sans-serif",
+  fontFamily: 'var(--font-sans)',
   transition: 'border-color 0.2s',
 };
 
