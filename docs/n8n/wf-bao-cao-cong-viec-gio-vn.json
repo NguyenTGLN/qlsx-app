@@ -1,0 +1,730 @@
+{
+  "name": "Báo cáo & nhắc việc Zalo (giờ VN)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            },
+            {
+              "triggerAtHour": 17
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        48,
+        192
+      ],
+      "id": "2a9f0459-2574-4666-a604-ce92a16fdb3b",
+      "name": "Schedule 8h & 17h"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "a6fc08fc-dc4e-432e-9588-424d78470769",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        48,
+        368
+      ],
+      "id": "8f0c00c8-d335-4ce3-9766-9b465d2e0318",
+      "name": "Webhook tổng hợp",
+      "webhookId": "a6fc08fc-dc4e-432e-9588-424d78470769"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "47cc5412-40b2-4747-af7f-8d7090cb40c2",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        48,
+        544
+      ],
+      "id": "161637b1-75d3-47b6-b0c9-efeb7fcf4420",
+      "name": "Webhook cập nhật task",
+      "webhookId": "47cc5412-40b2-4747-af7f-8d7090cb40c2"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "16Ds1SmhzS_E9cX8HnoXEFxh1oucc3g7-bVr9gM15tL0",
+          "mode": "list",
+          "cachedResultName": "Bảng tính không có tiêu đề",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16Ds1SmhzS_E9cX8HnoXEFxh1oucc3g7-bVr9gM15tL0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Zalo token",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/16Ds1SmhzS_E9cX8HnoXEFxh1oucc3g7-bVr9gM15tL0/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        304,
+        368
+      ],
+      "id": "fa78082d-b8df-4cd3-abca-e9b7136fdabb",
+      "name": "Lấy token OA",
+      "executeOnce": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "LkXo3hroY3NHTeik",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "branch-check-01",
+              "leftValue": "={{ $('Webhook cập nhật task').isExecuted }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        544,
+        368
+      ],
+      "id": "236664d9-c272-4dba-ae8f-d7b4bd5f3bc6",
+      "name": "Là cập nhật task?"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "nhan_vien",
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        784,
+        208
+      ],
+      "id": "62cc48c3-4283-4722-bbc3-bd0323b4a1ef",
+      "name": "Lấy nhân viên",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "kAOz6fNsa8UHk4Ws",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://ngwkzicrnspeggunsblr.supabase.co/rest/v1/cong_viec_duoc_giao",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "or",
+              "value": "(status.eq.PENDING,status.eq.IN_PROGRESS)"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nd2t6aWNybnNwZWdndW5zYmxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMTU4MTgsImV4cCI6MjA4NzY5MTgxOH0.XgxezghOyUYgr370Ge13VN_V2r-PfR4BEq7JDDF4Pts"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nd2t6aWNybnNwZWdndW5zYmxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMTU4MTgsImV4cCI6MjA4NzY5MTgxOH0.XgxezghOyUYgr370Ge13VN_V2r-PfR4BEq7JDDF4Pts"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1024,
+        208
+      ],
+      "id": "fc330026-f6e1-4976-9fd8-6c3158e477e8",
+      "name": "Lấy công việc",
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================================================\n// TẠO NỘI DUNG ẢNH (định kỳ / theo yêu cầu)\n// - Item 1        : Bảng tổng hợp công việc cả phòng\n// - Item 2..n     : Bảng riêng của TỪNG NGƯỜI đang có việc\n// Mỗi item đầu ra : { html, message_text } -> đi vào CHUỖI GỬI CHUNG\n// Không hardcode tên nhân viên - lấy trực tiếp từ bảng nhan_vien\n// ==============================================================\nconst tasks = $('Lấy công việc').all().map(i => i.json).filter(t => t && t.id);\nconst nhanVien = $('Lấy nhân viên').all().map(i => i.json).filter(n => n && n.name);\n\nconst GROUP_ID = 'deb64378401ba945f00a';\nconst oaMap = {};\nnhanVien.forEach(nv => { oaMap[nv.name] = nv.id_zalo_oa; });\n\n// ===== MÚI GIỜ (fix lệch -7 tiếng) =====\n// Server n8n chạy UTC nên new Date().getHours() trả giờ UTC (10:00 VN in ra 03:00).\n// Mọi format/đếm ngày phải ÉP Asia/Ho_Chi_Minh, KHÔNG dùng getHours()/setHours().\nconst VN_TZ = 'Asia/Ho_Chi_Minh';\n\nfunction formatDateTime(isoString) {\n    try {\n        const parts = new Intl.DateTimeFormat('en-GB', {\n            timeZone: VN_TZ, hour12: false,\n            day: '2-digit', month: '2-digit', year: 'numeric',\n            hour: '2-digit', minute: '2-digit'\n        }).formatToParts(new Date(isoString));\n        const g = t => parts.find(x => x.type === t).value;\n        return `${g('day')}/${g('month')}/${g('year')} ${g('hour')}:${g('minute')}`;\n    } catch (e) { return isoString; }\n}\n\n// Số thứ tự NGÀY theo giờ VN (ngày kể từ epoch) — đếm \"còn/trễ X ngày\" đúng cả quanh nửa đêm VN.\nfunction vnDayNumber(dateLike) {\n    const s = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateLike));\n    return Math.round(Date.parse(s + 'T00:00:00Z') / 86400000);\n}\nconst todayVn = vnDayNumber(Date.now());\n\nfunction statusInfo(dueDate) {\n    if (!dueDate) return { text: '', cls: '', warn: '', color: '' };\n    const diff = vnDayNumber(dueDate) - todayVn;\n    if (diff < 0)   return { text: 'QUÁ HẠN',  cls: 'badge-danger',  warn: `Trễ ${Math.abs(diff)} ngày`, color: '#ef4444' };\n    if (diff === 0) return { text: 'HÔM NAY',  cls: 'badge-warning', warn: 'Đến hạn',                    color: '#f59e0b' };\n    return { text: 'ĐANG LÀM', cls: 'badge-success', warn: `Còn ${diff} ngày`, color: '#10b981' };\n}\n\nconst CSS = `\n        body, html { margin: 0; padding: 0; width: 1920px; min-height: 1080px; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, sans-serif; }\n        .header-title { width: 100%; background: #1e293b; color: white; text-align: center; font-size: 55px; padding: 25px 0; font-weight: bold; text-transform: uppercase; }\n        table { width: 100%; border-collapse: collapse; table-layout: fixed; background: white; }\n        th { background: #4f46e5; color: white; font-size: 38px; padding: 25px 10px; border-bottom: 6px solid #3730a3; }\n        td { padding: 30px 15px; font-size: 38px; vertical-align: middle; border-bottom: 2px solid #e2e8f0; word-wrap: break-word; line-height: 1.3; }\n        tr:nth-child(even) { background-color: #f8fafc; }\n        th:nth-child(1) { width: 10%; } th:nth-child(2) { width: 35%; } th:nth-child(3) { width: 12%; }\n        th:nth-child(4) { width: 15%; } th:nth-child(5) { width: 13%; } th:nth-child(6) { width: 15%; }\n        .text-center { text-align: center; } .font-bold { font-weight: bold; } .text-primary { color: #1e3a8a; }\n        .text-id { color: #64748b; font-size: 30px; text-align: center; }\n        .badge { padding: 12px 20px; border-radius: 10px; color: white; font-weight: bold; display: inline-block; font-size: 28px; }\n        .badge-danger { background: #ef4444; } .badge-warning { background: #f59e0b; } .badge-success { background: #10b981; }\n`;\n\nfunction buildTable(title, list) {\n    const sorted = [...list].sort((a, b) => {\n        const nameA = (a.name || 'Chưa giao').toLowerCase();\n        const nameB = (b.name || 'Chưa giao').toLowerCase();\n        if (nameA < nameB) return -1;\n        if (nameA > nameB) return 1;\n        const dateA = a.due_date ? new Date(a.due_date).getTime() : 0;\n        const dateB = b.due_date ? new Date(b.due_date).getTime() : 0;\n        return dateA - dateB;\n    });\n\n    let rows = '';\n    sorted.forEach(t => {\n        const s = statusInfo(t.due_date);\n        rows += `\n        <tr>\n            <td class=\"text-id\">${t.id || ''}</td>\n            <td class=\"font-bold text-primary\">${t.title}</td>\n            <td class=\"text-center font-bold\" style=\"background-color: #fefce8;\">${t.name || 'Chưa giao'}</td>\n            <td class=\"text-center\" style=\"font-size: 32px;\">${t.due_date ? formatDateTime(t.due_date) : 'N/A'}</td>\n            <td class=\"text-center\"><span class=\"badge ${s.cls}\">${s.text}</span></td>\n            <td class=\"text-center font-bold\" style=\"color: ${s.color};\">${s.warn}</td>\n        </tr>`;\n    });\n\n    return `<!DOCTYPE html>\n<html lang=\"vi\">\n<head><meta charset=\"UTF-8\"><style>${CSS}</style></head>\n<body>\n    <div class=\"header-title\">${title}</div>\n    <table>\n        <thead><tr><th>Mã CV</th><th>Tên công việc</th><th>Người làm</th><th>Hạn hoàn thành</th><th>Trạng thái</th><th>Cảnh báo</th></tr></thead>\n        <tbody>${rows}</tbody>\n    </table>\n</body>\n</html>`;\n}\n\nconst out = [];\n\n// 1) Bảng tổng hợp cả phòng\nif (tasks.length > 0) {\n    out.push({ json: {\n        html: buildTable('BẢNG TỔNG HỢP CÔNG VIỆC PHÒNG', tasks),\n        message_text: `Tổng hợp công việc [@${GROUP_ID}]`\n    }});\n}\n\n// 2) Bảng riêng từng người CÓ việc (người không có việc sẽ không nhận ảnh)\nconst byName = {};\ntasks.forEach(t => {\n    if (t.name) (byName[t.name] = byName[t.name] || []).push(t);\n});\n\nObject.keys(byName).sort((a, b) => a.localeCompare(b, 'vi')).forEach(name => {\n    const oaId = oaMap[name];\n    if (!oaId) return; // không tìm thấy id_zalo_oa -> bỏ qua ảnh cá nhân, vẫn có trong bảng tổng hợp\n    out.push({ json: {\n        html: buildTable(`CÔNG VIỆC CỦA ${name.toUpperCase()}`, byName[name]),\n        message_text: `[@${oaId}] Tốc độ!`\n    }});\n});\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        208
+      ],
+      "id": "17e27406-e818-489e-b769-73ad4b885af2",
+      "name": "Tạo nội dung ảnh (tổng hợp + cá nhân)"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "nhan_vien",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "name",
+              "keyValue": "={{ $('Webhook cập nhật task').first().json.body.assignee.name }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        784,
+        528
+      ],
+      "id": "79b4670b-c5a5-4316-a972-8723e64a7f61",
+      "name": "Lấy nhân viên (cập nhật)",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "kAOz6fNsa8UHk4Ws",
+          "name": "Supabase account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "cong_viec_duoc_giao",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $('Webhook cập nhật task').first().json.body.task.id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1024,
+        528
+      ],
+      "id": "0df1a443-f442-4425-ae82-85d51b2f2dd8",
+      "name": "Lấy công việc (cập nhật)",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kAOz6fNsa8UHk4Ws",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "tien_do",
+        "returnAll": true,
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook cập nhật task').first().json.body.task.id }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1264,
+        528
+      ],
+      "id": "abc9fe9b-cb6c-4720-a7cc-f0e410432a54",
+      "name": "Lấy tiến độ",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "kAOz6fNsa8UHk4Ws",
+          "name": "Supabase account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==============================================================\n// TẠO THẺ CHI TIẾT khi 1 công việc được cập nhật (Webhook cập nhật task)\n// Đầu vào : Lấy công việc (cập nhật) + Lấy tiến độ + Lấy nhân viên (cập nhật)\n// Đầu ra  : 1 item { html, message_text } -> đi vào CHUỖI GỬI CHUNG\n// ==============================================================\nconst task = $('Lấy công việc (cập nhật)').first().json || {};\nconst webhookBody = $('Webhook cập nhật task').first().json.body || {};\nlet nv = {};\ntry { nv = $('Lấy nhân viên (cập nhật)').first().json || {}; } catch (e) { nv = {}; }\n\n// Các dòng tiến độ của task (đã lọc theo task_id ở node trước)\nconst tienDo = $input.all().map(i => i.json).filter(r => r && r.task_id);\n\n// ===== MÚI GIỜ (fix lệch -7 tiếng) =====\n// Server n8n chạy UTC nên new Date().getHours() trả giờ UTC (10:00 VN in ra 03:00).\n// Mọi format/đếm ngày phải ÉP Asia/Ho_Chi_Minh, KHÔNG dùng getHours()/setHours().\nconst VN_TZ = 'Asia/Ho_Chi_Minh';\n\nfunction formatDateTime(isoString) {\n    try {\n        const parts = new Intl.DateTimeFormat('en-GB', {\n            timeZone: VN_TZ, hour12: false,\n            day: '2-digit', month: '2-digit', year: 'numeric',\n            hour: '2-digit', minute: '2-digit'\n        }).formatToParts(new Date(isoString));\n        const g = t => parts.find(x => x.type === t).value;\n        return `${g('day')}/${g('month')}/${g('year')} ${g('hour')}:${g('minute')}`;\n    } catch (e) { return isoString; }\n}\n\n// Số thứ tự NGÀY theo giờ VN (ngày kể từ epoch) — đếm \"còn/trễ X ngày\" đúng cả quanh nửa đêm VN.\nfunction vnDayNumber(dateLike) {\n    const s = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateLike));\n    return Math.round(Date.parse(s + 'T00:00:00Z') / 86400000);\n}\nconst todayVn = vnDayNumber(Date.now());\n\n// ===== BỘ ICON SVG (nét trắng, dùng chung cho nhãn) =====\nconst ICONS = {\n    content: `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M9 13h6M9 17h4\"/></svg>`,\n    clock:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/></svg>`,\n    trend:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"3 17 9 11 13 15 21 7\"/><polyline points=\"15 7 21 7 21 13\"/></svg>`,\n    user:    `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1\"/></svg>`,\n    alert:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3 2 20h20L12 3z\"/><path d=\"M12 10v4\"/><path d=\"M12 17.5h.01\"/></svg>`,\n    check:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M8 12l3 3 5-6\"/></svg>`\n};\nconst badgeIcon = (name) => `<span class=\"badge-ic\">${ICONS[name]}</span>`;\n\nconst assigneeName = task.name || (webhookBody.assignee && webhookBody.assignee.name) || 'Chưa giao';\nconst formattedDueDate = task.due_date ? formatDateTime(task.due_date) : 'N/A';\n\n// Tình trạng + kiểu cảnh báo cho cả thẻ\nlet statusHtml = `<span class=\"badge badge-secondary\">${badgeIcon('clock')} Chưa có hạn</span>`;\nlet cardClass = '';\nlet statusIcon = ICONS.check;\nlet statusRowColor = 'row-status-neutral';\nif (task.due_date) {\n    const diffDays = vnDayNumber(task.due_date) - todayVn;\n    if (diffDays < 0) {\n        statusHtml = `<span class=\"badge badge-danger\">${badgeIcon('alert')} Quá hạn ${Math.abs(diffDays)} ngày</span>`;\n        cardClass = 'card-overdue'; statusIcon = ICONS.alert; statusRowColor = 'row-status-danger';\n    } else if (diffDays === 0) {\n        statusHtml = `<span class=\"badge badge-warning\">${badgeIcon('alert')} Hạn hôm nay</span>`;\n        cardClass = 'card-today'; statusIcon = ICONS.alert; statusRowColor = 'row-status-warning';\n    } else if (diffDays <= 2) {\n        statusHtml = `<span class=\"badge badge-warning\">${badgeIcon('clock')} Còn ${diffDays} ngày</span>`;\n        cardClass = 'card-today'; statusIcon = ICONS.clock; statusRowColor = 'row-status-warning';\n    } else {\n        statusHtml = `<span class=\"badge badge-success\">${badgeIcon('check')} Còn ${diffDays} ngày</span>`;\n        statusIcon = ICONS.check; statusRowColor = 'row-status-success';\n    }\n}\n\n// Tiến độ gần nhất = dòng tien_do cuối cùng (không cần gộp chuỗi rồi tách lại)\nlet latestUpdate = `<span class=\"empty\">Chưa có cập nhật</span>`;\nif (tienDo.length > 0) {\n    const last = tienDo[tienDo.length - 1];\n    latestUpdate = `<span class=\"up-content\">${last.content}</span><span class=\"up-meta\">${formatDateTime(last.time)} · ${last.name}</span>`;\n}\n\nconst card = `\n        <div class=\"card ${cardClass}\">\n            <div class=\"row row-content\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.content}</span>Nội dung công việc</div>\n                <div class=\"value title\">${task.title || ''}</div>\n            </div>\n            <div class=\"row row-due\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.clock}</span>Thời hạn hoàn thành</div>\n                <div class=\"value\">${formattedDueDate}</div>\n            </div>\n            <div class=\"row row-progress\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.trend}</span>Tiến độ gần nhất</div>\n                <div class=\"value update-value\">${latestUpdate}</div>\n            </div>\n            <div class=\"row row-person\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.user}</span>Người thực hiện</div>\n                <div class=\"value strong\">${assigneeName}</div>\n            </div>\n            <div class=\"row ${statusRowColor}\">\n                <div class=\"label\"><span class=\"ic\">${statusIcon}</span>Tình trạng</div>\n                <div class=\"value\">${statusHtml}</div>\n            </div>\n        </div>\n`;\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html lang=\"vi\">\n<head>\n    <meta charset=\"UTF-8\">\n    <style>\n        body, html {\n            margin: 0; padding: 0;\n            width: 1920px; min-height: 1080px;\n            background: linear-gradient(160deg, #eef2ff 0%, #f8fafc 45%, #ecfeff 100%);\n            font-family: 'Segoe UI', Arial, sans-serif;\n        }\n        .wrapper { padding: 55px 70px; }\n        .page-title {\n            font-size: 56px; font-weight: 800; color: #1e293b;\n            text-transform: uppercase; margin: 0 0 40px; text-align: center;\n            letter-spacing: 1px;\n        }\n        .page-title span { color: #4f46e5; }\n        .page-title .bar {\n            display: block; width: 260px; height: 8px; margin: 22px auto 0;\n            border-radius: 6px;\n            background: linear-gradient(90deg,#6366f1,#0ea5e9,#f59e0b,#10b981);\n        }\n\n        .card {\n            background: #ffffff; border-radius: 28px;\n            box-shadow: 0 14px 40px rgba(30,41,59,0.12);\n            padding: 22px; margin-bottom: 48px;\n            border-left: 14px solid #cbd5e1;\n        }\n        .card-overdue { border-left-color: #dc2626; background: #fef2f2; }\n        .card-today   { border-left-color: #f59e0b; background: #fffbeb; }\n\n        .row {\n            display: flex; align-items: stretch;\n            border-radius: 18px; overflow: hidden;\n            margin-bottom: 16px;\n            min-height: 150px;\n            box-shadow: 0 4px 12px rgba(0,0,0,0.06);\n        }\n        .row:last-child { margin-bottom: 0; }\n\n        .label {\n            width: 480px; flex-shrink: 0;\n            color: #ffffff; font-size: 40px; font-weight: 700;\n            padding: 30px 34px; display: flex; align-items: center; gap: 20px;\n        }\n        .ic { width: 56px; height: 56px; flex-shrink: 0; display: inline-flex; }\n        .ic svg { width: 100%; height: 100%; }\n\n        .value {\n            flex: 1; font-size: 44px; color: #0f172a;\n            padding: 30px 40px; display: flex; align-items: center;\n            word-wrap: break-word; line-height: 1.35;\n        }\n        .value.title { font-weight: 800; font-size: 48px; }\n        .value.strong { font-weight: 800; }\n        .update-value { flex-direction: column; align-items: flex-start; justify-content: center; }\n        .up-content { color: #0f172a; }\n        .up-meta { font-size: 34px; font-style: italic; color: #b45309; margin-top: 8px; }\n        .empty { color: #b45309; font-style: italic; }\n\n        .row-content .label { background: linear-gradient(135deg,#6366f1,#8b5cf6); }\n        .row-content .value { background: #ddd6fe; color:#4338ca; border:3px solid #a78bfa; }\n\n        .row-due .label { background: linear-gradient(135deg,#0ea5e9,#06b6d4); }\n        .row-due .value { background: #bae6fd; color:#0369a1; font-weight:800; border:3px solid #38bdf8; }\n\n        .row-progress .label { background: linear-gradient(135deg,#f59e0b,#f97316); }\n        .row-progress .value { background: #fed7aa; color:#9a3412; border:3px solid #fb923c; }\n\n        .row-person .label { background: linear-gradient(135deg,#10b981,#14b8a6); }\n        .row-person .value { background: #a7f3d0; color:#065f46; border:3px solid #34d399; }\n\n        .row-status-success .label { background: linear-gradient(135deg,#10b981,#059669); }\n        .row-status-success .value { background: #a7f3d0; border:3px solid #34d399; }\n        .row-status-warning .label { background: linear-gradient(135deg,#f59e0b,#d97706); }\n        .row-status-warning .value { background: #fde68a; border:3px solid #fbbf24; }\n        .row-status-danger  .label { background: linear-gradient(135deg,#ef4444,#dc2626); }\n        .row-status-danger  .value { background: #fecaca; border:3px solid #f87171; }\n        .row-status-neutral .label { background: linear-gradient(135deg,#94a3b8,#64748b); }\n        .row-status-neutral .value { background: #e2e8f0; border:3px solid #cbd5e1; }\n\n        .badge {\n            padding: 16px 36px; border-radius: 22px; color: #ffffff;\n            font-weight: 800; display: inline-flex; align-items: center; gap: 16px;\n            font-size: 42px; line-height: 1.1;\n            box-shadow: 0 6px 16px rgba(0,0,0,0.18);\n        }\n        .badge-ic { width: 46px; height: 46px; display:inline-flex; }\n        .badge-ic svg { width:100%; height:100%; }\n        .badge-danger    { background: linear-gradient(to right, #ef4444, #dc2626); }\n        .badge-warning   { background: linear-gradient(to right, #f59e0b, #d97706); }\n        .badge-success   { background: linear-gradient(to right, #10b981, #059669); }\n        .badge-secondary { background: linear-gradient(to right, #94a3b8, #64748b); }\n    </style>\n</head>\n<body>\n    <div class=\"wrapper\">\n        <div class=\"page-title\">Danh sách <span>công việc</span><span class=\"bar\"></span></div>\n        ${card}\n    </div>\n</body>\n</html>\n`;\n\nconst mention = nv.id_zalo_oa ? `[@${nv.id_zalo_oa}] ` : '';\nreturn [{ json: { html: htmlContent, message_text: `${mention}Tốc độ!` } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        528
+      ],
+      "id": "8df8a5cf-6268-4e18-937a-06133d132ae9",
+      "name": "Tạo nội dung thẻ chi tiết"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1760,
+        368
+      ],
+      "id": "106a5947-c974-4cdf-a883-56fc43267cb9",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hcti.io/v1/image",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "html",
+              "value": "={{ $json.html }}"
+            },
+            {
+              "name": "format",
+              "value": "png"
+            }
+          ]
+        },
+        "options": {
+          "lowercaseHeaders": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2032,
+        464
+      ],
+      "id": "5ef3fed8-3d18-4cbf-aec3-f1943cd84a5f",
+      "name": "Tạo ảnh HCTI",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "pFhKIVPiiKdinNo4",
+          "name": "Unnamed credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Tạo ảnh HCTI').item.json.url }}.jpg",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2272,
+        464
+      ],
+      "id": "e5b58a3c-999c-46f1-82a6-2b5c833d2f25",
+      "name": "Tải ảnh JPG"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v2.0/oa/upload/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token OA').first().json.access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2512,
+        464
+      ],
+      "id": "56ee462d-0b8b-4651-873c-a18c200331a7",
+      "name": "Upload ảnh lên OA"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openapi.zalo.me/v3.0/oa/group/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Lấy token OA').first().json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"recipient\": {\n    \"group_id\": \"deb64378401ba945f00a\"\n  },\n  \"message\": {\n    \"text\": {{ JSON.stringify($('Loop Over Items').item.json.message_text) }},\n    \"attachment\": {\n      \"type\": \"template\",\n      \"payload\": {\n        \"template_type\": \"media\",\n        \"elements\": [\n          {\n            \"media_type\": \"image\",\n            \"attachment_id\": \"{{ $json.data.attachment_id }}\"\n          }\n        ]\n      }\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2752,
+        464
+      ],
+      "id": "539d97e8-5667-4d24-a29e-c61750b7dfcd",
+      "name": "Gửi ảnh vào nhóm OA"
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2992,
+        464
+      ],
+      "id": "7a3897ff-7757-4a93-b475-01bb72f7813c",
+      "name": "Chờ 2 giây",
+      "webhookId": "10000000-0000-4000-8000-00000000wait"
+    },
+    {
+      "parameters": {
+        "content": "## 3 nguồn kích hoạt → 1 lần lấy token\nSchedule 8h/17h và Webhook tổng hợp đi nhánh TRÊN.\nWebhook cập nhật task đi nhánh DƯỚI.\nToken OA chỉ đọc Google Sheets 1 lần/lượt chạy.",
+        "height": 120,
+        "width": 420
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "61a7e3af-3ba7-4296-81fb-c54ffd62b94b",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Chuẩn hoá đầu ra: { html, message_text }\nCả 2 nhánh đều trả về items cùng định dạng\n→ dùng CHUNG 1 chuỗi gửi phía sau.\nNhánh trên: 1 bảng phòng + N bảng cá nhân (không hardcode tên).\nNhánh dưới: 1 thẻ chi tiết task vừa cập nhật.",
+        "height": 140,
+        "width": 460
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1168,
+        0
+      ],
+      "id": "df62def3-ac20-4f03-bc6d-fe5be8a88934",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Chuỗi gửi dùng chung (thay cho 3 bản copy cũ)\nHCTI tạo PNG → tải bản .jpg (nén, không méo, bỏ Edit Image)\n→ upload OA → gửi nhóm kèm mention → chờ 2s tránh rate limit → lặp.",
+        "height": 120,
+        "width": 520
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1984,
+        240
+      ],
+      "id": "ace870a2-e898-4131-9490-6f8dc2cf054c",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## FIX MÚI GIỜ 2026-07-15 (lệch -7 tiếng)\nServer n8n chạy UTC → getHours() in 03:00 thay vì 10:00.\nCả 2 node Code đã ÉP Asia/Ho_Chi_Minh bằng Intl.DateTimeFormat\n(formatDateTime + vnDayNumber đếm 'còn/trễ X ngày' theo ngày VN).\nKhi sửa code sau này: KHÔNG dùng getHours()/setHours() trực tiếp.",
+        "height": 140,
+        "width": 520,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        544,
+        640
+      ],
+      "id": "f1c2d3e4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+      "name": "Sticky Note3"
+    }
+  ],
+  "connections": {
+    "Schedule 8h & 17h": {
+      "main": [
+        [
+          {
+            "node": "Lấy token OA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook tổng hợp": {
+      "main": [
+        [
+          {
+            "node": "Lấy token OA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook cập nhật task": {
+      "main": [
+        [
+          {
+            "node": "Lấy token OA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy token OA": {
+      "main": [
+        [
+          {
+            "node": "Là cập nhật task?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Là cập nhật task?": {
+      "main": [
+        [
+          {
+            "node": "Lấy nhân viên (cập nhật)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lấy nhân viên",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy nhân viên": {
+      "main": [
+        [
+          {
+            "node": "Lấy công việc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy công việc": {
+      "main": [
+        [
+          {
+            "node": "Tạo nội dung ảnh (tổng hợp + cá nhân)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo nội dung ảnh (tổng hợp + cá nhân)": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy nhân viên (cập nhật)": {
+      "main": [
+        [
+          {
+            "node": "Lấy công việc (cập nhật)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy công việc (cập nhật)": {
+      "main": [
+        [
+          {
+            "node": "Lấy tiến độ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lấy tiến độ": {
+      "main": [
+        [
+          {
+            "node": "Tạo nội dung thẻ chi tiết",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo nội dung thẻ chi tiết": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Tạo ảnh HCTI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tạo ảnh HCTI": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh JPG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh JPG": {
+      "main": [
+        [
+          {
+            "node": "Upload ảnh lên OA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload ảnh lên OA": {
+      "main": [
+        [
+          {
+            "node": "Gửi ảnh vào nhóm OA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gửi ảnh vào nhóm OA": {
+      "main": [
+        [
+          {
+            "node": "Chờ 2 giây",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chờ 2 giây": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "3ea5c6d0c36cbc08e2627e89f82a9a6d5c7d746c0e34b66b395bab5a90858f61"
+  }
+}
