@@ -8,6 +8,9 @@ import { useNavigate } from 'react-router-dom';
     import { MODULE_PERMS, ALL_PERMS, canSeeTab, getTabPerm } from '../../lib/AuthContext';
     import { PERM_REGISTRY, ALL_CAPS, CAP_LABEL, tabKey, migrateLegacyToTabPerms } from '../../lib/permRegistry';
     import ModuleShell, { TabButton } from '../../components/ModuleShell';
+    import AttachmentInput from '../../components/AttachmentInput';
+    import AttachmentList, { AttachmentBadge } from '../../components/AttachmentList';
+    import { collectPaths, deleteAttachments, cleanupAdded } from '../../lib/attachmentStorage';
     import {
       ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart,
       ListChecks, Loader2, CheckCircle2, AlertTriangle, Send, Search,
@@ -195,6 +198,7 @@ import { useNavigate } from 'react-router-dom';
         assignee_id:form.assignee_id, progress:0, sort_order:0, created_date:new Date().toISOString(),
         due_date:form.due_date||null, completed_date:null, updated_by:createdBy, last_reminded_date:null,
         recurrence_type:form.recurrence_type||RECUR.NONE, recurrence_parent_id:null, last_auto_created_date:null,
+        attachments:form.attachments||[],
       }
       const { error } = await db.from('cong_viec_duoc_giao').insert(row)
       if (error) throw error; return row
@@ -205,16 +209,32 @@ import { useNavigate } from 'react-router-dom';
       if (error) throw error; return updated
     }
 
+    // Xoá file đính kèm của việc + của mọi lần cập nhật tiến độ thuộc việc đó.
+    // Phải chạy TRƯỚC khi xoá row: mất row là mất luôn đường tìm path trong Storage.
+    // Dọn hụt chỉ để lại rác nên không bao giờ được chặn thao tác xoá việc.
+    async function cleanupTaskFiles(ids) {
+      if (!ids.length) return
+      try {
+        const [{ data:tasks }, { data:logs }] = await Promise.all([
+          db.from('cong_viec_duoc_giao').select('attachments').in('id',ids),
+          db.from('tien_do').select('attachments').in('task_id',ids),
+        ])
+        const paths = [...(tasks||[]), ...(logs||[])].flatMap(r => collectPaths(r.attachments))
+        await deleteAttachments(paths)
+      } catch { /* dọn hụt chỉ để lại rác trong Storage — không chặn xoá việc */ }
+    }
+
     async function apiDeleteTask(id) {
+      await cleanupTaskFiles([id])
       await db.from('tien_do').delete().eq('task_id',id)
       await db.from('cong_viec_duoc_giao').update({ recurrence_parent_id: null }).eq('recurrence_parent_id', id)
       const { error } = await db.from('cong_viec_duoc_giao').delete().eq('id',id)
       if (error) throw error
     }
 
-    async function apiAddUpdate(taskId, comment, userId) {
+    async function apiAddUpdate(taskId, comment, userId, attachments) {
       const id = await genUpdateId()
-      const row = { id, task_id:taskId, time:new Date().toISOString(), content:comment, updated_by_id:userId }
+      const row = { id, task_id:taskId, time:new Date().toISOString(), content:comment, updated_by_id:userId, attachments:attachments||[] }
       const { error } = await db.from('tien_do').insert(row)
       if (error) throw error; return row
     }
@@ -755,7 +775,7 @@ import { useNavigate } from 'react-router-dom';
                     h(AvatarName, {user: t.assignee, className: 'w-11 sm:w-14 shrink-0 pt-0.5'}),
                     h('div', {className: 'flex-1 min-w-0 flex flex-col gap-1.5'},
                       h('div', {className: 'flex items-start justify-between gap-2'},
-                        h('span', {className: 'font-bold text-[12px] sm:text-[13px] line-clamp-2 text-gray-900'}, t.title),
+                        h('span', {className: 'font-bold text-[12px] sm:text-[13px] line-clamp-2 text-gray-900'}, t.title, h(AttachmentBadge,{list:t.attachments})),
                         h('div', {className: 'shrink-0'}, h(CompactWarning, {due_date: t.due_date, status: t.status, completed_date: t.completed_date}))
                       ),
                       h('div', {className: 'flex flex-col gap-1 mt-auto pt-1.5 border-t border-gray-100'},
@@ -853,7 +873,7 @@ import { useNavigate } from 'react-router-dom';
               filtered.length===0 ? h('tr',null,h('td',{colSpan:canDelete?6:5,className:'text-center text-gray-400 py-10 text-[11px]'},'Không tìm thấy công việc nào'))
                 : filtered.map(t=>
                     h('tr',{key:t.id, className:'border-b border-gray-100 cursor-pointer table-row-hover group', onClick:()=>onDetail(t)},
-                      h('td',{className:tdClass}, h('div',{className:'font-bold text-gray-900 truncate'},t.title)),
+                      h('td',{className:tdClass}, h('div',{className:'font-bold text-gray-900 truncate flex items-center gap-1.5'},h('span',{className:'truncate'},t.title),h(AttachmentBadge,{list:t.attachments}))),
                       h('td',{className:tdClass}, h(AvatarName,{user:t.assignee, size:'md', className:'mx-auto max-w-[70px]'})),
                       h('td',{className:tdClass}, h(StatusBadge,{status:t.status})),
                       h('td',{className:tdClass+' text-center'}, h(CompactWarning,{due_date:t.due_date,status:t.status, completed_date:t.completed_date})),
@@ -951,7 +971,7 @@ import { useNavigate } from 'react-router-dom';
               h('div', {className:`absolute left-0 top-0 bottom-0 w-1 ${isCompleted?'bg-emerald-500':(over&&!isCompleted)?'bg-red-500':'bg-blue-500'}`}),
               
               h('div', {className: 'flex justify-between items-start mb-2 sm:mb-4 gap-2 pl-1.5 sm:pl-3'},
-                h('h3', {className: 'font-bold text-gray-900 text-[12px] sm:text-[15px] leading-snug line-clamp-2'}, t.title),
+                h('h3', {className: 'font-bold text-gray-900 text-[12px] sm:text-[15px] leading-snug line-clamp-2'}, t.title, h(AttachmentBadge,{list:t.attachments})),
                 h('span', {className: `whitespace-nowrap text-[8px] sm:text-[11px] px-1.5 py-0.5 sm:py-1 rounded font-bold tracking-wide shrink-0 ${statusConfig.cls}`}, statusConfig.label)
               ),
 
@@ -1003,18 +1023,23 @@ import { useNavigate } from 'react-router-dom';
       const canChangeAssignee = hasPerm(currentUser,'change_assignee');
       const canEditRecurrence = hasPerm(currentUser,'edit_recurrence');
       
-      const [f, setF] = useState({ title: task?.title||'', description: task?.description||'', label: task?.label||'', assignee_id: task?.assignee_id||'', due_date: toLocalInput(task?.due_date), recurrence_type: task?.recurrence_type||RECUR.NONE, status: task?.status||STATUS.IN_PROGRESS })
+      const [f, setF] = useState({ title: task?.title||'', description: task?.description||'', label: task?.label||'', assignee_id: task?.assignee_id||'', due_date: toLocalInput(task?.due_date), recurrence_type: task?.recurrence_type||RECUR.NONE, status: task?.status||STATUS.IN_PROGRESS, attachments: task?.attachments||[] })
       const [busy, setBusy] = useState(false); const set = (k,v) => setF(p=>({...p,[k]:v}))
+      const initialFiles = useRef(task?.attachments||[])   // mốc so sánh để dọn file thừa khi bấm Hủy
 
       async function submit(e) {
         e.preventDefault(); setBusy(true)
         try { await onSave({...f, due_date: f.due_date ? new Date(f.due_date).toISOString() : null}); onClose() } catch(e) { alert(e.message) } finally { setBusy(false) }
       }
 
-      return h(Modal,{title:isEdit?'Chỉnh sửa công việc':'Tạo việc mới',onClose,wide:true},
+      // File đã upload ngay lúc chọn, nên bấm Hủy phải xoá lại những file vừa thêm.
+      function cancel() { cleanupAdded(f.attachments, initialFiles.current); onClose() }
+
+      return h(Modal,{title:isEdit?'Chỉnh sửa công việc':'Tạo việc mới',onClose:cancel,wide:true},
         h('form',{onSubmit:submit},
           h(Field,{label:'Tiêu đề',required:true}, h('input',{className:inp,value:f.title,onChange:e=>set('title',e.target.value),placeholder:'Tên việc...',required:true,autoFocus:true})),
           h(Field,{label:'Mô tả'}, h('textarea',{className:inp+' resize-none',rows:2,value:f.description,onChange:e=>set('description',e.target.value),placeholder:'Chi tiết...'})),
+          h(Field,{label:'Đính kèm'}, h(AttachmentInput,{value:f.attachments,onChange:v=>set('attachments',v),folder:'tasks',userId:currentUser.id})),
           h('div',{className:'grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4'},
             h(Field,{label:'Người thực hiện' + (!canChangeAssignee && isEdit ? ' 🔒' : ''),required:true}, h('select',{className:sel + (!canChangeAssignee && isEdit ? ' bg-gray-100 cursor-not-allowed' : ''),value:f.assignee_id,onChange:e=>set('assignee_id',e.target.value),required:true,disabled:(!canChangeAssignee && isEdit)}, h('option',{value:''},'-- Chọn --'), users.map(u=>h('option',{key:u.id,value:u.id},u.name)))),
             h(Field,{label:'Hạn chót' + (!canEditDueDate && isEdit ? ' 🔒' : '')}, h('input',{type:'datetime-local',className:inp + (!canEditDueDate && isEdit ? ' bg-gray-100 cursor-not-allowed' : ''),value:f.due_date,onChange:e=>set('due_date',e.target.value),disabled:!canEditDueDate && isEdit})),
@@ -1022,7 +1047,7 @@ import { useNavigate } from 'react-router-dom';
             h(Field,{label:'Lặp lại' + (!canEditRecurrence && isEdit ? ' 🔒' : '')}, h('select',{className:sel + (!canEditRecurrence && isEdit ? ' bg-gray-100 cursor-not-allowed' : ''),value:f.recurrence_type,onChange:e=>set('recurrence_type',e.target.value),disabled:!canEditRecurrence && isEdit}, Object.entries(RECUR_CFG).map(([k,v])=>h('option',{key:k,value:k},v)))),
           ),
           isEdit && h('div',{className:'grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1'}, h(Field,{label:'Trạng thái'}, h('select',{className:sel,value:f.status,onChange:e=>set('status',e.target.value)}, Object.entries(STATUS_CFG).map(([k,v])=>h('option',{key:k,value:k},v.label))))),
-          h('div',{className:'flex justify-end gap-2 pt-3 mt-3 border-t border-gray-100'}, h('button',{type:'button',onClick:onClose,className:btn.secondary+' px-3 py-1.5 text-xs'},'Hủy'), h('button',{type:'submit',disabled:busy,className:btn.primary+' px-3 py-1.5 text-xs'},busy?'...':isEdit?'Lưu':'Tạo'))
+          h('div',{className:'flex justify-end gap-2 pt-3 mt-3 border-t border-gray-100'}, h('button',{type:'button',onClick:cancel,className:btn.secondary+' px-3 py-1.5 text-xs'},'Hủy'), h('button',{type:'submit',disabled:busy,className:btn.primary+' px-3 py-1.5 text-xs'},busy?'...':isEdit?'Lưu':'Tạo'))
         )
       )
     }
@@ -1031,7 +1056,7 @@ import { useNavigate } from 'react-router-dom';
     // TASK DETAIL PANEL
     // ============================================================
     function TaskDetail({task, currentUser, onUpdate, onAddUpdate, onDelete, onRemind, onClose, onOpenEdit}) {
-      const [comment, setComment] = useState(''); const [busy, setBusy] = useState(false); const isAdmin  = currentUser.role === ROLE.ADMIN; 
+      const [comment, setComment] = useState(''); const [files, setFiles] = useState([]); const [busy, setBusy] = useState(false); const isAdmin  = currentUser.role === ROLE.ADMIN;
       const tPerm = getTabPerm(currentUser, 'tasks', 'tasks');
       const canEdit = tPerm.edit;
       const canDelete = tPerm.delete;
@@ -1042,7 +1067,8 @@ import { useNavigate } from 'react-router-dom';
       const isCompleted = task.status===STATUS.COMPLETED;
       const isActive = !isCompleted && task.status!==STATUS.CANCELLED;
       
-      async function submitComment(e) { e.preventDefault(); if (!comment.trim()) return; setBusy(true); try { await onAddUpdate(task.id, comment.trim()); setComment('') } finally { setBusy(false) } }
+      // Gửi được khi chỉ có file mà không có chữ — đính kèm ảnh là đã nói lên điều cần nói.
+      async function submitComment(e) { e.preventDefault(); if (!comment.trim() && !files.length) return; setBusy(true); try { await onAddUpdate(task.id, comment.trim(), files); setComment(''); setFiles([]) } finally { setBusy(false) } }
       function quickStatus(s) { 
           const upd = {status:s}; 
           if (s===STATUS.COMPLETED || s===STATUS.CANCELLED) upd.completed_date=new Date().toISOString(); 
@@ -1093,13 +1119,18 @@ import { useNavigate } from 'react-router-dom';
                 h('span',{className:'text-xs font-bold text-yellow-700'},RECUR_CFG[task.recurrence_type]||'—')
               ),
               
-              task.description && h('div',{className:'bg-gray-50 rounded-xl p-3 col-span-2'}, h('div',{className:'text-[9px] font-bold text-gray-400 mb-1'},'MÔ TẢ'), h('p',{className:'text-xs text-gray-700 leading-relaxed font-medium'},task.description))
+              task.description && h('div',{className:'bg-gray-50 rounded-xl p-3 col-span-2'}, h('div',{className:'text-[9px] font-bold text-gray-400 mb-1'},'MÔ TẢ'), h('p',{className:'text-xs text-gray-700 leading-relaxed font-medium'},task.description)),
+
+              (task.attachments||[]).length>0 && h('div',{className:'bg-gray-50 rounded-xl p-3 col-span-2'}, h('div',{className:'text-[9px] font-bold text-gray-400 mb-1.5'},`ĐÍNH KÈM (${task.attachments.length})`), h(AttachmentList,{list:task.attachments}))
             ),
             hasPerm(currentUser,'remind_task') && isActive && h('button',{onClick:()=>onRemind(task),className:'w-full py-2 border border-yellow-200 bg-yellow-50 text-yellow-700 rounded-xl text-xs font-bold hover:bg-yellow-100 flex items-center justify-center gap-1.5'}, h(IconBell, null), task.last_reminded_date ? `Đã nhắc: ${fmtDT(task.last_reminded_date)}` : 'Gửi nhắc việc'),
             h('div',null,
               h('div',{className:'flex items-center justify-between mb-3 border-t border-gray-100 pt-3'}, h('h4',{className:'text-xs font-bold text-gray-800'},'CẬP NHẬT'), h('span',{className:'text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded'},(task.progressUpdates||[]).length)),
-              (task.progressUpdates||[]).length===0 ? h('p',{className:'text-[11px] text-gray-400 italic'},'Chưa có cập nhật.') : h('div',{className:'space-y-2'}, [...(task.progressUpdates||[])].reverse().map((u,i)=> h('div',{key:u.id||i,className:'flex gap-2'}, h(Avatar,{user:u.updatedBy,size:'sm'}), h('div',{className:'flex-1 bg-gray-50 rounded-xl p-2.5'}, h('div',{className:'flex justify-between gap-2 mb-1'}, h('span',{className:'font-bold text-gray-800 text-[10px]'},u.updatedBy?.name||'?'), h('span',{className:'text-gray-400 text-[9px] font-medium'},fmtDT(u.time))), h('p',{className:'text-[11px] text-gray-700 font-medium'},u.content))))),
-              (canUpdate && (!isCompleted || isAdmin)) ? h('form',{onSubmit:submitComment,className:'mt-3 flex gap-1.5'}, h('input',{className:inp+' flex-1 rounded-xl px-3 py-1.5 text-[11px] bg-gray-50',value:comment,onChange:e=>setComment(e.target.value),placeholder:'Viết cập nhật...'}), h('button',{type:'submit',disabled:busy||!comment.trim(),className:btn.primary+' rounded-xl px-3 py-1.5 text-[11px]'},busy?'...':'Gửi')) : !canUpdate ? null : h('p', {className: 'text-[10px] text-red-500 italic mt-2'}, 'Việc đã hoàn thành. Chỉ Admin mới có thể cập nhật thêm.')
+              (task.progressUpdates||[]).length===0 ? h('p',{className:'text-[11px] text-gray-400 italic'},'Chưa có cập nhật.') : h('div',{className:'space-y-2'}, [...(task.progressUpdates||[])].reverse().map((u,i)=> h('div',{key:u.id||i,className:'flex gap-2'}, h(Avatar,{user:u.updatedBy,size:'sm'}), h('div',{className:'flex-1 bg-gray-50 rounded-xl p-2.5'}, h('div',{className:'flex justify-between gap-2 mb-1'}, h('span',{className:'font-bold text-gray-800 text-[10px]'},u.updatedBy?.name||'?'), h('span',{className:'text-gray-400 text-[9px] font-medium'},fmtDT(u.time))), u.content && h('p',{className:'text-[11px] text-gray-700 font-medium'},u.content), (u.attachments||[]).length>0 && h('div',{className:'mt-1.5'}, h(AttachmentList,{list:u.attachments,size:56})))))),
+              (canUpdate && (!isCompleted || isAdmin)) ? h('form',{onSubmit:submitComment,className:'mt-3 space-y-1.5'},
+                h('div',{className:'flex gap-1.5'}, h('input',{className:inp+' flex-1 rounded-xl px-3 py-1.5 text-[11px] bg-gray-50',value:comment,onChange:e=>setComment(e.target.value),placeholder:'Viết cập nhật...'}), h('button',{type:'submit',disabled:busy||(!comment.trim()&&!files.length),className:btn.primary+' rounded-xl px-3 py-1.5 text-[11px]'},busy?'...':'Gửi')),
+                h(AttachmentInput,{value:files,onChange:setFiles,folder:'progress',userId:currentUser.id})
+              ) : !canUpdate ? null : h('p', {className: 'text-[10px] text-red-500 italic mt-2'}, 'Việc đã hoàn thành. Chỉ Admin mới có thể cập nhật thêm.')
             )
           )
         )
@@ -1221,6 +1252,8 @@ import { useNavigate } from 'react-router-dom';
         setBusy(true);
         try {
           const ids = tasksToDelete.map(t => t.id);
+          // 0. Dọn file đính kèm trong Storage trước khi mất row (mất row là mất đường tìm path)
+          await cleanupTaskFiles(ids);
           // 1. Xóa tiến độ
           await db.from('tien_do').delete().in('task_id', ids);
           // 2. Ngắt liên kết các task con
@@ -1237,8 +1270,8 @@ import { useNavigate } from 'react-router-dom';
         finally { setBusy(false); }
       }
 
-      async function handleAddUpdate(taskId, comment) {
-        const entry = {...await apiAddUpdate(taskId, comment, me.id), updatedBy:me}; setTasks(ts=>ts.map(t=>t.id===taskId?{...t,progressUpdates:[...(t.progressUpdates||[]),entry]}:t)); if (detailTask?.id===taskId) setDetailTask(d=>({...d,progressUpdates:[...(d.progressUpdates||[]),entry]})); toast('Đã cập nhật!')
+      async function handleAddUpdate(taskId, comment, attachments) {
+        const entry = {...await apiAddUpdate(taskId, comment, me.id, attachments), updatedBy:me}; setTasks(ts=>ts.map(t=>t.id===taskId?{...t,progressUpdates:[...(t.progressUpdates||[]),entry]}:t)); if (detailTask?.id===taskId) setDetailTask(d=>({...d,progressUpdates:[...(d.progressUpdates||[]),entry]})); toast('Đã cập nhật!')
       }
       
       async function handleRemind(taskArg) {

@@ -10,9 +10,10 @@ Nhóm Zalo: `deb64378401ba945f00a`. Mention cá nhân: `[@<nhan_vien.id_zalo_oa>
 ## 1. Thêm các node mới
 1. Mở workflow trong n8n.
 2. Mở file `wf-nhac-viec-them-nodes.json`, **copy toàn bộ nội dung**.
-3. Click vào canvas workflow → **Ctrl+V** (Paste). n8n sẽ thêm 6 node:
+3. Click vào canvas workflow → **Ctrl+V** (Paste). n8n sẽ thêm 8 node:
    `Webhook đến hạn`, `Định tuyến` (Switch), `Lấy nhân viên (đến hạn)`, `Lấy công việc (đến hạn)`,
-   `Lấy tiến độ (đến hạn)`, `Tạo thẻ đến hạn` — kèm sẵn dây nối nội bộ giữa 4 node nhánh đến hạn.
+   `Lấy tiến độ (đến hạn)`, `Tạo thẻ đến hạn` — kèm sẵn dây nối nội bộ giữa 4 node nhánh đến hạn —
+   cộng 2 node đính kèm: `Là ảnh đính kèm?` (IF) và `Tải ảnh đính kèm` (HTTP). Xem mục 4b để nối dây 2 node này.
 
 ## 2. Thay node IF bằng Switch "Định tuyến"
 Node `Định tuyến` (Switch) sẽ THAY node IF cũ `Là cập nhật task?`.
@@ -58,6 +59,40 @@ Node `Tạo thẻ đến hạn` mặc định dùng mẫu tự chứa (chạy ng
    else if (moc === '30'){ statusHtml = `<span class="badge badge-warning">${badgeIcon('clock')} Còn dưới 30 phút</span>`; }
    else                 { statusHtml = `<span class="badge badge-warning">${badgeIcon('clock')} Còn dưới 1 tiếng</span>`; }
    ```
+
+## 4b. Nối 2 node đính kèm (ảnh gửi thật vào nhóm)
+
+Zalo OA **chỉ có endpoint upload cho ảnh** (`upload/image`), không có cho video. Nên:
+ảnh → gửi thật vào nhóm; video/file → chèn link vào nội dung tin nhắn.
+
+Node `Tạo thẻ đến hạn` giờ trả về **nhiều item**: 1 thẻ chính + 1 item cho mỗi ảnh đính kèm
+(tối đa 5 — mỗi ảnh là 1 tin nhắn cách nhau 2 giây, 10 ảnh là nhóm nhận 11 tin trong 22 giây).
+Item ảnh có trường `direct_url`; thẻ chính thì không.
+
+**Nối dây** (chèn IF vào giữa `Loop Over Items` và `Tạo ảnh HCTI`):
+
+1. **Xoá** dây `Loop Over Items` → `Tạo ảnh HCTI`.
+2. `Loop Over Items` → **`Là ảnh đính kèm?`**
+3. `Là ảnh đính kèm?` output **true** → `Tải ảnh đính kèm` → **`Upload ảnh lên OA`** (bỏ qua HCTI)
+4. `Là ảnh đính kèm?` output **false** → `Tạo ảnh HCTI` (đường cũ giữ nguyên)
+
+Sơ đồ sau khi nối:
+```
+Loop Over Items → Là ảnh đính kèm? ─true→  Tải ảnh đính kèm ─┐
+                                   └false→ Tạo ảnh HCTI → Tải ảnh JPG ─┴→ Upload ảnh lên OA → Gửi ảnh vào nhóm OA → Chờ 2 giây
+```
+
+`Gửi ảnh vào nhóm OA` **không phải sửa** — nó đã lấy text từ `$('Loop Over Items').item.json.message_text`,
+đúng cho cả hai nhánh.
+
+> **Cảnh báo bảo trì:** khối tính đính kèm trong `Tạo thẻ đến hạn` là **bản copy** của
+> `splitZaloAttachments()` / `buildZaloAttachmentText()` trong `src/lib/attachments.js`.
+> Node n8n không import được từ repo. **Sửa một bên là phải sửa cả bên kia** — bên repo có test
+> (`src/lib/attachments.test.js`) nên test vẫn xanh trong khi tin Zalo đã sai.
+
+Muốn nút "Gửi nhắc việc" thủ công cũng kèm đính kèm thì copy khối `// ===== ĐÍNH KÈM =====`
+và phần `return out` sang node `Tạo nội dung thẻ chi tiết`, đổi `$('Lấy công việc (đến hạn)')`
+thành `$('Lấy công việc (cập nhật)')`.
 
 ## 5. Bỏ 8:00 khỏi lịch n8n (tránh gửi trùng)
 Job A trong Supabase sẽ lo 8:00. Mở node `Schedule 8h & 17h` → **xoá dòng `triggerAtHour: 8`**, chỉ giữ `17`.

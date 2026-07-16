@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
 import { Calendar, Filter, Package, Users, ClipboardList, ShieldAlert, CheckCircle, Clock, Target, Zap } from 'lucide-react';
+import { AttachmentBadge } from '../../components/AttachmentList';
 
 // Avatar tròn: ảnh thật nếu có, không thì chữ cái đầu tên trên nền gradient brand
 function RepAvatar({ name, avatar, size = 40 }) {
@@ -469,7 +470,7 @@ export default function WorkReport() {
                                return (
                                   <div key={idx} style={{ background: '#fff', border: '1px solid var(--border-color)', borderLeft: `3px solid ${statusColor}`, borderRadius: 12, padding: '0.9rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.6rem', boxShadow: 'var(--shadow-sm)' }}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                                          <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: '1.4', flex: 1, minWidth: 0 }}>{taskName}</div>
+                                          <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', lineHeight: '1.4', flex: 1, minWidth: 0 }}>{taskName} <AttachmentBadge list={task.attachments} /></div>
                                           <div>{statusNode}</div>
                                       </div>
 
