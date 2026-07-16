@@ -581,6 +581,13 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
               }
               if (!agg[key].id && loc.id) { agg[key].id = loc.id; agg[key].current_qty = Number(loc.current_qty) || 0; }
               agg[key].sumImport += q;
+              // Breakdown theo nguồn: chỉ dùng cho "Nhập thành phẩm" để mỗi dòng log
+              // mang wip_source riêng (hủy phiếu trả WIP đúng phiếu SX nguồn).
+              if (reason === 'Nhập thành phẩm') {
+                const src = b.sourceValue || '';
+                if (!agg[key].bySource) agg[key].bySource = {};
+                agg[key].bySource[src] = (agg[key].bySource[src] || 0) + q;
+              }
               if (b.sourceValue) agg[key].sources.add(b.sourceValue);
               // Mã đơn hàng (nhập tay / DLK / hoàn-hủy) — khớp cột "Mã đơn hàng" trên bản in.
               const donCode = blockOrderCode(b);
@@ -600,6 +607,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
               ly_do_nhap: reason,
               dlk_code: (reason === 'Nhập mua vào' && b.dlkCode) ? b.dlkCode : null,
               ma_don_hang_nhap: (b.sourceType === 'none' && b.orderCode) ? b.orderCode.trim() : null,
+              phieu_code: orderCode, // truy vết về chứng từ PNK để Hủy Phiếu xóa đúng dòng
             });
 
             // Trừ tồn WIP nếu nhập thành phẩm (theo phiếu SX nguồn)
@@ -631,19 +639,41 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
         } else {
           inserts.push({ item_code: a.code, item_name: a.name, unit: a.unit, location: a.location, quantity: a.sumImport, import_date: todayStr });
         }
-        pickingLogs.push({
-          order_code: orderCode,
-          product_code: 'NHAP_KHO',
-          component_code: a.code,
-          component_name: a.name,
-          location: a.location,
-          quantity_before: before,
-          quantity_taken: a.sumImport,
-          quantity_after: after,
-          created_by: userStr,
-          notes: srcStr ? `${reason} - ${srcStr}` : reason,
-          ma_don_hang: a.orderCodes.size > 0 ? [...a.orderCodes].join(', ') : null
-        });
+        if (reason === 'Nhập thành phẩm' && a.bySource && Object.keys(a.bySource).length > 0) {
+          // 1 dòng log / mỗi phiếu SX nguồn — wip_source để Hủy Phiếu cộng trả đúng WIP.
+          let running = before;
+          for (const [src, q] of Object.entries(a.bySource)) {
+            pickingLogs.push({
+              order_code: orderCode,
+              product_code: 'NHAP_KHO',
+              component_code: a.code,
+              component_name: a.name,
+              location: a.location,
+              quantity_before: running,
+              quantity_taken: q,
+              quantity_after: running + q,
+              created_by: userStr,
+              notes: src ? `${reason} - ${src}` : reason,
+              ma_don_hang: a.orderCodes.size > 0 ? [...a.orderCodes].join(', ') : null,
+              wip_source: src && src.startsWith('PSX-') ? src : null,
+            });
+            running += q;
+          }
+        } else {
+          pickingLogs.push({
+            order_code: orderCode,
+            product_code: 'NHAP_KHO',
+            component_code: a.code,
+            component_name: a.name,
+            location: a.location,
+            quantity_before: before,
+            quantity_taken: a.sumImport,
+            quantity_after: after,
+            created_by: userStr,
+            notes: srcStr ? `${reason} - ${srcStr}` : reason,
+            ma_don_hang: a.orderCodes.size > 0 ? [...a.orderCodes].join(', ') : null
+          });
+        }
       }
 
       // Thực thi
