@@ -100,6 +100,13 @@ Lưu ý bắt buộc kèm theo: hiện ImportStockTab GỘP dòng log theo (mã 
 - "Un-cancel" (khôi phục phiếu đã hủy) — không có; nếu lỡ hủy nhầm thì tạo phiếu mới.
 - Race sinh mã order_code giữa 2 người lưu cùng lúc — vấn đề riêng, không thuộc tính năng này.
 
+## Ghi chú sau code review (đã cân nhắc, chấp nhận)
+
+- **DKSX trả dư khi lệnh > nhu cầu:** khi tạo lệnh app clamp `remain = max(0, demand − qty)` nhưng khi hủy cộng trả nguyên `target_quantity` → demand có thể lớn hơn ban đầu (vd demand 5, lệnh 10, hủy → demand 10). Không lưu được số đã trừ thực nên chấp nhận; DKSX là số kế hoạch, user chỉnh lại khi nạp kỳ mới.
+- **PSX check bản ghi phụ qua luu_xuat:** PSX mới mà insert luu_xuat lỗi (console.warn) sẽ bị từ chối hủy với thông báo "phiếu tạo trước nâng cấp" (sai lý do nhưng an toàn — không hỏng dữ liệu). Hiếm; xử lý tay khi gặp.
+- **GRANT anon cho huy_phieu:** nhất quán hiện trạng bảo mật đã rollback (xem memory qlsx-bao-mat-rls); phải nằm trong danh sách rào khi khóa lại bảo mật.
+- **2 lỗi CRITICAL đã sửa trước khi giao:** (1) khối test SQL vi phạm FK inventory_items → script fail toàn bộ; (2) PNK tự động từ WorkerInput thiếu wip_source → hủy làm mất tồn WIP. Kèm fix I2: chỉ gắn wip_source khi WIP thực sự bị trừ lúc nhập (Set wipDeducted), tránh cộng trả WIP "ma".
+
 ## Kiểm thử
 
 - SQL: khối test trong file cho từng loại phiếu (PNK đủ hàng → OK & tồn nguyên trạng; PNK đã dùng bớt → EXCEPTION & không đổi gì; PXK; PSX chưa/đã có production_logs; PNK thành phẩm trả WIP; hủy lại lần 2 → chặn).
