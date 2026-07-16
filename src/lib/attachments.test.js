@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   kindOf, fmtSize, validateFile, warnFor, totalSize, planSelection,
-  splitZaloAttachments, buildZaloAttachmentText,
+  splitZaloAttachments, buildZaloAttachmentText, attachmentViewUrl,
   MAX_SIZE, MAX_COUNT, MAX_EMBED_IMAGES,
 } from './attachments';
 
@@ -154,10 +154,22 @@ describe('splitZaloAttachments', () => {
   });
 });
 
+describe('attachmentViewUrl', () => {
+  it('có path thì đi qua webhook xem trực tiếp (link ngắn + Office viewer cho excel/word)', () => {
+    expect(attachmentViewUrl({ path: 'tasks/2026-07/ab12cd34ef.xlsx', url: 'https://dai.example/x.xlsx' }))
+      .toBe('https://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/ab12cd34ef.xlsx');
+  });
+  it('không có path (dữ liệu lạ) thì rơi về url gốc', () => {
+    expect(attachmentViewUrl({ url: 'https://x/v.mp4' })).toBe('https://x/v.mp4');
+  });
+});
+
 describe('buildZaloAttachmentText', () => {
-  it('liệt kê video và file kèm dung lượng và link', () => {
-    expect(buildZaloAttachmentText([vid(), doc()])).toBe(
-      '📎 Đính kèm:\n• v.mp4 (18MB) — https://x/v.mp4\n• d.pdf (128KB) — https://x/d.pdf'
+  it('liệt kê video và file: tên + dung lượng một dòng, link xem trực tiếp dòng dưới', () => {
+    expect(buildZaloAttachmentText([vid({ path: 'tasks/2026-07/v1.mp4' }), doc({ path: 'tasks/2026-07/d1.pdf' })])).toBe(
+      '📎 Đính kèm — bấm link để xem:\n' +
+      '• v.mp4 (18MB)\n  https://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/v1.mp4\n' +
+      '• d.pdf (128KB)\n  https://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/d1.pdf'
     );
   });
   it('bỏ qua ảnh vì ảnh đã nhúng trong thẻ', () => {

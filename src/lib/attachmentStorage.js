@@ -51,7 +51,10 @@ export async function uploadAttachment(file, { folder, userId }) {
   const prepared = kind === 'image' ? await compressImage(file) : { blob: file, mime: file.type, ext: ext(file.name) };
 
   const month = new Date().toISOString().slice(0, 7); // YYYY-MM
-  const path = `${folder}/${month}/${crypto.randomUUID()}.${prepared.ext}`;
+  // Mã 10 ký tự hex (40 bit) thay vì UUID 36 ký tự: path xuất hiện trong link Zalo nên càng
+  // ngắn càng tốt. Trùng mã thì upload lỗi (upsert:false) → người dùng bấm "Thử lại" là ra mã mới.
+  const code = crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+  const path = `${folder}/${month}/${code}.${prepared.ext}`;
 
   const { error } = await supabase.storage
     .from(BUCKET)

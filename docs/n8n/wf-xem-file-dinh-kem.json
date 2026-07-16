@@ -1,0 +1,73 @@
+{
+  "name": "Xem file đính kèm (link ngắn)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "f",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "id": "11f10001-0000-4000-8000-xemfile00001",
+      "name": "Webhook xem file",
+      "webhookId": "xem-file-dinh-kem"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Đổi link ngắn ?p=<path trong bucket> thành link XEM TRỰC TIẾP:\n// - excel/word/powerpoint -> Office Viewer (xem ngay trên điện thoại, không phải tải về;\n//   giới hạn của Office Viewer: file ~10MB trở xuống)\n// - pdf / video / ảnh     -> mở thẳng URL Storage, trình duyệt tự render\n// Path phải nằm trong bucket task-attachments (chặn '..' để không trỏ đi nơi khác).\nconst q = $input.first().json.query || {};\nconst p = String(q.p || '');\nconst BUCKET_BASE = 'https://ngwkzicrnspeggunsblr.supabase.co/storage/v1/object/public/task-attachments/';\nconst FALLBACK = 'https://amazing-frangollo-eb56a9.netlify.app';\n\nlet target = FALLBACK;\nif (p && !p.includes('..')) {\n    const raw = BUCKET_BASE + p;\n    const m = p.toLowerCase().match(/\\.([a-z0-9]+)$/);\n    const ext = m ? m[1] : '';\n    target = ['xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt'].includes(ext)\n        ? 'https://view.officeapps.live.com/op/view.aspx?src=' + encodeURIComponent(raw)\n        : raw;\n}\nreturn [{ json: { target } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "id": "11f10002-0000-4000-8000-xemfile00002",
+      "name": "Chọn đích xem"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $json.target }}"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, 0],
+      "id": "11f10003-0000-4000-8000-xemfile00003",
+      "name": "Chuyển hướng 302"
+    },
+    {
+      "parameters": {
+        "content": "## Link ngắn \"xem file đính kèm\"\nURL prod: `https://thegioilocnuoc.site/webhook/f?p=<path>`\n(dùng trong tin nhắn Zalo thay cho URL Storage dài).\n\n- excel/word → Office Viewer, xem ngay không tải về\n- pdf/video/ảnh → mở thẳng, trình duyệt tự render\n\nPHẢI Activate workflow này thì link mới sống.\nĐổi tên miền app: sửa FALLBACK trong node Code.",
+        "height": 200,
+        "width": 380
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, -240],
+      "id": "11f10004-0000-4000-8000-xemfile00004",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Webhook xem file": {
+      "main": [[{ "node": "Chọn đích xem", "type": "main", "index": 0 }]]
+    },
+    "Chọn đích xem": {
+      "main": [[{ "node": "Chuyển hướng 302", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {}
+}

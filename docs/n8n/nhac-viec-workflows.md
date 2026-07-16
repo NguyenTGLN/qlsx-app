@@ -86,6 +86,22 @@ tự nhúng ảnh, không sinh item ảnh riêng.
 > Node n8n không import được từ repo. **Sửa một bên là phải sửa cả bên kia** — bên repo có test
 > (`src/lib/attachments.test.js`) nên test vẫn xanh trong khi tin Zalo đã sai.
 
+### 4c. Link "xem file" ngắn (2026-07-16)
+
+Link video/file trong tin nhắn giờ đi qua webhook **`https://thegioilocnuoc.site/webhook/f?p=<path>`**
+thay vì URL Storage dài 130 ký tự:
+
+- **Ngắn hơn** (~60-90 ký tự; file upload mới dùng mã 10 ký tự nên ngắn nhất).
+- **Bấm là xem trực tiếp**: excel/word/powerpoint → mở qua **Office Viewer** (xem ngay trên
+  điện thoại, không phải tải về — giới hạn Office Viewer: file ~10MB trở xuống);
+  pdf / video / ảnh → mở thẳng, trình duyệt tự render.
+- Zalo **không cho gắn chữ lên link** (kiểu "bấm vào đây") trong tin nhắn text — link trần là
+  giới hạn của Zalo, không né được.
+
+**Cài (1 lần):** n8n → **Import from File** → `wf-xem-file-dinh-kem.json` (workflow MỚI, 3 node)
+→ **Activate**. Không Activate thì mọi link trong tin nhắn chết (trả 404).
+Đổi tên miền app thì sửa `FALLBACK` trong node `Chọn đích xem`.
+
 ## 5. Bỏ 8:00 khỏi lịch n8n (tránh gửi trùng)
 Job A trong Supabase sẽ lo 8:00. Mở node `Schedule 8h & 17h` → **xoá dòng `triggerAtHour: 8`**, chỉ giữ `17`.
 (Muốn quay lại lịch cũ thì thêm lại 8.)

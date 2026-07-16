@@ -157,7 +157,12 @@ Chỉ sửa 2 node code + 1 tham số:
   Đánh đổi: người nhận xem ảnh trong thẻ, không bấm mở full-size từng tấm (muốn xem gốc thì mở app).
 - Thẻ thêm dòng "📎 N file (x ảnh, y video, z tệp)".
 - **Video/file: chèn link vào `message_text`** (Zalo OA không có endpoint upload video;
-  API file cho nhóm chưa kiểm chứng — giữ nguyên quyết định cũ).
+  API file cho nhóm chưa kiểm chứng — giữ nguyên quyết định cũ). Link đi qua webhook
+  **`thegioilocnuoc.site/webhook/f?p=<path>`** (`wf-xem-file-dinh-kem.json`, phải Activate):
+  ngắn hơn URL Storage, và excel/word mở qua Office Viewer để bấm là xem được ngay;
+  pdf/video mở thẳng. Zalo không cho gắn chữ lên link nên link trần là hết mức.
+  Hàm nguồn: `attachmentViewUrl()` + `FILE_VIEW_BASE` trong `src/lib/attachments.js`.
+  Mã file upload mới rút còn 10 ký tự (`attachmentStorage.js`) cho link ngắn.
 - Trả về đúng **1 item** `{ html, message_text, ms_delay }`.
 
 ### 6.2 Node "Tạo ảnh HCTI"

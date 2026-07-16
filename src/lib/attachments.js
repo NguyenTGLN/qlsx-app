@@ -68,11 +68,19 @@ export function splitZaloAttachments(list) {
   return { images, links };
 }
 
+// Webhook n8n "xem file": rút ngắn link + chọn đích thông minh (excel/word → Office Viewer
+// xem trực tiếp trên điện thoại; pdf/video/ảnh → mở thẳng). Workflow: docs/n8n/wf-xem-file-dinh-kem.json
+export const FILE_VIEW_BASE = 'https://thegioilocnuoc.site/webhook/f?p=';
+
+export function attachmentViewUrl(a) {
+  return a.path ? FILE_VIEW_BASE + a.path : a.url;
+}
+
 // nguồn của sự thật cho node n8n "Tạo thẻ" — sửa hàm này là phải sửa cả bản copy trong n8n
 // (xem docs/n8n/nhac-viec-workflows.md)
 export function buildZaloAttachmentText(list) {
   const { links } = splitZaloAttachments(list);
   if (!links.length) return '';
-  const lines = links.map(a => `• ${a.name} (${fmtSize(a.size)}) — ${a.url}`);
-  return `📎 Đính kèm:\n${lines.join('\n')}`;
+  const lines = links.map(a => `• ${a.name} (${fmtSize(a.size)})\n  ${attachmentViewUrl(a)}`);
+  return `📎 Đính kèm — bấm link để xem:\n${lines.join('\n')}`;
 }
