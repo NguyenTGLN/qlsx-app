@@ -421,7 +421,8 @@ const WorkerInput = () => {
             so_luong_nhap: qty,
             ma_ncc: order.order_code,
             kho_nhap: locName,
-            ly_do_nhap: 'Nhập thành phẩm'
+            ly_do_nhap: 'Nhập thành phẩm',
+            phieu_code: importOrderCode, // truy vết về chứng từ PNK để Hủy Phiếu
           });
         }
 

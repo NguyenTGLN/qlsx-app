@@ -967,6 +967,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
              duLieuNhapArr.push({
                 ngay_nhap: todayLocal(), ma_hang: genComp.code, ten_hang: genComp.name,
                 so_luong_nhap: genComp.importQty, ma_ncc: orderCode, kho_nhap: genComp.targetLocation || 'Kho', ly_do_nhap: 'Thu hồi (Phân rã từ ' + allocations[0].code + ')',
+                phieu_code: pnkCode,
                 created_at: new Date(baseTimeMs + 1000).toISOString()
              });
              pickingLogs.push({
@@ -975,10 +976,11 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                 created_by: userStr, notes: 'Thu hồi (Phân rã từ ' + allocations[0].code + ')',
                 created_at: new Date(baseTimeMs + 1000).toISOString()
              });
-             
+
              extraSlbData.push({
                 ma_don_hang: pxkCode, ma_san_pham: genComp.code, ten_san_pham: genComp.name,
                 so_luong: genComp.importQty, ngay_xuat: todayLocal(),
+                phieu_code: pxkCode,
                 created_at: new Date(baseTimeMs + 2000).toISOString()
              });
              pickingLogs.push({
@@ -992,9 +994,10 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
              duLieuNhapArr.push({
                 ngay_nhap: todayLocal(), ma_hang: genComp.code, ten_hang: genComp.name,
                 so_luong_nhap: genComp.importQty, ma_ncc: orderCode, kho_nhap: genComp.targetLocation || 'Kho', ly_do_nhap: 'Thu hồi (Phân rã từ ' + allocations[0].code + ')',
+                phieu_code: pnkCode,
                 created_at: new Date(baseTimeMs + 1000).toISOString()
              });
-             
+
              const { data: exist } = await db.from('inventory_stock').select('id, quantity').eq('location', genComp.targetLocation).eq('item_code', genComp.code).maybeSingle();
              if (exist) {
                 updates.push(db.from('inventory_stock').update({ quantity: exist.quantity + genComp.importQty }).eq('id', exist.id));
@@ -1159,6 +1162,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
             so_luong: item.qty,
             ngay_xuat: todayLocal(),
             type: item.type, // manual_export: type theo lý do từng dòng; delivery: undefined -> dùng exportType
+            phieu_code: orderCode, // truy vết về chứng từ PDH/PXK để Hủy Phiếu xóa đúng dòng
             created_at: new Date(baseTimeMs).toISOString()
          }));
       } else if (mode === 'disassemble') {
@@ -1168,6 +1172,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
             ten_san_pham: allocations[0].name,
             so_luong: allocations[0].requiredQty,
             ngay_xuat: todayLocal(),
+            phieu_code: orderCode, // PPR
             created_at: new Date(baseTimeMs).toISOString()
          });
          slbData = slbData.concat(extraSlbData);
@@ -1181,6 +1186,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                   ten_san_pham: comp.name,
                   so_luong: totalTaken,
                   ngay_xuat: todayLocal(),
+                  phieu_code: orderCode, // PSX
                   created_at: new Date(baseTimeMs).toISOString()
                });
             }
