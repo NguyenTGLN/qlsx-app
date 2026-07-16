@@ -182,7 +182,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Thẻ \"đến hạn\" cho nhắc 60/30/5 phút — tự chứa CSS, chỉ phụ thuộc 3 node query + Webhook đến hạn.\nconst task = $('Lấy công việc (đến hạn)').first().json || {};\nconst body = $('Webhook đến hạn').first().json.body || {};\nlet nv = {};\ntry { nv = $('Lấy nhân viên (đến hạn)').first().json || {}; } catch (e) { nv = {}; }\nconst tienDo = $input.all().map(i => i.json).filter(r => r && r.task_id);\n\nconst moc = String(body.moc || '');\nconst p = n => String(n).padStart(2, '0');\nconst fmt = iso => { try { const d = new Date(iso); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch (e) { return iso; } };\n\nconst band = {\n  '60': { text: '⏰ CÒN DƯỚI 1 TIẾNG', color: '#f59e0b', bg: '#fffbeb' },\n  '30': { text: '⏰ CÒN DƯỚI 30 PHÚT', color: '#f97316', bg: '#fff7ed' },\n  '5':  { text: '🔥 CÒN DƯỚI 5 PHÚT',  color: '#ef4444', bg: '#fef2f2' }\n}[moc] || { text: '⏰ SẮP ĐẾN HẠN', color: '#f59e0b', bg: '#fffbeb' };\n\nconst assignee = task.name || (body.assignee && body.assignee.name) || 'Chưa giao';\nconst due = task.due_date ? fmt(task.due_date) : 'N/A';\nconst last = tienDo.length ? tienDo[tienDo.length - 1] : null;\nconst progress = last ? `${last.content} — ${fmt(last.time)} · ${last.name || ''}` : 'Chưa có cập nhật';\n\n// ===== ĐÍNH KÈM =====\n// Bản copy của splitZaloAttachments/buildZaloAttachmentText trong src/lib/attachments.js.\n// Sửa ở đây là PHẢI sửa cả bên đó (và ngược lại) — xem docs/n8n/nhac-viec-workflows.md.\n// Zalo OA chỉ có endpoint upload cho ảnh → video/file chỉ gửi được dạng link.\nconst MAX_ZALO_IMAGES = 5;\nconst fmtSize = (b) => { const n = Number(b) || 0; return n < 1024 * 1024 ? `${Math.round(n / 1024)}KB` : `${Math.round((n / 1024 / 1024) * 10) / 10}MB`; };\nconst atts = Array.isArray(task.attachments) ? task.attachments : [];\nconst zImages = [], zLinks = [];\nfor (const a of atts) {\n  if (a.kind === 'image' && zImages.length < MAX_ZALO_IMAGES) zImages.push(a);\n  else zLinks.push(a);\n}\nconst attachText = zLinks.length\n  ? `\\n\\n📎 Đính kèm:\\n${zLinks.map(a => `• ${a.name} (${fmtSize(a.size)}) — ${a.url}`).join('\\n')}`\n  : '';\nconst nImg = atts.filter(a => a.kind === 'image').length;\nconst nVid = atts.filter(a => a.kind === 'video').length;\nconst nFile = atts.length - nImg - nVid;\nconst attachSummary = [nImg && `${nImg} ảnh`, nVid && `${nVid} video`, nFile && `${nFile} tệp`].filter(Boolean).join(', ');\nconst attachRow = atts.length\n  ? `<div class=\"row\"><div class=\"lbl\">📎 Đính kèm</div><div class=\"val\">${atts.length} file (${attachSummary})</div></div>`\n  : '';\n\nconst html = `<!DOCTYPE html><html lang=\"vi\"><head><meta charset=\"UTF-8\"><style>\n  body,html{margin:0;padding:0;width:1920px;min-height:1080px;background:linear-gradient(160deg,#eef2ff,#f8fafc 45%,#ecfeff);font-family:'Segoe UI',Arial,sans-serif;}\n  .wrap{padding:60px 80px;}\n  .title{font-size:60px;font-weight:800;color:#1e293b;text-align:center;margin:0 0 40px;text-transform:uppercase;}\n  .banner{background:${band.bg};border:6px solid ${band.color};color:${band.color};font-size:64px;font-weight:800;text-align:center;padding:32px;border-radius:28px;margin-bottom:44px;}\n  .card{background:#fff;border-radius:28px;box-shadow:0 14px 40px rgba(30,41,59,.12);border-left:16px solid ${band.color};overflow:hidden;}\n  .row{display:flex;border-bottom:2px solid #eef2f7;}\n  .row:last-child{border-bottom:none;}\n  .lbl{width:460px;flex-shrink:0;background:#f1f5f9;color:#334155;font-size:38px;font-weight:700;padding:34px 40px;}\n  .val{flex:1;font-size:42px;color:#0f172a;padding:34px 44px;line-height:1.35;word-wrap:break-word;}\n  .val.strong{font-weight:800;}\n</style></head><body><div class=\"wrap\">\n  <div class=\"title\">Nhắc việc sắp đến hạn</div>\n  <div class=\"banner\">${band.text}</div>\n  <div class=\"card\">\n    <div class=\"row\"><div class=\"lbl\">📋 Công việc</div><div class=\"val strong\">${task.title || ''}</div></div>\n    <div class=\"row\"><div class=\"lbl\">⏰ Hạn chót</div><div class=\"val strong\" style=\"color:${band.color}\">${due}</div></div>\n    <div class=\"row\"><div class=\"lbl\">📈 Tiến độ gần nhất</div><div class=\"val\">${progress}</div></div>\n    <div class=\"row\"><div class=\"lbl\">👤 Người thực hiện</div><div class=\"val strong\">${assignee}</div></div>\n    ${attachRow}\n  </div>\n</div></body></html>`;\n\nconst mention = nv.id_zalo_oa ? `[@${nv.id_zalo_oa}] ` : '';\nconst out = [{ json: { html, message_text: mention + band.text + \" — Tốc độ nhé!\" + attachText } }];\n// Ảnh đính kèm: node IF \"Là ảnh đính kèm?\" thấy direct_url thì tải thẳng, bỏ qua HCTI.\nzImages.forEach((a, i) => out.push({ json: {\n  direct_url: a.url,\n  message_text: \"📎 Ảnh đính kèm — \" + (task.id || \"\") + \" (\" + (i + 1) + \"/\" + zImages.length + \")\",\n} }));\nreturn out;\n"
+        "jsCode": "// Thẻ \"đến hạn\" cho nhắc 60/30/5 phút — tự chứa CSS, chỉ phụ thuộc 3 node query + Webhook đến hạn.\nconst task = $('Lấy công việc (đến hạn)').first().json || {};\nconst body = $('Webhook đến hạn').first().json.body || {};\nlet nv = {};\ntry { nv = $('Lấy nhân viên (đến hạn)').first().json || {}; } catch (e) { nv = {}; }\nconst tienDo = $input.all().map(i => i.json).filter(r => r && r.task_id);\n\nconst moc = String(body.moc || '');\nconst p = n => String(n).padStart(2, '0');\nconst fmt = iso => { try { const d = new Date(iso); return `${p(d.getDate())}/${p(d.getMonth()+1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; } catch (e) { return iso; } };\n\nconst band = {\n  '60': { text: '⏰ CÒN DƯỚI 1 TIẾNG', color: '#f59e0b', bg: '#fffbeb' },\n  '30': { text: '⏰ CÒN DƯỚI 30 PHÚT', color: '#f97316', bg: '#fff7ed' },\n  '5':  { text: '🔥 CÒN DƯỚI 5 PHÚT',  color: '#ef4444', bg: '#fef2f2' }\n}[moc] || { text: '⏰ SẮP ĐẾN HẠN', color: '#f59e0b', bg: '#fffbeb' };\n\nconst assignee = task.name || (body.assignee && body.assignee.name) || 'Chưa giao';\nconst due = task.due_date ? fmt(task.due_date) : 'N/A';\nconst last = tienDo.length ? tienDo[tienDo.length - 1] : null;\nconst progress = last ? `${last.content} — ${fmt(last.time)} · ${last.name || ''}` : 'Chưa có cập nhật';\n\n// ===== ĐÍNH KÈM (của công việc + lần cập nhật tiến độ MỚI NHẤT) =====\n// Bản copy đồng bộ với splitZaloAttachments/buildZaloAttachmentText trong src/lib/attachments.js.\n// Sửa ở đây là PHẢI sửa cả bên đó (và ngược lại) — xem docs/n8n/nhac-viec-workflows.md.\n// MỘT KHỐI duy nhất: ảnh NHÚNG vào lưới trong thẻ (HCTI render) → 10 ảnh vẫn là 1 tin nhắn.\nconst MAX_EMBED_IMAGES = 10;\nconst fmtSize = (b) => { const n = Number(b) || 0; return n < 1024 * 1024 ? Math.round(n / 1024) + 'KB' : (Math.round((n / 1024 / 1024) * 10) / 10) + 'MB'; };\nconst attsTask = Array.isArray(task.attachments) ? task.attachments : [];\nconst lastTien = tienDo.length ? tienDo[tienDo.length - 1] : null;\nconst attsTien = (lastTien && Array.isArray(lastTien.attachments)) ? lastTien.attachments : [];\nconst seenPath = new Set(); const atts = [];\nfor (const a of [...attsTask, ...attsTien]) {\n    const k = a && (a.path || a.url);\n    if (k && !seenPath.has(k)) { seenPath.add(k); atts.push(a); }\n}\nconst zImages = [], zLinks = [];\nfor (const a of atts) {\n    if (a.kind === 'image' && zImages.length < MAX_EMBED_IMAGES) zImages.push(a);\n    else zLinks.push(a);\n}\nconst attachText = zLinks.length\n    ? '\\n\\n📎 Đính kèm:\\n' + zLinks.map(a => '• ' + a.name + ' (' + fmtSize(a.size) + ') — ' + a.url).join('\\n')\n    : '';\nconst nImg = atts.filter(a => a.kind === 'image').length;\nconst nVid = atts.filter(a => a.kind === 'video').length;\nconst nFile = atts.length - nImg - nVid;\nconst attachSummary = [nImg ? nImg + ' ảnh' : '', nVid ? nVid + ' video' : '', nFile ? nFile + ' tệp' : ''].filter(Boolean).join(', ');\nconst attachRow = atts.length ? `<div class=\"row\"><div class=\"lbl\">📎 Đính kèm</div><div class=\"val\">${atts.length} file (${attachSummary})</div></div>` : '';\nconst attachGrid = zImages.length ? `<div class=\"att-grid\">${zImages.map(a => `<img class=\"att-img\" src=\"${a.url}\"/>`).join('')}</div>` : '';\n\nconst html = `<!DOCTYPE html><html lang=\"vi\"><head><meta charset=\"UTF-8\"><style>\n  body,html{margin:0;padding:0;width:1920px;min-height:1080px;background:linear-gradient(160deg,#eef2ff,#f8fafc 45%,#ecfeff);font-family:'Segoe UI',Arial,sans-serif;}\n  .wrap{padding:60px 80px;}\n  .title{font-size:60px;font-weight:800;color:#1e293b;text-align:center;margin:0 0 40px;text-transform:uppercase;}\n  .banner{background:${band.bg};border:6px solid ${band.color};color:${band.color};font-size:64px;font-weight:800;text-align:center;padding:32px;border-radius:28px;margin-bottom:44px;}\n  .card{background:#fff;border-radius:28px;box-shadow:0 14px 40px rgba(30,41,59,.12);border-left:16px solid ${band.color};overflow:hidden;}\n  .row{display:flex;border-bottom:2px solid #eef2f7;}\n  .row:last-child{border-bottom:none;}\n  .lbl{width:460px;flex-shrink:0;background:#f1f5f9;color:#334155;font-size:38px;font-weight:700;padding:34px 40px;}\n  .val{flex:1;font-size:42px;color:#0f172a;padding:34px 44px;line-height:1.35;word-wrap:break-word;}\n  .val.strong{font-weight:800;}\n  .att-grid{display:flex;flex-wrap:wrap;gap:20px;padding:24px 0 0;}\n  .att-img{width:588px;height:442px;object-fit:cover;border-radius:18px;border:3px solid #a78bfa;background:#f5f3ff;}\n</style></head><body><div class=\"wrap\">\n  <div class=\"title\">Nhắc việc sắp đến hạn</div>\n  <div class=\"banner\">${band.text}</div>\n  <div class=\"card\">\n    <div class=\"row\"><div class=\"lbl\">📋 Công việc</div><div class=\"val strong\">${task.title || ''}</div></div>\n    <div class=\"row\"><div class=\"lbl\">⏰ Hạn chót</div><div class=\"val strong\" style=\"color:${band.color}\">${due}</div></div>\n    <div class=\"row\"><div class=\"lbl\">📈 Tiến độ gần nhất</div><div class=\"val\">${progress}</div></div>\n    <div class=\"row\"><div class=\"lbl\">👤 Người thực hiện</div><div class=\"val strong\">${assignee}</div></div>\n    ${attachRow}\n  ${attachGrid}\n  </div>\n</div></body></html>`;\n\nconst mention = nv.id_zalo_oa ? `[@${nv.id_zalo_oa}] ` : '';\nreturn [{ json: {\n    html,\n    message_text: mention + band.text + ' — Tốc độ nhé!' + attachText,\n    ms_delay: zImages.length ? 3000 : 1200,   // chờ HCTI tải ảnh đính kèm từ Storage\n} }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -192,60 +192,6 @@
       ],
       "id": "5f607182-93a4-4b55-ccdd-eeff00112233",
       "name": "Tạo thẻ đến hạn"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "rule-anh-dinh-kem",
-              "leftValue": "={{ !!$json.direct_url }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "if-anh-dinh-kem",
-      "name": "Là ảnh đính kèm?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        1980,
-        980
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.direct_url }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file"
-            }
-          }
-        }
-      },
-      "id": "http-tai-anh-dinh-kem",
-      "name": "Tải ảnh đính kèm",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2220,
-        1080
-      ]
     }
   ],
   "connections": {
@@ -287,35 +233,6 @@
         [
           {
             "node": "Tạo thẻ đến hạn",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Là ảnh đính kèm?": {
-      "main": [
-        [
-          {
-            "node": "Tải ảnh đính kèm",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Tạo ảnh HCTI",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Tải ảnh đính kèm": {
-      "main": [
-        [
-          {
-            "node": "Upload ảnh lên OA",
             "type": "main",
             "index": 0
           }

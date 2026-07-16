@@ -13,7 +13,7 @@ Bốn phần:
 1. **Tạo/sửa công việc** — đính kèm được ảnh, video, file.
 2. **Cập nhật tiến độ** — nhân viên đính kèm được ảnh/video chứng minh kết quả.
 3. **Hiển thị** — panel chi tiết xem đầy đủ; danh sách / Tổng quan / Báo cáo chỉ hiện badge 📎 + số lượng.
-4. **Nhắc việc Zalo** — ảnh gửi thật vào nhóm; video và file gửi dạng link trong nội dung tin nhắn.
+4. **Nhắc việc Zalo** — đính kèm gộp thành MỘT khối: ảnh nhúng ngay trong thẻ, video và file gửi dạng link trong nội dung tin nhắn (v2 — xem mục 6).
 
 ## 2. Quyết định đã chốt
 
@@ -95,7 +95,7 @@ Video và file: giữ nguyên, không nén.
 
 | File | Vai trò |
 |---|---|
-| `src/lib/attachments.js` | Hàm thuần, không import gì: `kindOf`, `validateFile`, `planSelection`, `warnFor`, `fmtSize`, `totalSize`, `splitZaloAttachments`, `buildZaloAttachmentText`, hằng số `MAX_SIZE` / `MAX_COUNT` / `MAX_ZALO_IMAGES` |
+| `src/lib/attachments.js` | Hàm thuần, không import gì: `kindOf`, `validateFile`, `planSelection`, `warnFor`, `fmtSize`, `totalSize`, `splitZaloAttachments`, `buildZaloAttachmentText`, hằng số `MAX_SIZE` / `MAX_COUNT` / `MAX_EMBED_IMAGES` |
 | `src/lib/attachmentStorage.js` | I/O: `compressImage`, `uploadAttachment`, `deleteAttachments`, `deleteRemoved`, `collectPaths`. Tách khỏi file trên vì vitest chạy môi trường `node` — logic thuần không được kéo theo client trình duyệt |
 | `src/components/AttachmentInput.jsx` | Nút đính kèm + input multiple + danh sách file (thumbnail/tên/size/nút xoá) + trạng thái tải + cảnh báo. Props: `value`, `onChange` (nhận hàm cập nhật), `folder`, `userId`, `disabled`, `protectedPaths` |
 | `src/components/AttachmentList.jsx` | Hiển thị read-only: lưới thumbnail ảnh, thẻ video, dòng file. Click → lightbox. Export kèm `AttachmentBadge` (icon 📎 + số) |
@@ -138,52 +138,44 @@ refactor chúng nằm ngoài phạm vi và có rủi ro làm hỏng luồng đan
 
 Quyền: đính kèm đi theo quyền sẵn có (`tPerm.create` / `tPerm.edit` cho việc; ai cập nhật được tiến độ thì đính kèm được vào tiến độ). Không thêm quyền mới.
 
-## 6. Luồng n8n → Zalo
+## 6. Luồng n8n → Zalo (v2 — MỘT KHỐI, 2026-07-16)
 
-Chuỗi hiện tại (workflow `wf-bao-cao-cong-viec-gio-vn.json`):
+> Bản v1 (mỗi ảnh một tin nhắn riêng, node IF "Là ảnh đính kèm?" + HTTP "Tải ảnh đính kèm",
+> cap 5 ảnh) đã chạy thật nhưng bị thay: người dùng muốn đính kèm gộp thành một khối —
+> 10 ảnh không được thành 10 tin nhắn.
 
-```
-Tạo thẻ (code) → Loop Over Items → Tạo ảnh HCTI → Tải ảnh JPG
-  → Upload ảnh lên OA → Gửi ảnh vào nhóm OA → Chờ 2 giây → (loop)
-```
+Thiết kế v2: **không thêm node nào**, chuỗi gửi giữ nguyên như workflow gốc
+(`Loop Over Items → Tạo ảnh HCTI → Tải ảnh JPG → Upload ảnh lên OA → Gửi ảnh vào nhóm OA → Chờ 2 giây`).
+Chỉ sửa 2 node code + 1 tham số:
 
-Thêm **2 node**, sửa **1 node code**, **không** thêm node truy vấn nào.
+### 6.1 Node code "Tạo nội dung thẻ chi tiết" (và "Tạo thẻ đến hạn" trong file paste)
 
-### 6.1 Sửa node code "Tạo thẻ đến hạn" và "Tạo nội dung thẻ chi tiết"
+- Gộp `task.attachments` **+ `attachments` của lần cập nhật tiến độ MỚI NHẤT** (dedup theo `path`).
+  Các lần cập nhật cũ hơn không lấy — thẻ chỉ hiện tiến độ gần nhất nên đính kèm cũng vậy.
+- **Ảnh (tối đa `MAX_EMBED_IMAGES` = 10): NHÚNG lưới `<img>` ngay trong thẻ HTML** →
+  HCTI render cả thẻ lẫn ảnh thành MỘT ảnh → **一 tin nhắn duy nhất** dù 10 ảnh.
+  Đánh đổi: người nhận xem ảnh trong thẻ, không bấm mở full-size từng tấm (muốn xem gốc thì mở app).
+- Thẻ thêm dòng "📎 N file (x ảnh, y video, z tệp)".
+- **Video/file: chèn link vào `message_text`** (Zalo OA không có endpoint upload video;
+  API file cho nhóm chưa kiểm chứng — giữ nguyên quyết định cũ).
+- Trả về đúng **1 item** `{ html, message_text, ms_delay }`.
 
-Đọc `task.attachments` (có sẵn nhờ `select('*')`).
+### 6.2 Node "Tạo ảnh HCTI"
 
-- Thẻ HTML: thêm dòng `📎 3 đính kèm (2 ảnh, 1 file)`.
-- `message_text`: thêm khối link cho **video và file**:
-  ```
-  📎 Đính kèm:
-  • video-lap-dat.mp4 (18MB) — https://…
-  • ban-ve.pdf — https://…
-  ```
-- Emit **thêm một item cho mỗi ảnh** (tối đa `MAX_ZALO_IMAGES` = 5):
-  `{ direct_url: <url ảnh>, message_text: '📎 Ảnh đính kèm — CV-001 (1/2)' }`
-- Ảnh thứ 6 trở đi rơi xuống khối link như video/file.
+`ms_delay`: `1200` → `={{ $json.ms_delay || 1200 }}`. Node code đặt 3000 khi có ảnh nhúng
+để HCTI kịp tải ảnh từ Storage trước khi chụp; thiếu bước này ảnh nhúng dễ thành ô trống.
 
-Giới hạn 5 ảnh vì mỗi ảnh là một tin nhắn cách nhau 2 giây: 10 ảnh nghĩa là nhóm Zalo nhận
-11 tin liên tiếp trong 22 giây.
+### 6.3 Bảng tổng hợp 8h/17h
 
-### 6.2 Node IF mới "Là ảnh đính kèm?"
-
-Đặt ngay sau `Loop Over Items`. Điều kiện `{{ !!$json.direct_url }}`.
-
-- **true** → node HTTP mới **"Tải ảnh đính kèm"** (`url: {{ $json.direct_url }}`,
-  `responseFormat: file`) → nối thẳng vào `Upload ảnh lên OA`, bỏ qua HCTI.
-- **false** → `Tạo ảnh HCTI` → `Tải ảnh JPG` → `Upload ảnh lên OA` (đường cũ).
-
-### 6.3 Node không phải sửa
-
-`Gửi ảnh vào nhóm OA` đã lấy text từ `$('Loop Over Items').item.json.message_text` — đúng cho cả hai nhánh.
-`Chờ 2 giây` giữ nguyên để tránh rate limit.
+Chỉ thêm đếm `📎N` cạnh tên việc. Không nhúng ảnh — bảng nhiều việc sẽ dài vô hạn.
 
 ### 6.4 Đầu ra tài liệu
 
-- Cập nhật `docs/n8n/wf-nhac-viec-them-nodes.json` — thêm 2 node mới để paste vào canvas.
-- Cập nhật `docs/n8n/nhac-viec-workflows.md` — runbook nối dây.
+- `docs/n8n/wf-bao-cao-cong-viec-gio-vn.json` — **bản workflow live đã vá sẵn toàn bộ**;
+  áp bằng Import from File ghi đè, không nối dây tay.
+- `docs/n8n/wf-nhac-viec-them-nodes.json` — file paste nhánh đến hạn, node `Tạo thẻ đến hạn`
+  cùng thiết kế v2.
+- `docs/n8n/nhac-viec-workflows.md` — runbook mục 4b.
 
 ## 7. Cảnh báo dung lượng
 
@@ -210,7 +202,7 @@ Giới hạn 5 ảnh vì mỗi ảnh là một tin nhắn cách nhau 2 giây: 10
 - `kindOf(mime)` map đúng image/video/file, kể cả mime lạ
 - `validate()` chặn quá 25MB, chặn quá 10 file
 - `buildZaloAttachmentText()` chỉ liệt kê video/file, bỏ ảnh (trong hạn 5), định dạng size đúng
-- Ảnh thứ 6 trở đi rơi xuống khối link
+- Ảnh vượt hạn nhúng (thứ 11 trở đi) rơi xuống khối link
 
 **Thủ công** — qua preview thật:
 - Tạo việc kèm 1 ảnh + 1 video + 1 pdf → panel chi tiết hiện đủ, lightbox mở được

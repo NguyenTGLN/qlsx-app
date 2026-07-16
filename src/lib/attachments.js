@@ -4,7 +4,7 @@
 export const MAX_SIZE = 25 * 1024 * 1024;   // chặn cứng mỗi file
 export const WARN_SIZE = 10 * 1024 * 1024;  // cảnh báo nhưng vẫn cho upload
 export const MAX_COUNT = 10;                // mỗi việc / mỗi lần cập nhật tiến độ
-export const MAX_ZALO_IMAGES = 5;           // mỗi ảnh là 1 tin nhắn cách nhau 2s → quá số này là spam nhóm
+export const MAX_EMBED_IMAGES = 10;         // số ảnh tối đa nhúng vào lưới trong thẻ Zalo (= MAX_COUNT)
 
 const KIND_LABEL = { image: 'Ảnh', video: 'Video', file: 'File' };
 
@@ -54,14 +54,15 @@ export function totalSize(list) {
   return (list || []).reduce((sum, a) => sum + (Number(a.size) || 0), 0);
 }
 
-// Chia đính kèm thành 2 nhóm cho nhắc việc Zalo:
-//   images — upload thật lên OA (Zalo chỉ có endpoint upload cho ảnh)
-//   links  — chèn link vào nội dung tin nhắn (video, file, và ảnh vượt hạn MAX_ZALO_IMAGES)
+// Chia đính kèm thành 2 nhóm cho nhắc việc Zalo (thiết kế v2 — một khối duy nhất):
+//   images — NHÚNG vào lưới <img> trong thẻ HTML, HCTI render → cả 10 ảnh vẫn là 1 tin nhắn
+//   links  — chèn link vào nội dung tin nhắn (video, file — Zalo OA không upload được video;
+//            và ảnh vượt hạn MAX_EMBED_IMAGES, phòng hờ)
 export function splitZaloAttachments(list) {
   const images = [];
   const links = [];
   for (const a of list || []) {
-    if (a.kind === 'image' && images.length < MAX_ZALO_IMAGES) images.push(a);
+    if (a.kind === 'image' && images.length < MAX_EMBED_IMAGES) images.push(a);
     else links.push(a);
   }
   return { images, links };

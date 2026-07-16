@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   kindOf, fmtSize, validateFile, warnFor, totalSize, planSelection,
   splitZaloAttachments, buildZaloAttachmentText,
-  MAX_SIZE, MAX_COUNT, MAX_ZALO_IMAGES,
+  MAX_SIZE, MAX_COUNT, MAX_EMBED_IMAGES,
 } from './attachments';
 
 const img = (over = {}) => ({ url: 'https://x/a.webp', name: 'a.webp', mime: 'image/webp', kind: 'image', size: 200 * 1024, ...over });
@@ -127,23 +127,26 @@ describe('totalSize', () => {
   });
 });
 
+// Thiết kế Zalo v2 (2026-07-16): ảnh KHÔNG gửi thành tin nhắn riêng nữa — chúng được
+// NHÚNG vào lưới trong thẻ HTML (HCTI render), cả 10 ảnh vẫn chỉ là 1 tin nhắn.
+// links = video/file (+ ảnh vượt hạn nhúng MAX_EMBED_IMAGES, phòng hờ).
 describe('splitZaloAttachments', () => {
-  it('ảnh gửi thật, video và file rơi xuống link', () => {
+  it('mọi ảnh vào nhóm nhúng, video và file rơi xuống link', () => {
     const r = splitZaloAttachments([img(), vid(), doc()]);
     expect(r.images).toHaveLength(1);
     expect(r.links.map(a => a.name)).toEqual(['v.mp4', 'd.pdf']);
   });
-  it('ảnh thứ 6 trở đi rơi xuống link', () => {
-    const list = Array.from({ length: 7 }, (_, i) => img({ name: `a${i}.webp` }));
+  it('10 ảnh đều được nhúng hết — không tin nhắn lẻ, không link', () => {
+    const list = Array.from({ length: 10 }, (_, i) => img({ name: `a${i}.webp` }));
     const r = splitZaloAttachments(list);
-    expect(r.images).toHaveLength(MAX_ZALO_IMAGES);
-    expect(r.images.map(a => a.name)).toEqual(['a0.webp', 'a1.webp', 'a2.webp', 'a3.webp', 'a4.webp']);
-    expect(r.links.map(a => a.name)).toEqual(['a5.webp', 'a6.webp']);
+    expect(r.images).toHaveLength(10);
+    expect(r.links).toEqual([]);
   });
-  it('giữ thứ tự gốc của link: ảnh thừa xếp sau video/file', () => {
-    const list = [...Array.from({ length: 6 }, (_, i) => img({ name: `a${i}.webp` })), vid()];
+  it('ảnh vượt hạn nhúng rơi xuống link, xếp sau video/file', () => {
+    const list = [...Array.from({ length: MAX_EMBED_IMAGES + 1 }, (_, i) => img({ name: `a${i}.webp` })), vid()];
     const r = splitZaloAttachments(list);
-    expect(r.links.map(a => a.name)).toEqual(['a5.webp', 'v.mp4']);
+    expect(r.images).toHaveLength(MAX_EMBED_IMAGES);
+    expect(r.links.map(a => a.name)).toEqual([`a${MAX_EMBED_IMAGES}.webp`, 'v.mp4']);
   });
   it('danh sách rỗng/null cho hai mảng rỗng', () => {
     expect(splitZaloAttachments([])).toEqual({ images: [], links: [] });
@@ -157,12 +160,9 @@ describe('buildZaloAttachmentText', () => {
       '📎 Đính kèm:\n• v.mp4 (18MB) — https://x/v.mp4\n• d.pdf (128KB) — https://x/d.pdf'
     );
   });
-  it('bỏ qua ảnh vì ảnh được gửi thật', () => {
-    expect(buildZaloAttachmentText([img(), img()])).toBe('');
-  });
-  it('ảnh thứ 6 trở đi có mặt trong danh sách link', () => {
-    const list = Array.from({ length: 6 }, (_, i) => img({ name: `a${i}.webp`, url: `https://x/a${i}.webp` }));
-    expect(buildZaloAttachmentText(list)).toBe('📎 Đính kèm:\n• a5.webp (200KB) — https://x/a5.webp');
+  it('bỏ qua ảnh vì ảnh đã nhúng trong thẻ', () => {
+    const list = Array.from({ length: 10 }, () => img());
+    expect(buildZaloAttachmentText(list)).toBe('');
   });
   it('không có đính kèm thì trả chuỗi rỗng', () => {
     expect(buildZaloAttachmentText([])).toBe('');
