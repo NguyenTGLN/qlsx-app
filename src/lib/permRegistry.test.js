@@ -127,3 +127,16 @@ describe('tab xuLy của Bảo Hành', () => {
     expect(granted.sendForm).toBe(true);
   });
 });
+
+describe('cancelDoc cap (Hủy Phiếu)', () => {
+  test('print_queue có cap cancelDoc; admin mặc định được', () => {
+    const admin = { role: 'ADMIN', permissions: {} };
+    expect(getTabPerm(admin, 'kho', 'print_queue').cancelDoc).toBe(true);
+  });
+  test('user thường chỉ được khi tick đúng key', () => {
+    const u = { role: 'USER', permissions: { 'tab.kho.print_queue.view': true } };
+    expect(getTabPerm(u, 'kho', 'print_queue').cancelDoc).toBe(false);
+    const u2 = { role: 'USER', permissions: { 'tab.kho.print_queue.cancelDoc': true } };
+    expect(getTabPerm(u2, 'kho', 'print_queue').cancelDoc).toBe(true);
+  });
+});

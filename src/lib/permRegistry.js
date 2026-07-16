@@ -4,11 +4,11 @@
 //    Tab chỉ-đọc -> caps = ['view']. Mọi tab BẮT BUỘC có 'view'.
 //    legacyAccess: key access_* cũ để đồng bộ.
 // ============================================================
-export const ALL_CAPS = ['view', 'create', 'edit', 'delete', 'io', 'sendForm', 'cancelLan'];
+export const ALL_CAPS = ['view', 'create', 'edit', 'delete', 'io', 'sendForm', 'cancelLan', 'cancelDoc'];
 
 export const CAP_LABEL = {
   view: 'Xem', create: 'Thêm', edit: 'Sửa', delete: 'Xóa', io: 'N/X',
-  sendForm: 'Gửi Form', cancelLan: 'Hủy Lần',
+  sendForm: 'Gửi Form', cancelLan: 'Hủy Lần', cancelDoc: 'Hủy Phiếu',
 };
 
 export const PERM_REGISTRY = [
@@ -30,7 +30,7 @@ export const PERM_REGISTRY = [
       { id: 'dksx',             label: 'DKSX — Nhu cầu sản xuất',  caps: ['view', 'create', 'delete'] },
       { id: 'de-xuat-dat-hang', label: 'Đề xuất đặt hàng (DLK)',   caps: ['view', 'create', 'edit', 'delete'] },
       { id: 'ton-kho-sx',       label: 'Tồn kho Sản xuất',         caps: ['view', 'edit', 'delete', 'io'] }, // không có nút Thêm
-      { id: 'print_queue',      label: 'Quản Lý Chứng Từ',         caps: ['view'] }, // chỉ in/in lại (workflow), không CRUD
+      { id: 'print_queue',      label: 'Quản Lý Chứng Từ',         caps: ['view', 'cancelDoc'] }, // in/in lại + hủy phiếu (đảo chứng từ)
     ],
   },
   {
