@@ -4,6 +4,7 @@ import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, Sh
 import { closeProposalWithShortfall } from '../../lib/dksxEngine';
 import { getCatalogItems, invalidateCatalog } from '../../lib/catalogCache';
 import { dlkImportCap } from '../../lib/proposalQty';
+import { newDocToken, claimDocToken, setDocTokenOrderCode, releaseDocToken } from '../../lib/docGuard';
 import AddCatalogItemModal from '../../components/AddCatalogItemModal';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
 
@@ -175,6 +176,10 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
   const blockIdRef = useRef(1);
   const newBlockId = () => blockIdRef.current++;
 
+  // Chống trùng chứng từ chờ in: 1 token/phiếu (ổn định suốt lần điền) + cờ chặn bấm-kép tức thì.
+  const importTokenRef = useRef(null);
+  const submittingRef = useRef(false);
+
   const initBlocksFor = (r) => {
     if (r === 'Nhập mua vào') return [{ id: newBlockId(), sourceType: 'ncc', sourceValue: '', dlkCode: '', items: [] }];
     if (r === 'Nhập mới' || r === 'Khác') return [{ id: newBlockId(), sourceType: 'none', sourceValue: '', dlkCode: '', orderCode: '', items: [] }];
@@ -237,6 +242,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
     if (!dlkPrefill) return;
     (async () => {
       setReason('Nhập mua vào');
+      importTokenRef.current = newDocToken();
       const item = await buildDlkItem({
         item_code: dlkPrefill.item_code, item_name: dlkPrefill.item_name, qty: dlkPrefill.qty, unit: dlkPrefill.unit,
         dlk_code: dlkPrefill.dlk_code || ''
@@ -530,10 +536,27 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
       if (anyMissing && !window.confirm("Có khối chưa điền nguồn (NCC / Mã phiếu / Mã đơn). Vẫn tiếp tục?")) return;
     }
 
+    // Chặn bấm-kép tức thì (đồng bộ, không chờ re-render như disabled={loading}).
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+
     setLoading(true);
     try {
-      const orderCode = await generateOrderCode();
       const userStr = localStorage.getItem('qlsx_user') || 'Nhân viên';
+
+      // CHỐT CHỐNG TRÙNG: chiếm token TRƯỚC khi sinh mã / trừ-cộng kho.
+      // Nếu token đã dùng (bấm lại / tải lại / nhiều tab) → dừng, không tạo chứng từ lần 2.
+      if (!importTokenRef.current) importTokenRef.current = newDocToken();
+      const claim = await claimDocToken(importTokenRef.current, { kind: 'import', createdBy: userStr });
+      if (!claim.ok) {
+        alert('Phiếu nhập này đã được lưu rồi' + (claim.orderCode ? ` (mã ${claim.orderCode})` : '') + '. Không tạo chứng từ trùng.');
+        setLoading(false);
+        submittingRef.current = false;
+        return;
+      }
+
+      const orderCode = await generateOrderCode();
+      await setDocTokenOrderCode(importTokenRef.current, orderCode);
       const todayStr = todayLocal();
 
       const duLieuNhap = [];
@@ -659,11 +682,16 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
       setPasteCodes('');
       setShortfallRows(shortfall);        // danh sách đề xuất nhận thiếu (có thể rỗng)
       setSuccessOrder(orderCode);         // mở hộp kết quả (thay popup trình duyệt xấu)
+      importTokenRef.current = newDocToken(); // phiếu mới (nếu tiếp tục nhập) → token mới
 
     } catch (e) {
       console.error(e);
+      // Thất bại trước khi ghi được chứng từ → nhả token để sửa & lưu lại được.
+      await releaseDocToken(importTokenRef.current);
+      importTokenRef.current = newDocToken();
       alert("Có lỗi xảy ra khi cập nhật kho: " + e.message);
     }
+    submittingRef.current = false;
     setLoading(false);
   };
 
@@ -841,7 +869,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
               return (
                 <button
                   key={type.id}
-                  onClick={() => { setReason(type.id); setBlocks(initBlocksFor(type.id)); setPasteCodes(''); }}
+                  onClick={() => { setReason(type.id); setBlocks(initBlocksFor(type.id)); setPasteCodes(''); importTokenRef.current = newDocToken(); }}
                   style={{
                     background:'#fff', borderRadius:14, border:'1px solid #eef2f7', padding:'0.9rem 0.3rem',
                     display:'flex', flexDirection:'column', alignItems:'center', gap:'0.5rem',

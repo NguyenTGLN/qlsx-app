@@ -8,6 +8,7 @@ import { aggregateComponentDemand, allocateFIFO, allocateExport, buildFinishedIt
 import { getCatalogItems, getBomProducts } from '../../lib/catalogCache';
 import { missingCapacities, capacityMap } from '../../lib/capacityGuard';
 import { parseManualOrders } from '../../lib/manualOrderParse';
+import { newDocToken, claimDocToken, releaseDocToken } from '../../lib/docGuard';
 
 // Làm tròn số lượng hiển thị tới 1 chữ số thập phân (khử nhiễu dấu phẩy động của mã dây, vd 284.30000000000007 → 284.3)
 const fmtQty = round1;
@@ -292,6 +293,11 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState([]);
   const fileInputRef = useRef(null);
+
+  // Chống trùng chứng từ chờ in: 1 token/phiếu (gán lúc TÍNH TOÁN, giữ tới lúc LƯU)
+  // + cờ chặn bấm-kép tức thì cho nút "LƯU PHIẾU".
+  const batchTokenRef = useRef(null);
+  const submittingRef = useRef(false);
   
   // Form State (Persist across tab switch)
   // Danh sách thành phẩm trên 1 phiếu SX (multi). Mỗi dòng: { id, code, name, qty }
@@ -438,6 +444,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       }
       const generatedCode = `PSX-${todayStr}-${seq.toString().padStart(2, '0')}`;
       setOrderCode(generatedCode);
+      batchTokenRef.current = newDocToken(); // phiếu SX mới → token chống trùng mới
 
       // Danh sách lệnh con (mỗi thành phẩm 1 lệnh)
       const finishedItems = buildFinishedItems(rows, generatedCode);
@@ -647,6 +654,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       }
       const generatedCode = `PDH-${todayStr}-${seq.toString().padStart(2, '0')}`;
       setOrderCode(generatedCode);
+      batchTokenRef.current = newDocToken(); // đơn hàng mới → token chống trùng mới
 
       // Gom nhóm nhu cầu
       const demandMap = {};
@@ -788,6 +796,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       }
       const generatedCode = `PXK-${todayStr}-${seq.toString().padStart(2, '0')}`;
       setOrderCode(generatedCode);
+      batchTokenRef.current = newDocToken(); // phiếu xuất thủ công mới → token chống trùng mới
 
       // Lấy tồn của tất cả mã được chọn (FIFO theo import_date, cùng ngày thì vị trí A→Z, 1→20)
       const codes = [...new Set(rows.map(r => r.code))];
@@ -864,9 +873,16 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const handleExecuteSave = async () => {
     if (isShortage) return alert('Không thể tạo lệnh vì thiếu linh kiện!');
     if (!allocations) return;
-    
-    // Bỏ qua in ấn, gọi trực tiếp hàm trừ kho và tạo phiếu
-    await confirmDeductAndCreateOrder();
+
+    // Chặn bấm-kép tức thì (đồng bộ) — không chờ re-render như disabled={isProcessing}.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      // Bỏ qua in ấn, gọi trực tiếp hàm trừ kho và tạo phiếu
+      await confirmDeductAndCreateOrder();
+    } finally {
+      submittingRef.current = false;
+    }
   };
 
   const confirmDeductAndCreateOrder = async () => {
@@ -893,6 +909,25 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     }
 
     setIsProcessing(true);
+
+    // CHỐT CHỐNG TRÙNG: chiếm token TRƯỚC khi trừ/cộng kho & ghi chứng từ.
+    // Bấm lại / tải lại / nhiều tab → token đã dùng → dừng, không trừ kho / không tạo phiếu lần 2.
+    if (!batchTokenRef.current) batchTokenRef.current = newDocToken();
+    try {
+      const claim = await claimDocToken(batchTokenRef.current, { orderCode, kind: mode, createdBy: (localStorage.getItem('user_id') || localStorage.getItem('username') || localStorage.getItem('staffName') || 'Nhân viên') });
+      if (!claim.ok) {
+        alert('Phiếu này đã được lưu rồi' + (claim.orderCode ? ` (mã ${claim.orderCode})` : '') + '. Không tạo chứng từ trùng.');
+        setIsProcessing(false);
+        setOrderCreated(true); // khóa nút, hiển thị trạng thái đã tạo
+        return;
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Lỗi kiểm tra chống trùng chứng từ: ' + e.message);
+      setIsProcessing(false);
+      return;
+    }
+
     try {
       // 3. Trừ kho / Cộng kho trên DB
       const updates = [];
@@ -1182,6 +1217,9 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       
     } catch (e) {
       console.error(e);
+      // Thất bại trước khi tạo xong chứng từ → nhả token để sửa & lưu lại được.
+      await releaseDocToken(batchTokenRef.current);
+      batchTokenRef.current = newDocToken();
       alert('Lỗi khi cập nhật hệ thống: ' + e.message);
     } finally {
       setIsProcessing(false);
@@ -1262,6 +1300,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       }
       const generatedCode = `PPR-${todayStr}-${seq.toString().padStart(2, '0')}`;
       setOrderCode(generatedCode);
+      batchTokenRef.current = newDocToken(); // phiếu phân rã mới → token chống trùng mới
 
       // Check BOM
       const { data: bomData, error: bomErr } = await db.from('bom_items')

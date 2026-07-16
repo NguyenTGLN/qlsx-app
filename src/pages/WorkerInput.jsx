@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Send, Clock, Users, PackageCheck, Info } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useTabPerm } from '../lib/AuthContext';
 import { missingCapacities } from '../lib/capacityGuard';
+import { newDocToken, claimDocToken, releaseDocToken } from '../lib/docGuard';
 
 const WorkerInput = () => {
   const navigate = useNavigate();
@@ -33,8 +34,12 @@ const WorkerInput = () => {
   const [capacityErr, setCapacityErr] = useState(false); // true khi KHÔNG kiểm tra được định mức (lỗi mạng/DB)
   const [dailyLogs, setDailyLogs] = useState([]);
   
-  const [locationsData, setLocationsData] = useState([]); 
+  const [locationsData, setLocationsData] = useState([]);
   const [allLocations, setAllLocations] = useState([]);
+
+  // Chống trùng: 1 token cho 1 lần gửi báo cáo (kèm PNK tự động) + cờ chặn bấm-kép tức thì.
+  const reportTokenRef = useRef(null);
+  const submittingRef = useRef(false);
 
   // Lấy data số lượng thực tế MỚI NHẤT
   useEffect(() => {
@@ -279,8 +284,32 @@ const WorkerInput = () => {
         if (!confirm) return;
     }
     
+    // Chặn bấm-kép tức thì (đồng bộ) trước khi state submitting kịp khóa nút.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+
     setSubmitting(true);
-    
+
+    // CHỐT CHỐNG TRÙNG: chiếm token TRƯỚC khi ghi báo cáo & tạo phiếu nhập kho tự động.
+    // Gửi lại / bấm kép / nhiều tab → token đã dùng → dừng, không tạo báo cáo & phiếu trùng.
+    if (!reportTokenRef.current) reportTokenRef.current = newDocToken();
+    try {
+      const userForGuard = workersList.find(w => w.id === selectedWorkers[0])?.name || 'Công nhân';
+      const claim = await claimDocToken(reportTokenRef.current, { orderCode: order.order_code, kind: 'worker_import', createdBy: userForGuard });
+      if (!claim.ok) {
+        alert('Báo cáo này đã được gửi rồi' + (claim.orderCode ? ` (phiếu ${claim.orderCode})` : '') + '. Không tạo trùng.');
+        setSubmitting(false);
+        submittingRef.current = false;
+        return;
+      }
+    } catch (guardErr) {
+      console.error(guardErr);
+      alert('Lỗi kiểm tra chống trùng: ' + guardErr.message);
+      setSubmitting(false);
+      submittingRef.current = false;
+      return;
+    }
+
     try {
       const qtyPerPerson = parseFloat(actualQuantity) / selectedWorkers.length;
 
@@ -406,8 +435,12 @@ const WorkerInput = () => {
       
     } catch (err) {
       console.error('Lỗi lưu log:', err);
+      // Thất bại khi ghi báo cáo → nhả token để gửi lại được.
+      await releaseDocToken(reportTokenRef.current);
+      reportTokenRef.current = newDocToken();
       alert('Không thể lưu nhật ký. Lỗi chi tiết: ' + err.message + '\n\n Nếu lỗi báo "violates foreign key constraint", bạn cần gỡ liên kết cột worker_id trên Supabase.');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
