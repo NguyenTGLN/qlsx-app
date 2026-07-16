@@ -1,6 +1,6 @@
 // Ô đính kèm cho form tạo/sửa công việc và ô cập nhật tiến độ.
 // File được upload NGAY khi chọn (không đợi bấm Lưu) để thấy thumbnail liền.
-// Đổi lại, nơi gọi phải dọn file thừa khi người dùng bấm Hủy — xem cleanupAdded() ở attachmentStorage.js.
+// Đổi lại, nơi gọi phải dọn file thừa khi người dùng bấm Hủy — xem deleteRemoved() ở attachmentStorage.js.
 import { useRef, useState } from 'react';
 import { Paperclip, X, FileText, Play, AlertTriangle, Loader2, RotateCw } from 'lucide-react';
 import { planSelection, totalSize, fmtSize, MAX_COUNT } from '../lib/attachments';
@@ -12,7 +12,12 @@ const thumb = {
   position: 'relative', flexShrink: 0, background: 'var(--bg-primary)',
 };
 
-export default function AttachmentInput({ value, onChange, folder = 'tasks', userId, disabled }) {
+// onChange LUÔN nhận một hàm cập nhật: onChange(prev => next).
+// Bắt buộc phải vậy — nhiều file tải song song cùng lúc, nếu dựng danh sách mới từ `value`
+// của lần render lúc bấm chọn thì file xong sau sẽ đè mất file xong trước.
+// protectedPaths: file đã lưu trong DB — bấm X chỉ gỡ khỏi form, KHÔNG xoá khỏi Storage
+// (người dùng có thể bấm Hủy, lúc đó DB vẫn trỏ tới file). Nơi gọi dọn khi Lưu.
+export default function AttachmentInput({ value, onChange, folder = 'tasks', userId, disabled, protectedPaths }) {
   const list = value || [];
   const inputRef = useRef(null);
   const [pending, setPending] = useState([]);   // file đang tải / tải lỗi
@@ -25,7 +30,7 @@ export default function AttachmentInput({ value, onChange, folder = 'tasks', use
     try {
       const att = await uploadAttachment(file, { folder, userId });
       setPending(p => p.filter(x => x.id !== tempId));
-      onChange([...(value || []), att]);
+      onChange(prev => [...(prev || []), att]);
     } catch (e) {
       setPending(p => p.map(x => x.id === tempId ? { ...x, status: 'error', error: e?.message || 'Tải lên thất bại', file } : x));
     }
@@ -47,9 +52,11 @@ export default function AttachmentInput({ value, onChange, folder = 'tasks', use
     setWarns(wrs);
   };
 
-  const remove = async (att) => {
-    onChange(list.filter(a => a.path !== att.path));
-    deleteAttachments([att.path]);
+  const remove = (att) => {
+    onChange(prev => (prev || []).filter(a => a.path !== att.path));
+    // File đã lưu trong DB thì để nơi gọi xoá lúc Lưu — xoá ngay ở đây mà người dùng
+    // bấm Hủy sẽ thành link hỏng (DB còn trỏ, file đã mất).
+    if (!(protectedPaths || []).includes(att.path)) deleteAttachments([att.path]);
   };
 
   const retry = (p) => {

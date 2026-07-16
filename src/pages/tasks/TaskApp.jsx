@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
     import ModuleShell, { TabButton } from '../../components/ModuleShell';
     import AttachmentInput from '../../components/AttachmentInput';
     import AttachmentList, { AttachmentBadge } from '../../components/AttachmentList';
-    import { collectPaths, deleteAttachments, cleanupAdded } from '../../lib/attachmentStorage';
+    import { collectPaths, deleteAttachments, deleteRemoved } from '../../lib/attachmentStorage';
     import {
       ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart,
       ListChecks, Loader2, CheckCircle2, AlertTriangle, Send, Search,
@@ -1029,17 +1029,23 @@ import { useNavigate } from 'react-router-dom';
 
       async function submit(e) {
         e.preventDefault(); setBusy(true)
-        try { await onSave({...f, due_date: f.due_date ? new Date(f.due_date).toISOString() : null}); onClose() } catch(e) { alert(e.message) } finally { setBusy(false) }
+        try {
+          await onSave({...f, due_date: f.due_date ? new Date(f.due_date).toISOString() : null})
+          // Lưu xong mới xoá file cũ đã bị gỡ khỏi form (xoá sớm hơn mà người dùng bấm Hủy
+          // hoặc lưu lỗi thì DB vẫn trỏ tới file đã mất → link hỏng).
+          deleteRemoved(initialFiles.current, f.attachments)
+          onClose()
+        } catch(e) { alert(e.message) } finally { setBusy(false) }
       }
 
       // File đã upload ngay lúc chọn, nên bấm Hủy phải xoá lại những file vừa thêm.
-      function cancel() { cleanupAdded(f.attachments, initialFiles.current); onClose() }
+      function cancel() { deleteRemoved(f.attachments, initialFiles.current); onClose() }
 
       return h(Modal,{title:isEdit?'Chỉnh sửa công việc':'Tạo việc mới',onClose:cancel,wide:true},
         h('form',{onSubmit:submit},
           h(Field,{label:'Tiêu đề',required:true}, h('input',{className:inp,value:f.title,onChange:e=>set('title',e.target.value),placeholder:'Tên việc...',required:true,autoFocus:true})),
           h(Field,{label:'Mô tả'}, h('textarea',{className:inp+' resize-none',rows:2,value:f.description,onChange:e=>set('description',e.target.value),placeholder:'Chi tiết...'})),
-          h(Field,{label:'Đính kèm'}, h(AttachmentInput,{value:f.attachments,onChange:v=>set('attachments',v),folder:'tasks',userId:currentUser.id})),
+          h(Field,{label:'Đính kèm'}, h(AttachmentInput,{value:f.attachments,onChange:up=>setF(p=>({...p,attachments:up(p.attachments||[])})),folder:'tasks',userId:currentUser.id,protectedPaths:collectPaths(initialFiles.current)})),
           h('div',{className:'grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4'},
             h(Field,{label:'Người thực hiện' + (!canChangeAssignee && isEdit ? ' 🔒' : ''),required:true}, h('select',{className:sel + (!canChangeAssignee && isEdit ? ' bg-gray-100 cursor-not-allowed' : ''),value:f.assignee_id,onChange:e=>set('assignee_id',e.target.value),required:true,disabled:(!canChangeAssignee && isEdit)}, h('option',{value:''},'-- Chọn --'), users.map(u=>h('option',{key:u.id,value:u.id},u.name)))),
             h(Field,{label:'Hạn chót' + (!canEditDueDate && isEdit ? ' 🔒' : '')}, h('input',{type:'datetime-local',className:inp + (!canEditDueDate && isEdit ? ' bg-gray-100 cursor-not-allowed' : ''),value:f.due_date,onChange:e=>set('due_date',e.target.value),disabled:!canEditDueDate && isEdit})),

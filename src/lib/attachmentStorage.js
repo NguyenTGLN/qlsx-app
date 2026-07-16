@@ -35,7 +35,10 @@ async function compressImage(file) {
     const blob = await new Promise(res => canvas.toBlob(res, 'image/webp', WEBP_QUALITY));
     // Nén xong mà to hơn bản gốc thì giữ bản gốc.
     if (!blob || blob.size >= file.size) return original;
-    return { blob, mime: 'image/webp', ext: 'webp' };
+    // Trình duyệt không mã hoá được webp thì toBlob lặng lẽ trả PNG — lấy mime thật từ blob,
+    // đừng gán cứng, kẻo lưu file PNG mà gắn nhãn webp.
+    const mime = blob.type || 'image/webp';
+    return { blob, mime, ext: mime.split('/')[1] || 'webp' };
   } catch {
     return original; // ví dụ HEIC ngoài Safari: trình duyệt không decode được
   }
@@ -81,9 +84,10 @@ export async function deleteAttachments(paths) {
 
 export const collectPaths = (list) => (list || []).map(a => a?.path).filter(Boolean);
 
-// File được upload ngay lúc chọn, nên khi người dùng bấm Hủy phải xoá lại những file vừa thêm.
-// added = danh sách hiện tại trừ đi danh sách lúc mở form.
-export function cleanupAdded(current, initial) {
-  const keep = new Set(collectPaths(initial));
-  return deleteAttachments(collectPaths(current).filter(p => !keep.has(p)));
+// Xoá khỏi Storage những file có trong `from` mà không còn trong `keep`. Dùng 2 chiều:
+//   bấm Hủy : deleteRemoved(danh sách hiện tại, danh sách lúc mở form) → xoá file vừa thêm
+//   bấm Lưu : deleteRemoved(danh sách lúc mở form, danh sách hiện tại) → xoá file cũ đã gỡ
+export function deleteRemoved(from, keep) {
+  const keepPaths = new Set(collectPaths(keep));
+  return deleteAttachments(collectPaths(from).filter(p => !keepPaths.has(p)));
 }
