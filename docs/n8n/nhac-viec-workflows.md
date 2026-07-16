@@ -62,6 +62,11 @@ Node `Tạo thẻ đến hạn` mặc định dùng mẫu tự chứa (chạy ng
 
 ## 4b. Nối 2 node đính kèm (ảnh gửi thật vào nhóm)
 
+> **Lối tắt (2026-07-16):** `wf-bao-cao-cong-viec-gio-vn.json` giờ là bản workflow live
+> **đã vá sẵn toàn bộ mục này** (2 node mới + dây nối + code đọc attachments + 📎 trong bảng
+> tổng hợp). Mở workflow đang chạy trong n8n → menu ⋮ → **Import from File** → chọn file đó
+> → Save. Không phải nối tay gì nữa — phần dưới chỉ để tham khảo khi muốn hiểu/nối tay.
+
 Zalo OA **chỉ có endpoint upload cho ảnh** (`upload/image`), không có cho video. Nên:
 ảnh → gửi thật vào nhóm; video/file → chèn link vào nội dung tin nhắn.
 

@@ -1,5 +1,4 @@
 {
-  "name": "Báo cáo & nhắc việc Zalo (giờ VN)",
   "nodes": [
     {
       "parameters": {
@@ -17,10 +16,10 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
       "position": [
-        48,
-        192
+        -336,
+        -80
       ],
-      "id": "2a9f0459-2574-4666-a604-ce92a16fdb3b",
+      "id": "a3489a3b-1be3-4b11-b18b-88d4b61353a8",
       "name": "Schedule 8h & 17h"
     },
     {
@@ -32,10 +31,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        48,
-        368
+        -336,
+        96
       ],
-      "id": "8f0c00c8-d335-4ce3-9766-9b465d2e0318",
+      "id": "906dc98e-082a-40c9-a253-123a68f2a2f2",
       "name": "Webhook tổng hợp",
       "webhookId": "a6fc08fc-dc4e-432e-9588-424d78470769"
     },
@@ -48,10 +47,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        48,
-        544
+        -336,
+        272
       ],
-      "id": "161637b1-75d3-47b6-b0c9-efeb7fcf4420",
+      "id": "d58547dc-9e5b-468a-a32b-9fc58001eacf",
       "name": "Webhook cập nhật task",
       "webhookId": "47cc5412-40b2-4747-af7f-8d7090cb40c2"
     },
@@ -76,10 +75,10 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.7,
       "position": [
-        304,
-        368
+        -80,
+        96
       ],
-      "id": "fa78082d-b8df-4cd3-abca-e9b7136fdabb",
+      "id": "a028f78b-151b-45a8-ba4a-f6751d2a8bb2",
       "name": "Lấy token OA",
       "executeOnce": true,
       "credentials": {
@@ -118,10 +117,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        544,
-        368
+        160,
+        96
       ],
-      "id": "236664d9-c272-4dba-ae8f-d7b4bd5f3bc6",
+      "id": "4b98c965-d33d-442d-9e49-00b4e2a6ced5",
       "name": "Là cập nhật task?"
     },
     {
@@ -133,10 +132,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        784,
-        208
+        400,
+        -64
       ],
-      "id": "62cc48c3-4283-4722-bbc3-bd0323b4a1ef",
+      "id": "ea5260e2-117d-407c-a644-f8a7d29e49cb",
       "name": "Lấy nhân viên",
       "executeOnce": true,
       "alwaysOutputData": true,
@@ -177,25 +176,25 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1024,
-        208
+        640,
+        -64
       ],
-      "id": "fc330026-f6e1-4976-9fd8-6c3158e477e8",
+      "id": "1b74a021-2919-45c0-8dfd-a77aa29e674d",
       "name": "Lấy công việc",
       "executeOnce": true,
       "alwaysOutputData": true
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================\n// TẠO NỘI DUNG ẢNH (định kỳ / theo yêu cầu)\n// - Item 1        : Bảng tổng hợp công việc cả phòng\n// - Item 2..n     : Bảng riêng của TỪNG NGƯỜI đang có việc\n// Mỗi item đầu ra : { html, message_text } -> đi vào CHUỖI GỬI CHUNG\n// Không hardcode tên nhân viên - lấy trực tiếp từ bảng nhan_vien\n// ==============================================================\nconst tasks = $('Lấy công việc').all().map(i => i.json).filter(t => t && t.id);\nconst nhanVien = $('Lấy nhân viên').all().map(i => i.json).filter(n => n && n.name);\n\nconst GROUP_ID = 'deb64378401ba945f00a';\nconst oaMap = {};\nconst avatarMap = {};\nnhanVien.forEach(nv => { oaMap[nv.name] = nv.id_zalo_oa; avatarMap[nv.name] = nv.avatar || ''; });\n\n// ===== AVATAR (ảnh đại diện nhân viên) =====\n// DB lưu đường dẫn tương đối '/avatars/x.webp'. HCTI render trên server riêng nên\n// PHẢI ghép thành URL tuyệt đối theo tên miền app đã deploy. Đổi APP_BASE bên dưới.\nconst APP_BASE = 'https://amazing-frangollo-eb56a9.netlify.app'; // vd: 'https://qlsx-tgln.netlify.app' (KHÔNG có dấu / ở cuối)\nfunction avatarUrl(p) {\n    if (!p) return '';\n    if (/^https?:\\/\\//i.test(p)) return p;            // đã là URL tuyệt đối\n    return APP_BASE.replace(/\\/+$/, '') + (p.charAt(0) === '/' ? p : '/' + p);\n}\nfunction initials(name) {\n    return (name || '?').trim().split(/\\s+/).map(w => w[0]).slice(-2).join('').toUpperCase() || '?';\n}\n// Avatar lớn cho tiêu đề bảng cá nhân; nếu không có ảnh -> chữ cái đầu tên\nfunction avatarBig(name) {\n    const u = avatarUrl(avatarMap[name]);\n    return u ? `<img class=\"hdr-av\" src=\"${u}\" alt=\"\"/>`\n             : `<div class=\"hdr-av hdr-av-fb\">${initials(name)}</div>`;\n}\n// Avatar nhỏ trong ô \"Người làm\" của bảng tổng hợp\nfunction avatarSmall(name) {\n    const u = avatarUrl(avatarMap[name]);\n    return u ? `<img class=\"cell-av\" src=\"${u}\" alt=\"\"/>`\n             : `<div class=\"cell-av cell-av-fb\">${initials(name)}</div>`;\n}\n\n// ===== MÚI GIỜ (fix lệch -7 tiếng) =====\n// Server n8n chạy UTC nên new Date().getHours() trả giờ UTC (10:00 VN in ra 03:00).\n// Mọi format/đếm ngày phải ÉP Asia/Ho_Chi_Minh, KHÔNG dùng getHours()/setHours().\nconst VN_TZ = 'Asia/Ho_Chi_Minh';\n\nfunction formatDateTime(isoString) {\n    try {\n        const parts = new Intl.DateTimeFormat('en-GB', {\n            timeZone: VN_TZ, hour12: false,\n            day: '2-digit', month: '2-digit', year: 'numeric',\n            hour: '2-digit', minute: '2-digit'\n        }).formatToParts(new Date(isoString));\n        const g = t => parts.find(x => x.type === t).value;\n        return `${g('day')}/${g('month')}/${g('year')} ${g('hour')}:${g('minute')}`;\n    } catch (e) { return isoString; }\n}\n\n// Số thứ tự NGÀY theo giờ VN (ngày kể từ epoch) — đếm \"còn/trễ X ngày\" đúng cả quanh nửa đêm VN.\nfunction vnDayNumber(dateLike) {\n    const s = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateLike));\n    return Math.round(Date.parse(s + 'T00:00:00Z') / 86400000);\n}\nconst todayVn = vnDayNumber(Date.now());\n\nfunction statusInfo(dueDate) {\n    if (!dueDate) return { text: '', cls: '', warn: '', color: '' };\n    const diff = vnDayNumber(dueDate) - todayVn;\n    if (diff < 0)   return { text: 'QUÁ HẠN',  cls: 'badge-danger',  warn: `Trễ ${Math.abs(diff)} ngày`, color: '#ef4444' };\n    if (diff === 0) return { text: 'HÔM NAY',  cls: 'badge-warning', warn: 'Đến hạn',                    color: '#f59e0b' };\n    return { text: 'ĐANG LÀM', cls: 'badge-success', warn: `Còn ${diff} ngày`, color: '#10b981' };\n}\n\nconst CSS = `\n        body, html { margin: 0; padding: 0; width: 1920px; min-height: 1080px; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, sans-serif; }\n        .header-title { width: 100%; background: #1e293b; color: white; font-size: 55px; padding: 30px 0; font-weight: bold; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 44px; }\n        .hdr-av { width: 150px; height: 150px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 8px solid rgba(255,255,255,0.92); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }\n        .hdr-av-fb { display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff; font-size: 76px; }\n        table { width: 100%; border-collapse: collapse; table-layout: fixed; background: white; }\n        th { background: #4f46e5; color: white; font-size: 38px; padding: 25px 10px; border-bottom: 6px solid #3730a3; }\n        td { padding: 30px 15px; font-size: 38px; vertical-align: middle; border-bottom: 2px solid #e2e8f0; word-wrap: break-word; line-height: 1.3; }\n        tr:nth-child(even) { background-color: #f8fafc; }\n        th:nth-child(1) { width: 10%; } th:nth-child(2) { width: 33%; } th:nth-child(3) { width: 17%; }\n        th:nth-child(4) { width: 15%; } th:nth-child(5) { width: 13%; } th:nth-child(6) { width: 12%; }\n        .text-center { text-align: center; } .font-bold { font-weight: bold; } .text-primary { color: #1e3a8a; }\n        .text-id { color: #64748b; font-size: 30px; text-align: center; }\n        .cell-person { display: flex; align-items: center; justify-content: center; gap: 18px; }\n        .cell-av { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; flex-shrink: 0; box-shadow: inset 0 0 0 2px rgba(0,0,0,0.12); }\n        .cell-av-fb { display: inline-flex; align-items: center; justify-content: center; background: #6366f1; color: #fff; font-size: 34px; font-weight: 700; }\n        .badge { padding: 12px 20px; border-radius: 10px; color: white; font-weight: bold; display: inline-block; font-size: 28px; }\n        .badge-danger { background: #ef4444; } .badge-warning { background: #f59e0b; } .badge-success { background: #10b981; }\n`;\n\nfunction buildTable(title, list, headerName) {\n    const sorted = [...list].sort((a, b) => {\n        const nameA = (a.name || 'Chưa giao').toLowerCase();\n        const nameB = (b.name || 'Chưa giao').toLowerCase();\n        if (nameA < nameB) return -1;\n        if (nameA > nameB) return 1;\n        const dateA = a.due_date ? new Date(a.due_date).getTime() : 0;\n        const dateB = b.due_date ? new Date(b.due_date).getTime() : 0;\n        return dateA - dateB;\n    });\n\n    let rows = '';\n    sorted.forEach(t => {\n        const s = statusInfo(t.due_date);\n        const personCell = t.name\n            ? `<div class=\"cell-person\">${avatarSmall(t.name)}<span>${t.name}</span></div>`\n            : `<div class=\"cell-person\"><span>Chưa giao</span></div>`;\n        rows += `\n        <tr>\n            <td class=\"text-id\">${t.id || ''}</td>\n            <td class=\"font-bold text-primary\">${t.title}</td>\n            <td class=\"text-center font-bold\" style=\"background-color: #fefce8;\">${personCell}</td>\n            <td class=\"text-center\" style=\"font-size: 32px;\">${t.due_date ? formatDateTime(t.due_date) : 'N/A'}</td>\n            <td class=\"text-center\"><span class=\"badge ${s.cls}\">${s.text}</span></td>\n            <td class=\"text-center font-bold\" style=\"color: ${s.color};\">${s.warn}</td>\n        </tr>`;\n    });\n\n    // Tiêu đề: bảng cá nhân có avatar lớn bên trái; bảng tổng hợp chỉ có chữ\n    const header = headerName\n        ? `<div class=\"header-title\">${avatarBig(headerName)}<span>${title}</span></div>`\n        : `<div class=\"header-title\"><span>${title}</span></div>`;\n\n    return `<!DOCTYPE html>\n<html lang=\"vi\">\n<head><meta charset=\"UTF-8\"><style>${CSS}</style></head>\n<body>\n    ${header}\n    <table>\n        <thead><tr><th>Mã CV</th><th>Tên công việc</th><th>Người làm</th><th>Hạn hoàn thành</th><th>Trạng thái</th><th>Cảnh báo</th></tr></thead>\n        <tbody>${rows}</tbody>\n    </table>\n</body>\n</html>`;\n}\n\nconst out = [];\n\n// 1) Bảng tổng hợp cả phòng (không avatar lớn ở tiêu đề, nhưng mỗi dòng có avatar nhỏ)\nif (tasks.length > 0) {\n    out.push({ json: {\n        html: buildTable('BẢNG TỔNG HỢP CÔNG VIỆC PHÒNG', tasks, null),\n        message_text: `Tổng hợp công việc [@${GROUP_ID}]`\n    }});\n}\n\n// 2) Bảng riêng từng người CÓ việc (người không có việc sẽ không nhận ảnh)\nconst byName = {};\ntasks.forEach(t => {\n    if (t.name) (byName[t.name] = byName[t.name] || []).push(t);\n});\n\nObject.keys(byName).sort((a, b) => a.localeCompare(b, 'vi')).forEach(name => {\n    const oaId = oaMap[name];\n    if (!oaId) return; // không tìm thấy id_zalo_oa -> bỏ qua ảnh cá nhân, vẫn có trong bảng tổng hợp\n    out.push({ json: {\n        html: buildTable(`CÔNG VIỆC CỦA ${name.toUpperCase()}`, byName[name], name),\n        message_text: `[@${oaId}] Tốc độ!`\n    }});\n});\n\nreturn out;\n"
+        "jsCode": "// ==============================================================\n// TẠO NỘI DUNG ẢNH (định kỳ / theo yêu cầu)\n// - Item 1        : Bảng tổng hợp công việc cả phòng\n// - Item 2..n     : Bảng riêng của TỪNG NGƯỜI đang có việc\n// Mỗi item đầu ra : { html, message_text } -> đi vào CHUỖI GỬI CHUNG\n// Không hardcode tên nhân viên - lấy trực tiếp từ bảng nhan_vien\n// ==============================================================\nconst tasks = $('Lấy công việc').all().map(i => i.json).filter(t => t && t.id);\nconst nhanVien = $('Lấy nhân viên').all().map(i => i.json).filter(n => n && n.name);\n\nconst GROUP_ID = 'deb64378401ba945f00a';\nconst oaMap = {};\nconst avatarMap = {};\nnhanVien.forEach(nv => { oaMap[nv.name] = nv.id_zalo_oa; avatarMap[nv.name] = nv.avatar || ''; });\n\n// ===== AVATAR (ảnh đại diện nhân viên) =====\n// DB lưu đường dẫn tương đối '/avatars/x.webp'. HCTI render trên server riêng nên\n// PHẢI ghép thành URL tuyệt đối theo tên miền app đã deploy. Đổi APP_BASE bên dưới.\nconst APP_BASE = 'https://amazing-frangollo-eb56a9.netlify.app'; // vd: 'https://qlsx-tgln.netlify.app' (KHÔNG có dấu / ở cuối)\nfunction avatarUrl(p) {\n    if (!p) return '';\n    if (/^https?:\\/\\//i.test(p)) return p;            // đã là URL tuyệt đối\n    return APP_BASE.replace(/\\/+$/, '') + (p.charAt(0) === '/' ? p : '/' + p);\n}\nfunction initials(name) {\n    return (name || '?').trim().split(/\\s+/).map(w => w[0]).slice(-2).join('').toUpperCase() || '?';\n}\n// Avatar lớn cho tiêu đề bảng cá nhân; nếu không có ảnh -> chữ cái đầu tên\nfunction avatarBig(name) {\n    const u = avatarUrl(avatarMap[name]);\n    return u ? `<img class=\"hdr-av\" src=\"${u}\" alt=\"\"/>`\n             : `<div class=\"hdr-av hdr-av-fb\">${initials(name)}</div>`;\n}\n// Avatar nhỏ trong ô \"Người làm\" của bảng tổng hợp\nfunction avatarSmall(name) {\n    const u = avatarUrl(avatarMap[name]);\n    return u ? `<img class=\"cell-av\" src=\"${u}\" alt=\"\"/>`\n             : `<div class=\"cell-av cell-av-fb\">${initials(name)}</div>`;\n}\n\n// ===== MÚI GIỜ (fix lệch -7 tiếng) =====\n// Server n8n chạy UTC nên new Date().getHours() trả giờ UTC (10:00 VN in ra 03:00).\n// Mọi format/đếm ngày phải ÉP Asia/Ho_Chi_Minh, KHÔNG dùng getHours()/setHours().\nconst VN_TZ = 'Asia/Ho_Chi_Minh';\n\nfunction formatDateTime(isoString) {\n    try {\n        const parts = new Intl.DateTimeFormat('en-GB', {\n            timeZone: VN_TZ, hour12: false,\n            day: '2-digit', month: '2-digit', year: 'numeric',\n            hour: '2-digit', minute: '2-digit'\n        }).formatToParts(new Date(isoString));\n        const g = t => parts.find(x => x.type === t).value;\n        return `${g('day')}/${g('month')}/${g('year')} ${g('hour')}:${g('minute')}`;\n    } catch (e) { return isoString; }\n}\n\n// Số thứ tự NGÀY theo giờ VN (ngày kể từ epoch) — đếm \"còn/trễ X ngày\" đúng cả quanh nửa đêm VN.\nfunction vnDayNumber(dateLike) {\n    const s = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateLike));\n    return Math.round(Date.parse(s + 'T00:00:00Z') / 86400000);\n}\nconst todayVn = vnDayNumber(Date.now());\n\nfunction statusInfo(dueDate) {\n    if (!dueDate) return { text: '', cls: '', warn: '', color: '' };\n    const diff = vnDayNumber(dueDate) - todayVn;\n    if (diff < 0)   return { text: 'QUÁ HẠN',  cls: 'badge-danger',  warn: `Trễ ${Math.abs(diff)} ngày`, color: '#ef4444' };\n    if (diff === 0) return { text: 'HÔM NAY',  cls: 'badge-warning', warn: 'Đến hạn',                    color: '#f59e0b' };\n    return { text: 'ĐANG LÀM', cls: 'badge-success', warn: `Còn ${diff} ngày`, color: '#10b981' };\n}\n\nconst CSS = `\n        body, html { margin: 0; padding: 0; width: 1920px; min-height: 1080px; background-color: #f1f5f9; font-family: 'Segoe UI', Arial, sans-serif; }\n        .header-title { width: 100%; background: #1e293b; color: white; font-size: 55px; padding: 30px 0; font-weight: bold; text-transform: uppercase; display: flex; align-items: center; justify-content: center; gap: 44px; }\n        .hdr-av { width: 150px; height: 150px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 8px solid rgba(255,255,255,0.92); box-shadow: 0 8px 22px rgba(0,0,0,0.45); }\n        .hdr-av-fb { display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff; font-size: 76px; }\n        table { width: 100%; border-collapse: collapse; table-layout: fixed; background: white; }\n        th { background: #4f46e5; color: white; font-size: 38px; padding: 25px 10px; border-bottom: 6px solid #3730a3; }\n        td { padding: 30px 15px; font-size: 38px; vertical-align: middle; border-bottom: 2px solid #e2e8f0; word-wrap: break-word; line-height: 1.3; }\n        tr:nth-child(even) { background-color: #f8fafc; }\n        th:nth-child(1) { width: 10%; } th:nth-child(2) { width: 33%; } th:nth-child(3) { width: 17%; }\n        th:nth-child(4) { width: 15%; } th:nth-child(5) { width: 13%; } th:nth-child(6) { width: 12%; }\n        .text-center { text-align: center; } .font-bold { font-weight: bold; } .text-primary { color: #1e3a8a; }\n        .text-id { color: #64748b; font-size: 30px; text-align: center; }\n        .cell-person { display: flex; align-items: center; justify-content: center; gap: 18px; }\n        .cell-av { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; flex-shrink: 0; box-shadow: inset 0 0 0 2px rgba(0,0,0,0.12); }\n        .cell-av-fb { display: inline-flex; align-items: center; justify-content: center; background: #6366f1; color: #fff; font-size: 34px; font-weight: 700; }\n        .badge { padding: 12px 20px; border-radius: 10px; color: white; font-weight: bold; display: inline-block; font-size: 28px; }\n        .badge-danger { background: #ef4444; } .badge-warning { background: #f59e0b; } .badge-success { background: #10b981; }\n`;\n\n// Bảng nhiều việc → chỉ hiện số 📎, không gửi ảnh từng việc ở nhánh này (tránh spam nhóm lúc 8h/17h)\nconst attBadge = t => (Array.isArray(t.attachments) && t.attachments.length)\n    ? ` <span style=\"color:#4f46e5;font-weight:800;\">📎${t.attachments.length}</span>` : '';\n\nfunction buildTable(title, list, headerName) {\n    const sorted = [...list].sort((a, b) => {\n        const nameA = (a.name || 'Chưa giao').toLowerCase();\n        const nameB = (b.name || 'Chưa giao').toLowerCase();\n        if (nameA < nameB) return -1;\n        if (nameA > nameB) return 1;\n        const dateA = a.due_date ? new Date(a.due_date).getTime() : 0;\n        const dateB = b.due_date ? new Date(b.due_date).getTime() : 0;\n        return dateA - dateB;\n    });\n\n    let rows = '';\n    sorted.forEach(t => {\n        const s = statusInfo(t.due_date);\n        const personCell = t.name\n            ? `<div class=\"cell-person\">${avatarSmall(t.name)}<span>${t.name}</span></div>`\n            : `<div class=\"cell-person\"><span>Chưa giao</span></div>`;\n        rows += `\n        <tr>\n            <td class=\"text-id\">${t.id || ''}</td>\n            <td class=\"font-bold text-primary\">${t.title}${attBadge(t)}</td>\n            <td class=\"text-center font-bold\" style=\"background-color: #fefce8;\">${personCell}</td>\n            <td class=\"text-center\" style=\"font-size: 32px;\">${t.due_date ? formatDateTime(t.due_date) : 'N/A'}</td>\n            <td class=\"text-center\"><span class=\"badge ${s.cls}\">${s.text}</span></td>\n            <td class=\"text-center font-bold\" style=\"color: ${s.color};\">${s.warn}</td>\n        </tr>`;\n    });\n\n    // Tiêu đề: bảng cá nhân có avatar lớn bên trái; bảng tổng hợp chỉ có chữ\n    const header = headerName\n        ? `<div class=\"header-title\">${avatarBig(headerName)}<span>${title}</span></div>`\n        : `<div class=\"header-title\"><span>${title}</span></div>`;\n\n    return `<!DOCTYPE html>\n<html lang=\"vi\">\n<head><meta charset=\"UTF-8\"><style>${CSS}</style></head>\n<body>\n    ${header}\n    <table>\n        <thead><tr><th>Mã CV</th><th>Tên công việc</th><th>Người làm</th><th>Hạn hoàn thành</th><th>Trạng thái</th><th>Cảnh báo</th></tr></thead>\n        <tbody>${rows}</tbody>\n    </table>\n</body>\n</html>`;\n}\n\nconst out = [];\n\n// 1) Bảng tổng hợp cả phòng (không avatar lớn ở tiêu đề, nhưng mỗi dòng có avatar nhỏ)\nif (tasks.length > 0) {\n    out.push({ json: {\n        html: buildTable('BẢNG TỔNG HỢP CÔNG VIỆC PHÒNG', tasks, null),\n        message_text: `Tổng hợp công việc [@${GROUP_ID}]`\n    }});\n}\n\n// 2) Bảng riêng từng người CÓ việc (người không có việc sẽ không nhận ảnh)\nconst byName = {};\ntasks.forEach(t => {\n    if (t.name) (byName[t.name] = byName[t.name] || []).push(t);\n});\n\nObject.keys(byName).sort((a, b) => a.localeCompare(b, 'vi')).forEach(name => {\n    const oaId = oaMap[name];\n    if (!oaId) return; // không tìm thấy id_zalo_oa -> bỏ qua ảnh cá nhân, vẫn có trong bảng tổng hợp\n    out.push({ json: {\n        html: buildTable(`CÔNG VIỆC CỦA ${name.toUpperCase()}`, byName[name], name),\n        message_text: `[@${oaId}] Làm ăn quá phọt phẹt!`\n    }});\n});\n\nreturn out;\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1264,
-        208
+        880,
+        -64
       ],
-      "id": "17e27406-e818-489e-b769-73ad4b885af2",
+      "id": "f89771b2-2277-4ac4-beed-9490979d9db5",
       "name": "Tạo nội dung ảnh (tổng hợp + cá nhân)"
     },
     {
@@ -214,10 +213,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        784,
-        528
+        400,
+        256
       ],
-      "id": "79b4670b-c5a5-4316-a972-8723e64a7f61",
+      "id": "47ca82f2-dc9e-40ed-bf60-2fd6a475185c",
       "name": "Lấy nhân viên (cập nhật)",
       "alwaysOutputData": true,
       "credentials": {
@@ -244,10 +243,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        1024,
-        528
+        640,
+        256
       ],
-      "id": "0df1a443-f442-4425-ae82-85d51b2f2dd8",
+      "id": "e2712cbf-ff62-4b3b-a0bd-417da9ad8a53",
       "name": "Lấy công việc (cập nhật)",
       "credentials": {
         "supabaseApi": {
@@ -275,10 +274,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        1264,
-        528
+        880,
+        256
       ],
-      "id": "abc9fe9b-cb6c-4720-a7cc-f0e410432a54",
+      "id": "f58043b1-9d96-468c-8b14-d75eca9c7855",
       "name": "Lấy tiến độ",
       "alwaysOutputData": true,
       "credentials": {
@@ -291,15 +290,15 @@
     },
     {
       "parameters": {
-        "jsCode": "// ==============================================================\n// TẠO THẺ CHI TIẾT khi 1 công việc được cập nhật (Webhook cập nhật task)\n// Đầu vào : Lấy công việc (cập nhật) + Lấy tiến độ + Lấy nhân viên (cập nhật)\n// Đầu ra  : 1 item { html, message_text } -> đi vào CHUỖI GỬI CHUNG\n// ==============================================================\nconst task = $('Lấy công việc (cập nhật)').first().json || {};\nconst webhookBody = $('Webhook cập nhật task').first().json.body || {};\nlet nv = {};\ntry { nv = $('Lấy nhân viên (cập nhật)').first().json || {}; } catch (e) { nv = {}; }\n\n// Các dòng tiến độ của task (đã lọc theo task_id ở node trước)\nconst tienDo = $input.all().map(i => i.json).filter(r => r && r.task_id);\n\n// ===== AVATAR (ảnh đại diện nhân viên) =====\n// DB lưu đường dẫn tương đối '/avatars/x.webp'. HCTI render trên server riêng nên\n// PHẢI ghép thành URL tuyệt đối theo tên miền app đã deploy. Đổi APP_BASE bên dưới.\nconst APP_BASE = 'https://amazing-frangollo-eb56a9.netlify.app'; // vd: 'https://qlsx-tgln.netlify.app' (KHÔNG có dấu / ở cuối)\nfunction avatarUrl(p) {\n    if (!p) return '';\n    if (/^https?:\\/\\//i.test(p)) return p;\n    return APP_BASE.replace(/\\/+$/, '') + (p.charAt(0) === '/' ? p : '/' + p);\n}\n\n// ===== MÚI GIỜ (fix lệch -7 tiếng) =====\n// Server n8n chạy UTC nên new Date().getHours() trả giờ UTC (10:00 VN in ra 03:00).\n// Mọi format/đếm ngày phải ÉP Asia/Ho_Chi_Minh, KHÔNG dùng getHours()/setHours().\nconst VN_TZ = 'Asia/Ho_Chi_Minh';\n\nfunction formatDateTime(isoString) {\n    try {\n        const parts = new Intl.DateTimeFormat('en-GB', {\n            timeZone: VN_TZ, hour12: false,\n            day: '2-digit', month: '2-digit', year: 'numeric',\n            hour: '2-digit', minute: '2-digit'\n        }).formatToParts(new Date(isoString));\n        const g = t => parts.find(x => x.type === t).value;\n        return `${g('day')}/${g('month')}/${g('year')} ${g('hour')}:${g('minute')}`;\n    } catch (e) { return isoString; }\n}\n\n// Số thứ tự NGÀY theo giờ VN (ngày kể từ epoch) — đếm \"còn/trễ X ngày\" đúng cả quanh nửa đêm VN.\nfunction vnDayNumber(dateLike) {\n    const s = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateLike));\n    return Math.round(Date.parse(s + 'T00:00:00Z') / 86400000);\n}\nconst todayVn = vnDayNumber(Date.now());\n\n// ===== BỘ ICON SVG (nét trắng, dùng chung cho nhãn) =====\nconst ICONS = {\n    content: `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M9 13h6M9 17h4\"/></svg>`,\n    clock:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/></svg>`,\n    trend:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"3 17 9 11 13 15 21 7\"/><polyline points=\"15 7 21 7 21 13\"/></svg>`,\n    user:    `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1\"/></svg>`,\n    alert:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3 2 20h20L12 3z\"/><path d=\"M12 10v4\"/><path d=\"M12 17.5h.01\"/></svg>`,\n    check:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M8 12l3 3 5-6\"/></svg>`\n};\nconst badgeIcon = (name) => `<span class=\"badge-ic\">${ICONS[name]}</span>`;\n\nconst assigneeName = task.name || (webhookBody.assignee && webhookBody.assignee.name) || 'Chưa giao';\nconst formattedDueDate = task.due_date ? formatDateTime(task.due_date) : 'N/A';\n\n// Avatar đưa vào ô BÊN TRÁI của dòng đầu (thay nhãn \"Nội dung công việc\").\n// Không có ảnh -> vòng tròn chữ cái đầu tên.\nconst avUrl = avatarUrl(nv.avatar);\nconst heroInitials = (assigneeName || '?').trim().split(/\\s+/).map(w => w[0]).slice(-2).join('').toUpperCase() || '?';\nconst rowAvatar = avUrl\n    ? `<img class=\"av\" src=\"${avUrl}\" alt=\"\"/>`\n    : `<div class=\"av av-fb\">${heroInitials}</div>`;\n\n// Tình trạng + kiểu cảnh báo cho cả thẻ\nlet statusHtml = `<span class=\"badge badge-secondary\">${badgeIcon('clock')} Chưa có hạn</span>`;\nlet cardClass = '';\nlet statusIcon = ICONS.check;\nlet statusRowColor = 'row-status-neutral';\nif (task.due_date) {\n    const diffDays = vnDayNumber(task.due_date) - todayVn;\n    if (diffDays < 0) {\n        statusHtml = `<span class=\"badge badge-danger\">${badgeIcon('alert')} Quá hạn ${Math.abs(diffDays)} ngày</span>`;\n        cardClass = 'card-overdue'; statusIcon = ICONS.alert; statusRowColor = 'row-status-danger';\n    } else if (diffDays === 0) {\n        statusHtml = `<span class=\"badge badge-warning\">${badgeIcon('alert')} Hạn hôm nay</span>`;\n        cardClass = 'card-today'; statusIcon = ICONS.alert; statusRowColor = 'row-status-warning';\n    } else if (diffDays <= 2) {\n        statusHtml = `<span class=\"badge badge-warning\">${badgeIcon('clock')} Còn ${diffDays} ngày</span>`;\n        cardClass = 'card-today'; statusIcon = ICONS.clock; statusRowColor = 'row-status-warning';\n    } else {\n        statusHtml = `<span class=\"badge badge-success\">${badgeIcon('check')} Còn ${diffDays} ngày</span>`;\n        statusIcon = ICONS.check; statusRowColor = 'row-status-success';\n    }\n}\n\n// Tiến độ gần nhất = dòng tien_do cuối cùng (không cần gộp chuỗi rồi tách lại)\nlet latestUpdate = `<span class=\"empty\">Chưa có cập nhật</span>`;\nif (tienDo.length > 0) {\n    const last = tienDo[tienDo.length - 1];\n    latestUpdate = `<span class=\"up-content\">${last.content}</span><span class=\"up-meta\">${formatDateTime(last.time)} · ${last.name}</span>`;\n}\n\nconst card = `\n        <div class=\"card ${cardClass}\">\n            <div class=\"row row-hero\">\n                <div class=\"hero-ava\"><div class=\"hero-name\">${assigneeName}</div>${rowAvatar}</div>\n                <div class=\"value title big\">${task.title || ''}</div>\n            </div>\n            <div class=\"row row-due\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.clock}</span>Thời hạn hoàn thành</div>\n                <div class=\"value\">${formattedDueDate}</div>\n            </div>\n            <div class=\"row row-progress\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.trend}</span>Tiến độ gần nhất</div>\n                <div class=\"value update-value\">${latestUpdate}</div>\n            </div>\n            <div class=\"row row-person\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.user}</span>Người thực hiện</div>\n                <div class=\"value strong\">${assigneeName}</div>\n            </div>\n            <div class=\"row ${statusRowColor}\">\n                <div class=\"label\"><span class=\"ic\">${statusIcon}</span>Tình trạng</div>\n                <div class=\"value\">${statusHtml}</div>\n            </div>\n        </div>\n`;\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html lang=\"vi\">\n<head>\n    <meta charset=\"UTF-8\">\n    <style>\n        body, html {\n            margin: 0; padding: 0;\n            width: 1920px; min-height: 1080px;\n            background: linear-gradient(160deg, #eef2ff 0%, #f8fafc 45%, #ecfeff 100%);\n            font-family: 'Segoe UI', Arial, sans-serif;\n        }\n        .wrapper { padding: 55px 70px; }\n\n        .card {\n            background: #ffffff; border-radius: 28px;\n            box-shadow: 0 14px 40px rgba(30,41,59,0.12);\n            padding: 22px; margin-bottom: 48px;\n            border-left: 14px solid #cbd5e1;\n        }\n        .card-overdue { border-left-color: #dc2626; background: #fef2f2; }\n        .card-today   { border-left-color: #f59e0b; background: #fffbeb; }\n\n        .row {\n            display: flex; align-items: stretch;\n            border-radius: 18px; overflow: hidden;\n            margin-bottom: 16px;\n            min-height: 150px;\n            box-shadow: 0 4px 12px rgba(0,0,0,0.06);\n        }\n        .row:last-child { margin-bottom: 0; }\n\n        .label {\n            width: 480px; flex-shrink: 0;\n            color: #ffffff; font-size: 40px; font-weight: 700;\n            padding: 30px 34px; display: flex; align-items: center; gap: 20px;\n        }\n        .ic { width: 56px; height: 56px; flex-shrink: 0; display: inline-flex; }\n        .ic svg { width: 100%; height: 100%; }\n\n        .value {\n            flex: 1; font-size: 44px; color: #0f172a;\n            padding: 30px 40px; display: flex; align-items: center;\n            word-wrap: break-word; line-height: 1.35;\n        }\n        .value.title { font-weight: 800; font-size: 48px; }\n        .value.title.big { font-size: 62px; line-height: 1.25; }\n        .value.strong { font-weight: 800; }\n\n        /* Dòng đầu: ô trái = avatar (nền tím), ô phải = nội dung công việc to */\n        .row-hero { min-height: 320px; }\n        /* Ô trái = tên (bên trái) + avatar (bên phải), CỤM căn giữa ô. Cùng box-model với .label\n           (width 480 + padding 34) để mép phải THẲNG hàng với các ô nhãn bên dưới. */\n        .hero-ava { width: 480px; padding: 30px 34px; box-sizing: content-box; flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 28px; background: linear-gradient(135deg,#6366f1,#8b5cf6); }\n        .hero-ava .hero-name { color: #fff; font-size: 52px; font-weight: 800; line-height: 1.15; white-space: nowrap; }\n        .hero-ava .av { width: 232px; height: 232px; flex-shrink: 0; border-radius: 50%; object-fit: cover; border: 9px solid rgba(255,255,255,0.92); box-shadow: 0 8px 26px rgba(0,0,0,0.32); }\n        .hero-ava .av-fb { display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.22); color: #fff; font-size: 104px; font-weight: 800; }\n        .row-hero .value { background: #ddd6fe; color: #4338ca; border: 3px solid #a78bfa; }\n        .update-value { flex-direction: column; align-items: flex-start; justify-content: center; }\n        .up-content { color: #0f172a; }\n        .up-meta { font-size: 34px; font-style: italic; color: #b45309; margin-top: 8px; }\n        .empty { color: #b45309; font-style: italic; }\n\n        .row-due .label { background: linear-gradient(135deg,#0ea5e9,#06b6d4); }\n        .row-due .value { background: #bae6fd; color:#0369a1; font-weight:800; border:3px solid #38bdf8; }\n\n        .row-progress .label { background: linear-gradient(135deg,#f59e0b,#f97316); }\n        .row-progress .value { background: #fed7aa; color:#9a3412; border:3px solid #fb923c; }\n\n        .row-person .label { background: linear-gradient(135deg,#10b981,#14b8a6); }\n        .row-person .value { background: #a7f3d0; color:#065f46; border:3px solid #34d399; }\n\n        .row-status-success .label { background: linear-gradient(135deg,#10b981,#059669); }\n        .row-status-success .value { background: #a7f3d0; border:3px solid #34d399; }\n        .row-status-warning .label { background: linear-gradient(135deg,#f59e0b,#d97706); }\n        .row-status-warning .value { background: #fde68a; border:3px solid #fbbf24; }\n        .row-status-danger  .label { background: linear-gradient(135deg,#ef4444,#dc2626); }\n        .row-status-danger  .value { background: #fecaca; border:3px solid #f87171; }\n        .row-status-neutral .label { background: linear-gradient(135deg,#94a3b8,#64748b); }\n        .row-status-neutral .value { background: #e2e8f0; border:3px solid #cbd5e1; }\n\n        .badge {\n            padding: 16px 36px; border-radius: 22px; color: #ffffff;\n            font-weight: 800; display: inline-flex; align-items: center; gap: 16px;\n            font-size: 42px; line-height: 1.1;\n            box-shadow: 0 6px 16px rgba(0,0,0,0.18);\n        }\n        .badge-ic { width: 46px; height: 46px; display:inline-flex; }\n        .badge-ic svg { width:100%; height:100%; }\n        .badge-danger    { background: linear-gradient(to right, #ef4444, #dc2626); }\n        .badge-warning   { background: linear-gradient(to right, #f59e0b, #d97706); }\n        .badge-success   { background: linear-gradient(to right, #10b981, #059669); }\n        .badge-secondary { background: linear-gradient(to right, #94a3b8, #64748b); }\n    </style>\n</head>\n<body>\n    <div class=\"wrapper\">\n        ${card}\n    </div>\n</body>\n</html>\n`;\n\nconst mention = nv.id_zalo_oa ? `[@${nv.id_zalo_oa}] ` : '';\nreturn [{ json: { html: htmlContent, message_text: `${mention}Tốc độ!` } }];\n"
+        "jsCode": "// ==============================================================\n// TẠO THẺ CHI TIẾT khi 1 công việc được cập nhật (Webhook cập nhật task)\n// Đầu vào : Lấy công việc (cập nhật) + Lấy tiến độ + Lấy nhân viên (cập nhật)\n// Đầu ra  : 1 item { html, message_text } -> đi vào CHUỖI GỬI CHUNG\n// ==============================================================\nconst task = $('Lấy công việc (cập nhật)').first().json || {};\nconst webhookBody = $('Webhook cập nhật task').first().json.body || {};\nlet nv = {};\ntry { nv = $('Lấy nhân viên (cập nhật)').first().json || {}; } catch (e) { nv = {}; }\n\n// Các dòng tiến độ của task (đã lọc theo task_id ở node trước)\nconst tienDo = $input.all().map(i => i.json).filter(r => r && r.task_id);\n\n// ===== AVATAR (ảnh đại diện nhân viên) =====\n// DB lưu đường dẫn tương đối '/avatars/x.webp'. HCTI render trên server riêng nên\n// PHẢI ghép thành URL tuyệt đối theo tên miền app đã deploy. Đổi APP_BASE bên dưới.\nconst APP_BASE = 'https://amazing-frangollo-eb56a9.netlify.app'; // vd: 'https://qlsx-tgln.netlify.app' (KHÔNG có dấu / ở cuối)\nfunction avatarUrl(p) {\n    if (!p) return '';\n    if (/^https?:\\/\\//i.test(p)) return p;\n    return APP_BASE.replace(/\\/+$/, '') + (p.charAt(0) === '/' ? p : '/' + p);\n}\n\n// ===== MÚI GIỜ (fix lệch -7 tiếng) =====\n// Server n8n chạy UTC nên new Date().getHours() trả giờ UTC (10:00 VN in ra 03:00).\n// Mọi format/đếm ngày phải ÉP Asia/Ho_Chi_Minh, KHÔNG dùng getHours()/setHours().\nconst VN_TZ = 'Asia/Ho_Chi_Minh';\n\nfunction formatDateTime(isoString) {\n    try {\n        const parts = new Intl.DateTimeFormat('en-GB', {\n            timeZone: VN_TZ, hour12: false,\n            day: '2-digit', month: '2-digit', year: 'numeric',\n            hour: '2-digit', minute: '2-digit'\n        }).formatToParts(new Date(isoString));\n        const g = t => parts.find(x => x.type === t).value;\n        return `${g('day')}/${g('month')}/${g('year')} ${g('hour')}:${g('minute')}`;\n    } catch (e) { return isoString; }\n}\n\n// Số thứ tự NGÀY theo giờ VN (ngày kể từ epoch) — đếm \"còn/trễ X ngày\" đúng cả quanh nửa đêm VN.\nfunction vnDayNumber(dateLike) {\n    const s = new Intl.DateTimeFormat('en-CA', { timeZone: VN_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(dateLike));\n    return Math.round(Date.parse(s + 'T00:00:00Z') / 86400000);\n}\nconst todayVn = vnDayNumber(Date.now());\n\n// ===== BỘ ICON SVG (nét trắng, dùng chung cho nhãn) =====\nconst ICONS = {\n    content: `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/><path d=\"M9 13h6M9 17h4\"/></svg>`,\n    clock:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/></svg>`,\n    trend:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"3 17 9 11 13 15 21 7\"/><polyline points=\"15 7 21 7 21 13\"/></svg>`,\n    user:    `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1\"/></svg>`,\n    alert:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 3 2 20h20L12 3z\"/><path d=\"M12 10v4\"/><path d=\"M12 17.5h.01\"/></svg>`,\n    check:   `<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M8 12l3 3 5-6\"/></svg>`\n};\nconst badgeIcon = (name) => `<span class=\"badge-ic\">${ICONS[name]}</span>`;\n\nconst assigneeName = task.name || (webhookBody.assignee && webhookBody.assignee.name) || 'Chưa giao';\nconst formattedDueDate = task.due_date ? formatDateTime(task.due_date) : 'N/A';\n\n// Avatar đưa vào ô BÊN TRÁI của dòng đầu (thay nhãn \"Nội dung công việc\").\n// Không có ảnh -> vòng tròn chữ cái đầu tên.\nconst avUrl = avatarUrl(nv.avatar);\nconst heroInitials = (assigneeName || '?').trim().split(/\\s+/).map(w => w[0]).slice(-2).join('').toUpperCase() || '?';\nconst rowAvatar = avUrl\n    ? `<img class=\"av\" src=\"${avUrl}\" alt=\"\"/>`\n    : `<div class=\"av av-fb\">${heroInitials}</div>`;\n\n// Tình trạng + kiểu cảnh báo cho cả thẻ\nlet statusHtml = `<span class=\"badge badge-secondary\">${badgeIcon('clock')} Chưa có hạn</span>`;\nlet cardClass = '';\nlet statusIcon = ICONS.check;\nlet statusRowColor = 'row-status-neutral';\nif (task.due_date) {\n    const diffDays = vnDayNumber(task.due_date) - todayVn;\n    if (diffDays < 0) {\n        statusHtml = `<span class=\"badge badge-danger\">${badgeIcon('alert')} Quá hạn ${Math.abs(diffDays)} ngày</span>`;\n        cardClass = 'card-overdue'; statusIcon = ICONS.alert; statusRowColor = 'row-status-danger';\n    } else if (diffDays === 0) {\n        statusHtml = `<span class=\"badge badge-warning\">${badgeIcon('alert')} Hạn hôm nay</span>`;\n        cardClass = 'card-today'; statusIcon = ICONS.alert; statusRowColor = 'row-status-warning';\n    } else if (diffDays <= 2) {\n        statusHtml = `<span class=\"badge badge-warning\">${badgeIcon('clock')} Còn ${diffDays} ngày</span>`;\n        cardClass = 'card-today'; statusIcon = ICONS.clock; statusRowColor = 'row-status-warning';\n    } else {\n        statusHtml = `<span class=\"badge badge-success\">${badgeIcon('check')} Còn ${diffDays} ngày</span>`;\n        statusIcon = ICONS.check; statusRowColor = 'row-status-success';\n    }\n}\n\n// Tiến độ gần nhất = dòng tien_do cuối cùng (không cần gộp chuỗi rồi tách lại)\nlet latestUpdate = `<span class=\"empty\">Chưa có cập nhật</span>`;\nif (tienDo.length > 0) {\n    const last = tienDo[tienDo.length - 1];\n    latestUpdate = `<span class=\"up-content\">${last.content}</span><span class=\"up-meta\">${formatDateTime(last.time)} · ${last.name}</span>`;\n}\n\n// ===== ĐÍNH KÈM (ảnh/video/file của công việc) =====\n// Bản copy của splitZaloAttachments/buildZaloAttachmentText trong src/lib/attachments.js.\n// Sửa ở đây là PHẢI sửa cả bên đó (và ngược lại) — xem docs/n8n/nhac-viec-workflows.md.\n// Zalo OA chỉ có endpoint upload cho ẢNH → ảnh gửi thật (tối đa 5), video/file gửi link.\nconst MAX_ZALO_IMAGES = 5;\nconst fmtSize = (b) => { const n = Number(b) || 0; return n < 1024 * 1024 ? Math.round(n / 1024) + 'KB' : (Math.round((n / 1024 / 1024) * 10) / 10) + 'MB'; };\nconst atts = Array.isArray(task.attachments) ? task.attachments : [];\nconst zImages = [], zLinks = [];\nfor (const a of atts) {\n    if (a.kind === 'image' && zImages.length < MAX_ZALO_IMAGES) zImages.push(a);\n    else zLinks.push(a);\n}\nconst attachText = zLinks.length\n    ? '\\n\\n📎 Đính kèm:\\n' + zLinks.map(a => '• ' + a.name + ' (' + fmtSize(a.size) + ') — ' + a.url).join('\\n')\n    : '';\nconst nImg = atts.filter(a => a.kind === 'image').length;\nconst nVid = atts.filter(a => a.kind === 'video').length;\nconst nFile = atts.length - nImg - nVid;\nconst attachSummary = [nImg ? nImg + ' ảnh' : '', nVid ? nVid + ' video' : '', nFile ? nFile + ' tệp' : ''].filter(Boolean).join(', ');\nconst attachRow = atts.length ? `\n            <div class=\"row row-attach\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.content}</span>Đính kèm</div>\n                <div class=\"value\">${atts.length} file (${attachSummary})${zImages.length ? ' — ảnh gửi kèm ngay sau thẻ này' : ''}</div>\n            </div>` : '';\n\nconst card = `\n        <div class=\"card ${cardClass}\">\n            <div class=\"row row-hero\">\n                <div class=\"hero-ava\"><div class=\"hero-name\">${assigneeName}</div>${rowAvatar}</div>\n                <div class=\"value title big\">${task.title || ''}</div>\n            </div>\n            <div class=\"row row-due\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.clock}</span>Thời hạn hoàn thành</div>\n                <div class=\"value\">${formattedDueDate}</div>\n            </div>\n            <div class=\"row row-progress\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.trend}</span>Tiến độ gần nhất</div>\n                <div class=\"value update-value\">${latestUpdate}</div>\n            </div>\n            <div class=\"row row-person\">\n                <div class=\"label\"><span class=\"ic\">${ICONS.user}</span>Người thực hiện</div>\n                <div class=\"value strong\">${assigneeName}</div>\n            </div>\n${attachRow}\n            <div class=\"row ${statusRowColor}\">\n                <div class=\"label\"><span class=\"ic\">${statusIcon}</span>Tình trạng</div>\n                <div class=\"value\">${statusHtml}</div>\n            </div>\n        </div>\n`;\n\nconst htmlContent = `\n<!DOCTYPE html>\n<html lang=\"vi\">\n<head>\n    <meta charset=\"UTF-8\">\n    <style>\n        body, html {\n            margin: 0; padding: 0;\n            width: 1920px; min-height: 1080px;\n            background: linear-gradient(160deg, #eef2ff 0%, #f8fafc 45%, #ecfeff 100%);\n            font-family: 'Segoe UI', Arial, sans-serif;\n        }\n        .wrapper { padding: 55px 70px; }\n\n        .card {\n            background: #ffffff; border-radius: 28px;\n            box-shadow: 0 14px 40px rgba(30,41,59,0.12);\n            padding: 22px; margin-bottom: 48px;\n            border-left: 14px solid #cbd5e1;\n        }\n        .card-overdue { border-left-color: #dc2626; background: #fef2f2; }\n        .card-today   { border-left-color: #f59e0b; background: #fffbeb; }\n\n        .row {\n            display: flex; align-items: stretch;\n            border-radius: 18px; overflow: hidden;\n            margin-bottom: 16px;\n            min-height: 150px;\n            box-shadow: 0 4px 12px rgba(0,0,0,0.06);\n        }\n        .row:last-child { margin-bottom: 0; }\n\n        .label {\n            width: 480px; flex-shrink: 0;\n            color: #ffffff; font-size: 40px; font-weight: 700;\n            padding: 30px 34px; display: flex; align-items: center; gap: 20px;\n        }\n        .ic { width: 56px; height: 56px; flex-shrink: 0; display: inline-flex; }\n        .ic svg { width: 100%; height: 100%; }\n\n        .value {\n            flex: 1; font-size: 44px; color: #0f172a;\n            padding: 30px 40px; display: flex; align-items: center;\n            word-wrap: break-word; line-height: 1.35;\n        }\n        .value.title { font-weight: 800; font-size: 48px; }\n        .value.title.big { font-size: 62px; line-height: 1.25; }\n        .value.strong { font-weight: 800; }\n\n        /* Dòng đầu: ô trái = avatar (nền tím), ô phải = nội dung công việc to */\n        .row-hero { min-height: 320px; }\n        /* Ô trái = tên (bên trái) + avatar (bên phải), CỤM căn giữa ô. Cùng box-model với .label\n           (width 480 + padding 34) để mép phải THẲNG hàng với các ô nhãn bên dưới. */\n        .hero-ava { width: 480px; padding: 30px 34px; box-sizing: content-box; flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 28px; background: linear-gradient(135deg,#6366f1,#8b5cf6); }\n        .hero-ava .hero-name { color: #fff; font-size: 52px; font-weight: 800; line-height: 1.15; white-space: nowrap; }\n        .hero-ava .av { width: 232px; height: 232px; flex-shrink: 0; border-radius: 50%; object-fit: cover; border: 9px solid rgba(255,255,255,0.92); box-shadow: 0 8px 26px rgba(0,0,0,0.32); }\n        .hero-ava .av-fb { display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.22); color: #fff; font-size: 104px; font-weight: 800; }\n        .row-hero .value { background: #ddd6fe; color: #4338ca; border: 3px solid #a78bfa; }\n        .update-value { flex-direction: column; align-items: flex-start; justify-content: center; }\n        .up-content { color: #0f172a; }\n        .up-meta { font-size: 34px; font-style: italic; color: #b45309; margin-top: 8px; }\n        .empty { color: #b45309; font-style: italic; }\n\n        .row-due .label { background: linear-gradient(135deg,#0ea5e9,#06b6d4); }\n        .row-due .value { background: #bae6fd; color:#0369a1; font-weight:800; border:3px solid #38bdf8; }\n\n        .row-progress .label { background: linear-gradient(135deg,#f59e0b,#f97316); }\n        .row-progress .value { background: #fed7aa; color:#9a3412; border:3px solid #fb923c; }\n\n        .row-person .label { background: linear-gradient(135deg,#10b981,#14b8a6); }\n        .row-person .value { background: #a7f3d0; color:#065f46; border:3px solid #34d399; }\n\n        .row-status-success .label { background: linear-gradient(135deg,#10b981,#059669); }\n        .row-status-success .value { background: #a7f3d0; border:3px solid #34d399; }\n        .row-status-warning .label { background: linear-gradient(135deg,#f59e0b,#d97706); }\n        .row-status-warning .value { background: #fde68a; border:3px solid #fbbf24; }\n        .row-status-danger  .label { background: linear-gradient(135deg,#ef4444,#dc2626); }\n        .row-status-danger  .value { background: #fecaca; border:3px solid #f87171; }\n        .row-status-neutral .label { background: linear-gradient(135deg,#94a3b8,#64748b); }\n        .row-status-neutral .value { background: #e2e8f0; border:3px solid #cbd5e1; }\n\n        .row-attach .label { background: linear-gradient(135deg,#8b5cf6,#6366f1); }\n        .row-attach .value { background: #ede9fe; color: #5b21b6; border: 3px solid #a78bfa; font-weight: 700; }\n\n        .badge {\n            padding: 16px 36px; border-radius: 22px; color: #ffffff;\n            font-weight: 800; display: inline-flex; align-items: center; gap: 16px;\n            font-size: 42px; line-height: 1.1;\n            box-shadow: 0 6px 16px rgba(0,0,0,0.18);\n        }\n        .badge-ic { width: 46px; height: 46px; display:inline-flex; }\n        .badge-ic svg { width:100%; height:100%; }\n        .badge-danger    { background: linear-gradient(to right, #ef4444, #dc2626); }\n        .badge-warning   { background: linear-gradient(to right, #f59e0b, #d97706); }\n        .badge-success   { background: linear-gradient(to right, #10b981, #059669); }\n        .badge-secondary { background: linear-gradient(to right, #94a3b8, #64748b); }\n    </style>\n</head>\n<body>\n    <div class=\"wrapper\">\n        ${card}\n    </div>\n</body>\n</html>\n`;\n\nconst mention = nv.id_zalo_oa ? `[@${nv.id_zalo_oa}] ` : '';\nconst out = [{ json: { html: htmlContent, message_text: mention + 'Làm ăn quá phọt phẹt!' + attachText } }];\n// Mỗi ảnh đính kèm là 1 item riêng: node IF \"Là ảnh đính kèm?\" thấy direct_url thì tải thẳng, bỏ qua HCTI.\nzImages.forEach((a, i) => out.push({ json: {\n    direct_url: a.url,\n    message_text: '📎 Ảnh đính kèm — ' + (task.id || '') + ' (' + (i + 1) + '/' + zImages.length + ')',\n} }));\nreturn out;\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1504,
-        528
+        1120,
+        256
       ],
-      "id": "8df8a5cf-6268-4e18-937a-06133d132ae9",
+      "id": "775ee5ae-dd68-4ce2-a31f-77a08536f12d",
       "name": "Tạo nội dung thẻ chi tiết"
     },
     {
@@ -309,10 +308,10 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        1760,
-        368
+        1376,
+        96
       ],
-      "id": "106a5947-c974-4cdf-a883-56fc43267cb9",
+      "id": "c2f491dd-df1d-48c8-8ce6-1c5a3446f3a1",
       "name": "Loop Over Items"
     },
     {
@@ -345,10 +344,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2032,
-        464
+        1648,
+        192
       ],
-      "id": "5ef3fed8-3d18-4cbf-aec3-f1943cd84a5f",
+      "id": "40171b77-0d03-4fa2-9b97-e8e20e34e1d2",
       "name": "Tạo ảnh HCTI",
       "credentials": {
         "httpBasicAuth": {
@@ -371,10 +370,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        2272,
-        464
+        1888,
+        192
       ],
-      "id": "e5b58a3c-999c-46f1-82a6-2b5c833d2f25",
+      "id": "1d90c21d-db38-48e3-9379-3a69265f90d8",
       "name": "Tải ảnh JPG"
     },
     {
@@ -406,10 +405,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        2512,
-        464
+        2128,
+        192
       ],
-      "id": "56ee462d-0b8b-4651-873c-a18c200331a7",
+      "id": "64401cfe-2c43-42ec-899b-0daf24ec7367",
       "name": "Upload ảnh lên OA"
     },
     {
@@ -437,10 +436,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        2752,
-        464
+        2368,
+        192
       ],
-      "id": "539d97e8-5667-4d24-a29e-c61750b7dfcd",
+      "id": "670768bf-a882-4afd-a227-ff44151e4218",
       "name": "Gửi ảnh vào nhóm OA"
     },
     {
@@ -450,10 +449,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        2992,
-        464
+        2608,
+        192
       ],
-      "id": "7a3897ff-7757-4a93-b475-01bb72f7813c",
+      "id": "feeecb58-c9a3-4576-95ba-cfe40b4fd945",
       "name": "Chờ 2 giây",
       "webhookId": "10000000-0000-4000-8000-00000000wait"
     },
@@ -466,10 +465,10 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        0,
-        0
+        -384,
+        -272
       ],
-      "id": "61a7e3af-3ba7-4296-81fb-c54ffd62b94b",
+      "id": "36b06446-9181-4866-ab08-507e860efc0b",
       "name": "Sticky Note"
     },
     {
@@ -481,10 +480,10 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1168,
-        0
+        784,
+        -272
       ],
-      "id": "df62def3-ac20-4f03-bc6d-fe5be8a88934",
+      "id": "67656f3e-8ab9-4ea7-8e86-d8a63cf4a3df",
       "name": "Sticky Note1"
     },
     {
@@ -496,10 +495,10 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1984,
-        240
+        1600,
+        -32
       ],
-      "id": "ace870a2-e898-4131-9490-6f8dc2cf054c",
+      "id": "0d1db6c7-99b3-4bfc-9b22-f90f63dac49b",
       "name": "Sticky Note2"
     },
     {
@@ -512,11 +511,82 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        544,
-        640
+        160,
+        368
       ],
-      "id": "f1c2d3e4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+      "id": "0ba20d0d-ed58-43e7-a0f7-5919e3c11411",
       "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "rule-anh-dinh-kem",
+              "leftValue": "={{ !!$json.direct_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1568,
+        368
+      ],
+      "id": "11f00001-0000-4000-8000-anhdinhkem01",
+      "name": "Là ảnh đính kèm?"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.direct_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1888,
+        416
+      ],
+      "id": "11f00002-0000-4000-8000-anhdinhkem02",
+      "name": "Tải ảnh đính kèm"
+    },
+    {
+      "parameters": {
+        "content": "## ĐÍNH KÈM 2026-07-16 (ảnh gửi thật, video/file gửi link)\nThẻ chi tiết đọc task.attachments (cột jsonb mới):\n- Ảnh (tối đa 5): mỗi ảnh 1 item có direct_url → IF → Tải ảnh đính kèm → upload OA (bỏ qua HCTI).\n- Video/file + ảnh thứ 6 trở đi: chèn link vào message_text.\n⚠ Khối ĐÍNH KÈM trong node code là BẢN COPY của src/lib/attachments.js — sửa 1 bên phải sửa cả 2.",
+        "height": 160,
+        "width": 520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        560
+      ],
+      "id": "11f00003-0000-4000-8000-anhdinhkem03",
+      "name": "Sticky Note4"
     }
   ],
   "connections": {
@@ -664,7 +734,7 @@
         [],
         [
           {
-            "node": "Tạo ảnh HCTI",
+            "node": "Là ảnh đính kèm?",
             "type": "main",
             "index": 0
           }
@@ -720,6 +790,35 @@
         [
           {
             "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Là ảnh đính kèm?": {
+      "main": [
+        [
+          {
+            "node": "Tải ảnh đính kèm",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tạo ảnh HCTI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tải ảnh đính kèm": {
+      "main": [
+        [
+          {
+            "node": "Upload ảnh lên OA",
             "type": "main",
             "index": 0
           }
