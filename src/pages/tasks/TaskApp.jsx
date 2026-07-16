@@ -1069,12 +1069,26 @@ import { useNavigate } from 'react-router-dom';
       const canStatus = hasPerm(currentUser,'change_status');
       const canUpdate = hasPerm(currentUser,'add_update');
       const canCancel = hasPerm(currentUser,'cancel_task');
+
+      // File của ô tiến độ được upload ngay lúc chọn. Nếu người dùng chọn ảnh rồi đóng panel
+      // mà không bấm Gửi thì file thành rác vĩnh viễn — không row nào trỏ tới để dọn về sau.
+      // Form tạo việc có nút Hủy lo việc này; ô tiến độ thì không, nên dọn lúc panel đóng.
+      // Phải khai báo TRƯỚC `if (!task) return null` — hook không được gọi sau early return.
+      const filesRef = useRef([]); filesRef.current = files;
+      const sentRef = useRef([]);   // file đã gửi đi -> đã nằm trong DB, KHÔNG được xoá
+      useEffect(() => () => { deleteRemoved(filesRef.current, sentRef.current) }, [])
+
       if (!task) return null;
       const isCompleted = task.status===STATUS.COMPLETED;
       const isActive = !isCompleted && task.status!==STATUS.CANCELLED;
-      
+
       // Gửi được khi chỉ có file mà không có chữ — đính kèm ảnh là đã nói lên điều cần nói.
-      async function submitComment(e) { e.preventDefault(); if (!comment.trim() && !files.length) return; setBusy(true); try { await onAddUpdate(task.id, comment.trim(), files); setComment(''); setFiles([]) } finally { setBusy(false) } }
+      async function submitComment(e) {
+        e.preventDefault(); if (!comment.trim() && !files.length) return; setBusy(true)
+        const sending = files
+        sentRef.current = [...sentRef.current, ...sending]   // đánh dấu trước khi await, phòng panel đóng giữa chừng
+        try { await onAddUpdate(task.id, comment.trim(), sending); setComment(''); setFiles([]) } finally { setBusy(false) }
+      }
       function quickStatus(s) { 
           const upd = {status:s}; 
           if (s===STATUS.COMPLETED || s===STATUS.CANCELLED) upd.completed_date=new Date().toISOString(); 
