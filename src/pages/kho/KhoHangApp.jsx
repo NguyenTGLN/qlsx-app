@@ -895,7 +895,7 @@ export default function KhoHangApp() {
       ) : activeTab === 'nhap-kho' ? (
         <ImportStockTab dlkPrefill={dlkPrefill} onDlkConsumed={() => setDlkPrefill(null)} onImportComplete={() => { if (importReturnTab) { setActiveTab(importReturnTab); setImportReturnTab(null); } }} perms={perms} catalogCreatePerm={getTabPerm(user, 'kho', 'danh-muc').create} />
       ) : activeTab === 'print_queue' ? (
-        <PrintQueueTab />
+        <PrintQueueTab cancelPerm={tp.cancelDoc === true} />
       ) : activeTab === 'du-lieu-nhap' ? (
         <ImportLogsTab perms={perms} />
       ) : activeTab === 'luu-xuat' ? (

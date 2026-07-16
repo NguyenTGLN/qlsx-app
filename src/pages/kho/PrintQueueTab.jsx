@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
-import { Printer, Search, Loader2, CheckCircle, Clock, RefreshCw, Check, X, CheckSquare, Square, AlertCircle } from 'lucide-react';
+import { Printer, Search, Loader2, CheckCircle, Clock, RefreshCw, Check, X, CheckSquare, Square, AlertCircle, Ban } from 'lucide-react';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
 import { PageSizeSelect } from '../../components/WarehouseSharedUI';
 import DateRangeDropdown from '../../components/DateRangeDropdown';
+import { cancelPhieu } from '../../lib/cancelDoc';
 
 // notes phiếu nhập được lưu dạng "{lý do} - {nguồn}" (hoặc chỉ "{lý do}"); phiếu xuất chỉ có lý do.
 const splitNote = (n) => {
@@ -20,7 +21,7 @@ const toLocalDate = (ts) => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
 
-export default function PrintQueueTab() {
+export default function PrintQueueTab({ cancelPerm = false }) {
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState('UNPRINTED'); // UNPRINTED, PRINTED, ALL
@@ -40,6 +41,11 @@ export default function PrintQueueTab() {
   const [unitMap, setUnitMap] = useState({}); // item_code -> ĐVT (tra từ danh mục HH)
   const [nccMap, setNccMap] = useState({});   // tên/mã NCC (lowercase) -> { dia_chi, so_dien_thoai }
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // States for cancel-document modal
+  const [cancelTarget, setCancelTarget] = useState(null); // order đang hủy
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelBusy, setCancelBusy] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -62,12 +68,14 @@ export default function PrintQueueTab() {
             created_at: log.created_at,
             created_by: log.created_by,
             is_printed: log.is_printed || false,
+            is_cancelled: !!log.is_cancelled,
             itemsCount: 1,
             type: log.order_code.startsWith('PNK') ? 'NHẬP KHO' : (log.order_code.startsWith('PXK') ? 'XUẤT KHO' : (log.order_code.startsWith('PDH') ? 'XUẤT LẮP RÁP' : (log.order_code.startsWith('PSX') ? 'XUẤT SẢN XUẤT' : 'KHÁC')))
           });
         } else {
           const existing = orderMap.get(log.order_code);
           existing.itemsCount += 1;
+          if (log.is_cancelled) existing.is_cancelled = true;
         }
       });
       
@@ -92,8 +100,9 @@ export default function PrintQueueTab() {
   useEffect(() => { setPage(1); }, [filter, search, pageSize, dateRange]);
 
   const filteredOrders = orders.filter(o => {
-    if (filter === 'UNPRINTED' && o.is_printed) return false;
-    if (filter === 'PRINTED' && !o.is_printed) return false;
+    if (filter === 'UNPRINTED' && (o.is_printed || o.is_cancelled)) return false;
+    if (filter === 'PRINTED' && (!o.is_printed || o.is_cancelled)) return false;
+    if (filter === 'CANCELLED' && !o.is_cancelled) return false;
     if (dateRange.preset !== 'Tất cả') {
       const d = toLocalDate(o.created_at);
       if (dateRange.from && d < dateRange.from) return false;
@@ -118,15 +127,17 @@ export default function PrintQueueTab() {
   };
 
   const toggleAll = () => {
-    if (selected.size === filteredOrders.length && filteredOrders.length > 0) {
+    const selectableOrders = filteredOrders.filter(o => !o.is_cancelled);
+    if (selected.size === selectableOrders.length && selectableOrders.length > 0) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(filteredOrders.map(o => o.order_code)));
+      setSelected(new Set(selectableOrders.map(o => o.order_code)));
     }
   };
 
   // Bulk Print Handler
-  const handlePrintBatch = async (ordersArray) => {
+  const handlePrintBatch = async (ordersArrayIn) => {
+    const ordersArray = ordersArrayIn.filter(o => !o.is_cancelled);
     if (ordersArray.length === 0) return;
     setLoading(true);
     try {
@@ -204,6 +215,24 @@ export default function PrintQueueTab() {
     setNccMap({});
   };
 
+  // Cancel Document Handler
+  const handleCancelDoc = async () => {
+    if (!cancelTarget) return;
+    if (!cancelReason.trim()) { alert('Vui lòng nhập lý do hủy phiếu.'); return; }
+    setCancelBusy(true);
+    try {
+      const user = localStorage.getItem('qlsx_user') || 'Nhân viên';
+      const res = await cancelPhieu(cancelTarget.order_code, user, cancelReason);
+      alert(`Đã hủy phiếu ${res.order_code} (đảo ${res.reversed_lines} dòng). Tồn kho đã hoàn về trạng thái trước khi lập phiếu.`);
+      setCancelTarget(null);
+      setCancelReason('');
+      await loadData();
+    } catch (e) {
+      alert('Không thể hủy phiếu:\n' + e.message);
+    }
+    setCancelBusy(false);
+  };
+
   const s_btn = { display:'flex',alignItems:'center',gap:5,padding:'0.45rem 0.85rem',borderRadius:7,border:'none',cursor:'pointer',fontSize:'0.85rem',fontWeight:600,transition:'all 0.15s' };
 
   return (
@@ -256,6 +285,7 @@ export default function PrintQueueTab() {
           >
             <option value="UNPRINTED">Đang Chờ In</option>
             <option value="PRINTED">Đã In</option>
+            <option value="CANCELLED">Đã Hủy</option>
             <option value="ALL">Tất cả</option>
           </select>
 
@@ -275,9 +305,9 @@ export default function PrintQueueTab() {
             <thead>
               <tr style={{background:'#f1f5f9', borderBottom:'2px solid #e2e8f0', textAlign:'left'}}>
                 <th style={{padding:'0.45rem 0.6rem', width:40}}>
-                  <input 
-                    type="checkbox" 
-                    checked={filteredOrders.length > 0 && selected.size === filteredOrders.length}
+                  <input
+                    type="checkbox"
+                    checked={(() => { const sel = filteredOrders.filter(o => !o.is_cancelled); return sel.length > 0 && selected.size === sel.length; })()}
                     onChange={toggleAll}
                     style={{width:16, height:16, cursor:'pointer', accentColor:'#0ea5e9'}}
                   />
@@ -300,11 +330,12 @@ export default function PrintQueueTab() {
                   return (
                   <tr key={o.order_code} style={{borderBottom:'1px solid #e2e8f0', background: isSel ? '#f0f9ff' : 'transparent', transition:'background 0.1s'}}>
                     <td style={{padding:'0.45rem 0.6rem'}}>
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         checked={isSel}
+                        disabled={o.is_cancelled}
                         onChange={() => toggleSelect(o.order_code)}
-                        style={{width:16, height:16, cursor:'pointer', accentColor:'#0ea5e9'}}
+                        style={{width:16, height:16, cursor: o.is_cancelled ? 'not-allowed' : 'pointer', accentColor:'#0ea5e9'}}
                       />
                     </td>
                     <td style={{padding:'0.45rem 0.6rem', fontWeight:700, color:'#0f172a'}}>{o.order_code}</td>
@@ -313,7 +344,11 @@ export default function PrintQueueTab() {
                     <td style={{padding:'0.45rem 0.6rem'}}>{o.created_by || 'Auto'}</td>
                     <td style={{padding:'0.45rem 0.6rem'}}>{new Date(o.created_at).toLocaleString('vi-VN')}</td>
                     <td style={{padding:'0.45rem 0.6rem', textAlign:'center'}}>
-                      {o.is_printed ? (
+                      {o.is_cancelled ? (
+                        <span style={{display:'inline-flex', alignItems:'center', gap:4, background:'#f1f5f9', color:'#64748b', padding:'4px 8px', borderRadius:20, fontSize:'0.75rem', fontWeight:700, textDecoration:'line-through'}}>
+                           <Ban size={14}/> Đã Hủy
+                        </span>
+                      ) : o.is_printed ? (
                         <span style={{display:'inline-flex', alignItems:'center', gap:4, background:'#dcfce7', color:'#16a34a', padding:'4px 8px', borderRadius:20, fontSize:'0.75rem', fontWeight:700}}>
                            <CheckCircle size={14}/> Đã In
                         </span>
@@ -324,13 +359,25 @@ export default function PrintQueueTab() {
                       )}
                     </td>
                     <td style={{padding:'0.45rem 0.6rem', textAlign:'center'}}>
-                      <button 
-                        onClick={() => handlePrintBatch([o])}
-                        disabled={loading}
-                        style={{background: o.is_printed ? '#f1f5f9' : '#0ea5e9', color: o.is_printed ? '#475569' : '#fff', border:'none', padding:'6px 12px', borderRadius:6, fontWeight:600, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:5}}
-                      >
-                        <Printer size={16}/> {o.is_printed ? 'In Lại' : 'In Phiếu'}
-                      </button>
+                      {o.is_cancelled ? (
+                        <span style={{color:'#94a3b8', fontSize:'0.75rem'}}>Đã hủy</span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handlePrintBatch([o])}
+                            disabled={loading}
+                            style={{background: o.is_printed ? '#f1f5f9' : '#0ea5e9', color: o.is_printed ? '#475569' : '#fff', border:'none', padding:'6px 12px', borderRadius:6, fontWeight:600, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:5}}
+                          >
+                            <Printer size={16}/> {o.is_printed ? 'In Lại' : 'In Phiếu'}
+                          </button>
+                          {cancelPerm && (
+                            <button onClick={() => { setCancelTarget(o); setCancelReason(''); }} disabled={loading}
+                              style={{background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', padding:'6px 10px', borderRadius:6, fontWeight:600, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4, marginLeft:6}}>
+                              <Ban size={14}/> Hủy
+                            </button>
+                          )}
+                        </>
+                      )}
                     </td>
                   </tr>
                   );
@@ -360,6 +407,39 @@ export default function PrintQueueTab() {
           </div>
         )}
       </div>
+
+      {/* Cancel Document Confirm Modal */}
+      {cancelTarget && (
+        <div className="no-print" style={{position:'fixed', inset:0, background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center'}}>
+          <div style={{background:'#fff', width:'430px', maxWidth:'92vw', borderRadius:16, overflow:'hidden', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)'}}>
+            <div style={{background:'#fef2f2', padding:'1.25rem 1.5rem', borderBottom:'1px solid #fecaca'}}>
+              <h3 style={{margin:0, fontSize:'1.1rem', color:'#991b1b', fontWeight:800, display:'flex', alignItems:'center', gap:8}}>
+                <Ban size={20}/> Hủy Phiếu {cancelTarget.order_code}
+              </h3>
+            </div>
+            <div style={{padding:'1.25rem 1.5rem'}}>
+              <p style={{margin:'0 0 0.75rem 0', fontSize:'0.85rem', color:'#334155'}}>
+                Hệ thống sẽ <b>đảo ngược toàn bộ</b>: hoàn tồn kho về đúng vị trí, gỡ dữ liệu nhập/xuất và thống kê liên quan. Phiếu chuyển thành <b>"Đã Hủy"</b> (không in, không khôi phục được).
+              </p>
+              {cancelTarget.is_printed && (
+                <p style={{margin:'0 0 0.75rem 0', fontSize:'0.8rem', color:'#dc2626', fontWeight:700}}>⚠️ Phiếu này ĐÃ IN — hãy thu hồi bản in giấy sau khi hủy.</p>
+              )}
+              <label style={{fontSize:'0.8rem', fontWeight:700, color:'#475569', display:'block', marginBottom:4}}>Lý do hủy (bắt buộc)</label>
+              <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={2}
+                placeholder="VD: khách hủy đơn / lập nhầm phiếu..."
+                style={{width:'100%', padding:'8px 10px', border:'1px solid #cbd5e1', borderRadius:8, fontSize:'0.85rem', outline:'none', resize:'vertical', boxSizing:'border-box'}} />
+            </div>
+            <div style={{padding:'1rem 1.5rem', background:'#f8fafc', display:'flex', gap:'0.75rem', borderTop:'1px solid #e2e8f0'}}>
+              <button onClick={() => setCancelTarget(null)} disabled={cancelBusy}
+                style={{flex:1, padding:'0.6rem', borderRadius:8, border:'1px solid #cbd5e1', background:'#fff', color:'#475569', fontWeight:700, cursor:'pointer'}}>Không hủy</button>
+              <button onClick={handleCancelDoc} disabled={cancelBusy || !cancelReason.trim()}
+                style={{flex:1, padding:'0.6rem', borderRadius:8, border:'none', background: cancelBusy || !cancelReason.trim() ? '#fca5a5' : '#dc2626', color:'#fff', fontWeight:700, cursor:'pointer', display:'flex', justifyContent:'center', alignItems:'center', gap:6}}>
+                {cancelBusy ? <Loader2 size={16} className="spin"/> : <Ban size={16}/>} XÁC NHẬN HỦY
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Professional Confirm Modal */}
       {showConfirmModal && (
