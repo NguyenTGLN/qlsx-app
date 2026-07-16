@@ -563,6 +563,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
       const wipUpdates = [];
       // Gộp tồn kho theo (mã hàng, vị trí) trên toàn bộ block để tránh ghi đè khi trùng mã/vị trí
       const agg = {}; // key = code||location
+      const wipDeducted = new Set(); // key = code||psxCode — chỉ WIP thực sự bị trừ mới được cộng trả khi hủy
 
       for (const b of blocks) {
         for (const item of b.items) {
@@ -619,6 +620,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
                 .maybeSingle();
               if (wipStock) {
                 wipUpdates.push(db.from('inventory_stock').update({ quantity: wipStock.quantity - totalForItem }).eq('id', wipStock.id));
+                wipDeducted.add(item.code + '||' + b.sourceValue);
               }
             }
           }
@@ -655,7 +657,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
               created_by: userStr,
               notes: src ? `${reason} - ${src}` : reason,
               ma_don_hang: a.orderCodes.size > 0 ? [...a.orderCodes].join(', ') : null,
-              wip_source: src && src.startsWith('PSX-') ? src : null,
+              wip_source: src && src.startsWith('PSX-') && wipDeducted.has(a.code + '||' + src) ? src : null,
             });
             running += q;
           }

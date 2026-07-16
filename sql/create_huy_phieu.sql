@@ -193,6 +193,11 @@ DECLARE
   v_res jsonb;
   v_qty NUMERIC;
 BEGIN
+  -- Danh mục tạm cho mã test (inventory_stock có FK → inventory_items)
+  INSERT INTO inventory_items (item_code, item_name, unit)
+  VALUES ('TEST-HUY-ITEM', 'Test hủy phiếu', 'Cái')
+  ON CONFLICT (item_code) DO NOTHING;
+
   -- Dựng phiếu PNK giả: nhập 10 cái TEST-HUY-ITEM vào TEST-LOC
   INSERT INTO inventory_stock (item_code, item_name, unit, location, quantity, import_date)
   VALUES ('TEST-HUY-ITEM', 'Test hủy phiếu', 'Cái', 'TEST-LOC', 10, CURRENT_DATE);
@@ -219,5 +224,6 @@ BEGIN
 
   -- Dọn dữ liệu test
   DELETE FROM inventory_picking_logs WHERE order_code = 'PNK-00000000-99';
+  DELETE FROM inventory_items WHERE item_code = 'TEST-HUY-ITEM';
   RAISE NOTICE '✅ huy_phieu: TEST PASS';
 END $$;

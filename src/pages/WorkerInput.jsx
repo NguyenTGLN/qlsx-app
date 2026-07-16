@@ -410,7 +410,9 @@ const WorkerInput = () => {
             quantity_after: beforeQty + qty,
             created_by: userStr,
             notes: `Nhập tự động từ báo cáo SX - ${order.order_code}`,
-            is_printed: false // Chưa in
+            is_printed: false, // Chưa in
+            // WIP chỉ bị trừ khi dòng SX9 tồn tại — hủy phiếu sẽ cộng trả đúng phần đã trừ
+            wip_source: wipStock ? order.order_code : null,
           });
 
           // 4. Insert du lieu nhap
