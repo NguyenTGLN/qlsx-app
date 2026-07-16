@@ -14,12 +14,13 @@ export function nextProposalLanNo(lans) {
 }
 
 // Dựng 1 lần MỚI (chưa gán số 'lần' — caller gán bằng nextProposalLanNo): snapshot nội dung phiếu.
-export function buildProposalSnapshot(row, currentUser, now = new Date()) {
+// fieldOptions: caresoftFieldOptions để resolve nhãn trường option (chi tiết lỗi, nguyên nhân...).
+export function buildProposalSnapshot(row, currentUser, now = new Date(), fieldOptions = []) {
   const operator = currentUser ? (currentUser.name || currentUser.id || '') : '';
   return {
     'thời_điểm_tạo': now.toISOString(),
     'người_tạo': String(operator || ''),
     'đã_hủy': false,
-    'dữ_liệu': mapRowToProposal(row, currentUser, now),
+    'dữ_liệu': mapRowToProposal(row, currentUser, now, fieldOptions),
   };
 }

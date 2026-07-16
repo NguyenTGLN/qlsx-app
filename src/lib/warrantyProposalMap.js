@@ -1,5 +1,6 @@
 // Biến 1 dòng "xu_ly_phieu_bao_hanh" thành nội dung Phiếu đề nghị sửa chữa bảo hành.
 // Thuần, không phụ thuộc React — dùng chung cho cả bản in HTML lẫn Excel.
+import { lanDefaultsFromRow } from './warrantyProcessing';
 
 // Chuẩn hóa ngày về dd/mm/yyyy (nhận YYYY-MM-DD, ISO có giờ, hoặc Date). Không parse được -> ''.
 export function fmtNgay(v) {
@@ -44,11 +45,28 @@ export function resolveProposerName(nguoi) {
   return PROPOSER_FULL_NAME[normNameKey(raw)] || raw;
 }
 
-export function mapRowToProposal(row, currentUser, now = new Date()) {
+// Tên kỹ thuật phụ trách in trong ô "Ghi chú (Tình trạng)" — cố định theo yêu cầu.
+const KY_THUAT_PHU_TRACH = 'Nguyễn Bá Ngọc';
+
+// Gộp nội dung ô "Ghi chú (Tình trạng)": Tình trạng + Chi tiết lỗi + Nguyên nhân + Phương án xử lý
+// + Kỹ thuật phụ trách; mỗi mục 1 dòng có nhãn; bỏ qua mục rỗng (riêng Kỹ thuật phụ trách luôn hiện).
+function buildTinhTrangGhiChu({ tinhTrang, chiTietLoi, nguyenNhan, phuongAn }) {
+  return [
+    tinhTrang && `Tình trạng: ${tinhTrang}`,
+    chiTietLoi && `Chi tiết lỗi: ${chiTietLoi}`,
+    nguyenNhan && `Nguyên nhân: ${nguyenNhan}`,
+    phuongAn && `Phương án xử lý: ${phuongAn}`,
+    `Kỹ thuật phụ trách: ${KY_THUAT_PHU_TRACH}`,
+  ].filter(Boolean).join('\n');
+}
+
+export function mapRowToProposal(row, currentUser, now = new Date(), fieldOptions = []) {
   const r = row || {};
   const goc = r['phiếu_gốc_json'] || {};
   const tt = r['thông_tin_bổ_sung'] || {}; // giá trị đã sửa trong app (ưu tiên cao nhất)
   const nguoi = currentUser ? (currentUser.name || currentUser.id || '') : '';
+  // Nhãn hiệu lực (app sửa → phiếu gốc → mirror; trường option resolve nhãn từ *_option_id).
+  const eff = lanDefaultsFromRow(r, fieldOptions);
   return {
     maPhieu: pick(tt, r, goc, ['phiếu_ghi', 'id_phiếu_ghi']),
     khachHang: pick(tt, r, goc, ['tên_người_yêu_cầu', 'tên_khách_hàng']),
@@ -57,7 +75,15 @@ export function mapRowToProposal(row, currentUser, now = new Date()) {
     maDonHang: pick(tt, r, goc, ['mã_đơn_hàng']),
     ngayLap: fmtNgay(pick(tt, r, goc, ['ngày_lắp_đặt'])),
     maSP: pick(tt, r, goc, ['mã_sản_phẩm']),
-    tinhTrang: pick(tt, r, goc, ['tình_trạng']), // Tình trạng (KHÔNG lấy chi tiết lỗi)
+    // Ô "Ghi chú (Tình trạng)" = gộp Tình trạng + Chi tiết lỗi + Nguyên nhân + Phương án xử lý + Kỹ thuật phụ trách.
+    // Text thuần (tình trạng, phương án) dùng pick (có cả mirror); trường option (chi tiết lỗi, nguyên nhân)
+    // lấy nhãn đã resolve từ eff (eff cũng fallback về mirror row[key]/gốc nếu không có *_option_id).
+    tinhTrang: buildTinhTrangGhiChu({
+      tinhTrang: pick(tt, r, goc, ['tình_trạng']),
+      chiTietLoi: eff['chi_tiết_lỗi'],
+      nguyenNhan: eff['nguyên_nhân'],
+      phuongAn: pick(tt, r, goc, ['phương_án_xử_lý']),
+    }),
     linhKienList: splitLinhKien(pick(tt, r, goc, ['linh_kiện'])),
     nguoiPhuTrach: resolveProposerName(nguoi),
     ngayText: `Hôm nay, ngày ${now.getDate()} tháng ${now.getMonth() + 1} năm ${now.getFullYear()} tại TTBH công ty TNHH Euromade Việt Nam`,

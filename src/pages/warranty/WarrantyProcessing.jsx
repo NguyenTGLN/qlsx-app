@@ -1129,7 +1129,7 @@ export default function WarrantyProcessing() {
   // Thêm 1 lần đề xuất mới (snapshot nội dung phiếu hiện tại). Trả về snapshot vừa tạo.
   const addProposalLan = async (row) => {
     const lans = getEffectiveProposalLan(row);
-    const snap = { ...buildProposalSnapshot(row, user, new Date()), 'lần': nextProposalLanNo(lans) };
+    const snap = { ...buildProposalSnapshot(row, user, new Date(), fieldOptions), 'lần': nextProposalLanNo(lans) };
     await persistProposalLans(row, [...lans, snap]);
     return snap;
   };
@@ -1163,7 +1163,7 @@ export default function WarrantyProcessing() {
       const now = new Date();
       const snaps = await Promise.all(list.map(async (row) => {
         const lans = getEffectiveProposalLan(row);
-        const snap = { ...buildProposalSnapshot(row, user, now), 'lần': nextProposalLanNo(lans) };
+        const snap = { ...buildProposalSnapshot(row, user, now, fieldOptions), 'lần': nextProposalLanNo(lans) };
         await persistProposalLans(row, [...lans, snap]);
         return snap['dữ_liệu'];
       }));

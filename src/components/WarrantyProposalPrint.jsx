@@ -58,7 +58,7 @@ export default function WarrantyProposalPrint({ p }) {
             <td style={{ ...cell, fontWeight: 600 }}>{p.maSP}</td>
             <td style={{ ...cell, textAlign: 'center' }}>Cái</td>
             <td style={{ ...cell, textAlign: 'center' }}>1</td>
-            <td style={cell}>{p.tinhTrang}</td>
+            <td style={{ ...cell, whiteSpace: 'pre-line' }}>{p.tinhTrang}</td>
           </tr>
         </tbody>
       </table>

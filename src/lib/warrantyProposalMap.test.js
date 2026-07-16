@@ -31,7 +31,7 @@ describe('mapRowToProposal', () => {
     expect(p.maDonHang).toBe('DH-77');
     expect(p.ngayLap).toBe('09/01/2026');
     expect(p.maSP).toBe('RO-9');
-    expect(p.tinhTrang).toBe('Máy không lên nguồn');
+    expect(p.tinhTrang).toBe('Tình trạng: Máy không lên nguồn\nKỹ thuật phụ trách: Nguyễn Bá Ngọc');
     expect(p.nguoiPhuTrach).toBe('Trần Kỹ Thuật');
     expect(p.ngayText).toBe('Hôm nay, ngày 6 tháng 7 năm 2026 tại TTBH công ty TNHH Euromade Việt Nam');
   });
@@ -41,14 +41,28 @@ describe('mapRowToProposal', () => {
     expect(p.linhKienList).toEqual(['Bơm', 'Van điện từ', 'Adapter']);
   });
 
-  test('tình trạng KHÔNG lấy chi tiết lỗi (chỉ có chi_tiết_lỗi -> để trống)', () => {
+  test('chi tiết lỗi hiện thành dòng riêng có nhãn (không nhập chung Tình trạng)', () => {
     const p = mapRowToProposal({ ...row, 'tình_trạng': '', 'chi_tiết_lỗi': 'Rò nước' }, {}, NOW);
-    expect(p.tinhTrang).toBe('');
+    expect(p.tinhTrang).toBe('Chi tiết lỗi: Rò nước\nKỹ thuật phụ trách: Nguyễn Bá Ngọc');
+  });
+
+  test('ô Ghi chú gộp đủ 5 mục có nhãn, xuống dòng, đúng thứ tự', () => {
+    const p = mapRowToProposal({
+      ...row, 'chi_tiết_lỗi': 'Không ra nước', 'nguyên_nhân': 'Kẹt van', 'phương_án_xử_lý': 'Thay bo nguồn',
+    }, {}, NOW);
+    expect(p.tinhTrang).toBe(
+      'Tình trạng: Máy không lên nguồn\nChi tiết lỗi: Không ra nước\nNguyên nhân: Kẹt van\nPhương án xử lý: Thay bo nguồn\nKỹ thuật phụ trách: Nguyễn Bá Ngọc'
+    );
+  });
+
+  test('phương án xử lý đọc từ thông_tin_bổ_sung (bản app đã sửa) trước tiên', () => {
+    const edited = { ...row, 'phương_án_xử_lý': 'PA gốc', 'thông_tin_bổ_sung': { 'phương_án_xử_lý': 'PA app sửa' } };
+    expect(mapRowToProposal(edited, {}, NOW).tinhTrang).toContain('Phương án xử lý: PA app sửa');
   });
 
   test('tình trạng đọc từ thông_tin_bổ_sung (bản app đã sửa) trước tiên', () => {
     const edited = { ...row, 'tình_trạng': 'cũ (mirror)', 'thông_tin_bổ_sung': { 'tình_trạng': 'WT4200 không lạnh' } };
-    expect(mapRowToProposal(edited, {}, NOW).tinhTrang).toBe('WT4200 không lạnh');
+    expect(mapRowToProposal(edited, {}, NOW).tinhTrang).toBe('Tình trạng: WT4200 không lạnh\nKỹ thuật phụ trách: Nguyễn Bá Ngọc');
   });
 
   test('mã đơn hàng: bản sửa trong app (thông_tin_bổ_sung) được ưu tiên', () => {

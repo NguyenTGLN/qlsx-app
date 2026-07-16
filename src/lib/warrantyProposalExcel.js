@@ -72,7 +72,9 @@ function buildSheet(wb, tpl, p, used) {
   ws.getRow(T.maDH).getCell(1).value = `${labelOf(tpl, T.maDH)}: ${p.maDonHang}`;
   ws.getRow(T.ngayLap).getCell(1).value = `${labelOf(tpl, T.ngayLap)}: ${p.ngayLap}`;
   ws.getRow(T.sp).getCell(2).value = p.maSP;                 // B14
-  ws.getRow(T.sp).getCell(5).value = p.tinhTrang;            // E14
+  const ghiChuCell = ws.getRow(T.sp).getCell(5);
+  ghiChuCell.value = p.tinhTrang;                            // E14 (gộp Tình trạng + Phương án + Kỹ thuật)
+  ghiChuCell.alignment = { ...(ghiChuCell.alignment || {}), wrapText: true, vertical: 'top' }; // xuống dòng nhiều mục
   for (let k = 0; k < K; k++) {
     const row = ws.getRow(T.lk + k);
     row.getCell(1).value = k + 1;                            // TT
