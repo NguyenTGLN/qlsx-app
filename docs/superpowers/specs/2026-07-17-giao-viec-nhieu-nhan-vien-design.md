@@ -168,10 +168,11 @@ cache `dataCache` cũ trong trình duyệt người dùng không làm vỡ giao 
 Logic thuần tách ra `src/lib/taskAssignees.js` để test bằng vitest (theo tiền lệ `permRegistry.js`,
 `docGuard.js`):
 
-- `memberIds(task)` — đọc `assignee_ids`, fallback về `assignee_id`, trả `[]` khi chưa giao.
-- `memberNames(task, userMap)` — trả mảng tên, giữ đúng thứ tự.
+- `memberIds(task)` — đọc `assignee_ids`, fallback về `assignee_id`, khử trùng lặp, trả `[]` khi chưa giao.
+- `memberUsers(task, userMap)` — trả mảng user đầy đủ, giữ đúng thứ tự, bỏ id không tra được.
 - `formatAssignees(names)` — `[]` → `'Chưa giao'`; `['Ngọc']` → `'Ngọc'`; `['Ngọc','Phong']` → `'Ngọc +1'`.
 - `joinAssignees(names)` — chuỗi gộp cho payload n8n: `'Ngọc, Phong'`.
+- `assigneesPayload(task, userMap)` — mảng `{id, name, email}` cho field `assignees` mới của n8n.
 
 Trigger SQL: test block trong file SQL (theo tiền lệ `sql/create_huy_phieu.sql`) phủ 4 nhánh —
 insert kiểu cũ, insert kiểu mới, update mảng, update `assignee_id` (đổi mã NV).
