@@ -25,26 +25,11 @@ export function memberUsers(task, userMap) {
   return memberIds(task).map(id => userMap.get(id)).filter(Boolean);
 }
 
-// Nhãn ngắn cho thẻ việc / bảng việc: "Ngọc +2".
-export function formatAssignees(names) {
-  if (!names.length) return 'Chưa giao';
-  if (names.length === 1) return names[0];
-  return `${names[0]} +${names.length - 1}`;
-}
-
-// Chuỗi gộp gửi sang n8n — field `assignee` cũ vẫn là chuỗi nên workflow không cần sửa.
+// Chuỗi gộp tên: dùng cho payload n8n (field `assignee` cũ vẫn là chuỗi nên workflow không cần
+// sửa), cho màn hình TV, và cho phần "cùng: ..." trong báo cáo.
 export function joinAssignees(names) {
   if (!names.length) return 'Chưa giao';
   return names.join(', ');
-}
-
-// Chia ô cho dải avatar chồng nhau. Thẻ việc chỉ rộng 44-56px và ô bảng 70px, mà avatar 'sm'
-// chồng -space-x-2 ăn ~20px/ô → tối đa 3 ô. Đông hơn thì nhường 1 ô cho bong bóng "+N".
-const GROUP_MAX_SLOTS = 3;
-export function avatarSlots(users) {
-  if (users.length <= GROUP_MAX_SLOTS) return { shown: users, more: 0 };
-  const shown = users.slice(0, GROUP_MAX_SLOTS - 1);
-  return { shown, more: users.length - shown.length };
 }
 
 export function assigneesPayload(task, userMap) {
@@ -86,14 +71,17 @@ export function tallyTasks(tasks, startStr, endStr) {
       if (!isLate) company.onTime += 1;
     }
 
-    for (const id of memberIds(task)) {
+    const ids = memberIds(task);
+    for (const id of ids) {
       activeStaff.add(id);
       if (!perStaff.has(id)) perStaff.set(id, { total: 0, done: 0, onTime: 0, doneList: [] });
       const st = perStaff.get(id);
       st.total += 1;
       if (isDoneInRange) {
         st.done += 1;
-        st.doneList.push(task.title);
+        // `mates` = các thành viên KHÁC, để báo cáo ghi "cùng: Phong, Tuấn" — nhìn là hiểu vì sao
+        // một việc lại được tính cho nhiều người. Trả id, phần hiển thị tự tra tên.
+        st.doneList.push({ title: task.title, mates: ids.filter(x => x !== id) });
         if (!isLate) st.onTime += 1;
       }
     }

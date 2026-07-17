@@ -681,17 +681,28 @@ if (loading) return (
                          })()}
 
                          {st.tasksDoneList && st.tasksDoneList.length > 0 && (() => {
-                            // Gom việc trùng tên (VD "Báo cáo công việc cuối ngày" x5) và chỉ hiện 5 dòng đầu
+                            // Gom việc trùng tên (VD "Báo cáo công việc cuối ngày" x5) và chỉ hiện 5 dòng đầu.
+                            // Khoá gom gồm cả đồng đội: cùng tên việc nhưng khác nhóm là 2 dòng khác nhau.
                             const counted = new Map();
-                            st.tasksDoneList.forEach(t => counted.set(t, (counted.get(t) || 0) + 1));
-                            const items = [...counted.entries()];
+                            st.tasksDoneList.forEach(t => {
+                               const mates = (t.mates || []).map(id => staffMap[id]).filter(Boolean);
+                               const key = t.title + '|' + mates.join(',');
+                               const cur = counted.get(key);
+                               if (cur) cur.n += 1;
+                               else counted.set(key, { title: t.title, mates, n: 1 });
+                            });
+                            const items = [...counted.values()];
                             const shown = items.slice(0, 5);
                             const more = items.length - shown.length;
                             return (
                               <ul style={{margin: '0.6rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)', background:'#fff', padding:'0.5rem 0.9rem 0.5rem 1.6rem', borderRadius: 8, border:'1px solid var(--border-color)'}}>
-                                {shown.map(([t, n], idx) => (
+                                {shown.map((it, idx) => (
                                   <li key={idx} style={{marginBottom:'0.25rem', lineHeight: '1.35'}}>
-                                    {t}{n > 1 && <span style={{color: 'var(--text-tertiary)', fontWeight: 700}}> ×{n}</span>}
+                                    {it.title}{it.n > 1 && <span style={{color: 'var(--text-tertiary)', fontWeight: 700}}> ×{it.n}</span>}
+                                    {/* Việc nhóm: nói rõ ai cùng làm, để không tưởng báo cáo đếm trùng */}
+                                    {it.mates.length > 0 && (
+                                      <span style={{color: '#1d4ed8', fontWeight: 600}}> — cùng: {it.mates.join(', ')}</span>
+                                    )}
                                   </li>
                                 ))}
                                 {more > 0 && <li style={{listStyle: 'none', marginLeft: '-1.2rem', color: '#1d4ed8', fontWeight: 700, fontSize: '0.75rem'}}>+{more} việc khác</li>}

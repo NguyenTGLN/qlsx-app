@@ -210,7 +210,11 @@ const AdminDashboard = () => {
       st.tasksTotal += v.total;
       st.tasksDone += v.done;
       st.tasksOnTime += v.onTime;
-      st.tasksDoneList.push(...v.doneList);
+      // Đổi id đồng đội sang tên ngay tại đây — lúc render không còn danh sách nhân viên
+      st.tasksDoneList.push(...v.doneList.map(d => ({
+        title: d.title,
+        mates: d.mates.map(id => staffMap.get(id)?.name).filter(Boolean),
+      })));
     });
     let finalReport = Array.from(staffMap.values()).filter(s => s.prodQty > 0 || s.tasksTotal > 0).map(s => { const avgPerf = s.prodPerf.length > 0 ? (s.prodPerf.reduce((a,b)=>a+b,0)/s.prodPerf.length) : null; const taskRate = s.tasksDone > 0 ? s.tasksOnTime / s.tasksDone : null; return { ...s, avgPerf, taskRate }; });
     const rankPerfScores = [...new Set(finalReport.map(s => s.avgPerf).filter(v => v !== null))].sort((a,b) => b - a);
@@ -706,7 +710,16 @@ const AdminDashboard = () => {
                      
                      {st.tasksDoneList.length > 0 && (
                        <ul style={{margin: '0.5rem 0 0 0', paddingLeft: '1.2rem', fontSize: '0.85rem', color: 'var(--text-secondary)', maxHeight: '120px', overflowY: 'auto', background:'#fff', padding:'0.5rem 1rem', borderRadius:'6px', border:'1px solid #e2e8f0'}}>
-                         {st.tasksDoneList.map((t, idx) => <li key={idx} style={{marginBottom:'0.3rem', lineHeight: '1.3'}}>{t}</li>)}
+                         {st.tasksDoneList.map((t, idx) => {
+                           // Việc nhóm: ghi rõ ai cùng làm, để không tưởng báo cáo đếm trùng
+                           const mates = t.mates || [];
+                           return (
+                             <li key={idx} style={{marginBottom:'0.3rem', lineHeight: '1.3'}}>
+                               {t.title}
+                               {mates.length > 0 && <span style={{color: '#1d4ed8', fontWeight: 600}}> — cùng: {mates.join(', ')}</span>}
+                             </li>
+                           );
+                         })}
                        </ul>
                      )}
                    </div>

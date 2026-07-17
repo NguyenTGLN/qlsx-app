@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
     import AttachmentInput from '../../components/AttachmentInput';
     import AttachmentList, { AttachmentBadge } from '../../components/AttachmentList';
     import { collectPaths, deleteAttachments, deleteRemoved } from '../../lib/attachmentStorage';
-    import { memberIds, memberUsers, formatAssignees, joinAssignees, assigneesPayload, avatarSlots } from '../../lib/taskAssignees';
+    import { memberIds, memberUsers, joinAssignees, assigneesPayload } from '../../lib/taskAssignees';
     import {
       ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart,
       ListChecks, Loader2, CheckCircle2, AlertTriangle, Send, Search,
@@ -424,26 +424,16 @@ import { useNavigate } from 'react-router-dom';
     }
 
     // Avatar to + tên bên dưới (dùng ở thẻ việc / cột Người trong bảng)
-    function AvatarName({user, size='md', className=''}) {
-      return h('div',{className:`flex flex-col items-center gap-0.5 min-w-0 ${className}`},
-        h(Avatar,{user, size}),
-        h('span',{className:'text-[9px] sm:text-[10px] font-bold text-gray-700 text-center leading-tight truncate w-full'}, user?.name || 'Chưa giao')
-      )
-    }
 
-    // Việc nhóm: chồng avatar + nhãn rút gọn "Ngọc +2". Chỉ có 44-70px bề ngang ở thẻ việc và ô
-    // bảng, nên avatar nhóm dùng size 'sm' và tối đa 3 ô (đông hơn thì 2 avatar + "+N").
-    // Một người thì trả về AvatarName y như cũ — giữ nguyên avatar to đang dùng hằng ngày.
-    function AvatarGroup({users = [], size='md', className=''}) {
-      if (users.length <= 1) return h(AvatarName, {user: users[0] || null, size, className})
-      const {shown, more} = avatarSlots(users)
-      const names = users.map(u => u.name)
-      return h('div',{className:`flex flex-col items-center gap-0.5 min-w-0 ${className}`, title: names.join(', ')},
-        h('div',{className:'flex -space-x-2'},
-          shown.map(u => h('div',{key:u.id, className:'ring-2 ring-white rounded-full'}, h(Avatar,{user:u, size:'sm'}))),
-          more > 0 && h('div',{className:`${AVATAR_SZ.sm} rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold ring-2 ring-white flex-shrink-0`}, `+${more}`)
-        ),
-        h('span',{className:'text-[9px] sm:text-[10px] font-bold text-gray-700 text-center leading-tight truncate w-full'}, formatAssignees(names))
+    // Việc nhóm: liệt kê ĐỦ mọi thành viên dạng chip avatar+tên, tự xuống dòng khi chật.
+    // KHÔNG rút gọn kiểu "Ngọc +2" — giấu tên đi thì người xem phải mở chi tiết mới biết ai làm.
+    function AssigneeList({users = [], className=''}) {
+      if (!users.length) return h('span',{className:`text-[10px] text-gray-400 font-semibold ${className}`}, 'Chưa giao')
+      return h('div',{className:`flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 ${className}`},
+        users.map(u => h('div',{key:u.id, className:'flex items-center gap-1 min-w-0'},
+          h(Avatar,{user:u, size:'sm'}),
+          h('span',{className:'text-[10px] sm:text-[11px] font-bold text-gray-700 truncate'}, u.name)
+        ))
       )
     }
 
@@ -797,25 +787,23 @@ import { useNavigate } from 'react-router-dom';
                       key: t.id,
                       onClick: () => onDetail(t),
                       style: {borderLeft: `3px solid ${accent}`},
-                      className: 'bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md rounded-lg p-2.5 sm:p-3 cursor-pointer transition-all flex gap-2.5 relative shadow-sm'
+                      className: 'bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md rounded-lg p-2.5 sm:p-3 cursor-pointer transition-all flex flex-col gap-1.5 relative shadow-sm'
                     },
-                    // Avatar to + tên bên dưới, đứng riêng cột trái
-                    h(AvatarGroup, {users: t.assignees || [], className: 'w-11 sm:w-14 shrink-0 pt-0.5'}),
-                    h('div', {className: 'flex-1 min-w-0 flex flex-col gap-1.5'},
-                      h('div', {className: 'flex items-start justify-between gap-2'},
-                        h('span', {className: 'font-bold text-[12px] sm:text-[13px] line-clamp-2 text-gray-900'}, t.title, h(AttachmentBadge,{list:t.attachments})),
-                        h('div', {className: 'shrink-0'}, h(CompactWarning, {due_date: t.due_date, status: t.status, completed_date: t.completed_date}))
+                    h('div', {className: 'flex items-start justify-between gap-2'},
+                      h('span', {className: 'font-bold text-[12px] sm:text-[13px] line-clamp-2 text-gray-900'}, t.title, h(AttachmentBadge,{list:t.attachments})),
+                      h('div', {className: 'shrink-0'}, h(CompactWarning, {due_date: t.due_date, status: t.status, completed_date: t.completed_date}))
+                    ),
+                    // Người thực hiện chiếm trọn bề ngang thẻ → đủ chỗ liệt kê cả nhóm, không phải rút gọn
+                    h(AssigneeList, {users: t.assignees || []}),
+                    h('div', {className: 'flex flex-col gap-1 mt-auto pt-1.5 border-t border-gray-100'},
+                      h('div', {className: 'flex items-center gap-1.5 text-[10px] sm:text-[11px] text-gray-500 font-medium'},
+                        h(Clock, {size: 11, className: 'shrink-0 text-gray-400'}),
+                        h('span', null, 'Hạn:'),
+                        h('span', {className: 'text-gray-800 font-bold'}, t.due_date ? fmtDateStr(t.due_date) : 'Chưa đặt')
                       ),
-                      h('div', {className: 'flex flex-col gap-1 mt-auto pt-1.5 border-t border-gray-100'},
-                        h('div', {className: 'flex items-center gap-1.5 text-[10px] sm:text-[11px] text-gray-500 font-medium'},
-                          h(Clock, {size: 11, className: 'shrink-0 text-gray-400'}),
-                          h('span', null, 'Hạn:'),
-                          h('span', {className: 'text-gray-800 font-bold'}, t.due_date ? fmtDateStr(t.due_date) : 'Chưa đặt')
-                        ),
-                        h('div', {className: 'flex items-start gap-1.5 text-[10px] sm:text-[11px] text-gray-500 font-medium'},
-                          h(MessageSquare, {size: 11, className: 'shrink-0 mt-0.5 text-gray-400'}),
-                          h('span', {className: 'text-gray-700 line-clamp-2'}, getLatestUpdate(t))
-                        )
+                      h('div', {className: 'flex items-start gap-1.5 text-[10px] sm:text-[11px] text-gray-500 font-medium'},
+                        h(MessageSquare, {size: 11, className: 'shrink-0 mt-0.5 text-gray-400'}),
+                        h('span', {className: 'text-gray-700 line-clamp-2'}, getLatestUpdate(t))
                       )
                     )
                   )
@@ -890,11 +878,12 @@ import { useNavigate } from 'react-router-dom';
         h('div',{className:'bg-white rounded-xl border border-gray-200 shadow-sm w-full overflow-hidden'},
           h('table',{className:'w-full table-fixed'},
             h('thead',null, h('tr',{className:'border-b border-gray-200'},
-                h('th',{className:`${thClass} w-[30%] sm:w-[28%]`}, 'Công việc'),
-                h('th',{className:`${thClass} w-[15%] sm:w-[14%]`}, 'Người'),
+                h('th',{className:`${thClass} w-[26%] sm:w-[25%]`}, 'Công việc'),
+                // Cột Người nới rộng để liệt kê đủ thành viên việc nhóm, bù lại từ cột Cập nhật
+                h('th',{className:`${thClass} w-[22%]`}, 'Người'),
                 h('th',{className:`${thClass} w-[12%] sm:w-[13%]`}, 'Trạng thái'),
                 h('th',{className:`${thClass} w-[13%] text-center`}, 'Hạn'),
-                h('th',{className:`${thClass} w-[22%]`}, 'Cập nhật'),
+                h('th',{className:`${thClass} w-[16%]`}, 'Cập nhật'),
                 canDelete && h('th',{className:`${thClass} w-[8%] text-center`}, '')
             )),
             h('tbody',null,
@@ -902,7 +891,7 @@ import { useNavigate } from 'react-router-dom';
                 : filtered.map(t=>
                     h('tr',{key:t.id, className:'border-b border-gray-100 cursor-pointer table-row-hover group', onClick:()=>onDetail(t)},
                       h('td',{className:tdClass}, h('div',{className:'font-bold text-gray-900 truncate flex items-center gap-1.5'},h('span',{className:'truncate'},t.title),h(AttachmentBadge,{list:t.attachments}))),
-                      h('td',{className:tdClass}, h(AvatarGroup,{users:t.assignees||[], size:'md', className:'mx-auto max-w-[70px]'})),
+                      h('td',{className:tdClass + ' !whitespace-normal'}, h(AssigneeList,{users:t.assignees||[]})),
                       h('td',{className:tdClass}, h(StatusBadge,{status:t.status})),
                       h('td',{className:tdClass+' text-center'}, h(CompactWarning,{due_date:t.due_date,status:t.status, completed_date:t.completed_date})),
                       h('td',{className:tdClass+' text-gray-500'}, t.progressUpdates?.length ? t.progressUpdates[t.progressUpdates.length - 1].content : 'Chưa cập nhật'),

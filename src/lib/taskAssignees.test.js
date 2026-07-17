@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'vitest';
-import { memberIds, memberUsers, formatAssignees, joinAssignees, assigneesPayload, avatarSlots, tallyTasks } from './taskAssignees';
+import { memberIds, memberUsers, joinAssignees, assigneesPayload, tallyTasks } from './taskAssignees';
 
 const USERS = [
   { id: 'NV01', name: 'Ngọc', email: 'ngoc@x.vn' },
@@ -43,18 +43,6 @@ describe('memberUsers', () => {
   });
 });
 
-describe('formatAssignees', () => {
-  test('rỗng → Chưa giao', () => {
-    expect(formatAssignees([])).toBe('Chưa giao');
-  });
-  test('một người → tên trần', () => {
-    expect(formatAssignees(['Ngọc'])).toBe('Ngọc');
-  });
-  test('nhiều người → tên đầu + số còn lại', () => {
-    expect(formatAssignees(['Ngọc', 'Phong'])).toBe('Ngọc +1');
-    expect(formatAssignees(['Ngọc', 'Phong', 'Tuấn'])).toBe('Ngọc +2');
-  });
-});
 
 describe('joinAssignees', () => {
   test('rỗng → Chưa giao (giữ đúng chuỗi n8n đang in)', () => {
@@ -62,36 +50,6 @@ describe('joinAssignees', () => {
   });
   test('gộp bằng dấu phẩy', () => {
     expect(joinAssignees(['Ngọc', 'Phong'])).toBe('Ngọc, Phong');
-  });
-});
-
-// Thẻ việc chỉ rộng 44-56px, ô bảng 70px → tối đa 3 ô avatar, không được tràn.
-describe('avatarSlots', () => {
-  const mk = n => Array.from({ length: n }, (_, i) => ({ id: `NV0${i}`, name: `NV ${i}` }));
-
-  test('2 người → 2 avatar, không có bong bóng +N', () => {
-    expect(avatarSlots(mk(2))).toEqual({ shown: mk(2), more: 0 });
-  });
-  test('3 người → 3 avatar vừa khít, vẫn không có +N', () => {
-    expect(avatarSlots(mk(3))).toEqual({ shown: mk(3), more: 0 });
-  });
-  test('4 người → 2 avatar + "+2" (tổng vẫn 3 ô)', () => {
-    expect(avatarSlots(mk(4))).toEqual({ shown: mk(4).slice(0, 2), more: 2 });
-  });
-  test('13 người (cả công ty) → 2 avatar + "+11"', () => {
-    expect(avatarSlots(mk(13))).toEqual({ shown: mk(13).slice(0, 2), more: 11 });
-  });
-  test('không bao giờ chiếm quá 3 ô, dù bao nhiêu người', () => {
-    for (let n = 2; n <= 13; n++) {
-      const { shown, more } = avatarSlots(mk(n));
-      expect(shown.length + (more > 0 ? 1 : 0)).toBeLessThanOrEqual(3);
-    }
-  });
-  test('số người hiện + số gộp luôn bằng tổng, không sót ai', () => {
-    for (let n = 2; n <= 13; n++) {
-      const { shown, more } = avatarSlots(mk(n));
-      expect(shown.length + more).toBe(n);
-    }
   });
 });
 
@@ -109,8 +67,21 @@ describe('tallyTasks', () => {
     const r = tally([done(['A', 'B', 'C'])]);
     expect(r.company).toEqual({ total: 1, done: 1, onTime: 1 });
     for (const id of ['A', 'B', 'C']) {
-      expect(r.perStaff.get(id)).toEqual({ total: 1, done: 1, onTime: 1, doneList: ['Việc xong'] });
+      expect(r.perStaff.get(id)).toMatchObject({ total: 1, done: 1, onTime: 1 });
     }
+  });
+
+  test('doneList mang theo đồng đội để báo cáo ghi "cùng: ..."', () => {
+    const r = tally([done(['A', 'B', 'C'])]);
+    // mates = mọi thành viên KHÁC người đang xét, giữ nguyên thứ tự trong nhóm
+    expect(r.perStaff.get('A').doneList).toEqual([{ title: 'Việc xong', mates: ['B', 'C'] }]);
+    expect(r.perStaff.get('B').doneList).toEqual([{ title: 'Việc xong', mates: ['A', 'C'] }]);
+    expect(r.perStaff.get('C').doneList).toEqual([{ title: 'Việc xong', mates: ['A', 'B'] }]);
+  });
+
+  test('việc một người: mates rỗng, không hiện "cùng: ..."', () => {
+    const r = tally([done(['A'])]);
+    expect(r.perStaff.get('A').doneList).toEqual([{ title: 'Việc xong', mates: [] }]);
   });
 
   test('việc trễ hạn: tính done nhưng không tính onTime, cho cả nhóm', () => {

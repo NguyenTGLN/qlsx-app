@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Clock, AlertTriangle, MonitorPlay, Activity } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { memberUsers } from '../lib/taskAssignees';
 
 const TvDashboard = () => {
   const [tasks, setTasks] = useState([]);
@@ -31,15 +32,23 @@ const TvDashboard = () => {
     if (!started) return;
     
     const fetchTasks = async () => {
-      const { data } = await supabase
-        .from('cong_viec_duoc_giao')
-        .select('id, title, assignee_id, status, due_date, nhan_vien!cong_viec_duoc_giao_assignee_id_fkey(name)')
-        .neq('status', 'COMPLETED')
-        .neq('status', 'CANCELLED')
-        .order('due_date', { ascending: true })
-        .limit(20);
-        
-      if (data) setTasks(data);
+      // Việc nhóm: FK join chỉ ra được người đại diện, nên tự tra tên từ assignee_ids.
+      // Bảng nhân viên chỉ ~16 dòng nên lấy kèm mỗi lần refresh không đáng kể.
+      const [{ data }, { data: nvData }] = await Promise.all([
+        supabase
+          .from('cong_viec_duoc_giao')
+          .select('id, title, assignee_id, assignee_ids, status, due_date')
+          .neq('status', 'COMPLETED')
+          .neq('status', 'CANCELLED')
+          .order('due_date', { ascending: true })
+          .limit(20),
+        supabase.from('nhan_vien').select('id, name'),
+      ]);
+
+      if (data) {
+        const uMap = new Map((nvData || []).map(u => [u.id, u]));
+        setTasks(data.map(t => ({ ...t, memberNames: memberUsers(t, uMap).map(u => u.name) })));
+      }
     };
 
     fetchTasks(); // Gọi ngay lần đầu
@@ -300,7 +309,7 @@ const TvDashboard = () => {
                   </div>
                 )}
                 <div style={{ flex: 1 }}>
-                   <div style={styles.workerName}>{task.nhan_vien?.name || 'Chưa gán'}</div>
+                   <div style={styles.workerName}>{task.memberNames?.length ? task.memberNames.join(', ') : 'Chưa gán'}</div>
                    <div style={styles.taskTitle}>{task.title}</div>
                 </div>
                 <div style={styles.timeBox}>
@@ -361,7 +370,8 @@ const styles = {
   cardDanger: { background: '#991b1b', borderRadius: '16px', padding: '1.5rem 2rem', display: 'flex', alignItems: 'center', borderLeft: '8px solid #f87171', animation: 'pulse-red 1s infinite', boxShadow: '0 20px 25px -5px rgba(220, 38, 38, 0.4)' },
   
   alertIcon: { marginRight: '1.5rem' },
-  workerName: { fontSize: '1.8rem', fontWeight: 700, marginBottom: '0.5rem', color: '#f8fafc' },
+  // Việc nhóm nhiều tên: cho xuống dòng nhưng chặn ở 2 dòng, không để đẩy vỡ thẻ trên TV
+  workerName: { fontSize: '1.8rem', fontWeight: 700, marginBottom: '0.5rem', color: '#f8fafc', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' },
   taskTitle: { fontSize: '1.4rem', color: '#cbd5e1', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' },
   
   timeBox: { textAlign: 'right', minWidth: '180px' },
