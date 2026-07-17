@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
 import { Calendar, Filter, Package, Users, ClipboardList, ShieldAlert, CheckCircle, Clock, Target, Zap } from 'lucide-react';
 import { AttachmentBadge } from '../../components/AttachmentList';
+import { memberIds } from '../../lib/taskAssignees';
 
 // Avatar tròn: ảnh thật nếu có, không thì chữ cái đầu tên trên nền gradient brand
 function RepAvatar({ name, avatar, size = 40 }) {
@@ -156,30 +157,30 @@ export default function WorkReport() {
          const isPending = task.status !== 'COMPLETED' && task.status !== 'CANCELLED';
          if (!isDoneInRange && !isPending) return;
 
-         const wId = task.assignee_id;
-         cTasksTotal += 1;
-         if (isDoneInRange) cTasksDone += 1;
-         activeStaff.add(wId);
+         let isLate = false;
+         if (task.due_date && task.completed_date) {
+            isLate = (new Date(task.completed_date).getTime() - new Date(task.due_date).getTime()) > 60000;
+         }
 
-         if (wId && genStaffMap.has(wId)) {
+         // Bộ đếm toàn công ty: mỗi việc tính MỘT lần dù giao cho mấy người
+         cTasksTotal += 1;
+         if (isDoneInRange) {
+            cTasksDone += 1;
+            if (!isLate) cTasksOnTime += 1;
+         }
+
+         // Bộ đếm theo nhân viên: có tên trong nhóm là được tính
+         memberIds(task).forEach(wId => {
+            activeStaff.add(wId);
+            if (!genStaffMap.has(wId)) return;
             const st = genStaffMap.get(wId);
             st.tasksTotal += 1;
             if (isDoneInRange) {
                st.tasksDone += 1;
                st.tasksDoneList.push(task.title);
-
-               let isLate = false;
-               if (task.due_date && task.completed_date) {
-                  const due = new Date(task.due_date).getTime();
-                  const done = new Date(task.completed_date).getTime();
-                  if ((done - due) > 60000) isLate = true;
-               }
-               if (!isLate) {
-                  st.tasksOnTime += 1;
-                  cTasksOnTime += 1;
-               }
+               if (!isLate) st.tasksOnTime += 1;
             }
-         }
+         });
       });
 
       let finalReport = Array.from(genStaffMap.values()).filter(s => s.prodQty > 0 || s.tasksTotal > 0);
@@ -260,8 +261,8 @@ export default function WorkReport() {
     const getPersonalData = (nameKeyword) => {
      // 1. Filter TASKS
      const tasks = allTasks.filter(t => {
-         const name = staffMap[t.assignee_id] || '';
-         return name.toLowerCase().includes(nameKeyword.toLowerCase());
+         const kw = nameKeyword.toLowerCase();
+         return memberIds(t).some(id => (staffMap[id] || '').toLowerCase().includes(kw));
      });
 
      const getOD = (dStr) => {
