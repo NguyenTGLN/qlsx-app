@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'vitest';
-import { memberIds, memberUsers, formatAssignees, joinAssignees, assigneesPayload } from './taskAssignees';
+import { memberIds, memberUsers, formatAssignees, joinAssignees, assigneesPayload, avatarSlots } from './taskAssignees';
 
 const USERS = [
   { id: 'NV01', name: 'Ngọc', email: 'ngoc@x.vn' },
@@ -62,6 +62,36 @@ describe('joinAssignees', () => {
   });
   test('gộp bằng dấu phẩy', () => {
     expect(joinAssignees(['Ngọc', 'Phong'])).toBe('Ngọc, Phong');
+  });
+});
+
+// Thẻ việc chỉ rộng 44-56px, ô bảng 70px → tối đa 3 ô avatar, không được tràn.
+describe('avatarSlots', () => {
+  const mk = n => Array.from({ length: n }, (_, i) => ({ id: `NV0${i}`, name: `NV ${i}` }));
+
+  test('2 người → 2 avatar, không có bong bóng +N', () => {
+    expect(avatarSlots(mk(2))).toEqual({ shown: mk(2), more: 0 });
+  });
+  test('3 người → 3 avatar vừa khít, vẫn không có +N', () => {
+    expect(avatarSlots(mk(3))).toEqual({ shown: mk(3), more: 0 });
+  });
+  test('4 người → 2 avatar + "+2" (tổng vẫn 3 ô)', () => {
+    expect(avatarSlots(mk(4))).toEqual({ shown: mk(4).slice(0, 2), more: 2 });
+  });
+  test('13 người (cả công ty) → 2 avatar + "+11"', () => {
+    expect(avatarSlots(mk(13))).toEqual({ shown: mk(13).slice(0, 2), more: 11 });
+  });
+  test('không bao giờ chiếm quá 3 ô, dù bao nhiêu người', () => {
+    for (let n = 2; n <= 13; n++) {
+      const { shown, more } = avatarSlots(mk(n));
+      expect(shown.length + (more > 0 ? 1 : 0)).toBeLessThanOrEqual(3);
+    }
+  });
+  test('số người hiện + số gộp luôn bằng tổng, không sót ai', () => {
+    for (let n = 2; n <= 13; n++) {
+      const { shown, more } = avatarSlots(mk(n));
+      expect(shown.length + more).toBe(n);
+    }
   });
 });
 

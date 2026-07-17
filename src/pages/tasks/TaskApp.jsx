@@ -10,7 +10,7 @@ import { useNavigate } from 'react-router-dom';
     import AttachmentInput from '../../components/AttachmentInput';
     import AttachmentList, { AttachmentBadge } from '../../components/AttachmentList';
     import { collectPaths, deleteAttachments, deleteRemoved } from '../../lib/attachmentStorage';
-    import { memberIds, memberUsers, formatAssignees, joinAssignees, assigneesPayload } from '../../lib/taskAssignees';
+    import { memberIds, memberUsers, formatAssignees, joinAssignees, assigneesPayload, avatarSlots } from '../../lib/taskAssignees';
     import {
       ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart,
       ListChecks, Loader2, CheckCircle2, AlertTriangle, Send, Search,
@@ -434,11 +434,9 @@ import { useNavigate } from 'react-router-dom';
     // Việc nhóm: chồng avatar + nhãn rút gọn "Ngọc +2". Chỉ có 44-70px bề ngang ở thẻ việc và ô
     // bảng, nên avatar nhóm dùng size 'sm' và tối đa 3 ô (đông hơn thì 2 avatar + "+N").
     // Một người thì trả về AvatarName y như cũ — giữ nguyên avatar to đang dùng hằng ngày.
-    const GROUP_MAX_SLOTS = 3
     function AvatarGroup({users = [], size='md', className=''}) {
       if (users.length <= 1) return h(AvatarName, {user: users[0] || null, size, className})
-      const shown = users.length <= GROUP_MAX_SLOTS ? users : users.slice(0, GROUP_MAX_SLOTS - 1)
-      const more  = users.length - shown.length
+      const {shown, more} = avatarSlots(users)
       const names = users.map(u => u.name)
       return h('div',{className:`flex flex-col items-center gap-0.5 min-w-0 ${className}`, title: names.join(', ')},
         h('div',{className:'flex -space-x-2'},
@@ -1400,16 +1398,22 @@ import { useNavigate } from 'react-router-dom';
               const {error:pErr} = await db.rpc('dat_mat_khau', { p_id: form.id, p_pw: form.password });
               if (pErr) throw new Error('Lỗi đặt mật khẩu: ' + pErr.message);
             }
-            await db.from('cong_viec_duoc_giao').update({assignee_id: form.id}).eq('assignee_id', originalId);
+            // Phải vá assignee_ids ở MỌI việc có tên NV này, kể cả việc nhóm mà họ không phải
+            // người đại diện — `.eq('assignee_id', ...)` sẽ bỏ sót các việc đó và NV mất việc
+            // khỏi báo cáo khi mã cũ bị xoá bên dưới. Trigger DB tự chỉnh lại assignee_id.
+            const {error:renErr} = await db.rpc('doi_ma_nv_trong_viec', { p_from: originalId, p_to: form.id });
+            if (renErr) throw new Error('Lỗi chuyển việc sang mã mới: ' + renErr.message);
             await db.from('cong_viec_duoc_giao').update({updated_by: form.id}).eq('updated_by', originalId);
             await db.from('tien_do').update({updated_by_id: form.id}).eq('updated_by_id', originalId);
             const {error:delErr} = await db.from('nhan_vien').delete().eq('id', originalId);
             if (delErr) throw new Error('Lỗi xóa ID cũ: ' + delErr.message);
-            setUsers(us => us.map(u => u.id === originalId ? {...u, ...data, id: form.id} : u));
+            const newUsers = users.map(u => u.id === originalId ? {...u, ...data, id: form.id} : u);
+            setUsers(newUsers);
+            const um = new Map(newUsers.map(u=>[u.id,u]));
             setTasks(ts => ts.map(t => {
-              let updated = {...t};
-              if (t.assignee_id === originalId) { updated.assignee_id = form.id; updated.assignee = {...t.assignee,...data,id:form.id}; }
-              return updated;
+              const ids = memberIds(t);
+              if (!ids.includes(originalId)) return t;
+              return withMembers({...t, assignee_ids: ids.map(x => x === originalId ? form.id : x)}, um);
             }));
             if (me.id === originalId) setMe(prev => ({...prev, ...data, id: form.id}));
           } else {
@@ -1418,8 +1422,12 @@ import { useNavigate } from 'react-router-dom';
               const {error:pErr} = await db.rpc('dat_mat_khau', { p_id: originalId, p_pw: form.password });
               if (pErr) throw new Error('Lỗi đổi mật khẩu: ' + pErr.message);
             }
-            setUsers(us => us.map(u => u.id === originalId ? {...u,...data} : u));
-            setTasks(ts => ts.map(t => t.assignee_id === originalId ? {...t, assignee:{...t.assignee,...data}} : t));
+            const newUsers = users.map(u => u.id === originalId ? {...u,...data} : u);
+            setUsers(newUsers);
+            // Dựng lại từ danh sách user mới: đổi tên/avatar phải hiện cả ở việc nhóm mà NV này
+            // đứng thứ 2 trở đi, không riêng việc họ làm người đại diện.
+            const um = new Map(newUsers.map(u=>[u.id,u]));
+            setTasks(ts => ts.map(t => memberIds(t).includes(originalId) ? withMembers(t, um) : t));
             if (me.id === originalId) setMe(prev => ({...prev, ...data}));
           }
           toast('Đã cập nhật nhân viên!');

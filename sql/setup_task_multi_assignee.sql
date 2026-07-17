@@ -70,9 +70,35 @@ FOR EACH ROW
 EXECUTE FUNCTION public.sync_task_assignees();
 
 
+-- 5. ĐỔI MÃ NHÂN VIÊN TRONG MỌI VIỆC (kể cả khi họ KHÔNG phải người đại diện)
+--    Không có hàm này thì `update assignee_id where assignee_id = <mã cũ>` chỉ vá được việc mà
+--    NV là người đại diện; ở việc nhóm mà NV đứng thứ 2 trở đi, assignee_ids còn giữ mã cũ đã bị
+--    xoá khỏi nhan_vien → NV âm thầm mất việc đó khỏi báo cáo và bộ lọc.
+--    Một câu UPDATE = nguyên tử; trigger phía trên tự chỉnh lại assignee_id cho các dòng đổi.
+CREATE OR REPLACE FUNCTION public.doi_ma_nv_trong_viec(p_from text, p_to text)
+RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $$
+DECLARE
+    v_count integer;
+BEGIN
+    IF COALESCE(auth.jwt()->>'nv_role','') <> 'ADMIN' THEN
+        RAISE EXCEPTION 'Chỉ Admin' USING errcode = '42501';
+    END IF;
+
+    UPDATE public.cong_viec_duoc_giao
+       SET assignee_ids = array_replace(assignee_ids, p_from, p_to)
+     WHERE assignee_ids @> ARRAY[p_from];
+
+    GET DIAGNOSTICS v_count = ROW_COUNT;
+    RETURN v_count;
+END; $$;
+
+REVOKE ALL ON FUNCTION public.doi_ma_nv_trong_viec(text,text) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.doi_ma_nv_trong_viec(text,text) TO authenticated;
+
+
 -- ==============================================================================
 -- TEST BLOCK — chạy tay trong SQL Editor. Tự dọn sạch kể cả khi test fail.
--- Kỳ vọng in ra: "OK: tat ca 6 test deu dat".
+-- Kỳ vọng in ra: "OK: tat ca 7 test deu dat".
 -- Dùng 3 nhân viên CÓ THẬT vì assignee_id có khoá ngoại tới nhan_vien.
 -- ==============================================================================
 DO $$
@@ -128,8 +154,19 @@ BEGIN
     SELECT assignee_ids INTO v_ids FROM public.cong_viec_duoc_giao WHERE id = 'CV-TEST1';
     IF v_ids <> ARRAY[v_nv[1]] THEN RAISE EXCEPTION 'T6 fail: %', v_ids; END IF;
 
+    -- T7: đổi mã NV đứng THỨ HAI trong nhóm — ca mà `.eq('assignee_id', ...)` bỏ sót.
+    --     Gọi thẳng câu UPDATE của hàm doi_ma_nv_trong_viec (bỏ qua check ADMIN vì SQL Editor
+    --     không có JWT). Người đại diện phải giữ nguyên, thành viên 2 phải đổi sang mã mới.
+    UPDATE public.cong_viec_duoc_giao SET assignee_ids = ARRAY[v_nv[1], v_nv[2]] WHERE id = 'CV-TEST1';
+    UPDATE public.cong_viec_duoc_giao
+       SET assignee_ids = array_replace(assignee_ids, v_nv[2], v_nv[3])
+     WHERE assignee_ids @> ARRAY[v_nv[2]] AND id = 'CV-TEST1';
+    SELECT assignee_ids, assignee_id INTO v_ids, v_one FROM public.cong_viec_duoc_giao WHERE id = 'CV-TEST1';
+    IF v_ids <> ARRAY[v_nv[1], v_nv[3]] THEN RAISE EXCEPTION 'T7 fail (mang): %', v_ids; END IF;
+    IF v_one <> v_nv[1] THEN RAISE EXCEPTION 'T7 fail (nguoi dai dien bi doi): %', v_one; END IF;
+
     DELETE FROM public.cong_viec_duoc_giao WHERE id IN ('CV-TEST1', 'CV-TEST2');
-    RAISE NOTICE 'OK: tat ca 6 test deu dat';
+    RAISE NOTICE 'OK: tat ca 7 test deu dat';
 EXCEPTION WHEN OTHERS THEN
     -- Dọn sạch rồi mới ném lỗi ra: test fail giữa chừng không được để lại việc rác trên app
     DELETE FROM public.cong_viec_duoc_giao WHERE id IN ('CV-TEST1', 'CV-TEST2');

@@ -35,6 +35,15 @@ export function joinAssignees(names) {
   return names.join(', ');
 }
 
+// Chia ô cho dải avatar chồng nhau. Thẻ việc chỉ rộng 44-56px và ô bảng 70px, mà avatar 'sm'
+// chồng -space-x-2 ăn ~20px/ô → tối đa 3 ô. Đông hơn thì nhường 1 ô cho bong bóng "+N".
+const GROUP_MAX_SLOTS = 3;
+export function avatarSlots(users) {
+  if (users.length <= GROUP_MAX_SLOTS) return { shown: users, more: 0 };
+  const shown = users.slice(0, GROUP_MAX_SLOTS - 1);
+  return { shown, more: users.length - shown.length };
+}
+
 export function assigneesPayload(task, userMap) {
   return memberUsers(task, userMap).map(u => ({ id: u.id, name: u.name, email: u.email ?? null }));
 }
