@@ -87,53 +87,62 @@ EXECUTE FUNCTION public.process_zalo_auto_complete_task();
 
 -- ==============================================================================
 -- TEST BLOCK — chạy tay trong SQL Editor. Tự dọn sạch kể cả khi test fail.
--- Kỳ vọng in ra: "OK: thanh vien thu 2 gui bao cao da dong duoc viec nhom".
--- Mấu chốt: NV gửi báo cáo là thành viên THỨ HAI của nhóm → chứng minh trigger
--- không còn phụ thuộc assignee_id (người đại diện).
--- Cần 1 NV có uid_from (đã map Zalo) + 1 NV bất kỳ khác làm người đại diện.
+-- Kỳ vọng in ra: "OK: menh de moi tim duoc viec nhom cho thanh vien thu 2".
+--
+-- KHÔNG ghi gì vào zalo_messages / zalo_conversations — hai bảng đó đang nuôi KPI CSKH thật,
+-- và mọi cột của zalo_messages đều do parser (process_zalo_message_kpi) suy ra từ raw_data,
+-- nên chèn tin nhắn giả vừa bẩn dữ liệu vừa phải bịa đúng hình dạng JSON của n8n.
+--
+-- Thay vào đó test đúng THỨ ĐÃ ĐỔI: mệnh đề WHERE tìm việc. Chứng minh 2 chiều —
+-- mệnh đề mới TÌM THẤY việc nhóm, mệnh đề cũ KHÔNG (nếu cũ cũng thấy thì test vô nghĩa).
+-- Kiểm tra đầu-cuối thật sự: để một NV gửi "em gửi báo cáo" vào nhóm Zalo như thường ngày.
 -- ==============================================================================
 DO $$
 DECLARE
-    v_uid    TEXT;
-    v_me     TEXT;
-    v_other  TEXT;
-    v_status TEXT;
-    v_log    TEXT;
+    v_me        TEXT;
+    v_other     TEXT;
+    v_found_new TEXT;
+    v_found_old TEXT;
 BEGIN
-    SELECT id, uid_from INTO v_me, v_uid
+    -- v_me: NV đã map Zalo (uid_from) — chính là người trigger sẽ nhận diện khi gửi báo cáo
+    SELECT id INTO v_me
       FROM public.nhan_vien WHERE uid_from IS NOT NULL AND uid_from <> '' ORDER BY id LIMIT 1;
     IF v_me IS NULL THEN RAISE EXCEPTION 'Khong co nhan vien nao co uid_from de test'; END IF;
 
     SELECT id INTO v_other FROM public.nhan_vien WHERE id <> v_me ORDER BY id LIMIT 1;
     IF v_other IS NULL THEN RAISE EXCEPTION 'Can it nhat 2 nhan vien de test'; END IF;
 
-    -- Việc nhóm: người đại diện là v_other, người gửi báo cáo (v_me) là thành viên thứ 2
+    -- Việc nhóm: người đại diện là v_other, còn v_me (người gửi báo cáo) đứng THỨ HAI
     INSERT INTO public.cong_viec_duoc_giao (id, title, status, assignee_ids, due_date, created_date)
     VALUES ('CV-ZTEST', 'Báo cáo công việc cuối ngày', 'IN_PROGRESS', ARRAY[v_other, v_me], NOW(), NOW());
 
-    INSERT INTO public.zalo_messages (thread_id, uid_from, content, is_staff)
-    VALUES ('6274675927160413910', v_uid, 'em gửi báo cáo ạ [TEST]', true);
-
-    SELECT status INTO v_status FROM public.cong_viec_duoc_giao WHERE id = 'CV-ZTEST';
-    IF v_status <> 'COMPLETED' THEN
-        RAISE EXCEPTION 'FAIL: thanh vien thu 2 gui bao cao khong dong duoc viec (status=%)', v_status;
+    -- Mệnh đề MỚI (bản trong trigger ở trên) → PHẢI tìm thấy
+    SELECT id INTO v_found_new
+      FROM public.cong_viec_duoc_giao
+     WHERE (assignee_ids @> ARRAY[v_me] OR assignee_id = v_me)
+       AND title ILIKE '%Báo cáo công việc cuối ngày%'
+       AND status = 'IN_PROGRESS'
+       AND DATE(COALESCE(due_date, created_date) AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Ho_Chi_Minh') = (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+     ORDER BY created_date DESC
+     LIMIT 1;
+    IF v_found_new IS DISTINCT FROM 'CV-ZTEST' THEN
+        RAISE EXCEPTION 'FAIL: menh de moi khong tim thay viec nhom (tim duoc: %)', COALESCE(v_found_new, 'NULL');
     END IF;
 
-    SELECT content INTO v_log FROM public.tien_do WHERE task_id = 'CV-ZTEST' LIMIT 1;
-    RAISE NOTICE 'OK: thanh vien thu 2 gui bao cao da dong duoc viec nhom';
-    RAISE NOTICE 'Log tien do: %', v_log;
+    -- Mệnh đề CŨ (chỉ assignee_id) → PHẢI KHÔNG tìm thấy, vì v_me không phải người đại diện
+    SELECT id INTO v_found_old
+      FROM public.cong_viec_duoc_giao
+     WHERE assignee_id = v_me
+       AND id = 'CV-ZTEST'
+     LIMIT 1;
+    IF v_found_old IS NOT NULL THEN
+        RAISE EXCEPTION 'FAIL: test vo nghia — menh de cu cung tim thay, v_me dang la nguoi dai dien';
+    END IF;
 
-    DELETE FROM public.tien_do WHERE task_id = 'CV-ZTEST';
+    RAISE NOTICE 'OK: menh de moi tim duoc viec nhom cho thanh vien thu 2 (%), menh de cu thi khong', v_me;
+
     DELETE FROM public.cong_viec_duoc_giao WHERE id = 'CV-ZTEST';
-    DELETE FROM public.zalo_messages WHERE content = 'em gửi báo cáo ạ [TEST]';
 EXCEPTION WHEN OTHERS THEN
-    DELETE FROM public.tien_do WHERE task_id = 'CV-ZTEST';
     DELETE FROM public.cong_viec_duoc_giao WHERE id = 'CV-ZTEST';
-    DELETE FROM public.zalo_messages WHERE content = 'em gửi báo cáo ạ [TEST]';
     RAISE;
 END $$;
-
--- Trigger KPI (trigger_zalo_kpi_process) cũng chạy khi insert zalo_messages ở test trên.
--- Nếu nó tạo dòng rác trong zalo_conversations, dọn bằng:
---   DELETE FROM public.zalo_conversations WHERE thread_id = '6274675927160413910' AND is_responded = false AND customer_name IS NULL;
--- (kiểm tra kỹ trước khi xoá — chỉ xoá đúng dòng vừa sinh ra khi test)
