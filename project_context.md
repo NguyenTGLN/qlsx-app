@@ -213,7 +213,8 @@ graph LR
 - **CRUD Công việc**: Tạo, sửa, xóa, gán người thực hiện
 - **Việc nhóm (07/2026)**: Một việc giao được cho **nhiều NV** qua cột `assignee_ids text[]`.
   `assignee_id` cũ vẫn còn và luôn `= assignee_ids[1]` (người đại diện), do trigger
-  `sync_task_assignees` canh giữ → TvDashboard và các query cũ **không phải sửa**.
+  `sync_task_assignees` canh giữ → các query cũ chưa đổi vẫn chạy đúng (thấy người đại diện).
+  Mọi chỗ hiển thị (kể cả TvDashboard, báo cáo) đã đổi để liệt kê **đủ** thành viên, không rút gọn.
   Luật: **ai xong trước là xong cả nhóm**; báo cáo tính cho **mọi** thành viên có tên trong nhóm
   (nên tổng cộng dồn theo từng NV lớn hơn tổng toàn công ty — đúng thiết kế, không phải lỗi).
   Đọc nhóm **luôn qua `memberIds()`** (`src/lib/taskAssignees.js`), đừng đọc thẳng `assignee_id`.
