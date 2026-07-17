@@ -211,6 +211,14 @@ graph LR
 
 **Chức năng chính:**
 - **CRUD Công việc**: Tạo, sửa, xóa, gán người thực hiện
+- **Việc nhóm (07/2026)**: Một việc giao được cho **nhiều NV** qua cột `assignee_ids text[]`.
+  `assignee_id` cũ vẫn còn và luôn `= assignee_ids[1]` (người đại diện), do trigger
+  `sync_task_assignees` canh giữ → TvDashboard và các query cũ **không phải sửa**.
+  Luật: **ai xong trước là xong cả nhóm**; báo cáo tính cho **mọi** thành viên có tên trong nhóm
+  (nên tổng cộng dồn theo từng NV lớn hơn tổng toàn công ty — đúng thiết kế, không phải lỗi).
+  Đọc nhóm **luôn qua `memberIds()`** (`src/lib/taskAssignees.js`), đừng đọc thẳng `assignee_id`.
+  Đổi mã NV phải gọi RPC `doi_ma_nv_trong_viec` (vá cả thành viên không phải đại diện).
+  Script DB: `sql/setup_task_multi_assignee.sql`.
 - **Trạng thái**: `IN_PROGRESS` → `COMPLETED` / `CANCELLED`
 - **Lặp lại (Recurrence)**: `NONE`, `DAILY`, `WEEKLY`, `MONTHLY` — tự động tạo instance mới
 - **Tiến độ (Progress Updates)**: Ghi nhận cập nhật, comment theo dòng thời gian
@@ -358,6 +366,7 @@ erDiagram
         text description
         text status
         text assignee_id FK
+        text_array assignee_ids
         text priority
         text label
         int progress
@@ -489,6 +498,7 @@ erDiagram
 | 13 | `zalo_messages` | Tin nhắn Zalo raw | [setup_zalo_kpi.sql](file:///d:/Báo cáo sản xuất/qlsx-app/sql/setup_zalo_kpi.sql) |
 | 14 | `zalo_groups` | Danh mục nhóm Zalo | [setup_zalo_groups.sql](file:///d:/Báo cáo sản xuất/qlsx-app/sql/setup_zalo_groups.sql) |
 | 15 | `purchase_proposals` | Đề xuất mua hàng | [setup_purchase_proposals.sql](file:///d:/Báo cáo sản xuất/qlsx-app/sql/setup_purchase_proposals.sql) |
+| 16 | `cong_viec_duoc_giao.assignee_ids` | Cột việc nhóm + trigger đồng bộ người đại diện + RPC đổi mã NV | [setup_task_multi_assignee.sql](file:///d:/Báo cáo sản xuất/qlsx-app/sql/setup_task_multi_assignee.sql) |
 
 ### 6.3 Views
 
@@ -501,7 +511,8 @@ erDiagram
 | Trigger | Bảng | Timing | Chức năng |
 |---|---|---|---|
 | `trigger_zalo_kpi_process` | `zalo_messages` | BEFORE INSERT | Tự động gom tin nhắn khách hàng thành phiên hội thoại (5 phút), ghi nhận KPI phản hồi nhân viên |
-| `trigger_zalo_auto_complete_task` | `zalo_messages` | AFTER INSERT | Tự động hoàn thành task "Báo cáo công việc cuối ngày" khi nhân viên gửi báo cáo vào nhóm Zalo đích |
+| `trigger_zalo_auto_complete_task` | `zalo_messages` | AFTER INSERT | Tự động hoàn thành task "Báo cáo công việc cuối ngày" khi nhân viên gửi báo cáo vào nhóm Zalo đích (việc nhóm: **ai trong nhóm gửi cũng đóng được**) |
+| `trigger_sync_task_assignees` | `cong_viec_duoc_giao` | BEFORE INSERT/UPDATE | Canh bất biến `assignee_id = assignee_ids[1]` cho việc nhóm; ghi kiểu cũ (chỉ `assignee_id`) vẫn hợp lệ |
 
 **Logic Trigger Zalo KPI:**
 1. **Khách hàng nhắn tin**: Kiểm tra có phiên mở trong 5 phút → gom vào hoặc tạo phiên mới
