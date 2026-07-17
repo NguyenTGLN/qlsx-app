@@ -55,7 +55,6 @@ export const PERM_REGISTRY = [
     tabs: [
       { id: 'dashboard',   label: 'Tổng Quan',     caps: ['view'] },
       { id: 'zalo_kpi',    label: 'KPI CSKH Zalo', caps: ['view', 'edit', 'delete', 'io'] },
-      { id: 'zalo_report', label: 'BC Trực Zalo',  caps: ['view', 'create'] }, // bảng chỉ-đọc; tạo qua nút header
     ],
   },
   {

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
     import { supabase as db, fetchAllRows } from '../../lib/supabase';
     import { dataCache } from '../../lib/dataCache';
     import WorkReport from './WorkReport';
-    import ZaloReportModal from '../cskh/ZaloReportModal';
     import { useAuth } from '../../lib/AuthContext';
     import { MODULE_PERMS, ALL_PERMS, canSeeTab, getTabPerm } from '../../lib/AuthContext';
     import { PERM_REGISTRY, ALL_CAPS, CAP_LABEL, tabKey, migrateLegacyToTabPerms } from '../../lib/permRegistry';
@@ -1173,7 +1172,6 @@ import { useNavigate } from 'react-router-dom';
       const [taskModal, setTaskModal] = useState(null)
       const [detailTask, setDetailTask] = useState(null)
       const [userModal, setUserModal] = useState(null)
-      const [showZaloModal, setShowZaloModal] = useState(false)
 
       const [pendingOrders, setPendingOrders] = useState([])
 
@@ -1458,25 +1456,6 @@ import { useNavigate } from 'react-router-dom';
             'Cập nhật CLSP'
           ),
 
-          // Gửi BC Trực Zalo
-          h('button', {
-            onClick: () => setShowZaloModal(true),
-            style: {
-              display: 'flex', alignItems: 'center', gap: '6px',
-              background: '#0068ff',
-              color: '#fff', border: 'none',
-              borderRadius: '8px', padding: '0.45rem 0.7rem',
-              fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(0,104,255,0.35)',
-              transition: 'all 0.15s', whiteSpace: 'nowrap',
-            },
-            onMouseEnter: e => { e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; },
-            onMouseLeave: e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform='translateY(0)'; },
-          },
-            h('svg', {style:{width:'15px',height:'15px',flexShrink:0}, fill:'none', stroke:'currentColor', viewBox:'0 0 24 24', strokeWidth:2.5}, h('path', {strokeLinecap:'round', strokeLinejoin:'round', d:'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z'})),
-            'Gửi BC Zalo'
-          ),
-
           // Tạo việc mới
           tPerm.create && h('button', {
             onClick: () => setTaskModal({}),
@@ -1499,8 +1478,7 @@ import { useNavigate } from 'react-router-dom';
 
         taskModal && h(TaskModal,{ task: taskModal.task||null, users, currentUser:me, onSave: taskModal.task ? d=>handleUpdateTask(taskModal.task.id,d) : handleCreateTask, onClose: ()=>setTaskModal(null) }),
         detailTask && h(TaskDetail,{ task: tasks.find(t=>t.id===detailTask.id)||detailTask, currentUser: me, onUpdate: handleUpdateTask, onAddUpdate: handleAddUpdate, onDelete: t=>{setDetailTask(null);handleDeleteTask(t)}, onRemind: handleRemind, onClose: ()=>setDetailTask(null), onOpenEdit: t=>{setDetailTask(null);setTaskModal({task:t})} }),
-        userModal && h(UserModal,{ user: userModal.user||null, onSave: handleSaveUser, onClose: ()=>setUserModal(null) }),
-        showZaloModal && h(ZaloReportModal, { onClose: ()=>setShowZaloModal(false), onSuccess: ()=>setShowZaloModal(false) })
+        userModal && h(UserModal,{ user: userModal.user||null, onSave: handleSaveUser, onClose: ()=>setUserModal(null) })
       )
     }
 export default App;

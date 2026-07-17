@@ -2,13 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb as db } from '../../lib/task_supabase';
 import { dataCache } from '../../lib/dataCache';
-import { HeadphonesIcon, LayoutDashboard, Calendar, MessageSquare, Send } from 'lucide-react';
-import { useAuth, canSeeTab, getTabPerm } from '../../lib/AuthContext';
-import ModuleShell, { TabButton, ActionButton } from '../../components/ModuleShell';
+import { HeadphonesIcon, LayoutDashboard, Calendar } from 'lucide-react';
+import { useAuth, canSeeTab } from '../../lib/AuthContext';
+import ModuleShell, { TabButton } from '../../components/ModuleShell';
 import DateRangeDropdown from '../../components/DateRangeDropdown';
 import CskhDashboard from './CskhDashboard';
-import ZaloReportTab from './ZaloReportTab';
-import ZaloReportModal from './ZaloReportModal';
 import ZaloKpiTab from './ZaloKpiTab';
 
 // ── Date Utility ──────────────────────────────────────────────────────────
@@ -82,8 +80,6 @@ const CskhApp = () => {
   const { user } = useAuth();
   const canViewDashboard = canSeeTab(user, 'cskh', 'dashboard');
   const canViewKpi = canSeeTab(user, 'cskh', 'zalo_kpi');
-  const canViewReport = canSeeTab(user, 'cskh', 'zalo_report');
-  const canCreateReport = getTabPerm(user, 'cskh', 'zalo_report').create;
 
   const [activeTab, setActiveTab] = usePersistedState('cskh_activeTab', 'menu');
 
@@ -93,8 +89,6 @@ const CskhApp = () => {
   }, [activeTab, user, setActiveTab]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [showZaloModal, setShowZaloModal] = useState(false);
-  const [zaloRefresh, setZaloRefresh] = useState(0);
 
   // ── Date Filter States (persisted) ──────────────────────────────────────
   const [dateRange, setDateRange] = usePersistedState('cskh_dateRange', { preset: 'Tất cả', from: '', to: '' });
@@ -202,13 +196,11 @@ const CskhApp = () => {
       headerRight={<>
         {/* Date filter — DateRangeDropdown chuẩn (đồng bộ với Kho) */}
         <DateRangeDropdown label="Ngày" value={dateRange} onChange={setDateRange} />
-        {canCreateReport && <ActionButton onClick={() => setShowZaloModal(true)} icon={Send} label="BC Zalo" color="#0068ff" />}
       </>}
       tabs={activeTab !== 'menu' ? (
         <>
           {canViewDashboard && <TabButton active={activeTab==='dashboard'} onClick={()=>setActiveTab('dashboard')} icon={LayoutDashboard} label="Tổng Quan" color="#6366f1" />}
           {canViewKpi && <TabButton active={activeTab==='zalo_kpi'} onClick={()=>setActiveTab('zalo_kpi')} icon={HeadphonesIcon} label="KPI CSKH Zalo" color="#16a34a" />}
-          {canViewReport && <TabButton active={activeTab==='zalo_report'} onClick={()=>setActiveTab('zalo_report')} icon={MessageSquare} label="BC Trực Zalo" color="#0068ff" />}
         </>
       ) : null}
     >
@@ -224,8 +216,7 @@ const CskhApp = () => {
           }}>
             {[
               ...(canViewDashboard ? [{ id: 'dashboard', label: 'Tổng Quan', icon: LayoutDashboard, color: '#6366f1' }] : []),
-              ...(canViewKpi ? [{ id: 'zalo_kpi', label: 'KPI CSKH Zalo', icon: HeadphonesIcon, color: '#16a34a' }] : []),
-              ...(canViewReport ? [{ id: 'zalo_report', label: 'BC Trực Zalo (Thủ công)', icon: MessageSquare, color: '#0068ff' }] : [])
+              ...(canViewKpi ? [{ id: 'zalo_kpi', label: 'KPI CSKH Zalo', icon: HeadphonesIcon, color: '#16a34a' }] : [])
             ].map(tabDef => (
               <button
                 key={tabDef.id}
@@ -273,21 +264,9 @@ const CskhApp = () => {
         ) : activeTab === 'zalo_kpi' ? (
           /* KPI Zalo tự quản lý dữ liệu riêng → render ngay (nhận khoảng ngày từ header) */
           <ZaloKpiTab dateRange={dateRange} />
-        ) : activeTab === 'zalo_report' ? (
-          <ZaloReportTab refreshTrigger={zaloRefresh} />
         ) : null}
       </main>
 
-      {/* ── Zalo Report Modal ── */}
-      {showZaloModal && (
-        <ZaloReportModal
-          onClose={() => setShowZaloModal(false)}
-          onSuccess={() => {
-            setZaloRefresh(v => v + 1);
-            setActiveTab('zalo_report');
-          }}
-        />
-      )}
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes fadeInUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
