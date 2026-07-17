@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'vitest';
-import { memberIds, memberUsers, formatAssignees, joinAssignees, assigneesPayload, avatarSlots } from './taskAssignees';
+import { memberIds, memberUsers, formatAssignees, joinAssignees, assigneesPayload, avatarSlots, tallyTasks } from './taskAssignees';
 
 const USERS = [
   { id: 'NV01', name: 'Ngọc', email: 'ngoc@x.vn' },
@@ -92,6 +92,85 @@ describe('avatarSlots', () => {
       const { shown, more } = avatarSlots(mk(n));
       expect(shown.length + more).toBe(n);
     }
+  });
+});
+
+// Luật nghiệp vụ cốt lõi: tổng toàn công ty đếm mỗi việc MỘT lần, còn từng nhân viên thì
+// "có tên trong nhóm là được tính". Đây là chỗ dễ sai nhất và trước đây không có test.
+describe('tallyTasks', () => {
+  const RANGE = ['2026-07-01', '2026-07-31'];
+  const done = (ids, extra = {}) => ({
+    title: 'Việc xong', status: 'COMPLETED', assignee_ids: ids,
+    due_date: '2026-07-10T17:00:00.000Z', completed_date: '2026-07-10T16:00:00.000Z', ...extra,
+  });
+  const tally = tasks => tallyTasks(tasks, ...RANGE);
+
+  test('việc nhóm 3 người: công ty đếm 1, mỗi người đều được +1', () => {
+    const r = tally([done(['A', 'B', 'C'])]);
+    expect(r.company).toEqual({ total: 1, done: 1, onTime: 1 });
+    for (const id of ['A', 'B', 'C']) {
+      expect(r.perStaff.get(id)).toEqual({ total: 1, done: 1, onTime: 1, doneList: ['Việc xong'] });
+    }
+  });
+
+  test('việc trễ hạn: tính done nhưng không tính onTime, cho cả nhóm', () => {
+    const late = done(['A', 'B'], { completed_date: '2026-07-11T17:00:00.000Z' });
+    const r = tally([late]);
+    expect(r.company).toEqual({ total: 1, done: 1, onTime: 0 });
+    expect(r.perStaff.get('A').onTime).toBe(0);
+    expect(r.perStaff.get('B').onTime).toBe(0);
+  });
+
+  test('trễ dưới 60 giây vẫn coi là đúng hạn', () => {
+    const r = tally([done(['A'], { completed_date: '2026-07-10T17:00:30.000Z' })]);
+    expect(r.company.onTime).toBe(1);
+  });
+
+  test('việc đã hủy bị bỏ qua hoàn toàn', () => {
+    const r = tally([{ title: 'x', status: 'CANCELLED', assignee_ids: ['A'], completed_date: '2026-07-10T00:00:00.000Z' }]);
+    expect(r.company).toEqual({ total: 0, done: 0, onTime: 0 });
+    expect(r.perStaff.size).toBe(0);
+  });
+
+  test('việc đang làm: vào tổng nhưng chưa vào done', () => {
+    const r = tally([{ title: 'x', status: 'IN_PROGRESS', assignee_ids: ['A', 'B'] }]);
+    expect(r.company).toEqual({ total: 1, done: 0, onTime: 0 });
+    expect(r.perStaff.get('B')).toEqual({ total: 1, done: 0, onTime: 0, doneList: [] });
+  });
+
+  test('việc xong NGOÀI khoảng thời gian lọc thì không tính', () => {
+    const r = tally([done(['A'], { completed_date: '2026-06-30T10:00:00.000Z' })]);
+    expect(r.company).toEqual({ total: 0, done: 0, onTime: 0 });
+  });
+
+  test('tổng theo từng NV LỚN HƠN tổng công ty khi có việc nhóm — đúng thiết kế', () => {
+    const r = tally([done(['A', 'B', 'C']), done(['A'])]);
+    expect(r.company.done).toBe(2);
+    const sum = [...r.perStaff.values()].reduce((s, v) => s + v.done, 0);
+    expect(sum).toBe(4);
+  });
+
+  test('activeStaff gồm mọi thành viên, kể cả NV đã bị xoá khỏi danh sách', () => {
+    const r = tally([{ title: 'x', status: 'IN_PROGRESS', assignee_ids: ['A', 'NV_DA_XOA'] }]);
+    expect([...r.activeStaff].sort()).toEqual(['A', 'NV_DA_XOA']);
+  });
+
+  test('onTime công ty KHÔNG phụ thuộc NV còn tồn tại hay không (bug cũ)', () => {
+    // Trước đây cTasksOnTime chỉ cộng khi NV còn trong staffMap → việc của NV đã nghỉ làm
+    // phình mẫu số mà không phình tử số, kéo tụt tỉ lệ đúng hạn toàn công ty.
+    const r = tally([done(['NV_DA_NGHI'])]);
+    expect(r.company).toEqual({ total: 1, done: 1, onTime: 1 });
+  });
+
+  test('việc kiểu cũ chỉ có assignee_id vẫn tính đúng', () => {
+    const r = tally([{ title: 'x', status: 'IN_PROGRESS', assignee_id: 'A' }]);
+    expect(r.perStaff.get('A').total).toBe(1);
+  });
+
+  test('việc chưa giao ai: vào tổng công ty, không vào ai cả', () => {
+    const r = tally([{ title: 'x', status: 'IN_PROGRESS', assignee_ids: [] }]);
+    expect(r.company.total).toBe(1);
+    expect(r.perStaff.size).toBe(0);
   });
 });
 

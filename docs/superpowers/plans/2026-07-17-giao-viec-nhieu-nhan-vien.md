@@ -1059,3 +1059,20 @@ Dùng skill `superpowers:requesting-code-review`. Sửa hết các điểm revie
 git add -A
 git commit -m "fix(tasks): sua theo code review viec nhom"
 ```
+
+---
+
+## Sai lệch so với plan (ghi lại khi thực thi, 2026-07-17)
+
+Plan viết trước khi đọc hết chi tiết; những chỗ dưới đây thực tế làm khác, và **bản code mới là chuẩn**:
+
+| Plan nói | Thực tế làm | Vì sao |
+|---|---|---|
+| `TaskApp.jsx:1331` (đổi mã NV) **không cần sửa**, trigger lo | **Sai — đây là bug.** Thêm RPC `doi_ma_nv_trong_viec` + sửa optimistic UI | `.eq('assignee_id', old)` chỉ khớp việc mà NV là người đại diện. Ở việc nhóm mà NV đứng thứ 2, `assignee_ids` giữ mã cũ vừa bị xoá khỏi `nhan_vien` → NV âm thầm mất việc khỏi báo cáo |
+| Test block SQL dùng mã giả `'NV-NEW'` | Dùng 3 NV có thật + bọc `EXCEPTION` để luôn dọn rác | `assignee_id` có khoá ngoại `cong_viec_duoc_giao_assignee_id_fkey` → mã giả vi phạm FK |
+| Bước "vá dữ liệu lệch" (`SET assignee_ids = assignee_ids`) | **Bỏ** | Sau migrate thì bất biến tự đúng; câu đó cũng không kích hoạt nhánh trigger nào (no-op) |
+| Trigger đặt `assignee_id` trong từng nhánh | Các nhánh chỉ quyết định **mảng**; `assignee_id` suy ra ở **một** chỗ cuối hàm | Bất biến được *khẳng định* thay vì *giả định đúng* ở mỗi nhánh. Kèm `uniq_giu_thu_tu()` khử trùng lặp giữ thứ tự |
+| Logic chia ô avatar nằm trong component | Tách `avatarSlots()` ra lib + 6 test | Là phần dễ tràn layout nhất mà lại không test được khi nằm trong component |
+| Luật cộng điểm viết lặp ở 2 file báo cáo | Tách `tallyTasks()` ra lib + 11 test | Đây là luật nghiệp vụ cốt lõi ("có tên trong nhóm là tính hết") mà lặp ở 2 nơi thì sớm muộn cũng lệch nhau |
+| 4 chỗ tự dựng `assignee`/`assignees` | Gom vào `withMembers()` | Bản sao việc lặp chưa có `assignee_id` (trigger DB mới đặt) → phải suy `assignee` từ `assignees` |
+| — | Thêm mục **Thứ tự triển khai** vào spec + đầu file SQL | Deploy bundle trước khi chạy SQL → `PGRST204`, cả công ty không tạo/sửa được việc |

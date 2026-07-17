@@ -177,7 +177,17 @@ Logic thuần tách ra `src/lib/taskAssignees.js` để test bằng vitest (theo
 Trigger SQL: test block trong file SQL (theo tiền lệ `sql/create_huy_phieu.sql`) phủ 4 nhánh —
 insert kiểu cũ, insert kiểu mới, update mảng, update `assignee_id` (đổi mã NV).
 
-## 9. Ngoài phạm vi
+## 9. Thứ tự triển khai (bắt buộc)
+
+1. Chạy `sql/setup_task_multi_assignee.sql` trên Supabase SQL Editor (kèm test block).
+2. Chạy `sql/setup_auto_complete_task.sql` (trigger Zalo bản mới).
+3. Deploy bundle.
+
+**Không được đảo bước 1 và 3.** Bundle mới ghi `assignee_ids` ở mọi lần tạo/sửa việc → lên trước
+SQL thì PostgREST trả `PGRST204 Could not find the 'assignee_ids' column`, cả công ty không tạo/sửa
+được việc nào. Chiều ngược lại an toàn nhờ nhánh fallback của `memberIds()` và trigger đồng bộ.
+
+## 10. Ngoài phạm vi
 
 - `TvDashboard.jsx` — vẫn hiện tên người đại diện.
 - Trạng thái riêng từng người, tiến độ riêng từng người.

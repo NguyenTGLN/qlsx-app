@@ -5,7 +5,7 @@ import { LayoutDashboard, CheckCircle, TrendingUp, Users, RefreshCw, Plus, X, Up
 import ModuleShell, { TabButton } from '../components/ModuleShell';
 import { supabase, fetchAllRows } from '../lib/supabase';
 import { dedupeByProductCode } from '../lib/capacityGuard';
-import { memberIds } from '../lib/taskAssignees';
+import { tallyTasks } from '../lib/taskAssignees';
 import { dataCache } from '../lib/dataCache';
 import { useTabPerm } from '../lib/AuthContext';
 import * as XLSX from 'xlsx';
@@ -117,6 +117,7 @@ const AdminDashboard = () => {
         supabase.from('nhan_vien').select('id, name'),
         supabase.from('product_capacities').select('*').order('product_code'),
         supabase.from('production_orders').select('*, production_logs(actual_quantity)').order('created_at', { ascending: false }).limit(50),
+        // assignee_ids = việc nhóm; assignee_id giữ lại làm fallback của memberIds() cho dòng chưa migrate
         fetchAllRows(() => supabase.from('cong_viec_duoc_giao').select('id, title, assignee_id, assignee_ids, status, completed_date, due_date')),
       ]);
         
@@ -197,31 +198,19 @@ const AdminDashboard = () => {
     let cProdQty = 0, cTasksDone = 0, cTasksTotal = 0, cTasksOnTime = 0; let activeStaff = new Set();
     const staffMap = new Map((nvData||[]).map(nv => [nv.id, { name: nv.name, prodQty: 0, prodDetails: [], tasksDone: 0, tasksTotal: 0, prodPerf: [], tasksDoneList: [], tasksOnTime: 0 }]));
     filteredLogs.forEach(log => { const qty = parseFloat(log.actual_quantity || 0); const pName = log.production_orders?.product_code || ''; const wId = log.worker_id; cProdQty += qty; activeStaff.add(wId); if (wId && staffMap.has(wId)) { const st = staffMap.get(wId); st.prodQty += qty; if(pName && !st.prodDetails.includes(pName)) st.prodDetails.push(pName); st.prodPerf.push(parseFloat(log.performance_rate||0)); } });
-    tLogs.forEach(task => {
-      let isDoneInRange = false;
-      if (task.status === 'COMPLETED' && task.completed_date) { const cd = task.completed_date.split('T')[0]; if (cd >= startStr && cd <= endStr) isDoneInRange = true; }
-      const isPending = task.status !== 'COMPLETED' && task.status !== 'CANCELLED';
-      if (!isDoneInRange && !isPending) return;
-
-      let isLate = false;
-      if (task.due_date && task.completed_date) { isLate = (new Date(task.completed_date).getTime() - new Date(task.due_date).getTime()) > 60000; }
-
-      // Bộ đếm toàn công ty: mỗi việc tính MỘT lần dù giao cho mấy người
-      cTasksTotal += 1;
-      if (isDoneInRange) { cTasksDone += 1; if (!isLate) cTasksOnTime += 1; }
-
-      // Bộ đếm theo nhân viên: việc nhóm tính cho MỌI thành viên có tên trong nhóm
-      memberIds(task).forEach(wId => {
-        activeStaff.add(wId);
-        if (!staffMap.has(wId)) return;
-        const st = staffMap.get(wId);
-        st.tasksTotal += 1;
-        if (isDoneInRange) {
-          st.tasksDone += 1;
-          st.tasksDoneList.push(task.title);
-          if (!isLate) st.tasksOnTime += 1;
-        }
-      });
+    // Luật cộng điểm nằm trong tallyTasks (dùng chung với WorkReport, có test)
+    const tally = tallyTasks(tLogs, startStr, endStr);
+    cTasksTotal = tally.company.total;
+    cTasksDone = tally.company.done;
+    cTasksOnTime = tally.company.onTime;
+    tally.activeStaff.forEach(id => activeStaff.add(id));
+    tally.perStaff.forEach((v, wId) => {
+      const st = staffMap.get(wId);
+      if (!st) return;                        // NV đã bị xoá khỏi nhan_vien
+      st.tasksTotal += v.total;
+      st.tasksDone += v.done;
+      st.tasksOnTime += v.onTime;
+      st.tasksDoneList.push(...v.doneList);
     });
     let finalReport = Array.from(staffMap.values()).filter(s => s.prodQty > 0 || s.tasksTotal > 0).map(s => { const avgPerf = s.prodPerf.length > 0 ? (s.prodPerf.reduce((a,b)=>a+b,0)/s.prodPerf.length) : null; const taskRate = s.tasksDone > 0 ? s.tasksOnTime / s.tasksDone : null; return { ...s, avgPerf, taskRate }; });
     const rankPerfScores = [...new Set(finalReport.map(s => s.avgPerf).filter(v => v !== null))].sort((a,b) => b - a);

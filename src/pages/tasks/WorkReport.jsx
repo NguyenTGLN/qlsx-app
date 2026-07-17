@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
 import { Calendar, Filter, Package, Users, ClipboardList, ShieldAlert, CheckCircle, Clock, Target, Zap } from 'lucide-react';
 import { AttachmentBadge } from '../../components/AttachmentList';
-import { memberIds } from '../../lib/taskAssignees';
+import { memberIds, tallyTasks } from '../../lib/taskAssignees';
 
 // Avatar tròn: ảnh thật nếu có, không thì chữ cái đầu tên trên nền gradient brand
 function RepAvatar({ name, avatar, size = 40 }) {
@@ -148,39 +148,19 @@ export default function WorkReport() {
          }
       });
 
-      (tLogs || []).forEach(task => {
-         let isDoneInRange = false;
-         if (task.status === 'COMPLETED' && task.completed_date) {
-             const cd = task.completed_date.split('T')[0];
-             if (cd >= startStr && cd <= endStr) isDoneInRange = true;
-         }
-         const isPending = task.status !== 'COMPLETED' && task.status !== 'CANCELLED';
-         if (!isDoneInRange && !isPending) return;
-
-         let isLate = false;
-         if (task.due_date && task.completed_date) {
-            isLate = (new Date(task.completed_date).getTime() - new Date(task.due_date).getTime()) > 60000;
-         }
-
-         // Bộ đếm toàn công ty: mỗi việc tính MỘT lần dù giao cho mấy người
-         cTasksTotal += 1;
-         if (isDoneInRange) {
-            cTasksDone += 1;
-            if (!isLate) cTasksOnTime += 1;
-         }
-
-         // Bộ đếm theo nhân viên: có tên trong nhóm là được tính
-         memberIds(task).forEach(wId => {
-            activeStaff.add(wId);
-            if (!genStaffMap.has(wId)) return;
-            const st = genStaffMap.get(wId);
-            st.tasksTotal += 1;
-            if (isDoneInRange) {
-               st.tasksDone += 1;
-               st.tasksDoneList.push(task.title);
-               if (!isLate) st.tasksOnTime += 1;
-            }
-         });
+      // Luật cộng điểm nằm trong tallyTasks (dùng chung với AdminDashboard, có test)
+      const tally = tallyTasks(tLogs || [], startStr, endStr);
+      cTasksTotal = tally.company.total;
+      cTasksDone = tally.company.done;
+      cTasksOnTime = tally.company.onTime;
+      tally.activeStaff.forEach(id => activeStaff.add(id));
+      tally.perStaff.forEach((v, wId) => {
+         const st = genStaffMap.get(wId);
+         if (!st) return;                       // NV đã bị xoá khỏi nhan_vien
+         st.tasksTotal += v.total;
+         st.tasksDone += v.done;
+         st.tasksOnTime += v.onTime;
+         st.tasksDoneList.push(...v.doneList);
       });
 
       let finalReport = Array.from(genStaffMap.values()).filter(s => s.prodQty > 0 || s.tasksTotal > 0);

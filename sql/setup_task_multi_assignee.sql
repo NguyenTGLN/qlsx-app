@@ -4,6 +4,12 @@
 -- Bất biến: assignee_id = assignee_ids[1] (người đại diện), do trigger dưới canh giữ.
 -- Giữ assignee_id để TvDashboard + các query cũ chạy nguyên, không phải sửa.
 -- Luật nghiệp vụ: ai xong trước là xong cả nhóm → 1 việc = 1 dòng = 1 trạng thái.
+--
+-- >>> CHẠY FILE NÀY TRƯỚC KHI DEPLOY BUNDLE MỚI <<<
+-- Bundle mới ghi cột assignee_ids ở mọi lần tạo/sửa việc. Nếu bundle lên trước, PostgREST trả
+-- PGRST204 "Could not find the 'assignee_ids' column" → cả công ty không tạo/sửa được việc nào.
+-- Ngược lại (SQL trước, bundle cũ còn chạy) thì an toàn: bundle cũ chỉ ghi assignee_id, trigger
+-- bên dưới tự dựng mảng.
 -- ==============================================================================
 
 -- 1. CỘT MỚI
@@ -22,40 +28,53 @@ UPDATE public.cong_viec_duoc_giao
 CREATE INDEX IF NOT EXISTS idx_cv_assignee_ids
   ON public.cong_viec_duoc_giao USING GIN (assignee_ids);
 
--- 4. TRIGGER ĐỒNG BỘ HAI CHIỀU
+-- 4a. KHỬ TRÙNG LẶP GIỮ NGUYÊN THỨ TỰ (bản SQL của memberIds() bên JS).
+--     Thứ tự có nghĩa: phần tử đầu là người đại diện, và giao diện hiện theo đúng thứ tự này
+--     → không dùng được `array_agg(DISTINCT ...)` vì nó sắp xếp lại.
+CREATE OR REPLACE FUNCTION public.uniq_giu_thu_tu(p_arr text[])
+RETURNS text[] LANGUAGE sql IMMUTABLE AS $$
+    SELECT COALESCE(array_agg(x ORDER BY min_ord), '{}'::text[])
+      FROM (
+        SELECT x, MIN(ord) AS min_ord
+          FROM unnest(COALESCE(p_arr, '{}'::text[])) WITH ORDINALITY AS t(x, ord)
+         WHERE x IS NOT NULL AND x <> ''
+         GROUP BY x
+      ) s;
+$$;
+
+-- 4b. TRIGGER ĐỒNG BỘ HAI CHIỀU
+--     Các nhánh chỉ quyết định MẢNG; assignee_id được suy ra ở MỘT chỗ duy nhất ở cuối hàm.
+--     Nhờ vậy bất biến được *khẳng định*, không phải *giả định đúng* ở từng nhánh.
 CREATE OR REPLACE FUNCTION public.sync_task_assignees()
 RETURNS TRIGGER AS $$
 BEGIN
+    NEW.assignee_ids := public.uniq_giu_thu_tu(NEW.assignee_ids);
+
     IF TG_OP = 'INSERT' THEN
-        -- Ghi kiểu mới (có mảng) → mảng quyết định người đại diện
-        IF COALESCE(array_length(NEW.assignee_ids, 1), 0) > 0 THEN
-            NEW.assignee_id := NEW.assignee_ids[1];
         -- Ghi kiểu cũ (chỉ có assignee_id) → dựng mảng một phần tử
-        ELSIF NEW.assignee_id IS NOT NULL THEN
+        IF COALESCE(array_length(NEW.assignee_ids, 1), 0) = 0 AND NEW.assignee_id IS NOT NULL THEN
             NEW.assignee_ids := ARRAY[NEW.assignee_id];
-        ELSE
-            NEW.assignee_ids := '{}';
         END IF;
 
-    ELSE  -- UPDATE
-        IF NEW.assignee_ids IS DISTINCT FROM OLD.assignee_ids THEN
-            -- Mảng đổi → mảng thắng (kể cả khi assignee_id cũng đổi cùng lúc)
-            IF COALESCE(array_length(NEW.assignee_ids, 1), 0) > 0 THEN
-                NEW.assignee_id := NEW.assignee_ids[1];
-            ELSE
-                NEW.assignee_id := NULL;
-            END IF;
-        ELSIF NEW.assignee_id IS DISTINCT FROM OLD.assignee_id THEN
-            -- Chỉ assignee_id đổi → đường đổi mã NV (TaskApp.jsx:1331).
-            -- Thay đúng id cũ trong mảng, giữ nguyên các thành viên khác và thứ tự.
-            IF NEW.assignee_id IS NULL THEN
-                NEW.assignee_ids := '{}';
-            ELSIF OLD.assignee_id IS NULL THEN
-                NEW.assignee_ids := ARRAY[NEW.assignee_id];
-            ELSE
-                NEW.assignee_ids := array_replace(COALESCE(OLD.assignee_ids, '{}'), OLD.assignee_id, NEW.assignee_id);
-            END IF;
+    ELSIF NEW.assignee_ids IS NOT DISTINCT FROM OLD.assignee_ids
+          AND NEW.assignee_id IS DISTINCT FROM OLD.assignee_id THEN
+        -- CHỈ assignee_id đổi → đường ghi kiểu cũ (đổi mã NV).
+        -- Thay đúng id cũ trong mảng, giữ nguyên các thành viên khác và thứ tự.
+        -- (Mảng đổi thì không vào đây → mảng luôn thắng, kể cả khi cả hai cùng đổi.)
+        IF NEW.assignee_id IS NULL THEN
+            NEW.assignee_ids := '{}';
+        ELSIF OLD.assignee_id IS NULL OR COALESCE(array_length(OLD.assignee_ids, 1), 0) = 0 THEN
+            NEW.assignee_ids := ARRAY[NEW.assignee_id];
+        ELSE
+            NEW.assignee_ids := public.uniq_giu_thu_tu(array_replace(OLD.assignee_ids, OLD.assignee_id, NEW.assignee_id));
         END IF;
+    END IF;
+
+    -- BẤT BIẾN: assignee_id = assignee_ids[1]. Khẳng định ở đúng một nơi, cho mọi đường ghi.
+    IF COALESCE(array_length(NEW.assignee_ids, 1), 0) > 0 THEN
+        NEW.assignee_id := NEW.assignee_ids[1];
+    ELSE
+        NEW.assignee_id := NULL;
     END IF;
 
     RETURN NEW;
@@ -84,9 +103,15 @@ BEGIN
         RAISE EXCEPTION 'Chỉ Admin' USING errcode = '42501';
     END IF;
 
+    -- Nhánh CASE là lưới an toàn cho dòng chưa migrate (assignee_ids rỗng nhưng assignee_id có):
+    -- array_replace('{}', ...) vẫn ra '{}' → mảng không đổi → trigger no-op → assignee_id kẹt lại
+    -- mã cũ vừa bị xoá khỏi nhan_vien → vi phạm khoá ngoại. Phải dựng mảng từ assignee_id trước.
     UPDATE public.cong_viec_duoc_giao
-       SET assignee_ids = array_replace(assignee_ids, p_from, p_to)
-     WHERE assignee_ids @> ARRAY[p_from];
+       SET assignee_ids = array_replace(
+             CASE WHEN COALESCE(array_length(assignee_ids, 1), 0) = 0
+                  THEN ARRAY[assignee_id] ELSE assignee_ids END,
+             p_from, p_to)
+     WHERE assignee_ids @> ARRAY[p_from] OR assignee_id = p_from;
 
     GET DIAGNOSTICS v_count = ROW_COUNT;
     RETURN v_count;
@@ -98,7 +123,7 @@ GRANT EXECUTE ON FUNCTION public.doi_ma_nv_trong_viec(text,text) TO authenticate
 
 -- ==============================================================================
 -- TEST BLOCK — chạy tay trong SQL Editor. Tự dọn sạch kể cả khi test fail.
--- Kỳ vọng in ra: "OK: tat ca 7 test deu dat".
+-- Kỳ vọng in ra: "OK: tat ca 9 test deu dat".
 -- Dùng 3 nhân viên CÓ THẬT vì assignee_id có khoá ngoại tới nhan_vien.
 -- ==============================================================================
 DO $$
@@ -165,8 +190,22 @@ BEGIN
     IF v_ids <> ARRAY[v_nv[1], v_nv[3]] THEN RAISE EXCEPTION 'T7 fail (mang): %', v_ids; END IF;
     IF v_one <> v_nv[1] THEN RAISE EXCEPTION 'T7 fail (nguoi dai dien bi doi): %', v_one; END IF;
 
+    -- T8: đổi assignee_id thành người ĐÃ có trong nhóm → không được để lại phần tử trùng.
+    --     Mảng ['A','B'] + SET assignee_id='B' → array_replace ra ['B','B'], phải khử còn ['B'].
+    UPDATE public.cong_viec_duoc_giao SET assignee_ids = ARRAY[v_nv[1], v_nv[2]] WHERE id = 'CV-TEST1';
+    UPDATE public.cong_viec_duoc_giao SET assignee_id = v_nv[2] WHERE id = 'CV-TEST1';
+    SELECT assignee_ids, assignee_id INTO v_ids, v_one FROM public.cong_viec_duoc_giao WHERE id = 'CV-TEST1';
+    IF v_ids <> ARRAY[v_nv[2]] THEN RAISE EXCEPTION 'T8 fail (con trung lap): %', v_ids; END IF;
+    IF v_one <> v_nv[2] THEN RAISE EXCEPTION 'T8 fail (bat bien vo): % vs %', v_one, v_ids; END IF;
+
+    -- T9: ghi mảng có phần tử trùng + rỗng → trigger tự khử, giữ nguyên thứ tự
+    UPDATE public.cong_viec_duoc_giao SET assignee_ids = ARRAY[v_nv[2], v_nv[1], v_nv[2], ''] WHERE id = 'CV-TEST1';
+    SELECT assignee_ids, assignee_id INTO v_ids, v_one FROM public.cong_viec_duoc_giao WHERE id = 'CV-TEST1';
+    IF v_ids <> ARRAY[v_nv[2], v_nv[1]] THEN RAISE EXCEPTION 'T9 fail: %', v_ids; END IF;
+    IF v_one <> v_nv[2] THEN RAISE EXCEPTION 'T9 fail (bat bien vo): %', v_one; END IF;
+
     DELETE FROM public.cong_viec_duoc_giao WHERE id IN ('CV-TEST1', 'CV-TEST2');
-    RAISE NOTICE 'OK: tat ca 7 test deu dat';
+    RAISE NOTICE 'OK: tat ca 9 test deu dat';
 EXCEPTION WHEN OTHERS THEN
     -- Dọn sạch rồi mới ném lỗi ra: test fail giữa chừng không được để lại việc rác trên app
     DELETE FROM public.cong_viec_duoc_giao WHERE id IN ('CV-TEST1', 'CV-TEST2');

@@ -219,6 +219,10 @@ graph LR
   Đọc nhóm **luôn qua `memberIds()`** (`src/lib/taskAssignees.js`), đừng đọc thẳng `assignee_id`.
   Đổi mã NV phải gọi RPC `doi_ma_nv_trong_viec` (vá cả thành viên không phải đại diện).
   Script DB: `sql/setup_task_multi_assignee.sql`.
+  > ⚠️ **Thứ tự bắt buộc: chạy SQL TRƯỚC, deploy bundle SAU.** Bundle mới ghi cột `assignee_ids`
+  > ở mọi lần tạo/sửa việc; lên trước SQL thì PostgREST trả `PGRST204 Could not find the
+  > 'assignee_ids' column` → **cả công ty không tạo/sửa được việc nào**. Chiều ngược lại
+  > (SQL trước, bundle cũ còn chạy) thì an toàn nhờ nhánh fallback của `memberIds()`.
 - **Trạng thái**: `IN_PROGRESS` → `COMPLETED` / `CANCELLED`
 - **Lặp lại (Recurrence)**: `NONE`, `DAILY`, `WEEKLY`, `MONTHLY` — tự động tạo instance mới
 - **Tiến độ (Progress Updates)**: Ghi nhận cập nhật, comment theo dòng thời gian
