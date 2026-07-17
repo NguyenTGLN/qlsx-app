@@ -10,6 +10,7 @@ import { useNavigate } from 'react-router-dom';
     import AttachmentInput from '../../components/AttachmentInput';
     import AttachmentList, { AttachmentBadge } from '../../components/AttachmentList';
     import { collectPaths, deleteAttachments, deleteRemoved } from '../../lib/attachmentStorage';
+    import { memberIds, memberUsers, formatAssignees, joinAssignees, assigneesPayload } from '../../lib/taskAssignees';
     import {
       ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart,
       ListChecks, Loader2, CheckCircle2, AlertTriangle, Send, Search,
@@ -142,6 +143,14 @@ import { useNavigate } from 'react-router-dom';
     // ============================================================
     // API
     // ============================================================
+    // Gắn người thực hiện vào task để render: `assignees` là cả nhóm, `assignee` là người đại diện.
+    // Suy assignee TỪ assignees chứ không đọc t.assignee_id: việc vừa insert (kể cả bản sao việc lặp)
+    // chưa có assignee_id trong object JS — cột đó do trigger DB đặt.
+    function withMembers(t, uMap) {
+      const assignees = memberUsers(t, uMap)
+      return { ...t, assignees, assignee: assignees[0] || null }
+    }
+
     async function genTaskId() {
       const { data } = await db.from('cong_viec_duoc_giao').select('id').like('id','CV-%').order('id',{ascending:false}).limit(20)
       let max = 0; for (const r of (data||[])) { const m=r.id.match(/^CV-(\d+)$/); if(m&&+m[1]>max) max=+m[1] }
@@ -169,9 +178,9 @@ import { useNavigate } from 'react-router-dom';
       for (const p of (pRes.data||[])) {
         const arr = pMap.get(p.task_id) || []; arr.push({...p, updatedBy: uMap.get(p.updated_by_id)||null}); pMap.set(p.task_id, arr)
       }
-      const tasks = (tRes.data||[]).map(t=>({
-        ...t, status: t.status === 'PENDING' ? 'IN_PROGRESS' : t.status, assignee: uMap.get(t.assignee_id)||null, progressUpdates: pMap.get(t.id)||[],
-      }))
+      const tasks = (tRes.data||[]).map(t=>withMembers({
+        ...t, status: t.status === 'PENDING' ? 'IN_PROGRESS' : t.status, progressUpdates: pMap.get(t.id)||[],
+      }, uMap))
 
       const pendingOrders = (poRes.data || []).map(o => {
         const produced = (o.production_logs || []).reduce((sum, log) => sum + parseFloat(log.actual_quantity || 0), 0);
@@ -194,13 +203,15 @@ import { useNavigate } from 'react-router-dom';
       const id = await genTaskId()
       const row = {
         id, title:form.title, description:form.description||'', status:STATUS.IN_PROGRESS, priority:form.priority||'', label:form.label||'',
-        assignee_id:form.assignee_id, progress:0, sort_order:0, created_date:new Date().toISOString(),
+        assignee_ids:form.assignee_ids||[], progress:0, sort_order:0, created_date:new Date().toISOString(),
         due_date:form.due_date||null, completed_date:null, updated_by:createdBy, last_reminded_date:null,
         recurrence_type:form.recurrence_type||RECUR.NONE, recurrence_parent_id:null, last_auto_created_date:null,
         attachments:form.attachments||[],
       }
-      const { error } = await db.from('cong_viec_duoc_giao').insert(row)
-      if (error) throw error; return row
+      // Lấy lại bản DB: trigger sync_task_assignees mới là nơi đặt assignee_id (người đại diện),
+      // trả `row` của JS sẽ thiếu cột đó → thẻ việc vừa tạo mất người cho tới lần reload sau.
+      const { data, error } = await db.from('cong_viec_duoc_giao').insert(row).select().single()
+      if (error) throw error; return data
     }
 
     async function apiUpdateTask(id, data) {
@@ -282,7 +293,7 @@ import { useNavigate } from 'react-router-dom';
           const newId = await genTaskId()
           const clone = {
             id: newId, title: tmpl.title, description: tmpl.description || '', priority: tmpl.priority || '', label: tmpl.label || '',
-            assignee_id: tmpl.assignee_id, status: STATUS.IN_PROGRESS, progress: 0, sort_order: 0,
+            assignee_ids: memberIds(tmpl), status: STATUS.IN_PROGRESS, progress: 0, sort_order: 0,
             due_date: nextDue, completed_date: null, created_date: new Date().toISOString(), updated_by: tmpl.updated_by, last_reminded_date: null,
             recurrence_type: RECUR.NONE, recurrence_parent_id: tmpl.id, last_auto_created_date: null,
           }
@@ -298,7 +309,7 @@ import { useNavigate } from 'react-router-dom';
           const newId = await genTaskId()
           const clone = {
             id: newId, title: tmpl.title, description: tmpl.description || '', priority: tmpl.priority || '', label: tmpl.label || '',
-            assignee_id: tmpl.assignee_id, status: STATUS.IN_PROGRESS, progress: 0, sort_order: 0,
+            assignee_ids: memberIds(tmpl), status: STATUS.IN_PROGRESS, progress: 0, sort_order: 0,
             due_date: nextDue, completed_date: null, created_date: new Date().toISOString(), updated_by: tmpl.updated_by, last_reminded_date: null,
             recurrence_type: RECUR.NONE, recurrence_parent_id: tmpl.id, last_auto_created_date: null,
           }
@@ -417,6 +428,24 @@ import { useNavigate } from 'react-router-dom';
       return h('div',{className:`flex flex-col items-center gap-0.5 min-w-0 ${className}`},
         h(Avatar,{user, size}),
         h('span',{className:'text-[9px] sm:text-[10px] font-bold text-gray-700 text-center leading-tight truncate w-full'}, user?.name || 'Chưa giao')
+      )
+    }
+
+    // Việc nhóm: chồng avatar + nhãn rút gọn "Ngọc +2". Chỉ có 44-70px bề ngang ở thẻ việc và ô
+    // bảng, nên avatar nhóm dùng size 'sm' và tối đa 3 ô (đông hơn thì 2 avatar + "+N").
+    // Một người thì trả về AvatarName y như cũ — giữ nguyên avatar to đang dùng hằng ngày.
+    const GROUP_MAX_SLOTS = 3
+    function AvatarGroup({users = [], size='md', className=''}) {
+      if (users.length <= 1) return h(AvatarName, {user: users[0] || null, size, className})
+      const shown = users.length <= GROUP_MAX_SLOTS ? users : users.slice(0, GROUP_MAX_SLOTS - 1)
+      const more  = users.length - shown.length
+      const names = users.map(u => u.name)
+      return h('div',{className:`flex flex-col items-center gap-0.5 min-w-0 ${className}`, title: names.join(', ')},
+        h('div',{className:'flex -space-x-2'},
+          shown.map(u => h('div',{key:u.id, className:'ring-2 ring-white rounded-full'}, h(Avatar,{user:u, size:'sm'}))),
+          more > 0 && h('div',{className:`${AVATAR_SZ.sm} rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold ring-2 ring-white flex-shrink-0`}, `+${more}`)
+        ),
+        h('span',{className:'text-[9px] sm:text-[10px] font-bold text-gray-700 text-center leading-tight truncate w-full'}, formatAssignees(names))
       )
     }
 
@@ -584,7 +613,7 @@ import { useNavigate } from 'react-router-dom';
       }
 
       const userStats = users.map(u => {
-        const ut = tasks.filter(t => t.assignee_id === u.id)
+        const ut = tasks.filter(t => memberIds(t).includes(u.id))
         return {
           ...u, total: ut.length,
           active: ut.filter(t => t.status === STATUS.IN_PROGRESS).length,
@@ -667,7 +696,9 @@ import { useNavigate } from 'react-router-dom';
               reporter: currentUser?.name || 'Unknown',
               stats,
               userStats: userStats.map(u => ({name: u.name, total: u.total, active: u.active, done: u.done, canceled: u.canceled, late: u.late})),
-              tasks: tasks.map(t => ({id: t.id, title: t.title, status: t.status, assignee: users.find(u=>u.id===t.assignee_id)?.name||'Chưa giao', due_date: t.due_date, priority: t.priority}))
+              // `assignee` giữ nguyên KIỂU CHUỖI để n8n in thẳng vào ảnh báo cáo, không phải sửa workflow;
+              // việc nhóm thành "Ngọc, Phong". `assignees` là field mới cho khi nào n8n cần tách từng người.
+              tasks: tasks.map(t => ({id: t.id, title: t.title, status: t.status, assignee: joinAssignees((t.assignees||[]).map(u=>u.name)), assignees: (t.assignees||[]).map(u=>({id:u.id, name:u.name})), due_date: t.due_date, priority: t.priority}))
             };
             try {
               const res = await fetch(WEBHOOK_URL, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
@@ -771,7 +802,7 @@ import { useNavigate } from 'react-router-dom';
                       className: 'bg-white border border-gray-200 hover:border-blue-400 hover:shadow-md rounded-lg p-2.5 sm:p-3 cursor-pointer transition-all flex gap-2.5 relative shadow-sm'
                     },
                     // Avatar to + tên bên dưới, đứng riêng cột trái
-                    h(AvatarName, {user: t.assignee, className: 'w-11 sm:w-14 shrink-0 pt-0.5'}),
+                    h(AvatarGroup, {users: t.assignees || [], className: 'w-11 sm:w-14 shrink-0 pt-0.5'}),
                     h('div', {className: 'flex-1 min-w-0 flex flex-col gap-1.5'},
                       h('div', {className: 'flex items-start justify-between gap-2'},
                         h('span', {className: 'font-bold text-[12px] sm:text-[13px] line-clamp-2 text-gray-900'}, t.title, h(AttachmentBadge,{list:t.attachments})),
@@ -834,8 +865,8 @@ import { useNavigate } from 'react-router-dom';
       const [search,setSearch] = useState(''); const [stFilter,setStFilter] = useState('IN_PROGRESS'); const isAdmin = currentUser.role===ROLE.ADMIN
       const canDelete = getTabPerm(currentUser, 'tasks', 'tasks').delete;
       const filtered = tasks.filter(t=>{
-        if (stFilter!=='ALL'&&t.status!==stFilter) return false; if (assFilter!=='ALL'&&t.assignee_id!==assFilter) return false
-        if (search) { const q=search.toLowerCase(); if (!t.title.toLowerCase().includes(q)&&!t.id.toLowerCase().includes(q)&&!(t.assignee?.name||'').toLowerCase().includes(q)&&!(t.label||'').toLowerCase().includes(q)) return false }
+        if (stFilter!=='ALL'&&t.status!==stFilter) return false; if (assFilter!=='ALL'&&!memberIds(t).includes(assFilter)) return false
+        if (search) { const q=search.toLowerCase(); const names=(t.assignees||[]).map(u=>(u.name||'').toLowerCase()); if (!t.title.toLowerCase().includes(q)&&!t.id.toLowerCase().includes(q)&&!names.some(n=>n.includes(q))&&!(t.label||'').toLowerCase().includes(q)) return false }
         return true
       }).sort((a, b) => {
         const nameA = (a.assignee?.name || 'zzz').toLowerCase(); const nameB = (b.assignee?.name || 'zzz').toLowerCase()
@@ -873,7 +904,7 @@ import { useNavigate } from 'react-router-dom';
                 : filtered.map(t=>
                     h('tr',{key:t.id, className:'border-b border-gray-100 cursor-pointer table-row-hover group', onClick:()=>onDetail(t)},
                       h('td',{className:tdClass}, h('div',{className:'font-bold text-gray-900 truncate flex items-center gap-1.5'},h('span',{className:'truncate'},t.title),h(AttachmentBadge,{list:t.attachments}))),
-                      h('td',{className:tdClass}, h(AvatarName,{user:t.assignee, size:'md', className:'mx-auto max-w-[70px]'})),
+                      h('td',{className:tdClass}, h(AvatarGroup,{users:t.assignees||[], size:'md', className:'mx-auto max-w-[70px]'})),
                       h('td',{className:tdClass}, h(StatusBadge,{status:t.status})),
                       h('td',{className:tdClass+' text-center'}, h(CompactWarning,{due_date:t.due_date,status:t.status, completed_date:t.completed_date})),
                       h('td',{className:tdClass+' text-gray-500'}, t.progressUpdates?.length ? t.progressUpdates[t.progressUpdates.length - 1].content : 'Chưa cập nhật'),
@@ -892,7 +923,7 @@ import { useNavigate } from 'react-router-dom';
     function UserTaskBoard({user, tasks, onBack, onDetail, onEdit, onUpdate, onRemind, onDelete, currentUser}) {
       // Mặc định mở tab "Đang làm"; nếu người này không có việc đang làm thì về "Tất cả" (tránh mở trang trống)
       const [tab, setTab] = useState(() =>
-        tasks.some(t => t.assignee_id === user.id && t.status === STATUS.IN_PROGRESS) ? 'ACTIVE' : 'ALL');
+        tasks.some(t => memberIds(t).includes(user.id) && t.status === STATUS.IN_PROGRESS) ? 'ACTIVE' : 'ALL');
       const isAdmin = currentUser.role === ROLE.ADMIN;
       const tPerm = getTabPerm(currentUser, 'tasks', 'tasks');
       const canDelete = tPerm.delete;
@@ -928,7 +959,7 @@ import { useNavigate } from 'react-router-dom';
         });
       };
 
-      const myTasks = sortKanbanTasks(tasks.filter(t => t.assignee_id === user.id));
+      const myTasks = sortKanbanTasks(tasks.filter(t => memberIds(t).includes(user.id)));
       const activeTasks = myTasks.filter(t => t.status === STATUS.IN_PROGRESS);
       const completedTasks = myTasks.filter(t => t.status === STATUS.COMPLETED);
       const displayTasks = tab === 'ALL' ? myTasks : (tab === 'ACTIVE' ? activeTasks : completedTasks);
@@ -1022,12 +1053,15 @@ import { useNavigate } from 'react-router-dom';
       const canChangeAssignee = hasPerm(currentUser,'change_assignee');
       const canEditRecurrence = hasPerm(currentUser,'edit_recurrence');
       
-      const [f, setF] = useState({ title: task?.title||'', description: task?.description||'', label: task?.label||'', assignee_id: task?.assignee_id||'', due_date: toLocalInput(task?.due_date), recurrence_type: task?.recurrence_type||RECUR.NONE, status: task?.status||STATUS.IN_PROGRESS, attachments: task?.attachments||[] })
+      const [f, setF] = useState({ title: task?.title||'', description: task?.description||'', label: task?.label||'', assignee_ids: memberIds(task), due_date: toLocalInput(task?.due_date), recurrence_type: task?.recurrence_type||RECUR.NONE, status: task?.status||STATUS.IN_PROGRESS, attachments: task?.attachments||[] })
       const [busy, setBusy] = useState(false); const set = (k,v) => setF(p=>({...p,[k]:v}))
       const initialFiles = useRef(task?.attachments||[])   // mốc so sánh để dọn file thừa khi bấm Hủy
 
       async function submit(e) {
-        e.preventDefault(); setBusy(true)
+        e.preventDefault()
+        // Hộp checkbox không có `required` như thẻ <select> cũ → phải tự chặn
+        if (!f.assignee_ids.length) { alert('Chọn ít nhất một người thực hiện.'); return }
+        setBusy(true)
         try {
           await onSave({...f, due_date: f.due_date ? new Date(f.due_date).toISOString() : null})
           // Lưu xong mới xoá file cũ đã bị gỡ khỏi form (xoá sớm hơn mà người dùng bấm Hủy
@@ -1045,8 +1079,22 @@ import { useNavigate } from 'react-router-dom';
           h(Field,{label:'Tiêu đề',required:true}, h('input',{className:inp,value:f.title,onChange:e=>set('title',e.target.value),placeholder:'Tên việc...',required:true,autoFocus:true})),
           h(Field,{label:'Mô tả'}, h('textarea',{className:inp+' resize-none',rows:2,value:f.description,onChange:e=>set('description',e.target.value),placeholder:'Chi tiết...'})),
           h(Field,{label:'Đính kèm'}, h(AttachmentInput,{value:f.attachments,onChange:up=>setF(p=>({...p,attachments:up(p.attachments||[])})),folder:'tasks',userId:currentUser.id,protectedPaths:collectPaths(initialFiles.current)})),
+          h(Field,{label:`Người thực hiện (${f.assignee_ids.length})` + (!canChangeAssignee && isEdit ? ' 🔒' : ''),required:true},
+            h('div',{className:`border border-gray-200 rounded-xl p-2 max-h-44 overflow-y-auto grid grid-cols-2 gap-1 ${(!canChangeAssignee && isEdit) ? 'bg-gray-100' : 'bg-white'}`},
+              users.map(u => {
+                const on = f.assignee_ids.includes(u.id)
+                return h('label',{key:u.id,
+                  className:`flex items-center gap-1.5 px-1.5 py-1 rounded-lg select-none ${(!canChangeAssignee && isEdit) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-gray-50'} ${on ? 'bg-blue-50' : ''}`},
+                  h('input',{type:'checkbox', checked:on, disabled:(!canChangeAssignee && isEdit),
+                    className:'w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0',
+                    onChange:()=>setF(p=>({...p, assignee_ids: on ? p.assignee_ids.filter(x=>x!==u.id) : [...p.assignee_ids, u.id]}))}),
+                  h(Avatar,{user:u, size:'sm'}),
+                  h('span',{className:'text-[11px] sm:text-xs font-semibold text-gray-700 truncate'}, u.name)
+                )
+              })
+            )
+          ),
           h('div',{className:'grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4'},
-            h(Field,{label:'Người thực hiện' + (!canChangeAssignee && isEdit ? ' 🔒' : ''),required:true}, h('select',{className:sel + (!canChangeAssignee && isEdit ? ' bg-gray-100 cursor-not-allowed' : ''),value:f.assignee_id,onChange:e=>set('assignee_id',e.target.value),required:true,disabled:(!canChangeAssignee && isEdit)}, h('option',{value:''},'-- Chọn --'), users.map(u=>h('option',{key:u.id,value:u.id},u.name)))),
             h(Field,{label:'Hạn chót' + (!canEditDueDate && isEdit ? ' 🔒' : '')}, h('input',{type:'datetime-local',className:inp + (!canEditDueDate && isEdit ? ' bg-gray-100 cursor-not-allowed' : ''),value:f.due_date,onChange:e=>set('due_date',e.target.value),disabled:!canEditDueDate && isEdit})),
             h(Field,{label:'Nhãn'}, h('input',{className:inp,value:f.label,onChange:e=>set('label',e.target.value),placeholder:'Bảo hành, KH...'})),
             h(Field,{label:'Lặp lại' + (!canEditRecurrence && isEdit ? ' 🔒' : '')}, h('select',{className:sel + (!canEditRecurrence && isEdit ? ' bg-gray-100 cursor-not-allowed' : ''),value:f.recurrence_type,onChange:e=>set('recurrence_type',e.target.value),disabled:!canEditRecurrence && isEdit}, Object.entries(RECUR_CFG).map(([k,v])=>h('option',{key:k,value:k},v)))),
@@ -1123,7 +1171,14 @@ import { useNavigate } from 'react-router-dom';
             ),
 
             h('div',{className:'grid grid-cols-2 gap-2'},
-              h('div',{className:'bg-gray-50 rounded-xl p-3'}, h('div',{className:'text-[9px] font-bold text-gray-400 mb-1'},'NGƯỜI THỰC HIỆN'), h('div',{className:'flex items-center gap-1.5'}, h(Avatar,{user:task.assignee,size:'sm'}), h('span',{className:'text-xs font-bold text-gray-800 truncate'},task.assignee?.name||'—'))),
+              // Chỗ duy nhất hiện ĐỦ tên cả nhóm — thẻ việc và bảng việc đều rút gọn "Ngọc +2"
+              h('div',{className:'bg-gray-50 rounded-xl p-3'}, h('div',{className:'text-[9px] font-bold text-gray-400 mb-1'},'NGƯỜI THỰC HIỆN'),
+                (task.assignees||[]).length === 0
+                  ? h('div',{className:'flex items-center gap-1.5'}, h(Avatar,{user:null,size:'sm'}), h('span',{className:'text-xs font-bold text-gray-800'},'—'))
+                  : h('div',{className:'flex flex-wrap gap-x-3 gap-y-1.5'}, (task.assignees||[]).map(u =>
+                      h('div',{key:u.id, className:'flex items-center gap-1.5 min-w-0'}, h(Avatar,{user:u,size:'sm'}), h('span',{className:'text-xs font-bold text-gray-800 truncate'},u.name))
+                    ))
+              ),
               h('div',{className:'bg-gray-50 rounded-xl p-3'}, h('div',{className:'text-[9px] font-bold text-gray-400 mb-1'},'HẠN CHÓT'), h(CompactWarning,{due_date:task.due_date,status:task.status, completed_date:task.completed_date})),
               task.label && h('div',{className:'bg-gray-50 rounded-xl p-3'}, h('div',{className:'text-[9px] font-bold text-gray-400 mb-1'},'NHÃN'), h('span',{className:'text-xs font-bold text-gray-700'},task.label)),
               
@@ -1202,8 +1257,7 @@ import { useNavigate } from 'react-router-dom';
             const newClones = await checkRecurring(t)
             if (newClones.length > 0 || isNewDay) {
               const um = new Map(u.map(x=>[x.id,x]))
-              const all = [...newClones.map(c=>({...c, assignee:um.get(c.assignee_id)||null, progressUpdates:[]})), ...t]
-                .map(task=>({...task, assignee:um.get(task.assignee_id)||task.assignee||null}))
+              const all = [...newClones.map(c=>({...c, progressUpdates:[]})), ...t].map(task=>withMembers(task, um))
               setUsers(u)
               setTasks(all)
               if (newClones.length > 0) toast(`Tự động tạo ${newClones.length} việc lặp lại`)
@@ -1234,7 +1288,7 @@ import { useNavigate } from 'react-router-dom';
           setPendingOrders(po)
           const newClones = await checkRecurring(t)
           const um = new Map(u.map(x=>[x.id,x]))
-          const all = [...newClones.map(c=>({...c, assignee:um.get(c.assignee_id)||null, progressUpdates:[]})), ...t].map(task=>({...task, assignee:um.get(task.assignee_id)||task.assignee||null}))
+          const all = [...newClones.map(c=>({...c, progressUpdates:[]})), ...t].map(task=>withMembers(task, um))
           setTasks(all)
           // Lưu cache sau khi fetch xong
           dataCache.set(TASK_CACHE_KEY, { users: u, tasks: all, pendingOrders: po });
@@ -1244,11 +1298,23 @@ import { useNavigate } from 'react-router-dom';
       // handleLogin giữ lại cho tương thích nhưng không dùng LoginScreen nữa
       function handleLogin(user) { setMe(user); bootstrap(user) }
       
-      async function handleCreateTask(form) { const raw = await apiCreateTask(form, me.id); setTasks(ts=>[{...raw,assignee:users.find(u=>u.id===raw.assignee_id)||null,progressUpdates:[]},...ts]); toast('Đã tạo việc!') }
+      async function handleCreateTask(form) {
+        const raw = await apiCreateTask(form, me.id)
+        const um = new Map(users.map(u=>[u.id,u]))
+        setTasks(ts=>[withMembers({...raw, progressUpdates:[]}, um),...ts]); toast('Đã tạo việc!')
+      }
       async function handleUpdateTask(id, data) {
-        const prev = tasks.find(t=>t.id===id); const optimistic = {...prev,...data, assignee:users.find(u=>u.id===(data.assignee_id||prev.assignee_id))||prev.assignee}
-        setTasks(ts=>ts.map(t=>t.id===id?optimistic:t)); if (detailTask?.id===id) setDetailTask(d=>({...d,...data,assignee:optimistic.assignee}))
-        try { await apiUpdateTask(id,{...data,updated_by:me.id}); toast('Đã cập nhật!') } catch(e) { setTasks(ts=>ts.map(t=>t.id===id?prev:t)); toast('Lỗi: '+e.message,'error') }
+        const prev = tasks.find(t=>t.id===id)
+        const um = new Map(users.map(u=>[u.id,u]))
+        const optimistic = withMembers({...prev,...data}, um)
+        setTasks(ts=>ts.map(t=>t.id===id?optimistic:t))
+        if (detailTask?.id===id) setDetailTask(d=>({...d,...data,assignee:optimistic.assignee,assignees:optimistic.assignees}))
+        try {
+          const saved = await apiUpdateTask(id,{...data,updated_by:me.id})
+          // Trigger DB mới là nơi quyết định assignee_id → lấy bản DB làm chuẩn
+          setTasks(ts=>ts.map(t=>t.id===id?withMembers({...t, ...saved}, um):t))
+          toast('Đã cập nhật!')
+        } catch(e) { setTasks(ts=>ts.map(t=>t.id===id?prev:t)); toast('Lỗi: '+e.message,'error') }
       }
       
       async function handleDeleteTask(task) { 
@@ -1296,12 +1362,18 @@ import { useNavigate } from 'react-router-dom';
         const task = tasks.find(t => t.id === taskArg.id) || taskArg;
         const upd = {last_reminded_date:new Date().toISOString()};
         await handleUpdateTask(task.id,upd);
-        const assignee = users.find(u=>u.id===task.assignee_id);
+        const um = new Map(users.map(u=>[u.id,u]));
+        const members = memberUsers(task, um);
+        const primary = members[0] || null;
         const remindPayload = {
           type: 'reminder',
           timestamp: upd.last_reminded_date,
           sender: { id: me.id, name: me.name, role: me.role },
-          assignee: { id: assignee?.id||null, name: assignee?.name||'Chưa giao', email: assignee?.email||null },
+          // `assignee` giữ nguyên DẠNG OBJECT để node mention hiện tại của n8n chạy như cũ (mention
+          // người đại diện); `name` là chuỗi gộp nên tin nhắn đọc ra đủ tên nhóm. Muốn mention đủ
+          // nhóm thì n8n lặp trên `assignees` — app không phải đổi.
+          assignee: { id: primary?.id||null, name: joinAssignees(members.map(u=>u.name)), email: primary?.email||null },
+          assignees: assigneesPayload(task, um),
           task: { id: task.id, title: task.title, status: task.status, priority: task.priority, due_date: task.due_date, due_at_vn: fmtDueVN(task.due_date), description: task.description }
         };
         try { await fetch('https://thegioilocnuoc.site/webhook/47cc5412-40b2-4747-af7f-8d7090cb40c2', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(remindPayload)}); } catch(_) {}
