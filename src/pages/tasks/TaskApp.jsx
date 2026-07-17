@@ -1452,7 +1452,11 @@ import { useNavigate } from 'react-router-dom';
             onMouseEnter: e => { e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(-1px)'; },
             onMouseLeave: e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform='translateY(0)'; },
           },
-            h('svg', {style:{width:'15px',height:'15px',flexShrink:0}, fill:'none', stroke:'currentColor', viewBox:'0 0 24 24', strokeWidth:2.5}, h('path', {strokeLinecap:'round', strokeLinejoin:'round', d:'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z'})),
+            h('svg', {style:{width:'16px',height:'16px',flexShrink:0}, fill:'none', stroke:'currentColor', viewBox:'0 0 24 24', strokeWidth:2, strokeLinecap:'round', strokeLinejoin:'round'},
+              h('rect', {width:8, height:4, x:8, y:2, rx:1, ry:1}),
+              h('path', {d:'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'}),
+              h('path', {d:'m9 14 2 2 4-4'}),
+            ),
             'Cập nhật CLSP'
           ),
 
@@ -1471,8 +1475,13 @@ import { useNavigate } from 'react-router-dom';
             onMouseEnter: e => { e.currentTarget.style.background='#1d4ed8'; e.currentTarget.style.transform='translateY(-1px)'; },
             onMouseLeave: e => { e.currentTarget.style.background='#2563eb'; e.currentTarget.style.transform='translateY(0)'; },
           },
-            h('svg', {style:{width:'15px',height:'15px',flexShrink:0}, fill:'none', stroke:'currentColor', viewBox:'0 0 24 24', strokeWidth:2.5}, h('path', {strokeLinecap:'round', strokeLinejoin:'round', d:'M12 4v16m8-8H4'})),
-            '+ Việc mới'
+            h('svg', {style:{width:'16px',height:'16px',flexShrink:0}, fill:'none', stroke:'currentColor', viewBox:'0 0 24 24', strokeWidth:2, strokeLinecap:'round', strokeLinejoin:'round'},
+              h('rect', {width:8, height:4, x:8, y:2, rx:1, ry:1}),
+              h('path', {d:'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'}),
+              h('path', {d:'M9 14h6'}),
+              h('path', {d:'M12 11v6'}),
+            ),
+            'Việc mới'
           ),
         ),
 

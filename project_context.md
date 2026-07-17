@@ -258,14 +258,17 @@ graph LR
 - [CskhApp.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/cskh/CskhApp.jsx) (~14KB) — Shell chính
 - [CskhDashboard.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/cskh/CskhDashboard.jsx) (~14KB) — Dashboard tổng quan
 - [ZaloKpiTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/cskh/ZaloKpiTab.jsx) (~63KB) — Tab KPI Zalo chính
-- [ZaloReportTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/cskh/ZaloReportTab.jsx) (~16KB) — Báo cáo Zalo
-- [ZaloReportModal.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/cskh/ZaloReportModal.jsx) (~15KB) — Modal báo cáo chi tiết
 
 **Chức năng chính:**
 - **KPI Zalo**: Theo dõi tốc độ phản hồi tin nhắn Zalo từ khách hàng
 - **Dashboard**: Thống kê tổng quan phản hồi, tỉ lệ xử lý
 - **Báo cáo**: Xuất báo cáo KPI theo nhân viên, nhóm Zalo
 - **Đánh dấu xử lý**: Mark as responded, ghi nhận người phản hồi
+
+> ⛔ **Đã gỡ (07/2026): "BC Trực Zalo (thủ công)"** — `ZaloReportTab.jsx`, `ZaloReportModal.jsx`,
+> nút "Gửi BC Zalo" (ở cả TaskApp và CSKH), quyền tab `zalo_report`, bảng `zalo_duty_reports`
+> và bucket `zalo-reports`. Không dùng nữa. Script gỡ DB: `sql/drop_zalo_reports.sql`.
+> **KPI CSKH Zalo và hệ thống nhắc việc Zalo KHÔNG bị ảnh hưởng.**
 
 ---
 
@@ -597,9 +600,7 @@ qlsx-app/
 │   │   ├── 📂 cskh/                 # Module CSKH
 │   │   │   ├── CskhApp.jsx
 │   │   │   ├── CskhDashboard.jsx
-│   │   │   ├── ZaloKpiTab.jsx
-│   │   │   ├── ZaloReportTab.jsx
-│   │   │   └── ZaloReportModal.jsx
+│   │   │   └── ZaloKpiTab.jsx
 │   │   ├── 📂 kho/                  # Module Kho Hàng (14 tabs)
 │   │   │   ├── KhoHangApp.jsx
 │   │   │   ├── CatalogTab.jsx
