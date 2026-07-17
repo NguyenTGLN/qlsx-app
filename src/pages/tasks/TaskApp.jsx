@@ -409,6 +409,9 @@ import { useNavigate } from 'react-router-dom';
 
     const AVATAR_SZ = {
       sm: 'w-4 h-4 sm:w-6 sm:h-6 text-[8px] sm:text-xs',
+      // chip: cho danh sách người thực hiện việc nhóm. Ảnh avatar là hình NGUYÊN NGƯỜI 256px,
+      // xuống 24px (sm) trông như cụt → dùng 32px cho rõ mặt mà nhóm nhiều người vẫn gọn.
+      chip: 'w-7 h-7 sm:w-8 sm:h-8 text-[9px] sm:text-[11px]',
       md: 'w-12 h-12 sm:w-14 sm:h-14 text-sm sm:text-base',
       lg: 'w-14 h-14 sm:w-[72px] sm:h-[72px] text-lg sm:text-xl',
     }
@@ -430,8 +433,8 @@ import { useNavigate } from 'react-router-dom';
     function AssigneeList({users = [], className=''}) {
       if (!users.length) return h('span',{className:`text-[10px] text-gray-400 font-semibold ${className}`}, 'Chưa giao')
       return h('div',{className:`flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 ${className}`},
-        users.map(u => h('div',{key:u.id, className:'flex items-center gap-1 min-w-0'},
-          h(Avatar,{user:u, size:'sm'}),
+        users.map(u => h('div',{key:u.id, className:'flex items-center gap-1.5 min-w-0'},
+          h(Avatar,{user:u, size:'chip'}),
           h('span',{className:'text-[10px] sm:text-[11px] font-bold text-gray-700 truncate'}, u.name)
         ))
       )
