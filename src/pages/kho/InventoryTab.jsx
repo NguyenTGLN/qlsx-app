@@ -3,7 +3,7 @@ import { supabase as db, fetchAllRows, fetchPageRows, sqlPackHint } from '../../
 import { usePersistedState } from '../../lib/usePersistedState';
 import { useCachedFetch } from '../../lib/useCachedFetch';
 import { getCatalogItems, invalidateCatalog } from '../../lib/catalogCache';
-import { Search, Loader2, RefreshCw, Package, Database, Download, Upload, Trash2, Edit3, X, Check, Printer, Calculator, Plus } from 'lucide-react';
+import { Search, Loader2, RefreshCw, Package, Database, Download, Upload, Trash2, Edit3, X, Check, Printer, Calculator, Plus, MapPin } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { todayLocal, parseImportDate } from '../../lib/dateUtils';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
@@ -40,6 +40,11 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [printData, setPrintData] = useState([]);
   const [printShowStock, setPrintShowStock] = useState(false);
+
+  // Bulk move location
+  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [moveLocation, setMoveLocation] = useState('');
+  const [moving, setMoving] = useState(false);
 
   // Column Toggle
   const [hiddenCols, setHiddenCols] = usePersistedState('inventory_hiddenCols', new Set());
@@ -184,6 +189,77 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
       if (error) throw error;
       fetchInventory();
     } catch(e) { alert('Lỗi xóa: ' + e.message); }
+  };
+
+  // Đổi vị trí hàng loạt: chuyển mọi dòng đã chọn về cùng 1 vị trí mới.
+  // inventory_stock có ràng buộc DUY NHẤT (item_code, location) → phải gộp cộng dồn theo mã
+  // (giữa các dòng chọn cùng mã, và với dòng sẵn có ở vị trí đích) để không vi phạm ràng buộc.
+  const handleBulkMove = async () => {
+    const newLoc = moveLocation.trim().toUpperCase();
+    if (!newLoc) return alert('Vui lòng nhập vị trí mới!');
+    setMoving(true);
+    try {
+      const ids = Array.from(selectedKeys);
+      // Selection tồn tại xuyên trang → lấy đầy đủ thông tin dòng đã chọn từ DB (không dựa vào trang hiện tại)
+      const { data: sel, error: selErr } = await db.from('inventory_stock')
+        .select('id, item_code, item_name, unit, location, quantity, import_date')
+        .in('id', ids);
+      if (selErr) throw selErr;
+
+      // Gom theo mã hàng: cùng mã dồn về 1 dòng ở vị trí mới (lấy ngày nhập mới nhất)
+      const groups = {}; // item_code -> { qty, import_date, ids: [] }
+      for (const r of (sel || [])) {
+        const g = groups[r.item_code] || (groups[r.item_code] = { qty: 0, import_date: r.import_date, ids: [] });
+        g.qty += Number(r.quantity) || 0;
+        g.ids.push(r.id);
+        if (r.import_date && (!g.import_date || r.import_date > g.import_date)) g.import_date = r.import_date;
+      }
+
+      let movedCodes = 0;
+      for (const code of Object.keys(groups)) {
+        const g = groups[code];
+        // Dòng sẵn có ở vị trí đích (có thể chính là 1 trong các dòng đã chọn, hoặc dòng khác chưa chọn)
+        const { data: dest, error: destErr } = await db.from('inventory_stock')
+          .select('id, quantity').eq('item_code', code).eq('location', newLoc).maybeSingle();
+        if (destErr) throw destErr;
+
+        if (dest) {
+          // Nếu dòng đích nằm trong nhóm đã chọn thì SL nó đã nằm trong g.qty; nếu không thì cộng thêm SL sẵn có.
+          const destSelected = g.ids.includes(dest.id);
+          const finalQty = destSelected ? g.qty : (Number(dest.quantity) || 0) + g.qty;
+          const { error: upErr } = await db.from('inventory_stock')
+            .update({ quantity: finalQty, import_date: g.import_date }).eq('id', dest.id);
+          if (upErr) throw upErr;
+          const toDelete = g.ids.filter(id => id !== dest.id);
+          if (toDelete.length) {
+            const { error: delErr } = await db.from('inventory_stock').delete().in('id', toDelete);
+            if (delErr) throw delErr;
+          }
+        } else {
+          // Chưa có ở đích: giữ 1 dòng làm đích (đổi vị trí + tổng SL), xóa các dòng còn lại của mã này
+          const keepId = g.ids[0];
+          const { error: upErr } = await db.from('inventory_stock')
+            .update({ location: newLoc, quantity: g.qty, import_date: g.import_date }).eq('id', keepId);
+          if (upErr) throw upErr;
+          const toDelete = g.ids.filter(id => id !== keepId);
+          if (toDelete.length) {
+            const { error: delErr } = await db.from('inventory_stock').delete().in('id', toDelete);
+            if (delErr) throw delErr;
+          }
+        }
+        movedCodes++;
+      }
+
+      setShowMoveModal(false);
+      setMoveLocation('');
+      setSelectedKeys(new Set());
+      fetchInventory();
+      alert(`Đã chuyển ${ids.length} dòng (${movedCodes} mã) về vị trí "${newLoc}".`);
+    } catch (e) {
+      alert('Lỗi đổi vị trí: ' + e.message);
+    } finally {
+      setMoving(false);
+    }
   };
 
   const handleExport = async () => {
@@ -484,6 +560,9 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
           <>
             <span style={{fontSize:'0.8rem',fontWeight:700,color:'#1e3a8a',whiteSpace:'nowrap'}}>{selectedKeys.size} đã chọn</span>
             <button onClick={handleExport} style={{...s.btn,background:'#10b981',color:'#fff',border:'none',padding:'0.4rem 0.75rem',flexShrink:0}}><Download size={14}/>Xuất</button>
+            {perms.edit && (
+              <button onClick={()=>{ setMoveLocation(''); setShowMoveModal(true); }} style={{...s.btn,background:'#6366f1',color:'#fff',border:'none',padding:'0.4rem 0.75rem',flexShrink:0}}><MapPin size={14}/>Đổi vị trí</button>
+            )}
             {perms.edit && selectedKeys.size === 1 && (
               <button onClick={()=>setEditRow(rows.find(r=>r.id===Array.from(selectedKeys)[0]))} style={{...s.btn,background:'#f59e0b',color:'#fff',border:'none',padding:'0.4rem 0.75rem',flexShrink:0}}><Edit3 size={14}/>Sửa</button>
             )}
@@ -626,6 +705,30 @@ export default function InventoryTab({ perms = { view: true, create: true, edit:
               }} style={s.btn}>Hủy</button>
               <button onClick={handleSaveManualInput} style={{...s.btn, background:'#16a34a', color:'#fff'}}>
                 <Check size={14}/> Lưu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMoveModal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center'}}>
+          <div style={{background:'#fff',padding:'1.5rem',borderRadius:12,width:400,maxWidth:'92vw',boxShadow:'0 20px 25px -5px rgba(0,0,0,0.1)'}}>
+            <h3 style={{marginTop:0,marginBottom:6,display:'flex',alignItems:'center',gap:6}}><MapPin size={18} color="#6366f1"/> Đổi vị trí hàng loạt</h3>
+            <p style={{margin:'0 0 15px',fontSize:'0.78rem',color:'#64748b',lineHeight:1.5}}>
+              Chuyển <strong style={{color:'#1e3a8a'}}>{selectedKeys.size}</strong> dòng đã chọn về cùng 1 vị trí mới.
+              Nếu vị trí mới đã có cùng mã hàng, hệ thống sẽ <strong>gộp cộng dồn số lượng</strong>.
+            </p>
+            <label style={{display:'block',fontSize:'0.75rem',fontWeight:600,color:'#64748b',marginBottom:4}}>Vị trí mới *</label>
+            <input list="move-loc-list" value={moveLocation} onChange={e=>setMoveLocation(e.target.value.toUpperCase())} autoFocus
+              style={{...s.input, width:'100%',boxSizing:'border-box'}} placeholder="Ví dụ: VP1T4" />
+            <datalist id="move-loc-list">
+              {locations.map(l => <option key={l} value={l} />)}
+            </datalist>
+            <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:20}}>
+              <button onClick={()=>{ setShowMoveModal(false); setMoveLocation(''); }} disabled={moving} style={s.btn}>Hủy</button>
+              <button onClick={handleBulkMove} disabled={moving || !moveLocation.trim()} style={{...s.btn, background:'#6366f1', color:'#fff', border:'none'}}>
+                {moving ? <Loader2 size={14} style={{animation:'spin 1s linear infinite'}}/> : <MapPin size={14}/>} Chuyển
               </button>
             </div>
           </div>
