@@ -357,6 +357,17 @@ describe('xử lý nhiều lần', () => {
     expect(v.Ten_DLD).toBe('KTV B');                // per-lần
     expect(v.Trang_Thai).toBe(KB_TRANG_THAI_FORM);
   });
+
+  test('buildLanKhaiBaoRecord: mirror mã_đơn_hàng rỗng → lấy từ thông_tin_bổ_sung (mã sửa tay)', () => {
+    // Caresoft sync ghi đè mirror về rỗng; mã ĐH thật nằm ở thông_tin_bổ_sung (đúng cái màn hình hiện).
+    const row = {
+      'phiếu_ghi': '229545', 'mã_đơn_hàng': '',
+      'thông_tin_bổ_sung': { 'mã_đơn_hàng': 'VNA123456789-1' },
+      'phiếu_gốc_json': { 'mã_đơn_hàng': '' },
+    };
+    const v = buildLanKhaiBaoRecord(row, { 'lần': 2, 'cnv_id': '229545-2' }, []).newValues;
+    expect(v.Ma_Don_Hang).toBe('VNA123456789-1');
+  });
 });
 
 describe('deriveKhaiBaoStatuses', () => {

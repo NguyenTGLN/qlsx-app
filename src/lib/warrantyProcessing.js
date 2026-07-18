@@ -144,8 +144,9 @@ export function computeTotalCost(parts) {
 }
 
 // Các trường thông tin app quản lý trong thông_tin_bổ_sung (prefill từ phiếu_gốc_json → sửa được).
-// mã_đơn_hàng: app-only (Caresoft nhiều phiếu để trống) — cho sửa tay tại app, KHÔNG đẩy về CS
-// (buildLanKhaiBaoRecord vẫn đọc Ma_Don_Hang từ cột mirror nên thêm key này không đổi payload sync).
+// mã_đơn_hàng: app-only (Caresoft nhiều phiếu để trống) — cho sửa tay tại app, KHÔNG đẩy về CS.
+// buildKhaiBaoRecord/buildLanKhaiBaoRecord đọc Ma_Don_Hang ưu tiên thông_tin_bổ_sung → mirror → gốc
+// (khớp maDonHang() hiển thị): tránh gửi form RỖNG khi CS sync ghi đè cột mirror về trống.
 export const THONG_TIN_BO_SUNG_KEYS = [
   'mã_đlđ', 'tên_đlđ', 'sđt_đlđ', 'khoảng_cách',
   'tên_khách_hàng', 'số_điện_thoại_khách_hàng', 'địa_chỉ_nhận_hàng',
@@ -319,7 +320,7 @@ export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
     oldValues: null,
     newValues: {
       Phieu_Ghi:       s(cnvId),
-      Ma_Don_Hang:     s((row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']),
+      Ma_Don_Hang:     s(ttRaw['mã_đơn_hàng'] || (row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']), // ưu tiên mã sửa tay (thông_tin_bổ_sung) — khớp maDonHang() hiển thị; mirror bị CS ghi rỗng vẫn gửi đúng
       San_Pham:        s(sanPham),
       Ngay_Lap_Dat:    normDateYmd(tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),
       Khach_Hang:      s(tin['tên_khách_hàng']),
@@ -380,7 +381,7 @@ export function buildKhaiBaoRecord(row, fieldOptions = []) {
     oldValues: null,
     newValues: {
       Phieu_Ghi:       s((row && (row['phiếu_ghi'] || row['id_phiếu_ghi']))), // số phiếu hiển thị, fallback id nội bộ
-      Ma_Don_Hang:     s((row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']),
+      Ma_Don_Hang:     s(ttRaw['mã_đơn_hàng'] || (row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']), // ưu tiên mã sửa tay (thông_tin_bổ_sung) — khớp maDonHang() hiển thị; mirror bị CS ghi rỗng vẫn gửi đúng
       San_Pham:        s(optLabel('mã_sản_phẩm')),
       Ngay_Lap_Dat:    normDateYmd(tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),
       Chi_Tiet_Loi:    s(optLabel('chi_tiết_lỗi')),
