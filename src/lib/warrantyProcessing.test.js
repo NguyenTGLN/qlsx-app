@@ -368,6 +368,17 @@ describe('xử lý nhiều lần', () => {
     const v = buildLanKhaiBaoRecord(row, { 'lần': 2, 'cnv_id': '229545-2' }, []).newValues;
     expect(v.Ma_Don_Hang).toBe('VNA123456789-1');
   });
+
+  test('buildLanKhaiBaoRecord: bỏ ký tự "#" khỏi mọi giá trị (CNV báo lỗi nếu chứa #)', () => {
+    const row = { 'phiếu_ghi': '229545', 'mã_đơn_hàng': 'DH#01' };
+    const lan = { 'lần': 1, 'cnv_id': '229545', 'linh_kiện': 'Vòi lạnh # V-IS-WT4200-C', 'nguyên_nhân': 'Rò # nước' };
+    const v = buildLanKhaiBaoRecord(row, lan, []).newValues;
+    expect(v.Linh_Kien).toBe('Vòi lạnh V-IS-WT4200-C');
+    expect(v.Nguyen_Nhan).toBe('Rò nước');
+    expect(v.Ma_Don_Hang).toBe('DH 01');
+    // Không còn '#' ở bất kỳ trường nào
+    Object.values(v).forEach(val => expect(String(val)).not.toContain('#'));
+  });
 });
 
 describe('deriveKhaiBaoStatuses', () => {
@@ -461,7 +472,7 @@ describe('buildKhaiBaoRecord', () => {
     expect(v.SDT_Khach).toBe('0945011809');
     expect(v.Ten_DLD).toBe('TRẦN VĂN MẠNH');
     expect(v.SDT_DLD).toBe('0984469066');
-    expect(v.Linh_Kien).toBe('Phao điện # E-FS-4200');
+    expect(v.Linh_Kien).toBe('Phao điện E-FS-4200'); // '#' đã được lọc bỏ khi gửi CNV
   });
 
   test('3 trạng thái = hằng số; Phan_Loai_CV & Khoang_Cach rỗng khi app không có', () => {
@@ -487,7 +498,7 @@ describe('buildKhaiBaoRecord', () => {
     expect(v.Ten_DLD).toBe('KTV Sửa Tay');     // override app thắng phiếu gốc
     expect(v.Khoang_Cach).toBe('12');
     expect(v.San_Pham).toBe('WT-4200-RO');      // resolve NHÃN từ option_id, không phải id
-    expect(v.Linh_Kien).toBe('Phao điện # E-FS-4200');
+    expect(v.Linh_Kien).toBe('Phao điện E-FS-4200'); // '#' đã được lọc bỏ khi gửi CNV
   });
 
   test('Nguyên nhân & Phương án xử lý lấy bản app đã sửa (không chỉ phiếu gốc)', () => {

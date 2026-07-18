@@ -304,6 +304,18 @@ export function lanDefaultsFromRow(row, fieldOptions = []) {
   };
 }
 
+// Bỏ ký tự '#' khỏi chuỗi (CNV báo lỗi nếu giá trị chứa '#'). '#' cùng khoảng trắng kề nó gộp thành
+// 1 dấu cách rồi trim. VD "Vòi lạnh # V-IS-WT4200-C" → "Vòi lạnh V-IS-WT4200-C". Không phải chuỗi → giữ nguyên.
+export function stripHash(v) {
+  return typeof v === 'string' ? v.replace(/\s*#\s*/g, ' ').trim() : v;
+}
+// Áp stripHash cho MỌI giá trị của object payload (làm sạch '#' toàn bộ trường trước khi gửi CNV).
+export function stripHashValues(obj) {
+  const out = {};
+  for (const k of Object.keys(obj)) out[k] = stripHash(obj[k]);
+  return out;
+}
+
 // Dựng payload CNV cho 1 LẦN: shared (KH/SP/ĐH/ngày lắp) lấy từ row; per-lần lấy từ lan (loại nhiệm vụ
 // → Phan_Loai_CV; chi tiết lỗi/tình trạng/nguyên nhân/phương án/linh kiện/KTV-ĐLĐ/khoảng cách). Phieu_Ghi = cnv_id.
 export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
@@ -318,7 +330,7 @@ export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
   return {
     action: 'CREATE',
     oldValues: null,
-    newValues: {
+    newValues: stripHashValues({
       Phieu_Ghi:       s(cnvId),
       Ma_Don_Hang:     s(ttRaw['mã_đơn_hàng'] || (row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']), // ưu tiên mã sửa tay (thông_tin_bổ_sung) — khớp maDonHang() hiển thị; mirror bị CS ghi rỗng vẫn gửi đúng
       San_Pham:        s(sanPham),
@@ -339,7 +351,7 @@ export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
       Trang_Thai:      KB_TRANG_THAI_FORM,
       Xac_Nhan_Online: KB_XAC_NHAN_ONLINE_INIT,
       Thanh_Toan:      KB_THANH_TOAN_INIT,
-    },
+    }),
   };
 }
 
@@ -379,7 +391,7 @@ export function buildKhaiBaoRecord(row, fieldOptions = []) {
   return {
     action: 'CREATE',
     oldValues: null,
-    newValues: {
+    newValues: stripHashValues({
       Phieu_Ghi:       s((row && (row['phiếu_ghi'] || row['id_phiếu_ghi']))), // số phiếu hiển thị, fallback id nội bộ
       Ma_Don_Hang:     s(ttRaw['mã_đơn_hàng'] || (row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']), // ưu tiên mã sửa tay (thông_tin_bổ_sung) — khớp maDonHang() hiển thị; mirror bị CS ghi rỗng vẫn gửi đúng
       San_Pham:        s(optLabel('mã_sản_phẩm')),
@@ -400,6 +412,6 @@ export function buildKhaiBaoRecord(row, fieldOptions = []) {
       Trang_Thai:      KB_TRANG_THAI_FORM,
       Xac_Nhan_Online: KB_XAC_NHAN_ONLINE_INIT,
       Thanh_Toan:      KB_THANH_TOAN_INIT,
-    },
+    }),
   };
 }
