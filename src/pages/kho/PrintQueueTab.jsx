@@ -80,8 +80,13 @@ export default function PrintQueueTab({ cancelPerm = false }) {
       });
       
       // Sắp xếp theo Ngày Lập từ mới đến cũ (không phụ thuộc thứ tự gom Map).
+      // Cùng thời điểm tạo → mã phiếu mới hơn (sequence lớn hơn) lên trước cho ổn định.
       const allOrders = Array.from(orderMap.values())
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        .sort((a, b) => {
+          const dt = new Date(b.created_at) - new Date(a.created_at);
+          if (dt !== 0) return dt;
+          return String(b.order_code).localeCompare(String(a.order_code));
+        });
       setOrders(allOrders);
       // Clean up selection if order is no longer in the list (or changed status)
       // For simplicity, we just clear selection on reload

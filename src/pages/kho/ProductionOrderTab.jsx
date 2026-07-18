@@ -723,19 +723,26 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     // item_code là PK của inventory_items nên không cần dedup; catalog đã sắp theo item_code
     const items = await getCatalogItems().catch(() => []);
     setStockItems(items.map(item => ({ code: item.item_code, name: item.item_name })));
+    return items;
   };
 
   const handleOpenManualExport = async () => {
     setShowManualExportModal(true);
     setManualRows([emptyManualRow()]);
+    // Nạp danh mục trước để tra tên thành phẩm theo product_code của từng PSX
+    const items = await loadStockItems();
+    const nameByCode = {};
+    (items || []).forEach(it => { nameByCode[it.item_code] = it.item_name; });
     const { data: orderData } = await db.from('production_orders')
-      .select('order_code')
+      .select('order_code, product_code')
       .in('status', ['pending', 'in_progress'])
       .order('created_at', { ascending: false })
       .limit(50);
-    if (orderData) setRecentOrders(orderData.map(d => d.order_code));
-
-    await loadStockItems();
+    // Kèm tên thành phẩm để dễ tìm PSX (vd "PSX-... — Vỏ lõi lọc OCB 4.5x20")
+    if (orderData) setRecentOrders(orderData.map(d => ({
+      code: d.order_code,
+      name: nameByCode[d.product_code] || d.product_code || '',
+    })));
   };
 
   const handleOpenManualOrder = () => {
@@ -2085,7 +2092,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                       <select style={s.input} value={row.orderRef}
                         onChange={e => setManualRows(rs => rs.map((r, i) => i === idx ? { ...r, orderRef: e.target.value } : r))}>
                         <option value="">-- Dùng mã phiếu PXK chung --</option>
-                        {recentOrders.map(code => <option key={code} value={code}>{code}</option>)}
+                        {recentOrders.map(o => <option key={o.code} value={o.code}>{o.name ? `${o.code} — ${o.name}` : o.code}</option>)}
                       </select>
                     </div>
                   )}
