@@ -379,6 +379,22 @@ describe('xử lý nhiều lần', () => {
     // Không còn '#' ở bất kỳ trường nào
     Object.values(v).forEach(val => expect(String(val)).not.toContain('#'));
   });
+
+  test('buildLanKhaiBaoRecord: tách linh kiện → 3 ô (chỉ 3 cái đầu) + gửi kết quả thực hiện', () => {
+    const row = { 'phiếu_ghi': '229545', 'kết_quả_thực_hiện': 'Đã thay xong' };
+    const lan = { 'lần': 1, 'cnv_id': '229545', 'linh_kiện': 'Vòi lạnh # A, Vòi nóng # B, Van # C, Bơm # D' };
+    const v = buildLanKhaiBaoRecord(row, lan, []).newValues;
+    expect(v.Linh_Kien).toBe('Vòi lạnh A');    // phần tử 1 (đã lọc '#')
+    expect(v.Linh_Kien_2).toBe('Vòi nóng B');
+    expect(v.Linh_Kien_3).toBe('Van C');       // chỉ 3 cái đầu — "Bơm D" bị bỏ
+    expect(v.Ket_Qua_Thuc_Hien).toBe('Đã thay xong');
+  });
+
+  test('buildLanKhaiBaoRecord: kết quả thực hiện lấy từ phiếu_gốc_json khi mirror trống', () => {
+    const row = { 'phiếu_ghi': '229545', 'phiếu_gốc_json': { 'kết_quả_thực_hiện': 'Từ gốc CS' } };
+    const v = buildLanKhaiBaoRecord(row, { 'lần': 1, 'cnv_id': '229545' }, []).newValues;
+    expect(v.Ket_Qua_Thuc_Hien).toBe('Từ gốc CS');
+  });
 });
 
 describe('deriveKhaiBaoStatuses', () => {
@@ -450,12 +466,13 @@ describe('buildKhaiBaoRecord', () => {
     },
   };
 
-  test('action=CREATE, oldValues=null, đủ 20 khóa newValues', () => {
+  test('action=CREATE, oldValues=null, đủ 23 khóa newValues', () => {
     const rec = buildKhaiBaoRecord(baseRow, FO);
     expect(rec.action).toBe('CREATE');
     expect(rec.oldValues).toBeNull();
     expect(Object.keys(rec.newValues).sort()).toEqual([
-      'Chi_Tiet_Loi', 'Dia_Chi', 'Khach_Hang', 'Khoang_Cach', 'Linh_Kien', 'Ma_DLD',
+      'Chi_Tiet_Loi', 'Dia_Chi', 'Ket_Qua_Thuc_Hien', 'Khach_Hang', 'Khoang_Cach',
+      'Linh_Kien', 'Linh_Kien_2', 'Linh_Kien_3', 'Ma_DLD',
       'Ma_Don_Hang', 'Ngay_Lap_Dat', 'Nguyen_Nhan', 'Phan_Loai_CV', 'Phieu_Ghi',
       'Phuong_An_XL', 'SDT_DLD', 'SDT_Khach', 'San_Pham', 'Tinh_Trang', 'Thanh_Toan',
       'Trang_Thai', 'Ten_DLD', 'Xac_Nhan_Online',

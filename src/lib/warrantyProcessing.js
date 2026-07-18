@@ -316,6 +316,13 @@ export function stripHashValues(obj) {
   return out;
 }
 
+// Tách chuỗi linh kiện gộp (ngăn bởi dấu phẩy) → mảng phần tử đã trim, bỏ rỗng, lấy tối đa `max`.
+// Dùng để gửi CNV thành nhiều ô Linh_Kien / Linh_Kien_2 / Linh_Kien_3.
+// VD "Vòi lạnh # V-IS-WT4200-C, Vòi nóng # V-IS-WT4200-H" → ["Vòi lạnh # V-IS-WT4200-C","Vòi nóng # V-IS-WT4200-H"].
+export function splitLinhKien(v, max = 3) {
+  return String(v || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, max);
+}
+
 // Dựng payload CNV cho 1 LẦN: shared (KH/SP/ĐH/ngày lắp) lấy từ row; per-lần lấy từ lan (loại nhiệm vụ
 // → Phan_Loai_CV; chi tiết lỗi/tình trạng/nguyên nhân/phương án/linh kiện/KTV-ĐLĐ/khoảng cách). Phieu_Ghi = cnv_id.
 export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
@@ -327,6 +334,8 @@ export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
   const L = lan || {};
   const phieuGhi = (row && (row['phiếu_ghi'] || row['id_phiếu_ghi'])) || '';
   const cnvId = L['cnv_id'] || cnvIdForLan(phieuGhi, L['lần'] || 1);
+  const lk = splitLinhKien(L['linh_kiện']); // tách thành tối đa 3 ô Linh_Kien / _2 / _3
+  const ketQua = ttRaw['kết_quả_thực_hiện'] || (row && row['kết_quả_thực_hiện']) || goc['kết_quả_thực_hiện'];
   return {
     action: 'CREATE',
     oldValues: null,
@@ -342,12 +351,15 @@ export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
       Tinh_Trang:      s(L['tình_trạng']),
       Nguyen_Nhan:     s(L['nguyên_nhân']),
       Phuong_An_XL:    s(L['phương_án_xử_lý']),
+      Ket_Qua_Thuc_Hien: s(ketQua),
       Ten_DLD:         s(L['tên_đlđ']),
       Ma_DLD:          s(L['mã_đlđ']),
       SDT_DLD:         s(L['sđt_đlđ']),
       Khoang_Cach:     s(L['khoảng_cách']),
       Phan_Loai_CV:    s(L['loại_nhiệm_vụ']),
-      Linh_Kien:       s(L['linh_kiện']),
+      Linh_Kien:       s(lk[0]),
+      Linh_Kien_2:     s(lk[1]),
+      Linh_Kien_3:     s(lk[2]),
       Trang_Thai:      KB_TRANG_THAI_FORM,
       Xac_Nhan_Online: KB_XAC_NHAN_ONLINE_INIT,
       Thanh_Toan:      KB_THANH_TOAN_INIT,
@@ -388,6 +400,8 @@ export function buildKhaiBaoRecord(row, fieldOptions = []) {
     return resolveOptionLabel(fieldOptions, ttRaw[key + '_option_id']) || (row && row[key]) || goc[key] || '';
   };
   const s = (v) => (v === undefined || v === null) ? '' : String(v);
+  const lk = splitLinhKien(optLabel('linh_kiện')); // tách thành tối đa 3 ô Linh_Kien / _2 / _3
+  const ketQua = ttRaw['kết_quả_thực_hiện'] || (row && row['kết_quả_thực_hiện']) || goc['kết_quả_thực_hiện'];
   return {
     action: 'CREATE',
     oldValues: null,
@@ -403,12 +417,15 @@ export function buildKhaiBaoRecord(row, fieldOptions = []) {
       Tinh_Trang:      s(tin['tình_trạng']),
       Nguyen_Nhan:     s(optLabel('nguyên_nhân')),                                   // option (app sửa → gốc)
       Phuong_An_XL:    s(ttRaw['phương_án_xử_lý'] || goc['phương_án_xử_lý']),         // text (app sửa → gốc)
+      Ket_Qua_Thuc_Hien: s(ketQua),                                                  // mirror từ phieu_bao_hanh (app sửa → mirror → gốc)
       Ten_DLD:         s(tin['tên_đlđ']),
       Ma_DLD:          s(tin['mã_đlđ']),
       SDT_DLD:         s(tin['sđt_đlđ']),
       Khoang_Cach:     s(tin['khoảng_cách']),
       Phan_Loai_CV:    '', // app không lưu trường này → để rỗng (theo quyết định)
-      Linh_Kien:       s(optLabel('linh_kiện')),
+      Linh_Kien:       s(lk[0]),
+      Linh_Kien_2:     s(lk[1]),
+      Linh_Kien_3:     s(lk[2]),
       Trang_Thai:      KB_TRANG_THAI_FORM,
       Xac_Nhan_Online: KB_XAC_NHAN_ONLINE_INIT,
       Thanh_Toan:      KB_THANH_TOAN_INIT,
