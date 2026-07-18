@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, CheckCircle, TrendingUp, Users, RefreshCw, Plus, X, Upload, Download, Package, Activity, Smartphone, Edit, Trash2, BarChart2, ArrowUpRight, ArrowDownRight, Minus, ClipboardList, CalendarClock } from 'lucide-react';
+import { LayoutDashboard, CheckCircle, TrendingUp, Users, RefreshCw, Plus, X, Upload, Download, Package, Activity, Smartphone, Edit, Trash2, BarChart2, ArrowUpRight, ArrowDownRight, Minus, ClipboardList, CalendarClock, Search } from 'lucide-react';
 import ModuleShell, { TabButton } from '../components/ModuleShell';
 import { supabase, fetchAllRows } from '../lib/supabase';
 import { dedupeByProductCode } from '../lib/capacityGuard';
@@ -43,6 +43,7 @@ const AdminDashboard = () => {
   // Thêm mới Năng Lực UX
   const [showCapacityModal, setShowCapacityModal] = useState(false);
   const [newCapacity, setNewCapacity] = useState({ product_code: '', product_name: '', standard_time: '' });
+  const [capacitySearch, setCapacitySearch] = useState(''); // tìm theo mã SP / tên tham khảo ở tab Định Mức
 
   const fileInputRef = useRef(null);
   const orderFileRef = useRef(null);
@@ -455,11 +456,33 @@ const AdminDashboard = () => {
     } catch(err) { alert('Lỗi xóa: ' + err.message); }
   };
 
-  const renderCapacities = () => (
+  const renderCapacities = () => {
+    const q = capacitySearch.trim().toLowerCase();
+    const filteredCaps = q
+      ? capacities.filter(c =>
+          (c.product_code || '').toLowerCase().includes(q) ||
+          (c.product_name || '').toLowerCase().includes(q))
+      : capacities;
+    return (
     <div className="glass-panel" style={styles.tableContainer}>
       <div style={styles.tableHeaderFlex}>
         <h3>Quản Lý Năng Lực SX / Mã Sản Phẩm</h3>
-        <div style={{display:'flex', gap:'0.75rem'}}>
+        <div style={{display:'flex', gap:'0.75rem', alignItems:'center', flexWrap:'wrap'}}>
+          <div style={{position:'relative', display:'flex', alignItems:'center'}}>
+            <Search size={15} style={{position:'absolute', left:10, color:'var(--text-tertiary)', pointerEvents:'none'}} />
+            <input
+              value={capacitySearch}
+              onChange={e => setCapacitySearch(e.target.value)}
+              placeholder="Tìm mã / tên sản phẩm..."
+              style={{padding:'0.5rem 2rem 0.5rem 2rem', borderRadius:8, border:'1px solid var(--border-color, #e2e8f0)', outline:'none', fontSize:'0.85rem', minWidth:220, background:'var(--input-bg, #fff)', color:'var(--text-primary)'}}
+            />
+            {capacitySearch && (
+              <button onClick={() => setCapacitySearch('')} title="Xóa tìm kiếm"
+                style={{position:'absolute', right:6, background:'none', border:'none', cursor:'pointer', color:'var(--text-tertiary)', display:'flex', padding:2}}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
           {p.create && <button onClick={() => { setNewCapacity({product_code: '', product_name: '', standard_time: ''}); openModal(setShowCapacityModal); }} className="btn-secondary">
             <Plus size={16}/> Thêm Mã Bằng Tay
           </button>}
@@ -476,7 +499,7 @@ const AdminDashboard = () => {
               <tr><th>STT</th><th>Mã Sản Phẩm</th><th>Tên Tham Khảo</th><th>Thời Gian (Giờ/SP)</th><th>Thao Tác</th></tr>
             </thead>
             <tbody>
-              {capacities.map((cap, i) => (
+              {filteredCaps.map((cap, i) => (
                 <tr key={cap.id}>
                   <td>{i+1}</td>
                   <td><strong style={{color:'var(--primary-color)'}}>{cap.product_code}</strong></td>
@@ -495,11 +518,13 @@ const AdminDashboard = () => {
                 </tr>
               ))}
               {capacities.length === 0 && <tr><td colSpan="5" style={{textAlign: 'center', padding: '2rem'}}>Hệ thống chưa có định mức năng lực nào. Tải Mẫu về Đăng lên hoặc Thêm Bằng Tay.</td></tr>}
+              {capacities.length > 0 && filteredCaps.length === 0 && <tr><td colSpan="5" style={{textAlign: 'center', padding: '2rem', color:'var(--text-tertiary)'}}>Không tìm thấy mã sản phẩm khớp với "{capacitySearch}".</td></tr>}
             </tbody>
           </table>
       </div>
     </div>
-  );
+    );
+  };
 
   const deleteOrder = async (id, orderCode) => {
     if (!window.confirm(`XÓA LỆNH (${orderCode}): BẠN CÓ CHẮC KHÔNG?\nToàn bộ nhật ký sản xuất và lịch sử chấm công của công nhân cho lệnh này cũng sẽ bị XÓA SẠCH theo! Việc này không thể phục hồi.`)) return;
