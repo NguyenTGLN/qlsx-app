@@ -4,7 +4,7 @@ import { usePersistedState } from '../../lib/usePersistedState';
 import { taskDb } from '../../lib/task_supabase';
 import { Search, RefreshCw, ChevronLeft, ChevronRight, Filter, Send, Download, CheckCircle2, RotateCcw, Calendar, DownloadCloud } from 'lucide-react';
 import { useTabPerm, useAuth } from '../../lib/AuthContext';
-import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, deriveKhaiBaoStatuses, cnvIdForLan, getEffectiveLan, buildLanKhaiBaoRecord, lanDefaultsFromRow } from '../../lib/warrantyProcessing';
+import { TRANG_THAI_XU_LY, TRANG_THAI_DONG_BO, isQualifyingTicket, getEffectiveSteps, ensureClosingStep, CLOSING_STEP, WORKFLOW_STEPS_MAU, stepUrgency, applyStepToggle, csStatusOnClosingToggle, OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, deriveKhaiBaoStatuses, cnvIdForLan, getEffectiveLan, buildLanKhaiBaoRecord, lanDefaultsFromRow } from '../../lib/warrantyProcessing';
 import fieldOptions from '../../data/caresoftFieldOptions.json';
 import ProcessingModal from './ProcessingModal';
 import WarrantyProposalModal from './WarrantyProposalModal';
@@ -220,11 +220,14 @@ const chipPalette = (done, urg) => {
 // Dãy chip bước WF. Bấm 1 chip → mở popover: nhập "đã thực hiện gì" (ghi_chú) rồi 1 nút duy nhất
 // "Hoàn thành & Đồng bộ" (lật xong + đẩy về Caresoft; bước "Đóng phiếu" → đóng ticket Solved) + "Đóng".
 // Popover position:fixed (không bị cắt).
-function StepChips({ row, perm, onCompleteSync }) {
+function StepChips({ row, perm, onCompleteSync, onSaveSteps }) {
   const steps = getEffectiveSteps(row['các_bước']);
   const [open, setOpen] = useState(null); // { index, top, left }
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+  const [hover, setHover] = useState(null);   // index chip đang rê chuột (hiện nút ×, chèn)
+  const [ins, setIns] = useState(null);       // popover chèn bước: { index, top, left }
+  const [insName, setInsName] = useState('');
   const cur = open != null ? steps[open.index] : null;
   const curDone = cur ? cur['trạng_thái'] === 'xong' : false;
 
@@ -241,6 +244,34 @@ function StepChips({ row, perm, onCompleteSync }) {
     try { await onCompleteSync(row, open.index, steps, draft, perm.io); close(); } finally { setBusy(false); }
   };
 
+  // Xóa 1 bước ngay trên danh sách (không cho xóa bước "Đóng phiếu"). Xác nhận nhẹ để tránh nhỡ tay.
+  const deleteStep = async (e, i) => {
+    e.stopPropagation();
+    const name = steps[i]?.['tên'] || `Bước ${i + 1}`;
+    if (String(name).trim() === CLOSING_STEP) return;
+    if (!window.confirm(`Xóa bước "${name}"?`)) return;
+    setBusy(true);
+    try { await onSaveSteps(row, steps.filter((_, idx) => idx !== i)); } finally { setBusy(false); }
+  };
+  // Mở popover chèn 1 bước MỚI vào TRƯỚC bước thứ i.
+  const openInsert = (e, i) => {
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    setInsName('');
+    setIns({ index: i, top: Math.min(r.bottom + 6, window.innerHeight - 180), left: Math.max(8, Math.min(r.left, window.innerWidth - 300)) });
+  };
+  const closeInsert = () => setIns(null);
+  const doInsert = async () => {
+    const nm = insName.trim();
+    if (!nm) return;
+    const next = steps.slice();
+    next.splice(ins.index, 0, { 'tên': nm, 'trạng_thái': 'chưa_xong' });
+    setBusy(true);
+    try { await onSaveSteps(row, next); closeInsert(); } finally { setBusy(false); }
+  };
+
+  const canEdit = perm.edit;
+
   return (
     <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', alignItems: 'stretch', height: '100%' }}>
       {steps.map((st, i) => {
@@ -248,30 +279,70 @@ function StepChips({ row, perm, onCompleteSync }) {
         const name = st['tên'] || `Bước ${i + 1}`;
         const dl = fmtDeadline(st['hạn_xử_lý']);
         const urg = stepUrgency(st); // 'green' | 'orange' | 'blink' | null
+        const isClosing = String(name).trim() === CLOSING_STEP;
         return (
-          <span
+          <div
             key={i}
-            className={`wf-card${urg === 'blink' ? ' wf-blink' : ''}`}
-            onClick={(e) => openPop(e, i)}
-            title={name + (dl ? ` · hạn ${dl}` : '') + (done
-              ? ` — ✓ xong${st['hoàn_thành_lúc'] ? ' lúc ' + fmtDeadline(st['hoàn_thành_lúc']) : ''}${st['người_hoàn_thành'] ? ' bởi ' + st['người_hoàn_thành'] : ''}`
-              : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong') + ' · bấm để ghi chú / cập nhật'}
-            style={{
-              display: 'inline-flex', flexDirection: 'column', justifyContent: 'space-between', gap: '3px',
-              width: 106, minHeight: 44, padding: '6px 8px', borderRadius: '10px', fontSize: '0.6rem', fontWeight: 600,
-              lineHeight: 1.15, userSelect: 'none', cursor: 'pointer', flex: '0 0 auto',
-              ...chipPalette(done, urg),
-            }}
+            style={{ position: 'relative', flex: '0 0 auto', display: 'flex', alignItems: 'stretch', paddingTop: 9 }}
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover(h => (h === i ? null : h))}
           >
-            {/* 2 dòng đầu: nội dung bước (tự cắt nếu dài; 📝 = đã có ghi chú) */}
-            <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-              {done ? '✓ ' : ''}{name}{st['ghi_chú'] ? ' 📝' : ''}
+            {/* Nút chèn bước MỚI vào trước bước này (hiện khi rê chuột, cần quyền sửa) */}
+            {canEdit && hover === i && (
+              <button
+                onClick={(e) => openInsert(e, i)}
+                title={`Chèn 1 bước vào trước "${name}"`}
+                style={{ position: 'absolute', top: 0, left: -6, zIndex: 4, width: 18, height: 18, borderRadius: '50%', border: '1px solid #93c5fd', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 800, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+              >+</button>
+            )}
+            {/* Nút xóa bước (hiện khi rê chuột, trừ bước "Đóng phiếu") */}
+            {canEdit && hover === i && !isClosing && (
+              <button
+                onClick={(e) => deleteStep(e, i)}
+                title={`Xóa bước "${name}"`}
+                style={{ position: 'absolute', top: 0, right: -6, zIndex: 4, width: 18, height: 18, borderRadius: '50%', border: '1px solid #fca5a5', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 800, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+              >×</button>
+            )}
+            <span
+              className={`wf-card${urg === 'blink' ? ' wf-blink' : ''}`}
+              onClick={(e) => openPop(e, i)}
+              title={name + (dl ? ` · hạn ${dl}` : '') + (done
+                ? ` — ✓ xong${st['hoàn_thành_lúc'] ? ' lúc ' + fmtDeadline(st['hoàn_thành_lúc']) : ''}${st['người_hoàn_thành'] ? ' bởi ' + st['người_hoàn_thành'] : ''}`
+                : urg === 'blink' ? ' — quá/sắp hết hạn!' : ' — chưa xong') + ' · bấm để ghi chú / cập nhật'}
+              style={{
+                display: 'inline-flex', flexDirection: 'column', justifyContent: 'space-between', gap: '3px',
+                width: 106, minHeight: 44, padding: '6px 8px', borderRadius: '10px', fontSize: '0.6rem', fontWeight: 600,
+                lineHeight: 1.15, userSelect: 'none', cursor: 'pointer', flex: '0 0 auto',
+                ...chipPalette(done, urg),
+              }}
+            >
+              {/* 2 dòng đầu: nội dung bước (tự cắt nếu dài; 📝 = đã có ghi chú) */}
+              <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                {done ? '✓ ' : ''}{name}{st['ghi_chú'] ? ' 📝' : ''}
+              </span>
+              {/* dòng cuối: thời hạn */}
+              {dl && <span style={{ fontSize: '0.54rem', fontWeight: 700, whiteSpace: 'nowrap', opacity: 0.9 }}>{dl}</span>}
             </span>
-            {/* dòng cuối: thời hạn */}
-            {dl && <span style={{ fontSize: '0.54rem', fontWeight: 700, whiteSpace: 'nowrap', opacity: 0.9 }}>{dl}</span>}
-          </span>
+          </div>
         );
       })}
+      {/* Popover chèn bước mới (nhập tên, có gợi ý tên chuẩn) */}
+      {ins != null && (
+        <>
+          <div onClick={(e) => { e.stopPropagation(); closeInsert(); }} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: ins.top, left: ins.left, zIndex: 1001, width: 280, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.18)', padding: '0.8rem' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.82rem', color: '#1e293b', marginBottom: '0.5rem' }}>Chèn bước vào trước "{steps[ins.index]?.['tên'] || ''}"</div>
+            <input list="wf-step-suggestions-inline" autoFocus value={insName} onChange={(e) => setInsName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') doInsert(); }}
+              placeholder="Tên bước mới..." style={{ width: '100%', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '0.5rem', fontSize: '0.84rem', outline: 'none', boxSizing: 'border-box' }} />
+            <datalist id="wf-step-suggestions-inline">{WORKFLOW_STEPS_MAU.map(t => <option key={t} value={t} />)}</datalist>
+            <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.6rem' }}>
+              <button disabled={busy || !insName.trim()} onClick={doInsert} style={{ padding: '0.35rem 0.7rem', borderRadius: '7px', border: 'none', background: '#3b82f6', color: '#fff', fontWeight: 600, fontSize: '0.78rem', cursor: (busy || !insName.trim()) ? 'not-allowed' : 'pointer', opacity: (busy || !insName.trim()) ? 0.6 : 1 }}>Chèn</button>
+              <button disabled={busy} onClick={closeInsert} style={{ padding: '0.35rem 0.7rem', borderRadius: '7px', border: '1px solid #cbd5e1', background: '#fff', color: '#64748b', fontWeight: 600, fontSize: '0.78rem', cursor: 'pointer' }}>Đóng</button>
+            </div>
+          </div>
+        </>
+      )}
       {open != null && (
         <>
           <div onClick={(e) => { e.stopPropagation(); close(); }} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
@@ -408,9 +479,24 @@ function LanCard({ row, lan, perm, ext, onSave, onSend, onCancel }) {
   );
 }
 
+// Nút thu gọn/mở rộng cột nhiều-lần: mặc định cột chỉ hiện 1 ô (lần mới nhất) cho đỡ tràn ngang.
+// expanded=false → mũi tên phải + số lần đang ẩn; expanded=true → mũi tên trái (thu gọn).
+function LanCollapseToggle({ expanded, count, onToggle, minHeight = 116 }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      title={expanded ? 'Thu gọn (chỉ hiện lần mới nhất)' : `Mở rộng — xem tất cả ${count} lần`}
+      style={{ flex: '0 0 auto', width: 24, alignSelf: 'stretch', minHeight, display: 'inline-flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', cursor: 'pointer', fontWeight: 800, fontSize: '0.68rem', padding: 0 }}>
+      {expanded ? <ChevronLeft size={15} /> : <><ChevronRight size={15} /><span>{count}</span></>}
+    </button>
+  );
+}
+
 // Ô cột "Form khai báo": hàng ngang các ô-lần + ô "+ Thêm lần".
+// Mặc định THU GỌN (chỉ hiện lần mới nhất) khi có >1 lần; bấm nút để mở rộng xem/thêm.
 function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan, onCancelLan }) {
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   let lans = getEffectiveLan(row);
   // Chưa có lần nào ở app nhưng CNV đã có bản ghi cho số phiếu trần → hiện lần 1 (đối chiếu CNV).
   if (lans.length === 0) {
@@ -419,16 +505,19 @@ function KhaiBaoCell({ row, perm, khaiBaoExt, onSaveLan, onSendLan, onAddLan, on
   }
   const add = async (e) => { e.stopPropagation(); setBusy(true); try { await onAddLan(row); } finally { setBusy(false); } };
   if (lans.length === 0 && !perm.edit) return <span style={{ color: '#cbd5e1', fontSize: '0.72rem' }}>—</span>;
+  const collapsible = lans.length > 1;
+  const shown = collapsible && !expanded ? lans.slice(-1) : lans; // thu gọn → chỉ lần mới nhất
   return (
     <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '6px', alignItems: 'stretch' }}>
-      {lans.map((lan) => (
+      {collapsible && <LanCollapseToggle expanded={expanded} count={lans.length} onToggle={() => setExpanded(v => !v)} />}
+      {shown.map((lan) => (
         <LanCard key={String(lan['cnv_id'] || lan['lần'])} row={row} lan={lan} perm={perm}
           ext={khaiBaoExt && khaiBaoExt.get(String(lan['cnv_id']))}
           onSave={(l, draft) => onSaveLan(row, l, draft)}
           onSend={(l, draft) => onSendLan(row, l, draft)}
           onCancel={(l, huy) => onCancelLan(row, l, huy)} />
       ))}
-      {perm.edit && (
+      {perm.edit && (!collapsible || expanded) && (
         <button disabled={busy} onClick={add} className="wf-card"
           style={{ flex: '0 0 auto', width: 96, minHeight: 116, borderRadius: '10px', border: '1px dashed #93c5fd', background: '#eff6ff', color: '#1d4ed8', cursor: busy ? 'wait' : 'pointer', fontWeight: 700, fontSize: '0.72rem' }}>
           {busy ? '...' : '+ Thêm lần'}
@@ -680,7 +769,7 @@ const LIST_COLUMNS = [
   { key: 'tổng_chi_phí', label: 'Chi phí', render: r => (Number(r['tổng_chi_phí']) || 0).toLocaleString('vi-VN') + ' đ' },
   { key: 'kết_quả_xử_lý', label: 'Kết quả', render: r => r['kết_quả_xử_lý'] || '-' },
   { key: 'trạng_thái_xử_lý', label: 'Trạng thái xử lý', render: r => { const m = statusMeta(r['trạng_thái_xử_lý'] || 'chưa_xử_lý'); return badge(m.color, m.label); } },
-  { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onCompleteSync={ctx.onCompleteSync} /> },
+  { key: 'các_bước', label: 'Các bước (WF)', render: (r, ctx) => <StepChips row={r} perm={ctx.perm} onCompleteSync={ctx.onCompleteSync} onSaveSteps={ctx.onSaveSteps} /> },
   { key: 'trạng_thái_đồng_bộ', label: 'Đồng bộ', render: (r, ctx) => <SyncCell row={r} perm={ctx.perm} onSync={ctx.onQuickSync} /> },
   { key: 'khai_báo', label: 'Form khai báo', render: (r, ctx) => <KhaiBaoCell row={r} perm={ctx.perm} khaiBaoExt={ctx.khaiBaoExt} onSaveLan={ctx.onSaveLan} onSendLan={ctx.onSendLan} onAddLan={ctx.onAddLan} onCancelLan={ctx.onCancelLan} /> },
   {
@@ -958,6 +1047,16 @@ export default function WarrantyProcessing() {
       patch['trạng_thái_đồng_bộ'] = 'pending';
       patch['lỗi_đồng_bộ'] = null;
     }
+    setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
+    const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
+    if (error) { alert('Lỗi cập nhật bước: ' + error.message); await fetchRows(); }
+  };
+
+  // Lưu lại danh sách bước sau khi XÓA / CHÈN bước ngay trên danh sách (không đổi trạng thái xong/chưa).
+  // Luôn ép "Đóng phiếu" ở cuối. Cập nhật lạc quan UI; lỗi thì tải lại.
+  const saveStepsList = async (row, nextSteps) => {
+    const operator = (user && (user.name || user.id)) || '';
+    const patch = { 'các_bước': ensureClosingStep(nextSteps), 'người_cập_nhật': operator };
     setRows(prev => prev.map(x => x.id === row.id ? { ...x, ...patch } : x));
     const { error } = await taskDb.from('xu_ly_phieu_bao_hanh').update(patch).eq('id', row.id);
     if (error) { alert('Lỗi cập nhật bước: ' + error.message); await fetchRows(); }
@@ -1347,7 +1446,7 @@ export default function WarrantyProcessing() {
                       textOverflow: (isWide || isInfo) ? 'clip' : 'ellipsis',
                       whiteSpace: isInfo ? 'normal' : 'nowrap',
                     }}>
-                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, onCancelLan: cancelLan, khaiBaoExt, onAddProposalLan: addProposalLan, onSaveProposalLan: saveProposalLan, onCancelProposalLan: cancelProposalLan, onPrintProposal: (dl) => printProposals([dl]), onExcelProposal: (dl) => excelProposals([dl]) })}
+                      {c.render(r, { perm, onCompleteSync: completeStepAndSync, onSaveSteps: saveStepsList, onQuickSync: quickSync, onSaveGroup: saveInfoGroup, onSaveLan: saveLan, onSendLan: sendLan, onAddLan: addLan, onCancelLan: cancelLan, khaiBaoExt, onAddProposalLan: addProposalLan, onSaveProposalLan: saveProposalLan, onCancelProposalLan: cancelProposalLan, onPrintProposal: (dl) => printProposals([dl]), onExcelProposal: (dl) => excelProposals([dl]) })}
                     </td>
                   );
                 })}

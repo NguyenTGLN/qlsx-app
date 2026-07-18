@@ -57,11 +57,11 @@ export function ensureClosingStep(steps) {
 }
 
 // Danh sách bước hiệu lực của 1 phiếu: dùng bước tùy biến đã lưu nếu có,
-// nếu chưa có thì workflow chuẩn (tất cả 'chưa_xong'). Luôn kết thúc bằng "Đóng phiếu".
+// nếu CHƯA có thì mặc định CHỈ hiển thị mỗi bước "Đóng phiếu" — các bước khác
+// (Liên hệ KH, Hẹn lịch, Kiểm tra…) người dùng tự thêm tùy biến trong popup.
+// (WORKFLOW_STEPS_MAU nay chỉ còn dùng làm gợi ý khi thêm bước.)
 export function getEffectiveSteps(cacBuoc) {
-  const base = (Array.isArray(cacBuoc) && cacBuoc.length > 0)
-    ? cacBuoc
-    : WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong' }));
+  const base = (Array.isArray(cacBuoc) && cacBuoc.length > 0) ? cacBuoc : [];
   return ensureClosingStep(base);
 }
 

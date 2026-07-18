@@ -62,10 +62,9 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
     'kết_quả_xử_lý': row['kết_quả_xử_lý'] || '',
     'trạng_thái_caresoft_muốn_set': row['trạng_thái_caresoft_muốn_set'] || '',
   }));
+  // Phiếu mới mặc định CHỈ có bước "Đóng phiếu"; bước khác người dùng tự thêm (gợi ý ở datalist).
   const [steps, setSteps] = useState(() => ensureClosingStep(
-    (Array.isArray(row['các_bước']) && row['các_bước'].length)
-      ? row['các_bước']
-      : WORKFLOW_STEPS_MAU.map(t => ({ 'tên': t, 'trạng_thái': 'chưa_xong', 'người_làm': '', 'ghi_chú': '', 'hạn_xử_lý': '' }))
+    (Array.isArray(row['các_bước']) && row['các_bước'].length) ? row['các_bước'] : []
   ));
   const [parts, setParts] = useState(() => Array.isArray(row['linh_kiện_thay']) ? row['linh_kiện_thay'] : []);
   const [history] = useState(() => Array.isArray(row['lịch_sử_thao_tác']) ? row['lịch_sử_thao_tác'] : []);
@@ -298,13 +297,15 @@ export default function ProcessingModal({ row, perm, currentUser, onClose, onSav
             <h3 style={{ ...s.sectionTitle, margin: 0 }}>Các bước xử lý</h3>
             {perm.edit && <button onClick={addStep} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', padding: '0.3rem 0.6rem', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}><Plus size={14} /> Thêm bước</button>}
           </div>
+          {/* Gợi ý tên bước chuẩn cho ô "Tên bước" (gõ hoặc chọn nhanh). */}
+          <datalist id="wf-step-suggestions">{WORKFLOW_STEPS_MAU.map(t => <option key={t} value={t} />)}</datalist>
           {steps.length === 0 ? <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Chưa có bước nào.</p> : steps.map((st, i) => (
             <React.Fragment key={i}>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
               <button onClick={() => toggleStep(i)} disabled={!perm.edit} style={{ background: 'none', border: 'none', cursor: perm.edit ? 'pointer' : 'default', color: st['trạng_thái'] === 'xong' ? '#15803d' : '#cbd5e1' }}>
                 {st['trạng_thái'] === 'xong' ? <CheckCircle2 size={20} /> : <Circle size={20} />}
               </button>
-              <input style={{ ...s.input, flex: '2 1 140px' }} placeholder="Tên bước" value={st['tên'] || ''} disabled={!perm.edit} onChange={e => updateStep(i, 'tên', e.target.value)} />
+              <input list="wf-step-suggestions" style={{ ...s.input, flex: '2 1 140px' }} placeholder="Tên bước" value={st['tên'] || ''} disabled={!perm.edit} onChange={e => updateStep(i, 'tên', e.target.value)} />
               <input style={{ ...s.input, flex: '1 1 100px' }} placeholder="Người làm" value={st['người_làm'] || ''} disabled={!perm.edit} onChange={e => updateStep(i, 'người_làm', e.target.value)} />
               <input type="datetime-local" title="Hạn xử lý (ngày + giờ)" style={{ ...s.input, flex: '0 1 200px', minWidth: 180 }} value={st['hạn_xử_lý'] ? String(st['hạn_xử_lý']).substring(0, 16) : ''} disabled={!perm.edit} onChange={e => updateStep(i, 'hạn_xử_lý', e.target.value)} />
               {perm.edit && <button onClick={() => removeStep(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}><Trash2 size={16} /></button>}

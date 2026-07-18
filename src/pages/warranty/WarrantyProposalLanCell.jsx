@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Printer, Download } from 'lucide-react';
+import { FileText, Printer, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getEffectiveProposalLan } from '../../lib/warrantyProposalLan';
 
 // Các ô sửa của 1 lần đề xuất (map vào dữ_liệu). linh_kiện nhập bằng text ngăn dấu phẩy.
@@ -96,19 +96,36 @@ function ProposalLanCard({ row, lan, perm, onSave, onCancel, onPrint, onExcel })
   );
 }
 
+// Nút thu gọn/mở rộng: mặc định cột chỉ hiện 1 thẻ (lần mới nhất) cho đỡ tràn ngang.
+function LanCollapseToggle({ expanded, count, onToggle }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      title={expanded ? 'Thu gọn (chỉ hiện lần mới nhất)' : `Mở rộng — xem tất cả ${count} lần`}
+      style={{ flex: '0 0 auto', width: 24, alignSelf: 'stretch', minHeight: 90, display: 'inline-flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: '10px', border: '1px solid #cbd5e1', background: '#f8fafc', color: '#475569', cursor: 'pointer', fontWeight: 800, fontSize: '0.68rem', padding: 0 }}>
+      {expanded ? <ChevronLeft size={15} /> : <><ChevronRight size={15} /><span>{count}</span></>}
+    </button>
+  );
+}
+
 // Ô cột "Đề xuất BH": hàng ngang các thẻ lần + thẻ "+ Thêm lần".
+// Mặc định THU GỌN (chỉ hiện lần mới nhất) khi có >1 lần; bấm nút để mở rộng xem/thêm.
 export default function ProposalLanCell({ row, perm, onAddLan, onSaveLan, onCancelLan, onPrint, onExcel }) {
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const lans = getEffectiveProposalLan(row);
   const add = async (e) => { e.stopPropagation(); setBusy(true); try { await onAddLan(row); } finally { setBusy(false); } };
   if (lans.length === 0 && !perm.edit) return <span style={{ color: '#cbd5e1', fontSize: '0.72rem' }}>—</span>;
+  const collapsible = lans.length > 1;
+  const shown = collapsible && !expanded ? lans.slice(-1) : lans; // thu gọn → chỉ lần mới nhất
   return (
     <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '6px', alignItems: 'stretch' }} onClick={(e) => e.stopPropagation()}>
-      {lans.map((lan) => (
+      {collapsible && <LanCollapseToggle expanded={expanded} count={lans.length} onToggle={() => setExpanded(v => !v)} />}
+      {shown.map((lan) => (
         <ProposalLanCard key={String(lan['lần'])} row={row} lan={lan} perm={perm}
           onSave={onSaveLan} onCancel={onCancelLan} onPrint={onPrint} onExcel={onExcel} />
       ))}
-      {perm.edit && (
+      {perm.edit && (!collapsible || expanded) && (
         <button disabled={busy} onClick={add} className="wf-card"
           style={{ flex: '0 0 auto', width: 92, minHeight: 90, borderRadius: '10px', border: '1px dashed #93c5fd', background: '#eff6ff', color: '#1d4ed8', cursor: busy ? 'wait' : 'pointer', fontWeight: 700, fontSize: '0.72rem', display: 'inline-flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
           <FileText size={14} /> {busy ? '...' : '+ Thêm lần'}

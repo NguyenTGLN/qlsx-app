@@ -1,6 +1,6 @@
 import { test, expect, describe } from 'vitest';
 import {
-  PROCESSING_STATUSES, PROCESSING_CATEGORIES, WORKFLOW_STEPS_MAU,
+  PROCESSING_STATUSES, PROCESSING_CATEGORIES,
   isQualifyingTicket, computeTotalCost, getEffectiveSteps, ensureClosingStep, applyStepToggle, stepUrgency, toggleStepStatus, TRANG_THAI_XU_LY,
   THONG_TIN_BO_SUNG_KEYS, getThongTinBoSung, isClosingStepDone, csStatusOnClosingToggle, CLOSING_STEP,
   OPTION_FIELDS, OPTION_FIELD_KEYS, optionsFor, resolveOptionLabel, resolveOptionIdByLabel, parseMultiIds, joinMultiIds,
@@ -83,11 +83,11 @@ describe('hằng số', () => {
 });
 
 describe('getEffectiveSteps', () => {
-  test('phiếu chưa có bước → trả workflow chuẩn, tất cả chưa_xong', () => {
+  test('phiếu chưa có bước → mặc định CHỈ có "Đóng phiếu" (chưa_xong)', () => {
     const steps = getEffectiveSteps(null);
-    expect(steps.length).toBe(WORKFLOW_STEPS_MAU.length);
-    expect(steps.every(s => s['trạng_thái'] === 'chưa_xong')).toBe(true);
-    expect(steps[0]['tên']).toBe(WORKFLOW_STEPS_MAU[0]);
+    expect(steps.length).toBe(1);
+    expect(steps[0]['tên']).toBe('Đóng phiếu');
+    expect(steps[0]['trạng_thái']).toBe('chưa_xong');
   });
   test('phiếu đã có bước tùy biến → giữ nguyên + ép "Đóng phiếu" ở cuối', () => {
     const custom = [{ 'tên': 'Bước A', 'trạng_thái': 'xong' }];
@@ -96,8 +96,9 @@ describe('getEffectiveSteps', () => {
     expect(out[0]).toEqual({ 'tên': 'Bước A', 'trạng_thái': 'xong' });
     expect(out[out.length - 1]['tên']).toBe('Đóng phiếu');
   });
-  test('mảng rỗng → workflow chuẩn', () => {
-    expect(getEffectiveSteps([]).length).toBe(WORKFLOW_STEPS_MAU.length);
+  test('mảng rỗng → chỉ có "Đóng phiếu"', () => {
+    expect(getEffectiveSteps([]).length).toBe(1);
+    expect(getEffectiveSteps([]).at(-1)['tên']).toBe('Đóng phiếu');
   });
   test('workflow luôn kết thúc bằng "Đóng phiếu"', () => {
     expect(getEffectiveSteps(null).at(-1)['tên']).toBe('Đóng phiếu');
