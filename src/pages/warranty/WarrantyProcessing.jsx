@@ -396,8 +396,11 @@ const KB_TONE = { green: '#15803d', red: '#dc2626', amber: '#d97706', gray: '#94
 // Các trường nhập RIÊNG cho mỗi lần xử lý (free text). Loại nhiệm vụ → Phan_Loai_CV khi gửi CNV.
 const LAN_FIELDS = [
   ['loại_nhiệm_vụ', 'Loại nhiệm vụ'], ['chi_tiết_lỗi', 'Chi tiết lỗi'], ['tình_trạng', 'Tình trạng'],
-  ['nguyên_nhân', 'Nguyên nhân'], ['phương_án_xử_lý', 'Phương án xử lý'], ['linh_kiện', 'Linh kiện'],
+  ['nguyên_nhân', 'Nguyên nhân'], ['phương_án_xử_lý', 'Phương án xử lý'], ['kết_quả_thực_hiện', 'Kết quả thực hiện'],
+  ['linh_kiện', 'Linh kiện 1'], ['linh_kiện_2', 'Linh kiện 2'], ['linh_kiện_3', 'Linh kiện 3'],
   ['tên_đlđ', 'Tên KTV/ĐLĐ'], ['mã_đlđ', 'Mã ĐLĐ'], ['sđt_đlđ', 'SĐT ĐLĐ'], ['khoảng_cách', 'Khoảng cách'],
+  ['tên_khách_hàng', 'Tên khách hàng'], ['số_điện_thoại_khách_hàng', 'SĐT khách hàng'], ['địa_chỉ_nhận_hàng', 'Địa chỉ'],
+  ['mã_sản_phẩm', 'Mã sản phẩm'], ['mã_đơn_hàng', 'Mã đơn hàng'], ['ngày_lắp_đặt', 'Ngày lắp đặt'],
 ];
 
 // 1 ô = 1 LẦN xử lý: "Lần N · loại nhiệm vụ" + 3 dòng trạng thái (suy từ CNV theo cnv_id) + nút Gửi/Gửi lại.
@@ -417,6 +420,11 @@ function LanCard({ row, lan, perm, ext, onSave, onSend, onCancel }) {
     // Điền sẵn: giá trị lần đã lưu → mặc định từ phiếu (đỡ gõ lại). loại_nhiệm_vụ không có default.
     const defaults = lanDefaultsFromRow(row, fieldOptions);
     const d = {}; LAN_FIELDS.forEach(([k]) => { d[k] = lan[k] || defaults[k] || ''; });
+    // Dữ liệu cũ: ô "Linh kiện 1" còn dạng gộp (nhiều LK ngăn dấu phẩy) → tách ra 3 ô riêng.
+    if (String(d['linh_kiện'] || '').includes(',')) {
+      const p = String(d['linh_kiện']).split(',').map(x => x.trim());
+      d['linh_kiện'] = p[0] || ''; d['linh_kiện_2'] = p[1] || ''; d['linh_kiện_3'] = p[2] || '';
+    }
     setDraft(d);
     const top = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - 360));
     setOpen({ top, left: Math.max(8, Math.min(r.left, window.innerWidth - 340)), maxH: window.innerHeight - top - 12 });

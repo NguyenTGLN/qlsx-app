@@ -296,11 +296,18 @@ export function lanDefaultsFromRow(row, fieldOptions = []) {
     'tình_trạng': s(tin['tình_trạng']),
     'nguyên_nhân': s(optLabel('nguyên_nhân')),
     'phương_án_xử_lý': s(ttRaw['phương_án_xử_lý'] || goc['phương_án_xử_lý']),
-    'linh_kiện': s(optLabel('linh_kiện')),
+    'kết_quả_thực_hiện': s(ttRaw['kết_quả_thực_hiện'] || (row && row['kết_quả_thực_hiện']) || goc['kết_quả_thực_hiện']),
+    'linh_kiện': s(optLabel('linh_kiện')), // dạng GỘP; popover & buildLan tự tách 3 ô
     'tên_đlđ': s(tin['tên_đlđ']),
     'mã_đlđ': s(tin['mã_đlđ']),
     'sđt_đlđ': s(tin['sđt_đlđ']),
     'khoảng_cách': s(tin['khoảng_cách']),
+    'tên_khách_hàng': s(tin['tên_khách_hàng']),
+    'số_điện_thoại_khách_hàng': s(tin['số_điện_thoại_khách_hàng'] || (row && row['số_điện_thoại_khách_hàng'])),
+    'địa_chỉ_nhận_hàng': s(tin['địa_chỉ_nhận_hàng']),
+    'mã_sản_phẩm': s(optLabel('mã_sản_phẩm')),
+    'mã_đơn_hàng': s(ttRaw['mã_đơn_hàng'] || (row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']),
+    'ngày_lắp_đặt': s(tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),
   };
 }
 
@@ -334,19 +341,22 @@ export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
   const L = lan || {};
   const phieuGhi = (row && (row['phiếu_ghi'] || row['id_phiếu_ghi'])) || '';
   const cnvId = L['cnv_id'] || cnvIdForLan(phieuGhi, L['lần'] || 1);
-  const lk = splitLinhKien(L['linh_kiện']); // tách thành tối đa 3 ô Linh_Kien / _2 / _3
-  const ketQua = ttRaw['kết_quả_thực_hiện'] || (row && row['kết_quả_thực_hiện']) || goc['kết_quả_thực_hiện'];
+  // Linh kiện: ưu tiên 3 ô riêng của lần; nếu ô 1 còn dạng gộp (dữ liệu cũ có dấu phẩy) → tách ra 3.
+  let lk1 = s(L['linh_kiện']), lk2 = s(L['linh_kiện_2']), lk3 = s(L['linh_kiện_3']);
+  if (lk1.includes(',')) { const p = splitLinhKien(lk1); lk1 = p[0] || ''; lk2 = p[1] || ''; lk3 = p[2] || ''; }
+  // Trường "chung" NAY cũng cho sửa theo từng lần: ưu tiên giá trị của lần → mặc định từ phiếu.
+  const ketQua = L['kết_quả_thực_hiện'] || ttRaw['kết_quả_thực_hiện'] || (row && row['kết_quả_thực_hiện']) || goc['kết_quả_thực_hiện'];
   return {
     action: 'CREATE',
     oldValues: null,
     newValues: stripHashValues({
       Phieu_Ghi:       s(cnvId),
-      Ma_Don_Hang:     s(ttRaw['mã_đơn_hàng'] || (row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']), // ưu tiên mã sửa tay (thông_tin_bổ_sung) — khớp maDonHang() hiển thị; mirror bị CS ghi rỗng vẫn gửi đúng
-      San_Pham:        s(sanPham),
-      Ngay_Lap_Dat:    normDateYmd(tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),
-      Khach_Hang:      s(tin['tên_khách_hàng']),
-      SDT_Khach:       s(tin['số_điện_thoại_khách_hàng'] || (row && row['số_điện_thoại_khách_hàng'])),
-      Dia_Chi:         s(tin['địa_chỉ_nhận_hàng']),
+      Ma_Don_Hang:     s(L['mã_đơn_hàng'] || ttRaw['mã_đơn_hàng'] || (row && row['mã_đơn_hàng']) || goc['mã_đơn_hàng']),
+      San_Pham:        s(L['mã_sản_phẩm'] || sanPham),
+      Ngay_Lap_Dat:    normDateYmd(L['ngày_lắp_đặt'] || tin['ngày_lắp_đặt'] || (row && row['ngày_lắp_đặt'])),
+      Khach_Hang:      s(L['tên_khách_hàng'] || tin['tên_khách_hàng']),
+      SDT_Khach:       s(L['số_điện_thoại_khách_hàng'] || tin['số_điện_thoại_khách_hàng'] || (row && row['số_điện_thoại_khách_hàng'])),
+      Dia_Chi:         s(L['địa_chỉ_nhận_hàng'] || tin['địa_chỉ_nhận_hàng']),
       Chi_Tiet_Loi:    s(L['chi_tiết_lỗi']),
       Tinh_Trang:      s(L['tình_trạng']),
       Nguyen_Nhan:     s(L['nguyên_nhân']),
@@ -357,9 +367,9 @@ export function buildLanKhaiBaoRecord(row, lan, fieldOptions = []) {
       SDT_DLD:         s(L['sđt_đlđ']),
       Khoang_Cach:     s(L['khoảng_cách']),
       Phan_Loai_CV:    s(L['loại_nhiệm_vụ']),
-      Linh_Kien:       s(lk[0]),
-      Linh_Kien_2:     s(lk[1]),
-      Linh_Kien_3:     s(lk[2]),
+      Linh_Kien:       s(lk1),
+      Linh_Kien_2:     s(lk2),
+      Linh_Kien_3:     s(lk3),
       Trang_Thai:      KB_TRANG_THAI_FORM,
       Xac_Nhan_Online: KB_XAC_NHAN_ONLINE_INIT,
       Thanh_Toan:      KB_THANH_TOAN_INIT,

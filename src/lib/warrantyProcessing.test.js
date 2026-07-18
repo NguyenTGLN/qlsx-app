@@ -395,6 +395,22 @@ describe('xử lý nhiều lần', () => {
     const v = buildLanKhaiBaoRecord(row, { 'lần': 1, 'cnv_id': '229545' }, []).newValues;
     expect(v.Ket_Qua_Thuc_Hien).toBe('Từ gốc CS');
   });
+
+  test('buildLanKhaiBaoRecord: trường chung sửa theo lần (override) + linh kiện 3 ô riêng', () => {
+    const row = { 'phiếu_ghi': '229545', 'phiếu_gốc_json': { 'tên_khách_hàng': 'KH gốc', 'kết_quả_thực_hiện': 'gốc' } };
+    const lan = {
+      'lần': 5, 'cnv_id': '229545-5',
+      'tên_khách_hàng': 'KH sửa tay', 'kết_quả_thực_hiện': 'Đã xong', 'mã_đơn_hàng': 'DH-EDIT',
+      'linh_kiện': 'LK một', 'linh_kiện_2': 'LK hai', 'linh_kiện_3': '',
+    };
+    const v = buildLanKhaiBaoRecord(row, lan, []).newValues;
+    expect(v.Khach_Hang).toBe('KH sửa tay');       // override từ lần, không lấy 'KH gốc'
+    expect(v.Ket_Qua_Thuc_Hien).toBe('Đã xong');   // override từ lần
+    expect(v.Ma_Don_Hang).toBe('DH-EDIT');
+    expect(v.Linh_Kien).toBe('LK một');            // 3 ô riêng — KHÔNG tách (ô 1 không có dấu phẩy)
+    expect(v.Linh_Kien_2).toBe('LK hai');
+    expect(v.Linh_Kien_3).toBe('');
+  });
 });
 
 describe('deriveKhaiBaoStatuses', () => {
