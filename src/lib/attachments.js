@@ -76,11 +76,33 @@ export function attachmentViewUrl(a) {
   return a.path ? FILE_VIEW_BASE + a.path : a.url;
 }
 
+// Nhãn đứng TRƯỚC link trần. Zalo không cho gắn chữ lên link trong tin nhắn text
+// (xem docs/n8n/nhac-viec-workflows.md mục 4c) nên đây là dạng gần nhất với "bấm vào đây".
+const LINK_LABEL = {
+  image: '🖼 Bấm vào đây để xem ảnh',
+  video: '🎬 Bấm vào đây để xem video',
+  file: '📄 Bấm vào đây xem file gửi kèm',
+};
+
 // nguồn của sự thật cho node n8n "Tạo thẻ" — sửa hàm này là phải sửa cả bản copy trong n8n
 // (xem docs/n8n/nhac-viec-workflows.md)
+//
+// Liệt kê MỌI đính kèm, kể cả ảnh đã nhúng trong thẻ: ảnh nhúng bị HCTI thu nhỏ và không bấm
+// được, người nhận vẫn cần link để mở bản đầy đủ.
 export function buildZaloAttachmentText(list) {
-  const { links } = splitZaloAttachments(list);
-  if (!links.length) return '';
-  const lines = links.map(a => `• ${a.name} (${fmtSize(a.size)})\n  ${attachmentViewUrl(a)}`);
-  return `📎 Đính kèm — bấm link để xem:\n${lines.join('\n')}`;
+  const atts = (list || []).filter(Boolean);
+  if (!atts.length) return '';
+  const kindOfAtt = a => a.kind || kindOf(a.mime);
+  // Đánh số trong từng loại khi có nhiều hơn 1 — nhãn là chữ đứng trước link trần, không đánh số
+  // thì 3 ảnh ra 3 dòng chữ giống hệt nhau, người nhận không biết link nào là ảnh nào.
+  const total = {};
+  for (const a of atts) { const k = kindOfAtt(a); total[k] = (total[k] || 0) + 1; }
+  const seen = {};
+  const lines = atts.map(a => {
+    const k = kindOfAtt(a);
+    seen[k] = (seen[k] || 0) + 1;
+    const num = total[k] > 1 ? ` (${seen[k]}/${total[k]})` : '';
+    return `${LINK_LABEL[k] || LINK_LABEL.file}${num} — ${fmtSize(a.size)}:\n${attachmentViewUrl(a)}`;
+  });
+  return `📎 Đính kèm:\n${lines.join('\n')}`;
 }

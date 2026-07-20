@@ -69,8 +69,10 @@ Node `Tạo thẻ đến hạn` mặc định dùng mẫu tự chứa (chạy ng
 - Thẻ chi tiết đọc `task.attachments` **+ attachments của lần cập nhật tiến độ MỚI NHẤT**
   (gộp, loại trùng theo `path`).
 - **Ảnh (tối đa 10): NHÚNG lưới `<img>` ngay trong thẻ** → HCTI render → cả 10 ảnh vẫn chỉ
-  là **1 tin nhắn**. Đổi lại: người nhận xem ảnh trong thẻ, không bấm mở full-size từng tấm.
-- **Video/file: chèn link** vào `message_text` (Zalo OA không có endpoint upload video).
+  là **1 tin nhắn**.
+- **MỌI file đều có link riêng** trong `message_text` — kể cả ảnh đã nhúng (2026-07-20).
+  Ảnh nhúng bị thu nhỏ trong thẻ và không bấm được, nên vẫn cần link mở bản đầy đủ.
+  Video/file thì bắt buộc dùng link (Zalo OA không có endpoint upload video).
 - `ms_delay` của HCTI tự tăng 1200→3000 khi có ảnh nhúng (chờ tải ảnh từ Storage).
 - Bảng tổng hợp 8h/17h: chỉ hiện đếm `📎N` cạnh tên việc (không nhúng ảnh — bảng sẽ dài vô hạn).
 
@@ -96,7 +98,20 @@ thay vì URL Storage dài 130 ký tự:
   điện thoại, không phải tải về — giới hạn Office Viewer: file ~10MB trở xuống);
   pdf / video / ảnh → mở thẳng, trình duyệt tự render.
 - Zalo **không cho gắn chữ lên link** (kiểu "bấm vào đây") trong tin nhắn text — link trần là
-  giới hạn của Zalo, không né được.
+  giới hạn của Zalo, không né được. Tin nhắn đi bằng `message.text` thuần + 1 ảnh template,
+  không có trường nào nhận HTML/anchor.
+- Cách gần nhất đang dùng (2026-07-20): **nhãn đứng TRƯỚC link trần**, mỗi file 2 dòng —
+
+  ```
+  📎 Đính kèm:
+  🖼 Bấm vào đây để xem ảnh (1/2) — 200KB:
+  https://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/ab12cd34ef.webp
+  🎬 Bấm vào đây để xem video — 18MB:
+  https://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/9f3c1d20aa.mp4
+  ```
+
+  Nhiều file cùng loại thì đánh số `(i/n)`, vì nhãn là chữ chứ không dính vào link — không đánh
+  số thì 3 ảnh ra 3 dòng chữ giống hệt nhau.
 
 **Cài (1 lần):** n8n → **Import from File** → `wf-xem-file-dinh-kem.json` (workflow MỚI, 3 node)
 → **Activate**. Không Activate thì mọi link trong tin nhắn chết (trả 404).

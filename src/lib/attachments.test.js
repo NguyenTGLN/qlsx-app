@@ -164,17 +164,34 @@ describe('attachmentViewUrl', () => {
   });
 });
 
+// Nhãn "Bấm vào đây..." là dòng chữ ĐỨNG TRƯỚC link trần — Zalo không cho gắn chữ lên link
+// trong tin nhắn text (docs/n8n/nhac-viec-workflows.md mục 4c).
 describe('buildZaloAttachmentText', () => {
-  it('liệt kê video và file: tên + dung lượng một dòng, link xem trực tiếp dòng dưới', () => {
+  it('mỗi loại có nhãn riêng, link xuống dòng ngay dưới', () => {
     expect(buildZaloAttachmentText([vid({ path: 'tasks/2026-07/v1.mp4' }), doc({ path: 'tasks/2026-07/d1.pdf' })])).toBe(
-      '📎 Đính kèm — bấm link để xem:\n' +
-      '• v.mp4 (18MB)\n  https://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/v1.mp4\n' +
-      '• d.pdf (128KB)\n  https://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/d1.pdf'
+      '📎 Đính kèm:\n' +
+      '🎬 Bấm vào đây để xem video — 18MB:\nhttps://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/v1.mp4\n' +
+      '📄 Bấm vào đây xem file gửi kèm — 128KB:\nhttps://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/d1.pdf'
     );
   });
-  it('bỏ qua ảnh vì ảnh đã nhúng trong thẻ', () => {
-    const list = Array.from({ length: 10 }, () => img());
-    expect(buildZaloAttachmentText(list)).toBe('');
+  it('ảnh cũng có link dù đã nhúng trong thẻ — ảnh nhúng không bấm mở full-size được', () => {
+    expect(buildZaloAttachmentText([img({ path: 'tasks/2026-07/a1.webp' })])).toBe(
+      '📎 Đính kèm:\n' +
+      '🖼 Bấm vào đây để xem ảnh — 200KB:\nhttps://thegioilocnuoc.site/webhook/f?p=tasks/2026-07/a1.webp'
+    );
+  });
+  it('nhiều file cùng loại thì đánh số để phân biệt', () => {
+    const txt = buildZaloAttachmentText([
+      img({ path: 'p/a1.webp' }), img({ path: 'p/a2.webp' }), vid({ path: 'p/v1.mp4' }),
+    ]);
+    expect(txt).toContain('🖼 Bấm vào đây để xem ảnh (1/2) — 200KB:');
+    expect(txt).toContain('🖼 Bấm vào đây để xem ảnh (2/2) — 200KB:');
+    // video chỉ có 1 nên không đánh số
+    expect(txt).toContain('🎬 Bấm vào đây để xem video — 18MB:');
+  });
+  it('đính kèm cũ thiếu cột kind thì suy ra từ mime', () => {
+    expect(buildZaloAttachmentText([{ path: 'p/x.mp4', mime: 'video/mp4', size: 1024 }]))
+      .toContain('🎬 Bấm vào đây để xem video');
   });
   it('không có đính kèm thì trả chuỗi rỗng', () => {
     expect(buildZaloAttachmentText([])).toBe('');

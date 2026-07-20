@@ -850,9 +850,37 @@ import { useNavigate } from 'react-router-dom';
     // ============================================================
     // TASK TABLE (Danh sách tất cả công việc)
     // ============================================================
-    function TaskTable({tasks,users,currentUser,assFilter,setAssFilter,onEdit,onDetail,onDelete,onBulkDelete}) {
+    // Modal nhập nhanh tiến độ ngay từ bảng danh sách (không cần mở chi tiết)
+    function QuickUpdateModal({task, onSubmit, onClose}) {
+      const [txt,setTxt] = useState('')
+      const [busy,setBusy] = useState(false)
+      async function submit(e) {
+        e.preventDefault()
+        if (!txt.trim()) return
+        setBusy(true)
+        try { await onSubmit(txt.trim()); onClose() }
+        finally { setBusy(false) }
+      }
+      return h(Modal,{title:'Cập nhật tiến độ', onClose},
+        h('form',{onSubmit:submit},
+          h('p',{className:'text-[11px] sm:text-xs text-gray-500 font-semibold mb-2 line-clamp-2'}, task.title),
+          h('textarea',{className:inp+' min-h-[90px]', value:txt, autoFocus:true, onChange:e=>setTxt(e.target.value), placeholder:'Nội dung tiến độ...'}),
+          h('div',{className:'flex justify-end gap-2 mt-4'},
+            h('button',{type:'button',onClick:onClose,className:btn.secondary},'Đóng'),
+            h('button',{type:'submit',disabled:busy||!txt.trim(),className:btn.primary}, busy?'Đang lưu...':'Lưu tiến độ')
+          )
+        )
+      )
+    }
+
+    function TaskTable({tasks,users,currentUser,assFilter,setAssFilter,onEdit,onDetail,onDelete,onBulkDelete,onUpdate,onRemind,onAddUpdate}) {
       const [search,setSearch] = useState(''); const [stFilter,setStFilter] = useState('IN_PROGRESS'); const isAdmin = currentUser.role===ROLE.ADMIN
       const canDelete = getTabPerm(currentUser, 'tasks', 'tasks').delete;
+      const canAddUpdate = hasPerm(currentUser,'add_update')
+      const canRemind    = hasPerm(currentUser,'remind_task')
+      const canStatus    = hasPerm(currentUser,'change_status')
+      const hasActions   = canAddUpdate || canRemind || canStatus || canDelete
+      const [quickTask,setQuickTask] = useState(null)
       const filtered = tasks.filter(t=>{
         if (stFilter!=='ALL'&&t.status!==stFilter) return false; if (assFilter!=='ALL'&&!memberIds(t).includes(assFilter)) return false
         if (search) { const q=search.toLowerCase(); const names=(t.assignees||[]).map(u=>(u.name||'').toLowerCase()); if (!t.title.toLowerCase().includes(q)&&!t.id.toLowerCase().includes(q)&&!names.some(n=>n.includes(q))&&!(t.label||'').toLowerCase().includes(q)) return false }
@@ -881,16 +909,16 @@ import { useNavigate } from 'react-router-dom';
         h('div',{className:'bg-white rounded-xl border border-gray-200 shadow-sm w-full overflow-hidden'},
           h('table',{className:'w-full table-fixed'},
             h('thead',null, h('tr',{className:'border-b border-gray-200'},
-                h('th',{className:`${thClass} w-[26%] sm:w-[25%]`}, 'Công việc'),
+                h('th',{className:`${thClass} w-[22%] sm:w-[21%]`}, 'Công việc'),
                 // Cột Người nới rộng để liệt kê đủ thành viên việc nhóm, bù lại từ cột Cập nhật
-                h('th',{className:`${thClass} w-[22%]`}, 'Người'),
-                h('th',{className:`${thClass} w-[12%] sm:w-[13%]`}, 'Trạng thái'),
-                h('th',{className:`${thClass} w-[13%] text-center`}, 'Hạn'),
-                h('th',{className:`${thClass} w-[16%]`}, 'Cập nhật'),
-                canDelete && h('th',{className:`${thClass} w-[8%] text-center`}, '')
+                h('th',{className:`${thClass} w-[19%]`}, 'Người'),
+                h('th',{className:`${thClass} w-[11%] sm:w-[12%]`}, 'Trạng thái'),
+                h('th',{className:`${thClass} w-[12%] text-center`}, 'Hạn'),
+                h('th',{className:`${thClass} w-[14%]`}, 'Cập nhật'),
+                hasActions && h('th',{className:`${thClass} w-[22%] text-center`}, 'Thao tác')
             )),
             h('tbody',null,
-              filtered.length===0 ? h('tr',null,h('td',{colSpan:canDelete?6:5,className:'text-center text-gray-400 py-10 text-[11px]'},'Không tìm thấy công việc nào'))
+              filtered.length===0 ? h('tr',null,h('td',{colSpan:hasActions?6:5,className:'text-center text-gray-400 py-10 text-[11px]'},'Không tìm thấy công việc nào'))
                 : filtered.map(t=>
                     h('tr',{key:t.id, className:'border-b border-gray-100 cursor-pointer table-row-hover group', onClick:()=>onDetail(t)},
                       h('td',{className:tdClass}, h('div',{className:'font-bold text-gray-900 truncate flex items-center gap-1.5'},h('span',{className:'truncate'},t.title),h(AttachmentBadge,{list:t.attachments}))),
@@ -898,12 +926,36 @@ import { useNavigate } from 'react-router-dom';
                       h('td',{className:tdClass}, h(StatusBadge,{status:t.status})),
                       h('td',{className:tdClass+' text-center'}, h(CompactWarning,{due_date:t.due_date,status:t.status, completed_date:t.completed_date})),
                       h('td',{className:tdClass+' text-gray-500'}, t.progressUpdates?.length ? t.progressUpdates[t.progressUpdates.length - 1].content : 'Chưa cập nhật'),
-                      canDelete && h('td',{className:tdClass+' text-center'}, h('button',{onClick:(e)=>{e.stopPropagation(); onDelete(t)},className:'text-gray-300 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors', title:'Xóa'}, h(IconTrash)))
+                      hasActions && h('td',{className:'px-1 py-1.5 text-center'},
+                        h('div',{className:'flex items-center justify-center gap-1', onClick:e=>e.stopPropagation()},
+                          canAddUpdate && t.status===STATUS.IN_PROGRESS && h('button',{
+                            onClick:()=>setQuickTask(t),
+                            className:'px-1.5 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 font-bold text-[9px] sm:text-[10px] flex items-center gap-0.5 transition-colors',
+                            title:'Cập nhật tiến độ'
+                          }, h(IconEdit), h('span',{className:'hidden lg:inline'},'Tiến độ')),
+                          canRemind && t.status===STATUS.IN_PROGRESS && h('button',{
+                            onClick:()=>onRemind(t),
+                            className:'px-1.5 py-1 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold text-[9px] sm:text-[10px] flex items-center gap-0.5 transition-colors shadow-sm',
+                            title: t.last_reminded_date ? `Đã nhắc: ${fmtDT(t.last_reminded_date)}` : 'Gửi nhắc việc'
+                          }, h(IconBell), h('span',{className:'hidden lg:inline'},'Nhắc')),
+                          canStatus && t.status===STATUS.IN_PROGRESS && h('button',{
+                            onClick:()=>{ if(confirm('Xác nhận hoàn thành công việc này?')) onUpdate(t.id,{status:STATUS.COMPLETED, completed_date:new Date().toISOString()}) },
+                            className:'px-1.5 py-1 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 font-bold text-[9px] sm:text-[10px] flex items-center gap-0.5 transition-colors shadow-sm',
+                            title:'Đánh dấu hoàn thành'
+                          }, h(IconCheck), h('span',{className:'hidden lg:inline'},'Xong')),
+                          canDelete && h('button',{onClick:()=>onDelete(t),className:'text-gray-300 hover:text-red-500 hover:bg-red-50 p-1 rounded transition-colors', title:'Xóa'}, h(IconTrash))
+                        )
+                      )
                     )
                   )
             )
           )
-        )
+        ),
+        quickTask && h(QuickUpdateModal,{
+          task: quickTask,
+          onClose: ()=>setQuickTask(null),
+          onSubmit: txt => onAddUpdate(quickTask.id, txt, [])
+        })
       )
     }
 
@@ -1487,7 +1539,7 @@ import { useNavigate } from 'react-router-dom';
                : view==='dashboard'&&canSeeTab(me,'tasks','dashboard') ? h(Dashboard, {tasks, users, currentUser: me, pendingOrders, onUserClick:handleUserClick, onDetail:t=>setDetailTask(t), onAddUser: ()=>setUserModal({}), onEditUser: u=>setUserModal({user:u})})
                : view==='work_report' && canSeeTab(me,'tasks','work_report') ? h(WorkReport)
                : view==='tasks' && assFilter !== 'ALL' ? h(UserTaskBoard, { user: users.find(u=>u.id===assFilter) || me, tasks, currentUser: me, onBack: canSeeTab(me,'tasks','dashboard') ? () => { setView('dashboard'); setAssFilter('ALL'); } : null, onDetail: t=>setDetailTask(t), onEdit: t=>setTaskModal({task:t}), onUpdate: handleUpdateTask, onRemind: handleRemind, onDelete: handleDeleteTask })
-               : view==='tasks' && assFilter === 'ALL' ? h('div',null, h('div',{className:'flex items-center justify-between mb-4 max-w-[1400px] mx-auto w-full'}, h('h1',{className:'text-sm sm:text-xl font-bold text-gray-900'}, 'Tất cả công việc'), h('button',{onClick:()=>{dataCache.invalidate(TASK_CACHE_KEY);bootstrap(me,true);},className:btn.secondary+' px-2 py-1 text-[10px] sm:text-xs'},'↻ Làm mới')), h(TaskTable,{ tasks, users, currentUser:me, assFilter, setAssFilter, onEdit: t=>setTaskModal({task:t}), onDetail:t=>setDetailTask(t), onDelete:handleDeleteTask, onBulkDelete:handleBulkDelete }))
+               : view==='tasks' && assFilter === 'ALL' ? h('div',null, h('div',{className:'flex items-center justify-between mb-4 max-w-[1400px] mx-auto w-full'}, h('h1',{className:'text-sm sm:text-xl font-bold text-gray-900'}, 'Tất cả công việc'), h('button',{onClick:()=>{dataCache.invalidate(TASK_CACHE_KEY);bootstrap(me,true);},className:btn.secondary+' px-2 py-1 text-[10px] sm:text-xs'},'↻ Làm mới')), h(TaskTable,{ tasks, users, currentUser:me, assFilter, setAssFilter, onEdit: t=>setTaskModal({task:t}), onDetail:t=>setDetailTask(t), onDelete:handleDeleteTask, onBulkDelete:handleBulkDelete, onUpdate:handleUpdateTask, onRemind:handleRemind, onAddUpdate:handleAddUpdate }))
                : null
         ),
 
