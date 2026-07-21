@@ -17,3 +17,25 @@ export function diemDat(ct, logs = []) {
   const max = num(ct.chi_tieu);
   return clamp(max + tong, 0, max);
 }
+
+// Kết quả tính của MỘT dòng chỉ tiêu.
+// `bpMap`: { [lien_ket_bo_phan]: điểm đạt của dòng BO_PHAN } — xem tinhBangKpi().
+//
+// Dòng có lien_ket_bo_phan lấy ĐIỂM ĐẠT từ dòng bộ phận nhưng giữ TRỌNG SỐ riêng:
+// chấm một lần cho cả bộ phận, mỗi người quy đổi theo trọng số của mình.
+export function tinhChiTieu(ct, logs = [], bpMap = {}) {
+  const laBoPhan = !!ct.lien_ket_bo_phan;
+  const dat = laBoPhan ? num(bpMap[ct.lien_ket_bo_phan]) : diemDat(ct, logs);
+  const max = num(ct.chi_tieu);
+  const trongSo = num(ct.trong_so);
+
+  // chi_tieu null/0 = dòng thưởng ngoài trọng số: cộng thẳng điểm nhật ký, không có tỉ lệ.
+  if (!max) {
+    const thuong = logs.reduce((s, l) => s + num(l.so_diem), 0);
+    return { diemDat: dat, tiLeDat: null, diemQuyDoi: thuong, diemMat: 0, laThuong: true };
+  }
+
+  const tiLeDat = clamp(dat / max, 0, 1);
+  const diemQuyDoi = tiLeDat * trongSo;
+  return { diemDat: dat, tiLeDat, diemQuyDoi, diemMat: trongSo - diemQuyDoi, laThuong: false };
+}
