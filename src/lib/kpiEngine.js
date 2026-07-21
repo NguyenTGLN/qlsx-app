@@ -43,7 +43,11 @@ export function tinhChiTieu(ct, logs = [], bpMap = {}) {
   // chi_tieu = 0. Trong Excel gốc cột chỉ tiêu chỉ có 2/5/6/10/15/24 và dòng thưởng để trống,
   // nên số 0 chỉ có thể là lỗi nhập — suy "thưởng" từ !max sẽ nuốt mất lỗi đó.
   if (ct.chi_tieu == null) {
-    const thuong = logs.reduce((s, l) => s + num(l.so_diem), 0);
+    // "Chốt tay đè lên nhật ký" là luật chung, KHÔNG có ngoại lệ cho dòng thưởng.
+    // Trước đây nhánh này luôn lấy tổng nhật ký nên số chốt bị nuốt im lặng.
+    const thuong = ct.diem_chot != null
+      ? num(ct.diem_chot)
+      : logs.reduce((s, l) => s + num(l.so_diem), 0);
     // CHÚ Ý cho người đọc sau: `diemDat` của dòng thưởng KHÔNG phải điểm thật của dòng
     // (mặc định là 0) — điểm thật nằm ở `diemQuyDoi`. UI/Excel phải đọc cờ `laThuong`
     // để render đúng cột, đừng lấy `diemDat` ra hiển thị.
@@ -124,21 +128,29 @@ const phanTram = ti => `${soGon(ti * 100)}%`;
 export function giaiThich(ct, logs = [], bpMap = {}) {
   const kq = tinhChiTieu(ct, logs, bpMap);
 
+  const chotTay = ct.diem_chot != null;
+  // Chốt tay ghi rõ ai chốt, lúc nào — dùng chung cho cả dòng thường lẫn dòng thưởng.
+  const nguoiChot = ct.chot_boi ? ` bởi ${ct.chot_boi}` : '';
+  const lucChot = ct.chot_luc ? ` (${new Date(ct.chot_luc).toLocaleDateString('vi-VN')})` : '';
+
   if (kq.laThuong) {
     return {
       ten: ct.ten,
       buoc: [{
         nhan: 'Điểm cộng thêm',
-        dienGiai: logs.map(l => `${num(l.so_diem) > 0 ? '+' : ''}${num(l.so_diem)}`).join(' ') || '0',
+        // Chốt tay thì nhật ký KHÔNG còn quyết định điểm nữa, nên diễn giải phải nói đúng
+        // nguồn — liệt kê "+1.5" trong khi kết quả là 3 sẽ phá chính mục đích popup bằng chứng.
+        dienGiai: chotTay
+          ? `Quản lý chốt tay${nguoiChot}${lucChot}: ${soGon(kq.diemQuyDoi)}`
+          : (logs.map(l => `${num(l.so_diem) > 0 ? '+' : ''}${num(l.so_diem)}`).join(' ') || '0'),
         ketQua: soGon(kq.diemQuyDoi),
-        nguon: 'NHAT_KY',
+        nguon: chotTay ? 'CHOT_TAY' : 'NHAT_KY',
       }],
       nhatKy: logs,
     };
   }
 
   const tongLog = logs.reduce((s, l) => s + num(l.so_diem), 0);
-  const chotTay = ct.diem_chot !== null && ct.diem_chot !== undefined;
   const boPhan = !!ct.lien_ket_bo_phan;
 
   let buocDat;
@@ -149,11 +161,9 @@ export function giaiThich(ct, logs = [], bpMap = {}) {
       ketQua: soGon(kq.diemDat),
     };
   } else if (chotTay) {
-    const ai = ct.chot_boi ? ` bởi ${ct.chot_boi}` : '';
-    const luc = ct.chot_luc ? ` (${new Date(ct.chot_luc).toLocaleDateString('vi-VN')})` : '';
     buocDat = {
       nhan: 'Điểm đạt', nguon: 'CHOT_TAY',
-      dienGiai: `Quản lý chốt tay${ai}${luc}: ${soGon(kq.diemDat)}`,
+      dienGiai: `Quản lý chốt tay${nguoiChot}${lucChot}: ${soGon(kq.diemDat)}`,
       ketQua: soGon(kq.diemDat),
     };
   } else {

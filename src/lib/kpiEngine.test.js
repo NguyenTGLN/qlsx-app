@@ -97,6 +97,16 @@ describe('tinhChiTieu', () => {
     expect(r.diemQuyDoi).toBe(0);
     expect(r.diemMat).toBe(6);
   });
+
+  it('dòng thưởng: chốt tay đè lên nhật ký (luật không có ngoại lệ)', () => {
+    const r = tinhChiTieu({ chi_tieu: null, trong_so: 0, diem_chot: 3 }, [{ so_diem: 1.5 }]);
+    expect(r.diemQuyDoi).toBe(3);
+  });
+
+  it('dòng thưởng không chốt tay vẫn cộng theo nhật ký như cũ', () => {
+    const r = tinhChiTieu({ chi_tieu: null, trong_so: 0, diem_chot: null }, [{ so_diem: 1.5 }]);
+    expect(r.diemQuyDoi).toBeCloseTo(1.5);
+  });
 });
 
 // Bảng thật của Lê Văn Bích, kỳ 2026-06, rút gọn còn các dòng có mất điểm
@@ -156,6 +166,15 @@ describe('tinhBangKpi', () => {
     ];
     const r = tinhBangKpi(rows, [{ chi_tieu_id: 'b', so_diem: 2 }]);
     expect(r.tongKpi).toBeCloseTo(102);
+  });
+
+  it('tổng KPI cộng số CHỐT TAY của dòng thưởng, không cộng số nhật ký', () => {
+    const rows = [
+      { id: 'a', cap_do: 'CA_NHAN', ten: 'X', chi_tieu: 10, trong_so: 100, diem_chot: 10 },
+      { id: 'b', cap_do: 'CA_NHAN', ten: 'THƯỞNG', chi_tieu: null, trong_so: 0, diem_chot: 3 },
+    ];
+    const r = tinhBangKpi(rows, [{ chi_tieu_id: 'b', so_diem: 1.5 }]);
+    expect(r.tongKpi).toBeCloseTo(103);
   });
 });
 
@@ -228,6 +247,18 @@ describe('giaiThich', () => {
     const g = giaiThich({ ten: 'THƯỞNG', chi_tieu: null, trong_so: 0 },
       [{ ngay: '2026-06-30', so_diem: 1.5, ly_do: 'Ý tưởng tốt' }]);
     expect(g.buoc.map(b => b.nhan)).toEqual(['Điểm cộng thêm']);
+    expect(g.buoc[0].nguon).toBe('NHAT_KY');
     expect(g.buoc[0].ketQua).toBeCloseTo(1.5);
+  });
+
+  it('dòng thưởng chốt tay: diễn giải nói rõ chốt tay, không mâu thuẫn với kết quả', () => {
+    const g = giaiThich(
+      { ten: 'THƯỞNG', chi_tieu: null, trong_so: 0, diem_chot: 3, chot_boi: 'Nguyên' },
+      [{ ngay: '2026-06-30', so_diem: 1.5, ly_do: 'Ý tưởng tốt' }]);
+    expect(g.buoc[0].nguon).toBe('CHOT_TAY');
+    expect(g.buoc[0].dienGiai).toContain('Nguyên');
+    expect(g.buoc[0].ketQua).toBe(3);
+    // Chuỗi diễn giải KHÔNG được nói "+1.5" trong khi kết quả là 3.
+    expect(g.buoc[0].dienGiai).not.toContain('1.5');
   });
 });
