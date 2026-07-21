@@ -14,6 +14,14 @@ set search_path = public, pg_temp
 as $$
 declare so_dong int;
 begin
+  -- Hàm SECURITY DEFINER chạy bằng quyền chủ sở hữu nên BỎ QUA RLS: không tự kiểm quyền
+  -- ở đây thì dù sql/rls_kpi_admin_only.sql đã siết ghi về ADMIN, bất kỳ user đăng nhập
+  -- nào vẫn gọi được hàm này và chèn hàng trăm dòng chỉ tiêu. Cùng idiom với
+  -- public.dat_mat_khau / public.sao_chep_secret trong security_2_jwt_and_login.sql.
+  if coalesce(auth.jwt()->>'nv_role','') <> 'ADMIN' then
+    raise exception 'Chỉ Admin được tạo kỳ KPI' using errcode='42501';
+  end if;
+
   if ky_nguon is null or ky_moi is null or ky_nguon = ky_moi then
     raise exception 'Kỳ nguồn và kỳ mới phải khác nhau và không được để trống';
   end if;
