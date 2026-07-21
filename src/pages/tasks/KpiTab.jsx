@@ -56,15 +56,23 @@ export default function KpiTab({ me, users = [], perm = {} }) {
     setLoi('');
     try {
       // fetchAllRows trả { data, error } chứ KHÔNG trả thẳng mảng — phải destructure.
+      //
+      // `.order('id')` là TIE-BREAK BẮT BUỘC, không phải trang trí (luật của repo, xem
+      // lib/supabase.js): fetchAllRows gom theo từng đợt 1000 dòng, mà `thu_tu` thì mỗi
+      // người đều có 1..N nên trùng dày đặc. Thứ tự các dòng bằng nhau không được bảo đảm
+      // giữa hai request → đợt sau có thể trả lại dòng đã lấy hoặc bỏ sót dòng chưa lấy.
       const { data: ct, error: loiCt } = await fetchAllRows(() =>
-        supabase.from('kpi_chi_tieu').select('*').eq('ky', ky).order('thu_tu'));
+        supabase.from('kpi_chi_tieu').select('*').eq('ky', ky).order('thu_tu').order('id'));
       if (loiCt) throw loiCt;
 
       const ids = (ct || []).map(r => r.id);
       const nk = [];
       for (const lo of chiaLo(ids, 100)) {
+        // `ngay` trùng còn dày hơn `thu_tu` (cả bộ phận bị trừ điểm cùng một ngày là
+        // chuyện thường). Một dòng trừ điểm bị lặp = trừ đôi, bị sót = không trừ —
+        // cả hai đều ra sai điểm KPI, và sai âm thầm.
         const { data, error } = await fetchAllRows(() =>
-          supabase.from('kpi_nhat_ky').select('*').in('chi_tieu_id', lo).order('ngay'));
+          supabase.from('kpi_nhat_ky').select('*').in('chi_tieu_id', lo).order('ngay').order('id'));
         if (error) throw error;
         if (data) nk.push(...data);
       }
