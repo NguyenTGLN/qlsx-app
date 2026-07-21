@@ -1450,6 +1450,13 @@ import { useNavigate } from 'react-router-dom';
             if (renErr) throw new Error('Lỗi chuyển việc sang mã mới: ' + renErr.message);
             await db.from('cong_viec_duoc_giao').update({updated_by: form.id}).eq('updated_by', originalId);
             await db.from('tien_do').update({updated_by_id: form.id}).eq('updated_by_id', originalId);
+            // BẮT BUỘC trước khi xoá mã cũ: kpi_chi_tieu.nhan_vien_id là FK
+            // `on delete cascade` (sql/create_kpi_module.sql) — đây là FK cascade DUY NHẤT
+            // trỏ vào nhan_vien. Xoá bản ghi mã cũ mà chưa chuyển thì cascade nuốt sạch
+            // kpi_chi_tieu của MỌI KỲ, rồi cascade tiếp nuốt kpi_nhat_ky (bằng chứng chấm
+            // điểm). Không cảnh báo, không phục hồi được, mà KPI gắn thẳng với lương thưởng.
+            const {error:kpiErr} = await db.from('kpi_chi_tieu').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
+            if (kpiErr) throw new Error('Lỗi chuyển KPI sang mã mới: ' + kpiErr.message);
             const {error:delErr} = await db.from('nhan_vien').delete().eq('id', originalId);
             if (delErr) throw new Error('Lỗi xóa ID cũ: ' + delErr.message);
             const newUsers = users.map(u => u.id === originalId ? {...u, ...data, id: form.id} : u);
