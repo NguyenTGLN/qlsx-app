@@ -3,6 +3,7 @@
 // KHÔNG ghi thẳng vào Supabase — mở file SQL sinh ra, soát rồi tự chạy trên SQL Editor.
 import XLSX from 'xlsx';
 import { writeFileSync } from 'node:fs';
+import { q, n, ngayCuoiKy, sqlChiTieuKemGhiChu } from '../src/lib/kpiImportSql.js';
 
 const FILE = 'KPI/Copy of KPI kho 06.2026.xls';
 const KY = '2026-06';
@@ -33,8 +34,8 @@ const NHOM_BO_PHAN = [
   { khop: /CẢ TEAM/i, khoa: 'HOTLINE_CA_TEAM_BH' },
 ];
 
-const q = v => (v === null || v === undefined || v === '' ? 'null' : `'${String(v).replace(/'/g, "''")}'`);
-const n = v => (typeof v === 'number' && Number.isFinite(v) ? v : 'null');
+// Ngày gắn cho dòng nhật ký giữ ghi chú: ngày cuối của kỳ (kỳ đã chốt, không có ngày cụ thể).
+const NGAY_CHOT = ngayCuoiKy(KY);
 
 function docSheet(ws) {
   const range = XLSX.utils.decode_range(ws['!ref']);
@@ -103,7 +104,13 @@ const wb = XLSX.readFile(FILE);
 const sql = [
   `-- Sinh tự động bởi scripts/import-kpi-excel.mjs từ ${FILE}`,
   `-- Kỳ ${KY}. SOÁT KỸ trước khi chạy — dữ liệu này gắn với lương thưởng.`,
+  `--`,
+  `-- Ghi chú cột O của Excel ("Các bộ phận liên quan đánh giá") được giữ lại thành dòng`,
+  `-- kpi_nhat_ky với so_diem = 0: điểm thật đã nằm ở diem_chot (cột K), dòng này chỉ để`,
+  `-- popup bằng chứng trong app nói được VÌ SAO mất điểm. Ngày = ${NGAY_CHOT} (cuối kỳ).`,
   `begin;`,
+  `-- Xoá chỉ tiêu của kỳ này sẽ cascade xoá luôn kpi_nhat_ky của nó — đúng ý: chạy lại`,
+  `-- import là dựng lại kỳ từ đầu, không để lẫn nhật ký của lần import trước.`,
   `delete from kpi_chi_tieu where ky = '${KY}';`,
   ``,
 ];
@@ -111,6 +118,7 @@ const sql = [
 const boPhanDaTao = new Set();
 const canhBao = [];
 let soDongCaNhan = 0;
+let soNhatKy = 0;
 
 for (const sheet of wb.SheetNames) {
   if (BO_QUA.includes(sheet)) { canhBao.push(`BỎ QUA sheet cũ: ${sheet}`); continue; }
@@ -129,12 +137,23 @@ for (const sheet of wb.SheetNames) {
     // Dòng BO_PHAN tạo một lần cho cả kỳ, dùng chung cho mọi người trong nhóm.
     if (r.lien_ket_bo_phan && !boPhanDaTao.has(r.lien_ket_bo_phan)) {
       boPhanDaTao.add(r.lien_ket_bo_phan);
-      sql.push(`insert into kpi_chi_tieu (ky, cap_do, lien_ket_bo_phan, ten, mo_ta, chi_tieu, trong_so, cach_cham, diem_chot)`
-        + ` values ('${KY}', 'BO_PHAN', ${q(r.lien_ket_bo_phan)}, ${q(r.ten)}, ${q(r.mo_ta)}, ${n(r.chi_tieu)}, 0, 'THU_CONG', ${n(r.diem_chot)});`);
+      const insBP = `insert into kpi_chi_tieu (ky, cap_do, lien_ket_bo_phan, ten, mo_ta, chi_tieu, trong_so, cach_cham, diem_chot)`
+        + ` values ('${KY}', 'BO_PHAN', ${q(r.lien_ket_bo_phan)}, ${q(r.ten)}, ${q(r.mo_ta)}, ${n(r.chi_tieu)}, 0, 'THU_CONG', ${n(r.diem_chot)})`;
+      // Ghi chú của dòng chấm chung gắn vào ĐÚNG dòng BO_PHAN, không phải dòng cá nhân:
+      // engine đọc bằng chứng của chỉ tiêu liên kết bộ phận từ dòng chung (`__bpId` trong
+      // kpiEngine.tinhBangKpi), gắn vào dòng cá nhân là popup không bao giờ hiện ra.
+      // Trong Excel ô này là công thức nối chéo sheet (='HÀ'!O13) nên 14 sheet dùng CHUNG
+      // một câu chữ — lấy của sheet đầu gặp là đủ, không nhân bản 14 lần.
+      sql.push(sqlChiTieuKemGhiChu(insBP, { ghiChu: r.ghi_chu, ngay: NGAY_CHOT }));
+      if (r.ghi_chu) soNhatKy++;
     }
     soDongCaNhan++;
-    sql.push(`insert into kpi_chi_tieu (ky, cap_do, nhan_vien_id, lien_ket_bo_phan, nhom, thu_tu, ten, mo_ta, chi_tieu, trong_so, cach_cham, diem_tu_cham, diem_chot)`
-      + ` values ('${KY}', 'CA_NHAN', ${q(nvId)}, ${q(r.lien_ket_bo_phan)}, ${q(r.nhom)}, ${r.thu_tu}, ${q(r.ten)}, ${q(r.mo_ta)}, ${n(r.chi_tieu)}, ${r.trong_so}, 'THU_CONG', ${n(r.diem_tu_cham)}, ${n(r.diem_chot)});`);
+    const insCN = `insert into kpi_chi_tieu (ky, cap_do, nhan_vien_id, lien_ket_bo_phan, nhom, thu_tu, ten, mo_ta, chi_tieu, trong_so, cach_cham, diem_tu_cham, diem_chot)`
+      + ` values ('${KY}', 'CA_NHAN', ${q(nvId)}, ${q(r.lien_ket_bo_phan)}, ${q(r.nhom)}, ${r.thu_tu}, ${q(r.ten)}, ${q(r.mo_ta)}, ${n(r.chi_tieu)}, ${r.trong_so}, 'THU_CONG', ${n(r.diem_tu_cham)}, ${n(r.diem_chot)})`;
+    // Dòng liên kết bộ phận đã gửi ghi chú lên dòng chung ở trên rồi → không lặp lại.
+    const ghiChuCaNhan = r.lien_ket_bo_phan ? null : r.ghi_chu;
+    sql.push(sqlChiTieuKemGhiChu(insCN, { ghiChu: ghiChuCaNhan, ngay: NGAY_CHOT }));
+    if (ghiChuCaNhan) soNhatKy++;
   }
   sql.push('');
 }
@@ -143,4 +162,5 @@ sql.push('commit;');
 writeFileSync(OUT, sql.join('\n'), 'utf8');
 console.log(`✔ Đã sinh ${OUT}`);
 console.log(`  ${soDongCaNhan} dòng chỉ tiêu cá nhân + ${boPhanDaTao.size} dòng bộ phận`);
+console.log(`  ${soNhatKy} dòng nhật ký giữ ghi chú cột O (so_diem = 0, chỉ làm bằng chứng)`);
 for (const c of canhBao) console.log('  ' + c);
