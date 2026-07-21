@@ -40,15 +40,43 @@ for (let R = hdr + 2; R <= range.e.r; R++) {
   });
 }
 
-// Dòng chấm chung: điểm đạt lấy từ chính cột K của dòng bộ phận trong sheet Bích.
+// ── Dòng chấm chung ─────────────────────────────────────────────────────────
+// Điểm chấm chung KHÔNG được lấy từ sheet Bích. Trong Excel, ô này là công thức nối
+// chéo sang sheet khác (='HÀ'!O13) — bản chất là "chấm một lần, cả bộ phận dùng chung".
+// Nên ở đây đọc từ sheet NGUYÊN, đúng như Excel làm.
+//
+// Bản đầu của script này lấy `diem_chot` từ chính dòng cá nhân của Bích. Kết quả vẫn
+// ra 86.1 nên trông như đã kiểm chứng — nhưng thử gỡ hẳn luật chấm chung khỏi engine
+// thì script VẪN báo khớp. Nó không phân biệt được gì cả.
+//
+// Hai chốt chặn để lần này phân biệt được thật:
+//   1. Điểm chung đọc từ sheet khác → engine phải tra đúng dòng BO_PHAN mới ra số này.
+//   2. Dòng cá nhân bị đặt "mồi độc" diem_chot = 999. Engine đúng thì bỏ qua số này;
+//      engine đọc nhầm dòng cá nhân sẽ kẹp 999 về 10 → tổng vọt lên 91.1, lộ ngay.
 const dongBP = rows.find(r => r.lien_ket_bo_phan);
+if (!dongBP) throw new Error('Không tìm thấy dòng liên kết bộ phận trong sheet BÍCH');
+
+const wsNguyen = wb.Sheets['NGUYÊN '];
+const rgNguyen = XLSX.utils.decode_range(wsNguyen['!ref']);
+let diemChung = null;
+for (let R = rgNguyen.s.r; R <= rgNguyen.e.r; R++) {
+  const ten = wsNguyen[XLSX.utils.encode_cell({ r: R, c: 1 })];
+  if (!ten || !/BỘ PHẬN/i.test(String(ten.v))) continue;
+  const k = wsNguyen[XLSX.utils.encode_cell({ r: R, c: 10 })];   // cột K = KPI duyệt
+  if (k && typeof k.v === 'number') diemChung = k.v;
+  break;
+}
+if (diemChung === null) throw new Error('Không đọc được điểm chuyên cần bộ phận từ sheet NGUYÊN');
+
 const bpRow = {
   id: 'bp1', cap_do: 'BO_PHAN', lien_ket_bo_phan: 'CHUYEN_CAN_BO_PHAN',
-  ten: dongBP.ten, chi_tieu: dongBP.chi_tieu, trong_so: 0, diem_chot: dongBP.diem_chot,
+  ten: dongBP.ten, chi_tieu: dongBP.chi_tieu, trong_so: 0, diem_chot: diemChung,
 };
+dongBP.diem_chot = 999;   // mồi độc — engine đúng thì không bao giờ đọc tới
 
 const kq = tinhBangKpi([bpRow, ...rows], []);
 const ts = kiemTraTrongSo(rows);
+console.log(`Điểm chấm chung đọc từ sheet NGUYÊN: ${diemChung}/${dongBP.chi_tieu}`);
 
 console.log('Chỉ tiêu Bích lấy từ Excel:', rows.length);
 console.log('Σ trọng số:', ts.tong, ts.hopLe ? 'OK' : '⚠ LỆCH');
