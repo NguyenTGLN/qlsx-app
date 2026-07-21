@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { diemDat, tinhChiTieu, tinhBangKpi, kiemTraTrongSo } from './kpiEngine';
+import {
+  diemDat, tinhChiTieu, tinhBangKpi, kiemTraTrongSo, giaiThich,
+} from './kpiEngine';
 
 describe('diemDat', () => {
   it('không có nhật ký thì đạt tối đa', () => {
@@ -150,5 +152,45 @@ describe('kiemTraTrongSo', () => {
     ]);
     expect(r.tong).toBe(100);
     expect(r.hopLe).toBe(true);
+  });
+});
+
+describe('giaiThich', () => {
+  const ct = {
+    id: 'c2', ten: 'CHUYÊN CẦN CÁ NHÂN', chi_tieu: 10, trong_so: 7,
+    diem_chot: 3, chot_boi: 'Nguyên', chot_luc: '2026-06-30T10:00:00Z',
+  };
+  const logs = [
+    { ngay: '2026-06-17', so_diem: -1, ly_do: 'Đi muộn', nguoi_ghi: 'Nguyên' },
+    { ngay: '2026-06-27', so_diem: -3, ly_do: 'Quên chấm công', nguoi_ghi: 'Nguyên' },
+  ];
+
+  it('trả đủ các bước tính', () => {
+    const g = giaiThich(ct, logs);
+    expect(g.buoc.map(b => b.nhan)).toEqual(['Điểm đạt', 'Tỉ lệ đạt', 'Điểm quy đổi']);
+    expect(g.buoc[2].ketQua).toBeCloseTo(2.1);
+  });
+
+  it('nêu rõ điểm do quản lý chốt tay, kèm ai chốt', () => {
+    const g = giaiThich(ct, logs);
+    expect(g.buoc[0].nguon).toBe('CHOT_TAY');
+    expect(g.buoc[0].dienGiai).toContain('Nguyên');
+  });
+
+  it('khi không chốt tay thì diễn giải phép trừ từ nhật ký', () => {
+    const g = giaiThich({ ...ct, diem_chot: null, chot_boi: null }, logs);
+    expect(g.buoc[0].nguon).toBe('NHAT_KY');
+    expect(g.buoc[0].dienGiai).toBe('10 − 4 = 6');
+  });
+
+  it('trả kèm nhật ký làm bằng chứng', () => {
+    expect(giaiThich(ct, logs).nhatKy).toHaveLength(2);
+  });
+
+  it('dòng thưởng diễn giải bằng phép cộng, không có tỉ lệ', () => {
+    const g = giaiThich({ ten: 'THƯỞNG', chi_tieu: null, trong_so: 0 },
+      [{ ngay: '2026-06-30', so_diem: 1.5, ly_do: 'Ý tưởng tốt' }]);
+    expect(g.buoc.map(b => b.nhan)).toEqual(['Điểm cộng thêm']);
+    expect(g.buoc[0].ketQua).toBeCloseTo(1.5);
   });
 });

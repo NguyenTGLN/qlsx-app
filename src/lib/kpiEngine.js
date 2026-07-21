@@ -94,3 +94,73 @@ export function kiemTraTrongSo(rows = []) {
   const lech = Math.round((tong - 100) * 1000) / 1000;
   return { tong, lech, hopLe: Math.abs(lech) < 0.001 };
 }
+
+const soGon = n => Math.round(n * 100) / 100;
+// Phần trăm hiển thị: làm tròn 2 chữ số thay vì lấy số nguyên, để chuỗi diễn giải
+// không mâu thuẫn với kết quả thật (vd 1/3 phải là "33.33% × 9 = 3" chứ không phải "33% × 9 = 3").
+const phanTram = ti => `${soGon(ti * 100)}%`;
+
+// Diễn giải cách ra được con số — dùng cho popup bằng chứng khi bấm vào bất kỳ điểm nào.
+// Trả cấu trúc dữ liệu thuần; UI chỉ render, không tự tính lại (tránh lệch luật).
+export function giaiThich(ct, logs = [], bpMap = {}) {
+  const kq = tinhChiTieu(ct, logs, bpMap);
+
+  if (kq.laThuong) {
+    return {
+      ten: ct.ten,
+      buoc: [{
+        nhan: 'Điểm cộng thêm',
+        dienGiai: logs.map(l => `${num(l.so_diem) > 0 ? '+' : ''}${num(l.so_diem)}`).join(' ') || '0',
+        ketQua: soGon(kq.diemQuyDoi),
+        nguon: 'NHAT_KY',
+      }],
+      nhatKy: logs,
+    };
+  }
+
+  const tongLog = logs.reduce((s, l) => s + num(l.so_diem), 0);
+  const chotTay = ct.diem_chot !== null && ct.diem_chot !== undefined;
+  const boPhan = !!ct.lien_ket_bo_phan;
+
+  let buocDat;
+  if (boPhan) {
+    buocDat = {
+      nhan: 'Điểm đạt', nguon: 'BO_PHAN',
+      dienGiai: `Chấm chung cả bộ phận: ${soGon(kq.diemDat)}/${ct.chi_tieu}`,
+      ketQua: soGon(kq.diemDat),
+    };
+  } else if (chotTay) {
+    const ai = ct.chot_boi ? ` bởi ${ct.chot_boi}` : '';
+    const luc = ct.chot_luc ? ` (${new Date(ct.chot_luc).toLocaleDateString('vi-VN')})` : '';
+    buocDat = {
+      nhan: 'Điểm đạt', nguon: 'CHOT_TAY',
+      dienGiai: `Quản lý chốt tay${ai}${luc}: ${soGon(kq.diemDat)}`,
+      ketQua: soGon(kq.diemDat),
+    };
+  } else {
+    const dau = tongLog < 0 ? '−' : '+';
+    buocDat = {
+      nhan: 'Điểm đạt', nguon: 'NHAT_KY',
+      dienGiai: `${ct.chi_tieu} ${dau} ${Math.abs(soGon(tongLog))} = ${soGon(kq.diemDat)}`,
+      ketQua: soGon(kq.diemDat),
+    };
+  }
+
+  return {
+    ten: ct.ten,
+    buoc: [
+      buocDat,
+      {
+        nhan: 'Tỉ lệ đạt', nguon: 'CONG_THUC',
+        dienGiai: `${soGon(kq.diemDat)} / ${ct.chi_tieu} = ${phanTram(kq.tiLeDat)}`,
+        ketQua: kq.tiLeDat,
+      },
+      {
+        nhan: 'Điểm quy đổi', nguon: 'CONG_THUC',
+        dienGiai: `${phanTram(kq.tiLeDat)} × trọng số ${ct.trong_so} = ${soGon(kq.diemQuyDoi)}`,
+        ketQua: soGon(kq.diemQuyDoi),
+      },
+    ],
+    nhatKy: logs,
+  };
+}
