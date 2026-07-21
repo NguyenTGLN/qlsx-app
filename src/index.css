@@ -108,6 +108,21 @@ input, select, textarea {
   font-family: inherit;
 }
 
+/* Bỏ nút mũi tên tăng/giảm của <input type="number">.
+   Các ô SL trong phiếu kho rất hẹp (~60px) nên mũi tên chiếm gần hết mép phải: bấm vào ô
+   để đặt con trỏ rất dễ trúng mũi tên xuống và trừ mất số vừa gõ mà không ai nhận ra
+   (đã làm rơi 1 mã hàng khỏi phiếu nhập hoàn/hủy). Bỏ mũi tên → bấm đâu cũng chỉ đặt con trỏ,
+   số chỉ đổi khi thực sự gõ. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* ── A11y: focus ring thống nhất cho điều hướng bàn phím ── */
 :focus-visible {
   outline: 2px solid var(--primary-color);

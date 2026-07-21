@@ -4,6 +4,7 @@ import { Search, Loader2, Plus, Trash2, Printer, CheckCircle, Package, Check, Sh
 import { closeProposalWithShortfall } from '../../lib/dksxEngine';
 import { getCatalogItems, invalidateCatalog } from '../../lib/catalogCache';
 import { dlkImportCap } from '../../lib/proposalQty';
+import { findZeroQtyItems, zeroQtyWarning } from '../../lib/importQtyGuard';
 import { newDocToken, claimDocToken, setDocTokenOrderCode, releaseDocToken } from '../../lib/docGuard';
 import AddCatalogItemModal from '../../components/AddCatalogItemModal';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
@@ -528,6 +529,11 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
         }
       }
     }
+
+    // Mã đang được tick nhưng SL = 0 sẽ không được ghi (executeImport chỉ ghi SL > 0).
+    // Hỏi lại thay vì âm thầm bỏ — tránh mất mã hàng khỏi phiếu mà không ai biết.
+    const zeroItems = findZeroQtyItems(blocks);
+    if (zeroItems.length > 0 && !window.confirm(zeroQtyWarning(zeroItems))) return;
 
     // Cảnh báo khối thiếu nguồn
     const needSource = reason !== 'Nhập mới' && reason !== 'Khác';
