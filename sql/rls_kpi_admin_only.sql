@@ -2,6 +2,27 @@
 -- SIẾT RLS CHO 2 BẢNG KPI — chỉ ADMIN được ghi.
 -- Chạy SAU sql/create_kpi_module.sql, trên Supabase SQL Editor.
 --
+-- ⚠⚠ THỨ TỰ CHẠY BẮT BUỘC — ĐỌC TRƯỚC KHI ĐỘNG VÀO RLS CỦA APP:
+--
+--      1. sql/security_3_rls_lockdown.sql   (nếu cần chạy — xem cảnh báo dưới)
+--      2. sql/create_kpi_module.sql         (tạo bảng, bật RLS, KHÔNG tạo policy)
+--      3. sql/rls_kpi_admin_only.sql        (FILE NÀY — tạo 8 policy ADMIN)
+--
+--   File này PHẢI là file chạy CUỐI CÙNG trong nhóm trên. Chạy xong bước 3 mà sau
+--   này chạy lại bước 1 hoặc 2 thì phải chạy lại bước 3, nếu không quyền ghi KPI
+--   hỏng (mở toang hoặc khoá sạch).
+--
+-- ⚠⚠ CẢNH BÁO VỀ sql/security_3_rls_lockdown.sql:
+--   File đó có vòng `do $$` quét MỌI bảng trong schema public, DROP MỌI policy của
+--   từng bảng rồi tạo lại `auth_all ... using(true) with check(true)`. Nó KHÔNG biết
+--   gì về KPI, nên chạy lại nó sau file này sẽ XOÁ SẠCH 8 policy ADMIN bên dưới và
+--   thay bằng một policy mở toang — nhân viên thường lại tự sửa được điểm KPI của
+--   chính mình qua API, mà điểm KPI gắn thẳng với lương thưởng.
+--   → Mỗi lần chạy security_3_rls_lockdown.sql, BẮT BUỘC chạy lại file này ngay sau.
+--   → Kiểm chứng: select policyname from pg_policies
+--                  where tablename in ('kpi_chi_tieu','kpi_nhat_ky');
+--     Kỳ vọng 8 dòng kpi_ct_*/kpi_nk_*, và TUYỆT ĐỐI không có dòng `auth_all`.
+--
 -- Vì sao siết riêng 2 bảng này trong khi các bảng khác của app mở cho mọi user
 -- đã đăng nhập: KPI gắn trực tiếp với lương thưởng. Nếu chỉ chặn ở tầng giao diện
 -- thì nhân viên biết dùng công cụ lập trình có thể gọi thẳng API sửa điểm của mình
@@ -23,9 +44,15 @@ begin;
 alter table public.kpi_chi_tieu enable row level security;
 alter table public.kpi_nhat_ky  enable row level security;
 
--- Xoá policy mở toang tạo ở create_kpi_module.sql
+-- Dọn mọi policy mở toang có thể còn sót:
+--   kpi_*_all : bản CŨ của create_kpi_module.sql từng tạo (nay đã bỏ hẳn).
+--   auth_all  : do security_3_rls_lockdown.sql tạo cho mọi bảng public.
+-- Policy RLS là phép OR — sót lại một cái `using(true)` là 8 policy ADMIN dưới đây
+-- thành vô nghĩa, nên phải drop trước chứ không chỉ "create thêm".
 drop policy if exists kpi_chi_tieu_all on public.kpi_chi_tieu;
 drop policy if exists kpi_nhat_ky_all  on public.kpi_nhat_ky;
+drop policy if exists auth_all         on public.kpi_chi_tieu;
+drop policy if exists auth_all         on public.kpi_nhat_ky;
 
 -- ── kpi_chi_tieu ─────────────────────────────────────────────
 -- Đọc: mọi người đã đăng nhập (điểm KPI công khai toàn công ty — quyết định nghiệp vụ).

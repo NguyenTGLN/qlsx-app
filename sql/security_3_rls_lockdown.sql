@@ -4,6 +4,13 @@
 -- Toàn bộ file chạy trong 1 transaction: lỗi ở đâu là rollback hết, không hỏng nửa vời.
 -- ============================================================
 
+-- ⚠ FILE NÀY XOÁ MỌI POLICY CỦA MỌI BẢNG PUBLIC RỒI TẠO LẠI `auth_all using(true)`.
+--   Nó KHÔNG biết gì về các bảng có luật riêng, nên MỌI LẦN chạy lại file này đều phá
+--   quyền đã siết riêng ở nơi khác. Sau khi chạy xong file này BẮT BUỘC chạy lại:
+--       sql/rls_kpi_admin_only.sql   (8 policy chỉ-ADMIN cho kpi_chi_tieu / kpi_nhat_ky)
+--   Không chạy lại = nhân viên thường tự sửa được điểm KPI của chính mình qua API,
+--   mà điểm KPI gắn thẳng với lương thưởng.
+
 -- 1) Mọi bảng public: chỉ 'authenticated' toàn quyền; anon bị chặn.
 --    Ngoại lệ: nhan_vien (ghi = chỉ Admin), nhan_vien_secret (đã khoá tuyệt đối - bỏ qua).
 do $$

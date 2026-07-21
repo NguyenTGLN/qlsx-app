@@ -50,15 +50,32 @@ create index if not exists kpi_nhat_ky_ct     on kpi_nhat_ky(chi_tieu_id);
 create unique index if not exists kpi_nhat_ky_tu_dong_uniq
   on kpi_nhat_ky(chi_tieu_id, ref_id) where nguon = 'TU_DONG';
 
--- RLS: điểm công khai toàn bộ (quyết định nghiệp vụ) → mọi user đăng nhập đọc được.
--- Ghi thì gate ở tầng app theo cap của tab (permRegistry), giống các bảng khác trong app.
+-- ════════════════════════════════════════════════════════════════════════════
+-- RLS — FILE NÀY CHỈ BẬT RLS, CỐ Ý KHÔNG TẠO POLICY NÀO.
+--
+-- ⚠ BẮT BUỘC CHẠY TIẾP `sql/rls_kpi_admin_only.sql` NGAY SAU FILE NÀY.
+--   Bảng đã bật RLS mà KHÔNG có policy nào = KHÔNG AI đọc/ghi được, tab KPI sẽ
+--   trắng trơn. Chạy xong file này mà dừng lại là module coi như chưa dùng được.
+--
+-- Vì sao ở đây không tạo policy mở toang `using(true) with check(true)` như trước:
+-- file này viết idempotent (`create table if not exists`) nên được thiết kế để chạy
+-- lại. Mà policy RLS là phép OR — chỉ cần MỘT policy cho phép là qua. Nên mỗi lần
+-- chạy lại, policy mở toang sẽ quay về và làm 8 policy ADMIN trong
+-- rls_kpi_admin_only.sql trở thành vô nghĩa: nhân viên thường lại tự sửa được điểm
+-- KPI của chính mình qua API, mà điểm KPI gắn thẳng với lương thưởng.
+-- ════════════════════════════════════════════════════════════════════════════
 alter table kpi_chi_tieu enable row level security;
 alter table kpi_nhat_ky  enable row level security;
 
+-- Dọn tàn dư của các lần chạy bản CŨ của chính file này (bản cũ có tạo 2 policy mở
+-- toang). Nếu DB đã lỡ chạy bản cũ, dòng này là chỗ gỡ chúng ra.
 drop policy if exists kpi_chi_tieu_all on kpi_chi_tieu;
-create policy kpi_chi_tieu_all on kpi_chi_tieu for all
-  to authenticated using (true) with check (true);
+drop policy if exists kpi_nhat_ky_all  on kpi_nhat_ky;
 
-drop policy if exists kpi_nhat_ky_all on kpi_nhat_ky;
-create policy kpi_nhat_ky_all on kpi_nhat_ky for all
-  to authenticated using (true) with check (true);
+-- Nhắc ngay trên tab Results của Supabase SQL Editor. Dùng `raise notice` chứ KHÔNG
+-- dùng `\echo`: `\echo` là meta-command của psql, dán vào SQL Editor là lỗi cú pháp.
+do $$
+begin
+  raise notice '>> kpi_chi_tieu / kpi_nhat_ky da BAT RLS va CHUA co policy nao.';
+  raise notice '>> PHAI chay tiep sql/rls_kpi_admin_only.sql — neu khong, KHONG AI doc duoc bang KPI.';
+end $$;
