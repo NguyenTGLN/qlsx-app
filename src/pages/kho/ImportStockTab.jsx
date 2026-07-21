@@ -5,6 +5,7 @@ import { closeProposalWithShortfall } from '../../lib/dksxEngine';
 import { getCatalogItems, invalidateCatalog } from '../../lib/catalogCache';
 import { dlkImportCap } from '../../lib/proposalQty';
 import { findZeroQtyItems, zeroQtyWarning } from '../../lib/importQtyGuard';
+import { splitAggIntoLogRows } from '../../lib/importLogRows';
 import { newDocToken, claimDocToken, setDocTokenOrderCode, releaseDocToken } from '../../lib/docGuard';
 import AddCatalogItemModal from '../../components/AddCatalogItemModal';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
@@ -584,21 +585,20 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
               if (!mainLocation) mainLocation = loc.location;
               const key = item.code + '||' + loc.location;
               if (!agg[key]) {
-                agg[key] = { code: item.code, name: item.name, unit: item.unit, location: loc.location, id: loc.id || null, current_qty: Number(loc.current_qty) || 0, sumImport: 0, sources: new Set(), orderCodes: new Set() };
+                agg[key] = { code: item.code, name: item.name, unit: item.unit, location: loc.location, id: loc.id || null, current_qty: Number(loc.current_qty) || 0, sumImport: 0 };
               }
               if (!agg[key].id && loc.id) { agg[key].id = loc.id; agg[key].current_qty = Number(loc.current_qty) || 0; }
               agg[key].sumImport += q;
-              // Breakdown theo nguồn: chỉ dùng cho "Nhập thành phẩm" để mỗi dòng log
-              // mang wip_source riêng (hủy phiếu trả WIP đúng phiếu SX nguồn).
-              if (reason === 'Nhập thành phẩm') {
-                const src = b.sourceValue || '';
-                if (!agg[key].bySource) agg[key].bySource = {};
-                agg[key].bySource[src] = (agg[key].bySource[src] || 0) + q;
-              }
-              if (b.sourceValue) agg[key].sources.add(b.sourceValue);
               // Mã đơn hàng (nhập tay / DLK / hoàn-hủy) — khớp cột "Mã đơn hàng" trên bản in.
               const donCode = blockOrderCode(b);
-              if (donCode) agg[key].orderCodes.add(donCode);
+              const src = b.sourceValue || '';
+              // Breakdown theo khối nguồn cho MỌI lý do: mỗi khối 1 dòng log riêng, giữ được
+              // mã đơn của từng khối (trước đây gộp hết thành "DH1, DH2") và wip_source riêng
+              // cho từng phiếu SX. Tồn kho vẫn gộp theo (mã hàng, vị trí) như cũ.
+              const bk = src + '||' + donCode;
+              if (!agg[key].byBlock) agg[key].byBlock = {};
+              if (!agg[key].byBlock[bk]) agg[key].byBlock[bk] = { source: src, orderCode: donCode, qty: 0 };
+              agg[key].byBlock[bk].qty += q;
             }
           }
 
@@ -613,7 +613,10 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
               kho_nhap: mainLocation || 'Kho',
               ly_do_nhap: reason,
               dlk_code: (reason === 'Nhập mua vào' && b.dlkCode) ? b.dlkCode : null,
-              ma_don_hang_nhap: (b.sourceType === 'none' && b.orderCode) ? b.orderCode.trim() : null,
+              // Dùng chung blockOrderCode với bản in và picking-log → 3 nơi luôn khớp nhau.
+              // Trước đây chỉ ghi cho sourceType 'none' nên phiếu hoàn/hủy bỏ trống cột này,
+              // mã đơn chỉ còn nằm ở ma_ncc (cột vốn dành cho nhà cung cấp).
+              ma_don_hang_nhap: blockOrderCode(b) || null,
               phieu_code: orderCode, // truy vết về chứng từ PNK để Hủy Phiếu xóa đúng dòng
             });
 
@@ -633,55 +636,20 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
         }
       }
 
-      // Từ map gộp → cập nhật/insert tồn kho + picking log (1 dòng / mỗi vị trí)
+      // Từ map gộp → cập nhật/insert tồn kho (1 dòng / mỗi vị trí)
+      //             + picking log (1 dòng / mỗi khối nguồn, để giữ mã đơn riêng từng khối)
       const updates = [...wipUpdates];
       const inserts = [];
       const pickingLogs = [];
       for (const key in agg) {
         const a = agg[key];
-        const before = a.current_qty;
-        const after = before + a.sumImport;
-        const srcStr = [...a.sources].join(', ');
+        const after = a.current_qty + a.sumImport;
         if (a.id) {
           updates.push(db.from('inventory_stock').update({ quantity: after, import_date: todayStr }).eq('id', a.id));
         } else {
           inserts.push({ item_code: a.code, item_name: a.name, unit: a.unit, location: a.location, quantity: a.sumImport, import_date: todayStr });
         }
-        if (reason === 'Nhập thành phẩm' && a.bySource && Object.keys(a.bySource).length > 0) {
-          // 1 dòng log / mỗi phiếu SX nguồn — wip_source để Hủy Phiếu cộng trả đúng WIP.
-          let running = before;
-          for (const [src, q] of Object.entries(a.bySource)) {
-            pickingLogs.push({
-              order_code: orderCode,
-              product_code: 'NHAP_KHO',
-              component_code: a.code,
-              component_name: a.name,
-              location: a.location,
-              quantity_before: running,
-              quantity_taken: q,
-              quantity_after: running + q,
-              created_by: userStr,
-              notes: src ? `${reason} - ${src}` : reason,
-              ma_don_hang: a.orderCodes.size > 0 ? [...a.orderCodes].join(', ') : null,
-              wip_source: src && src.startsWith('PSX-') && wipDeducted.has(a.code + '||' + src) ? src : null,
-            });
-            running += q;
-          }
-        } else {
-          pickingLogs.push({
-            order_code: orderCode,
-            product_code: 'NHAP_KHO',
-            component_code: a.code,
-            component_name: a.name,
-            location: a.location,
-            quantity_before: before,
-            quantity_taken: a.sumImport,
-            quantity_after: after,
-            created_by: userStr,
-            notes: srcStr ? `${reason} - ${srcStr}` : reason,
-            ma_don_hang: a.orderCodes.size > 0 ? [...a.orderCodes].join(', ') : null
-          });
-        }
+        pickingLogs.push(...splitAggIntoLogRows(a, { orderCode, reason, userStr, wipDeducted }));
       }
 
       // Thực thi
