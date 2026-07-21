@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
 import { tinhBangKpi, giaiThich, kiemTraTrongSo } from '../../lib/kpiEngine';
-import { Trophy, ChevronRight, ChevronLeft, AlertTriangle, Plus, X, Loader2 } from 'lucide-react';
+import { xuatExcelKpi, dungDuLieuSheet } from '../../lib/kpiExcel';
+import KpiPrint from '../../components/KpiPrint';
+import {
+  Trophy, ChevronRight, ChevronLeft, AlertTriangle, Plus, X, Loader2,
+  FileDown, Printer, Pencil, CalendarPlus,
+} from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tiện ích nhỏ
@@ -120,7 +125,27 @@ export default function KpiTab({ me, users = [], perm = {} }) {
         <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
           {bangTheoNguoi.length} nhân viên
         </span>
+
+        {/* Xuất cả team một file nhiều sheet — đúng dạng file gốc phòng nhân sự đang dùng,
+            và cũng là việc thật hằng tháng (xuất từng người 14 lần thì không ai làm). */}
+        {perm?.io && bangTheoNguoi.length > 0 && (
+          <button
+            onClick={() => xuatExcelKpi(
+              bangTheoNguoi.map(p => ({
+                rows: [...dongBoPhan, ...rows.filter(r => r.nhan_vien_id === p.nvId)],
+                logs,
+                tenNhanVien: p.ten,
+              })), ky)}
+            style={{ ...nutPhu, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}
+          >
+            <FileDown size={13} /> Xuất Excel cả team
+          </button>
+        )}
       </div>
+
+      {perm?.create && (
+        <TaoKyMoi ky={ky} daCoDuLieu={rows.length > 0} onXong={taiDuLieu} />
+      )}
 
       {loi && (
         <div style={{
@@ -186,11 +211,61 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
   // Chỉ giữ ID chứ KHÔNG giữ nguyên object dòng chỉ tiêu: sau khi ghi điểm và tải lại,
   // object cũ đã cũ dữ liệu — popup phải lấy lại từ kết quả engine mới nhất.
   const [popupId, setPopupId] = useState(null);   // id chỉ tiêu | 'TONG' | null
+  const [suaCT, setSuaCT] = useState(null);       // dòng đang sửa/thêm, null = không sửa
+  const [inBan, setInBan] = useState(false);
 
   const kq = useMemo(() => tinhBangKpi(rows, logs), [rows, logs]);
   const canhBaoTrongSo = useMemo(() => kiemTraTrongSo(rows), [rows]);
   const nguoi = users.find(u => u.id === nvId);
   const tenNguoi = nguoi?.name || nvId;
+
+  const duLieuIn = useMemo(
+    () => dungDuLieuSheet(rows, logs, tenNguoi, ky), [rows, logs, tenNguoi, ky]);
+
+  // Chờ một nhịp cho bản in kịp mount rồi mới gọi window.print().
+  useEffect(() => {
+    if (!inBan) return undefined;
+    const t = setTimeout(() => { window.print(); setInBan(false); }, 80);
+    return () => clearTimeout(t);
+  }, [inBan]);
+
+  async function luuChiTieu(ct) {
+    const ban = {
+      ten: ct.ten.trim(),
+      mo_ta: ct.mo_ta?.trim() || null,
+      nhom: ct.nhom?.trim() || null,
+      chi_tieu: ct.chi_tieu,
+      trong_so: ct.trong_so,
+    };
+    const { error } = ct.id
+      ? await supabase.from('kpi_chi_tieu').update(ban).eq('id', ct.id)
+      : await supabase.from('kpi_chi_tieu').insert({
+          ...ban, ky, cap_do: 'CA_NHAN', nhan_vien_id: nvId,
+          // thu_tu lớn nhất + 1, KHÔNG phải số dòng: xoá bớt dòng giữa chừng rồi thêm mới
+          // sẽ đụng thu_tu cũ và bảng nhảy lung tung thứ tự.
+          thu_tu: rows.reduce((m, r) => Math.max(m, r.thu_tu || 0), 0) + 1,
+        });
+    if (error) return error.message;
+    setSuaCT(null);
+    onReload?.();
+    return null;
+  }
+
+  async function xoaChiTieu(id) {
+    // Nhật ký bị cascade xoá theo. Đếm đúng nhật ký GẮN VÀO DÒNG NÀY (`chi_tieu_id === id`),
+    // không dùng `d.logs` — với dòng liên kết bộ phận thì `d.logs` là nhật ký của dòng chung
+    // và sẽ KHÔNG mất, báo nhầm số làm người chấm sợ oan hoặc chủ quan.
+    const soNhatKy = logs.filter(l => l.chi_tieu_id === id).length;
+    const ten = rows.find(r => r.id === id)?.ten || 'chỉ tiêu này';
+    const canhBao = soNhatKy > 0
+      ? `\n\nXoá luôn ${soNhatKy} dòng nhật ký cộng/trừ điểm của chỉ tiêu này — toàn bộ bằng chứng chấm điểm sẽ mất và KHÔNG khôi phục được.`
+      : '\n\nChỉ tiêu này chưa có nhật ký nào.';
+    if (!window.confirm(`Xoá "${ten}"?${canhBao}`)) return;
+    const { error } = await supabase.from('kpi_chi_tieu').delete().eq('id', id);
+    if (error) { window.alert('Lỗi xoá: ' + error.message); return; }
+    setSuaCT(null);
+    onReload?.();
+  }
 
   const ctDangXem = popupId && popupId !== 'TONG'
     ? kq.dong.find(d => d.id === popupId)
@@ -213,6 +288,23 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
       >
         <ChevronLeft size={14} /> Danh sách
       </button>
+
+      {perm?.io && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => xuatExcelKpi([{ rows, logs, tenNhanVien: tenNguoi }], ky)}
+            style={{ ...nutPhu, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}
+          >
+            <FileDown size={13} /> Xuất Excel
+          </button>
+          <button
+            onClick={() => setInBan(true)}
+            style={{ ...nutPhu, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}
+          >
+            <Printer size={13} /> In
+          </button>
+        </div>
+      )}
 
       <div style={{ background: '#fff', borderRadius: 14, padding: '1rem', border: '1px solid #e2e8f0' }}>
         <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{tenNguoi}</div>
@@ -275,8 +367,55 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
         <div style={{ fontSize: '0.76rem', fontWeight: 700, color: '#475569', marginBottom: 6 }}>
           TOÀN BỘ CHỈ TIÊU ({kq.dong.length})
         </div>
-        {kq.dong.map(d => <DongChiTieu key={d.id} d={d} onClick={() => setPopupId(d.id)} />)}
+        {kq.dong.map(d => (
+          <DongChiTieu
+            key={d.id} d={d}
+            onClick={() => setPopupId(d.id)}
+            onSua={perm?.create ? () => setSuaCT(d) : null}
+          />
+        ))}
+
+        {perm?.create && (
+          <button
+            onClick={() => setSuaCT({ ten: '', mo_ta: '', chi_tieu: 10, trong_so: 0, nhom: '' })}
+            style={{ ...nutMo, marginTop: 8 }}
+          >
+            <Plus size={13} /> Thêm chỉ tiêu
+          </button>
+        )}
       </div>
+
+      {suaCT && (
+        <FormSuaChiTieu
+          ct={suaCT} onLuu={luuChiTieu} onXoa={xoaChiTieu} onHuy={() => setSuaCT(null)}
+        />
+      )}
+
+      {inBan && (
+        <div className="kpi-chi-in">
+          <KpiPrint duLieu={duLieuIn} />
+        </div>
+      )}
+
+      {/* Nếp in của dự án (xem ImportStockTab): ẩn bằng `visibility` chứ KHÔNG phải
+          `display:none` trên body — bản in nằm trong #root, mà tổ tiên đã display:none thì
+          con không cách nào hiện lại được. */}
+      <style>{`
+        .kpi-chi-in { display: none; }
+        @media print {
+          @page { size: A4 landscape; margin: 8mm; }
+          body * { visibility: hidden; }
+          .kpi-chi-in, .kpi-chi-in * { visibility: visible; }
+          .kpi-chi-in {
+            display: block !important;
+            position: absolute !important; left: 0; top: 0; width: 100%;
+            background: #fff !important;
+          }
+          body, html, #root, main { overflow: visible !important; height: auto !important; }
+          div { overflow: visible !important; }
+          th, td { border-color: #333 !important; }
+        }
+      `}</style>
 
       {popupId === 'TONG' && (
         <PopupTongKpi
@@ -300,16 +439,19 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
 // Một dòng trong bảng "toàn bộ chỉ tiêu".
 // Dòng thưởng ngoài trọng số (laThuong): `diemDat` LUÔN là 0 và không có tỉ lệ — điểm thật
 // nằm ở `diemQuyDoi`. Vì vậy phải render khác hẳn, tuyệt đối không hiện "0/null" hay "×0".
-function DongChiTieu({ d, onClick }) {
+function DongChiTieu({ d, onClick, onSua }) {
   const thuong = d.laThuong;
   return (
+    <div style={{
+      display: 'flex', alignItems: 'stretch', gap: 0, marginBottom: 4, borderRadius: 9,
+      border: thuong ? '1px solid #bbf7d0' : '1px solid #e2e8f0', background: '#fff',
+      overflow: 'hidden',
+    }}>
     <button
       onClick={onClick}
       style={{
-        display: 'flex', width: '100%', alignItems: 'center', gap: 8, textAlign: 'left',
-        padding: '0.5rem 0.65rem', marginBottom: 4, borderRadius: 9,
-        border: thuong ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
-        background: '#fff', cursor: 'pointer',
+        display: 'flex', flex: 1, minWidth: 0, alignItems: 'center', gap: 8, textAlign: 'left',
+        padding: '0.5rem 0.65rem', border: 'none', background: 'none', cursor: 'pointer',
       }}
     >
       <span style={{ flex: 1, fontSize: '0.76rem', minWidth: 0 }}>
@@ -340,6 +482,19 @@ function DongChiTieu({ d, onClick }) {
         {thuong && d.diemQuyDoi >= 0 ? '+' : ''}{so1(d.diemQuyDoi)}
       </span>
     </button>
+
+    {onSua && (
+      <button
+        onClick={onSua} title="Sửa chỉ tiêu" aria-label={`Sửa chỉ tiêu ${d.ten}`}
+        style={{
+          border: 'none', borderLeft: '1px solid #f1f5f9', background: '#fff',
+          padding: '0 0.6rem', cursor: 'pointer', color: '#94a3b8', flexShrink: 0,
+        }}
+      >
+        <Pencil size={13} />
+      </button>
+    )}
+    </div>
   );
 }
 
@@ -607,7 +762,8 @@ function FormGhiDiem({ chiTieuId, dangChotTay, me, onXong }) {
   );
 }
 
-// Chốt điểm tay: ghi thẳng `diem_chot` lên dòng chỉ tiêu, thắng mọi nhật ký.
+// Chốt điểm tay: ghi thẳng `diem_chot` lên dòng chỉ tiêu, thắng mọi nhật ký — kể cả ở
+// dòng thưởng ngoài trọng số (engine bỏ ngoại lệ này từ commit 9f2caf3).
 // Engine có kẹp [0, chi_tieu] rồi, nhưng kẹp âm thầm nên quản lý gõ 20 trên chỉ tiêu 10
 // sẽ không biết mình gõ sai — form phải chặn và nói ra.
 function FormChotDiem({ ctGhi, me, onXong }) {
@@ -617,11 +773,11 @@ function FormChotDiem({ ctGhi, me, onXong }) {
   const [loi, setLoi] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Dòng thưởng ngoài trọng số: engine tính điểm thưởng THUẦN từ nhật ký và không hề đọc
-  // `diem_chot`, nên cho chốt tay ở đây chỉ tạo một con số chết trong DB.
-  if (ctGhi.chi_tieu === null || ctGhi.chi_tieu === undefined) return null;
-
-  const max = Number(ctGhi.chi_tieu);
+  // Dòng thưởng không có `chi_tieu` nên KHÔNG có trần để kẹp, và cũng không có sàn:
+  // điểm ngoài trọng số có thể âm (phạt) y như nhật ký của nó. Chỉ dòng thường mới
+  // ràng buộc 0 ≤ x ≤ chi_tieu.
+  const laThuong = ctGhi.chi_tieu === null || ctGhi.chi_tieu === undefined;
+  const max = laThuong ? null : Number(ctGhi.chi_tieu);
 
   async function ghi(giaTriMoi) {
     setBusy(true);
@@ -648,8 +804,10 @@ function FormChotDiem({ ctGhi, me, onXong }) {
     if (raw === '') { setLoi('Nhập điểm chốt, hoặc bấm “Bỏ chốt” để quay lại tính theo nhật ký.'); return; }
     const v = Number(raw);
     if (!Number.isFinite(v)) { setLoi('Điểm chốt phải là một con số.'); return; }
-    if (v < 0) { setLoi('Điểm chốt không được nhỏ hơn 0.'); return; }
-    if (v > max) { setLoi(`Điểm chốt không được lớn hơn chỉ tiêu (${soNgan(max)}).`); return; }
+    if (!laThuong) {
+      if (v < 0) { setLoi('Điểm chốt không được nhỏ hơn 0.'); return; }
+      if (v > max) { setLoi(`Điểm chốt không được lớn hơn chỉ tiêu (${soNgan(max)}).`); return; }
+    }
     setLoi('');
     ghi(v);
   }
@@ -663,11 +821,14 @@ function FormChotDiem({ ctGhi, me, onXong }) {
   return (
     <div style={{ marginTop: 8, padding: '0.6rem', borderRadius: 10, background: '#f8fafc', display: 'grid', gap: 6 }}>
       <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
-        Điểm chốt tay thắng nhật ký. Hợp lệ: 0 – {soNgan(max)}.
+        {laThuong
+          ? 'Điểm chốt tay thắng nhật ký. Dòng ngoài trọng số không có trần — cộng hay trừ đều được.'
+          : `Điểm chốt tay thắng nhật ký. Hợp lệ: 0 – ${soNgan(max)}.`}
       </div>
       <input
-        type="number" step="0.5" min={0} max={max} inputMode="decimal"
-        placeholder={`Điểm chốt (0 – ${soNgan(max)})`}
+        type="number" step="0.5" inputMode="decimal"
+        min={laThuong ? undefined : 0} max={laThuong ? undefined : max}
+        placeholder={laThuong ? 'Điểm chốt (±)' : `Điểm chốt (0 – ${soNgan(max)})`}
         value={giaTri} onChange={e => setGiaTri(e.target.value)}
         style={oInput}
       />
@@ -677,6 +838,210 @@ function FormChotDiem({ ctGhi, me, onXong }) {
         {dangChot && (
           <button onClick={() => ghi(null)} disabled={busy} style={nutPhu}>Bỏ chốt</button>
         )}
+        <button onClick={() => { setMo(false); setLoi(''); }} style={nutPhu}>Huỷ</button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sửa / thêm / xoá chỉ tiêu (quyền `create`)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function FormSuaChiTieu({ ct, onLuu, onXoa, onHuy }) {
+  // Giữ chi_tieu/trong_so dạng CHUỖI trong lúc gõ: ép Number ngay mỗi phím sẽ biến ô đang
+  // xoá dở thành 0, và "" → 0 làm dòng thưởng (chi_tieu để trống) âm thầm thành chỉ tiêu 0.
+  const [f, setF] = useState({
+    ...ct,
+    chi_tieu: ct.chi_tieu == null ? '' : String(ct.chi_tieu),
+    trong_so: ct.trong_so == null ? '' : String(ct.trong_so),
+  });
+  const [loi, setLoi] = useState('');
+  const [busy, setBusy] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  const laThuong = String(f.chi_tieu).trim() === '';
+  const laBoPhan = !!ct.lien_ket_bo_phan;
+
+  async function luu() {
+    if (!f.ten?.trim()) { setLoi('Phải có tên chỉ tiêu.'); return; }
+
+    const rawCT = String(f.chi_tieu).trim();
+    const rawTS = String(f.trong_so).trim();
+    const chiTieu = rawCT === '' ? null : Number(rawCT);
+    const trongSo = rawTS === '' ? 0 : Number(rawTS);
+
+    if (chiTieu !== null && (!Number.isFinite(chiTieu) || chiTieu < 0)) {
+      setLoi('Mức chỉ tiêu phải là số không âm, hoặc để trống nếu là dòng thưởng.'); return;
+    }
+    // chi_tieu = 0 không phải "dòng thưởng" mà là lỗi nhập: engine cho mất trọn trọng số.
+    if (chiTieu === 0) {
+      setLoi('Mức chỉ tiêu = 0 sẽ làm chỉ tiêu này mất trọn trọng số. Để trống nếu muốn dòng thưởng ngoài trọng số.');
+      return;
+    }
+    if (!Number.isFinite(trongSo) || trongSo < 0) { setLoi('Trọng số phải là số không âm.'); return; }
+    if (chiTieu === null && trongSo !== 0) {
+      setLoi('Dòng thưởng ngoài trọng số phải có trọng số = 0.'); return;
+    }
+
+    setLoi('');
+    setBusy(true);
+    try {
+      const err = await onLuu({ ...f, chi_tieu: chiTieu, trong_so: trongSo });
+      if (err) setLoi('Lỗi lưu: ' + err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      onClick={onHuy}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', zIndex: 210,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0.75rem',
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: '#fff', borderRadius: 14, padding: '1rem', maxWidth: 460, width: '100%',
+          display: 'grid', gap: 8, maxHeight: '85vh', overflowY: 'auto',
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: '0.88rem' }}>{f.id ? 'Sửa chỉ tiêu' : 'Thêm chỉ tiêu'}</h3>
+
+        {laBoPhan && (
+          <div style={{
+            padding: '0.45rem 0.6rem', borderRadius: 8, background: '#eff6ff',
+            color: '#1d4ed8', fontSize: '0.72rem',
+          }}>
+            Chỉ tiêu chấm chung cả bộ phận: điểm đạt lấy từ dòng chung, chỉ trọng số là riêng.
+            Mức chỉ tiêu ở đây phải bằng mức của dòng chung, lệch là tỉ lệ đạt sai.
+          </div>
+        )}
+
+        <input
+          placeholder="Nhóm (VD: A. THỰC HIỆN NỘI QUY)" value={f.nhom || ''}
+          onChange={e => set('nhom', e.target.value)} style={oInput}
+        />
+        <input
+          placeholder="Tên chỉ tiêu" value={f.ten || ''}
+          onChange={e => set('ten', e.target.value)} style={oInput}
+        />
+        <textarea
+          placeholder="Diễn giải / quy định trừ điểm" rows={4} value={f.mo_ta || ''}
+          onChange={e => set('mo_ta', e.target.value)}
+          style={{ ...oInput, resize: 'vertical', fontFamily: 'inherit' }}
+        />
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <label style={{ flex: 1, fontSize: '0.72rem', color: '#64748b' }}>
+            Mức chỉ tiêu (điểm tối đa)
+            <input
+              type="number" step="1" min={0} inputMode="decimal" placeholder="để trống = thưởng"
+              value={f.chi_tieu} onChange={e => set('chi_tieu', e.target.value)} style={oInput}
+            />
+          </label>
+          <label style={{ flex: 1, fontSize: '0.72rem', color: '#64748b' }}>
+            Trọng số
+            <input
+              type="number" step="0.5" min={0} inputMode="decimal"
+              value={f.trong_so} onChange={e => set('trong_so', e.target.value)} style={oInput}
+            />
+          </label>
+        </div>
+
+        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+          {laThuong
+            ? 'Bỏ trống mức chỉ tiêu = dòng thưởng ngoài trọng số: điểm cộng thẳng vào tổng, không tính tỉ lệ.'
+            : 'Σ trọng số của cả bảng phải bằng 100 — sửa xong nhớ xem lại cảnh báo trên đầu bảng.'}
+        </div>
+
+        {loi && <div style={chuLoi}>{loi}</div>}
+
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={luu} disabled={busy} style={nutChinh}>
+            {busy ? 'Đang lưu…' : 'Lưu'}
+          </button>
+          {f.id && (
+            <button
+              onClick={() => onXoa(f.id)} disabled={busy}
+              style={{ ...nutPhu, border: '1px solid #fecaca', color: '#dc2626' }}
+            >
+              Xoá
+            </button>
+          )}
+          <button onClick={onHuy} style={nutPhu}>Huỷ</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tạo kỳ mới bằng cách copy bảng chỉ tiêu kỳ trước (quyền `create`)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Tháng liền trước một kỳ 'YYYY-MM'.
+function kyTruoc(ky) {
+  const [y, m] = String(ky).split('-').map(Number);
+  if (!y || !m) return '';
+  const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function TaoKyMoi({ ky, daCoDuLieu, onXong }) {
+  const [mo, setMo] = useState(false);
+  const [nguon, setNguon] = useState(kyTruoc(ky));
+  const [loi, setLoi] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  // Kỳ đã có dữ liệu thì RPC sẽ từ chối — không mời gọi thao tác chắc chắn hỏng.
+  if (daCoDuLieu) return null;
+
+  async function tao() {
+    if (!nguon) { setLoi('Chọn kỳ nguồn để copy.'); return; }
+    if (nguon === ky) { setLoi('Kỳ nguồn phải khác kỳ đang xem.'); return; }
+    setLoi('');
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.rpc('tao_ky_kpi', { ky_nguon: nguon, ky_moi: ky });
+      if (error) { setLoi('Lỗi: ' + error.message); return; }
+      if (!data) { setLoi(`Kỳ ${nguon} không có dòng chỉ tiêu nào để copy.`); return; }
+      setMo(false);
+      onXong?.();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!mo) return (
+    <button onClick={() => { setMo(true); setNguon(kyTruoc(ky)); setLoi(''); }} style={nutMo}>
+      <CalendarPlus size={13} /> Tạo kỳ {ky} từ kỳ trước
+    </button>
+  );
+
+  return (
+    <div style={{
+      marginTop: 10, marginBottom: 10, padding: '0.7rem', borderRadius: 10,
+      background: '#f8fafc', display: 'grid', gap: 6,
+    }}>
+      <div style={{ fontSize: '0.74rem', color: '#475569' }}>
+        Copy toàn bộ bảng chỉ tiêu sang kỳ <b>{ky}</b>. Điểm chốt và điểm tự chấm KHÔNG copy —
+        kỳ mới bắt đầu từ trạng thái đạt đủ.
+      </div>
+      <label style={{ fontSize: '0.72rem', color: '#64748b' }}>
+        Copy từ kỳ
+        <input
+          type="month" value={nguon} onChange={e => setNguon(e.target.value)} style={oInput}
+        />
+      </label>
+      {loi && <div style={chuLoi}>{loi}</div>}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={tao} disabled={busy} style={nutChinh}>
+          {busy ? 'Đang tạo…' : 'Tạo kỳ'}
+        </button>
         <button onClick={() => { setMo(false); setLoi(''); }} style={nutPhu}>Huỷ</button>
       </div>
     </div>
