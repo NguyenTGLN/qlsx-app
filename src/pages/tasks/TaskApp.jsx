@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
     import { supabase as db, fetchAllRows } from '../../lib/supabase';
     import { dataCache } from '../../lib/dataCache';
     import WorkReport from './WorkReport';
+    import KpiTab from './KpiTab';
     import { useAuth } from '../../lib/AuthContext';
     import { MODULE_PERMS, ALL_PERMS, canSeeTab, getTabPerm } from '../../lib/AuthContext';
     import { PERM_REGISTRY, ALL_CAPS, CAP_LABEL, tabKey, migrateLegacyToTabPerms } from '../../lib/permRegistry';
@@ -12,7 +13,7 @@ import { useNavigate } from 'react-router-dom';
     import { collectPaths, deleteAttachments, deleteRemoved } from '../../lib/attachmentStorage';
     import { memberIds, memberUsers, joinAssignees, assigneesPayload } from '../../lib/taskAssignees';
     import {
-      ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart,
+      ClipboardCheck, LayoutDashboard, ListTodo, FileBarChart, Trophy,
       ListChecks, Loader2, CheckCircle2, AlertTriangle, Send, Search,
       Clock, MessageSquare, Factory, UserPlus, Users as UsersIcon,
     } from 'lucide-react';
@@ -1494,6 +1495,7 @@ import { useNavigate } from 'react-router-dom';
         canSeeTab(me,'tasks','dashboard') && h(TabButton, {key:'dashboard', active: view==='dashboard', onClick: ()=>navTo('dashboard'), label:'Tổng quan', color:'#2563eb'}),
         canSeeTab(me,'tasks','tasks') && h(TabButton, {key:'tasks', active: view==='tasks', onClick: ()=>navTo('tasks'), label:'Công việc', color:'#2563eb'}),
         canSeeTab(me,'tasks','work_report') && h(TabButton, {key:'work_report', active: view==='work_report', onClick: ()=>navTo('work_report'), label:'Báo Cáo', color:'#2563eb'}),
+        canSeeTab(me,'tasks','kpi') && h(TabButton, {key:'kpi', active: view==='kpi', onClick: ()=>navTo('kpi'), label:'KPI', color:'#2563eb'}),
       ].filter(Boolean)
 
       return h(ModuleShell, {
@@ -1534,10 +1536,18 @@ import { useNavigate } from 'react-router-dom';
                    },
                      h('div', {style: {width: 46, height: 46, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #2563eb, #3b82f6)', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)'}}, h(FileBarChart, {size: 24, color: '#fff'})),
                      h('h3', {style: {margin: 0, fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', textAlign: 'center'}}, 'Báo Cáo')
+                   ),
+                   canSeeTab(me,'tasks','kpi') && h('button', {
+                     onClick: () => navTo('kpi'),
+                     style: { background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: '1.25rem 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', transition: 'all 0.25s', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07)' }
+                   },
+                     h('div', {style: {width: 46, height: 46, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #2563eb, #3b82f6)', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)'}}, h(Trophy, {size: 24, color: '#fff'})),
+                     h('h3', {style: {margin: 0, fontSize: '0.8rem', fontWeight: 700, color: '#0f172a', textAlign: 'center'}}, 'KPI')
                    )
                  )
                : view==='dashboard'&&canSeeTab(me,'tasks','dashboard') ? h(Dashboard, {tasks, users, currentUser: me, pendingOrders, onUserClick:handleUserClick, onDetail:t=>setDetailTask(t), onAddUser: ()=>setUserModal({}), onEditUser: u=>setUserModal({user:u})})
                : view==='work_report' && canSeeTab(me,'tasks','work_report') ? h(WorkReport)
+               : view==='kpi' && canSeeTab(me,'tasks','kpi') ? h(KpiTab, { me, users, perm: getTabPerm(me, 'tasks', 'kpi') })
                : view==='tasks' && assFilter !== 'ALL' ? h(UserTaskBoard, { user: users.find(u=>u.id===assFilter) || me, tasks, currentUser: me, onBack: canSeeTab(me,'tasks','dashboard') ? () => { setView('dashboard'); setAssFilter('ALL'); } : null, onDetail: t=>setDetailTask(t), onEdit: t=>setTaskModal({task:t}), onUpdate: handleUpdateTask, onRemind: handleRemind, onDelete: handleDeleteTask })
                : view==='tasks' && assFilter === 'ALL' ? h('div',null, h('div',{className:'flex items-center justify-between mb-4 max-w-[1400px] mx-auto w-full'}, h('h1',{className:'text-sm sm:text-xl font-bold text-gray-900'}, 'Tất cả công việc'), h('button',{onClick:()=>{dataCache.invalidate(TASK_CACHE_KEY);bootstrap(me,true);},className:btn.secondary+' px-2 py-1 text-[10px] sm:text-xs'},'↻ Làm mới')), h(TaskTable,{ tasks, users, currentUser:me, assFilter, setAssFilter, onEdit: t=>setTaskModal({task:t}), onDetail:t=>setDetailTask(t), onDelete:handleDeleteTask, onBulkDelete:handleBulkDelete, onUpdate:handleUpdateTask, onRemind:handleRemind, onAddUpdate:handleAddUpdate }))
                : null
