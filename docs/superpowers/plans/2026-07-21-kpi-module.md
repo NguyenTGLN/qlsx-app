@@ -792,7 +792,12 @@ Expected: `✔ Đã sinh sql/seed_kpi_2026_06.sql` + 2 dòng "BỎ QUA sheet cũ
 - [ ] **Step 4: Kiểm file SQL sinh ra**
 
 Run: `grep -c "insert into kpi_chi_tieu" sql/seed_kpi_2026_06.sql`
-Expected: khoảng 197 — 195 dòng chỉ tiêu cá nhân (32+16+20+19+20+11+11+11+11+11+11+14+14+14) + 2 dòng BO_PHAN. Nếu lệch nhiều thì luật lọc dòng nhóm/dòng thưởng đang sai, phải soát lại `docSheet` trước khi đi tiếp.
+Expected: **218** — 216 dòng chỉ tiêu cá nhân + 2 dòng BO_PHAN.
+
+Chi tiết 216 = 33+16+20+19+20+11+11+11+11+11+11+14+14+14. NGUYÊN là 33 (32 chỉ tiêu có điểm + 1 dòng "CỘNG THÊM NGOÀI TRỌNG SỐ"). Nếu lệch thì luật lọc dòng nhóm/dòng thưởng đang sai, phải soát lại `docSheet` trước khi đi tiếp.
+
+Run: `grep "^-- ──" sql/seed_kpi_2026_06.sql`
+Expected: 14 dòng, **mọi dòng đều `Σ trọng số 100`**. Đây là kiểm tra quan trọng nhất của bước import.
 
 Run: `head -20 sql/seed_kpi_2026_06.sql` — soát bằng mắt: có `begin;`, có `delete ... where ky = '2026-06'`, tên chỉ tiêu tiếng Việt không vỡ dấu.
 

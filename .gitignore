@@ -37,3 +37,4 @@ qlsx-deploy-moi.zip
 # Anh goc avatar (ban nen da o public/avatars/)
 /avatar/
 seed_kpi_*.sql
+KPI/
