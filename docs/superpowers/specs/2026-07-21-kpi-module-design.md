@@ -44,7 +44,7 @@ create table kpi_chi_tieu (
   ky            text not null,            -- '2026-06'
   cap_do        text not null default 'CA_NHAN',  -- 'CA_NHAN' | 'BO_PHAN'
   nhan_vien_id  text,                     -- null khi cap_do='BO_PHAN'
-  bo_phan       text,                     -- 'KHO' | 'CSKH'... dùng khi cap_do='BO_PHAN'
+  lien_ket_bo_phan text,                  -- khoá nhóm chấm chung, vd 'CHUYEN_CAN_KHO'
   nhom          text,                     -- 'A. THỰC HIỆN NỘI QUY'
   thu_tu        int not null,
   ten           text not null,            -- 'CHUYÊN CẦN CÁ NHÂN'
@@ -74,11 +74,12 @@ create table kpi_nhat_ky (
 );
 ```
 
-Liên kết chỉ tiêu bộ phận: nhân viên thuộc bộ phận nào lấy từ `nhan_vien` (thêm cột `bo_phan` nếu chưa có — xác nhận lúc viết plan). Dòng `BO_PHAN` của kỳ áp cho mọi nhân viên cùng `bo_phan`, mỗi người một `trong_so` riêng → cần bảng phụ mapping trọng số? **Không.** Đơn giản hơn: mỗi nhân viên vẫn có dòng chỉ tiêu riêng (`cap_do='CA_NHAN'`) nhưng thêm cột `lien_ket_bo_phan text` trỏ tên nhóm chấm chung (vd `'CHUYEN_CAN_KHO'`). Điểm đạt đọc từ dòng `BO_PHAN` cùng `ky` + cùng `lien_ket_bo_phan`; trọng số vẫn nằm ở dòng cá nhân. Chấm 1 lần trên dòng bộ phận → mọi người cùng nhóm tự cập nhật.
+**Liên kết chỉ tiêu bộ phận** — không cần đụng bảng `nhan_vien` (bảng này chỉ có `id, name, password, role, avatar, permissions`, không có cột bộ phận):
 
-```sql
-alter table kpi_chi_tieu add column lien_ket_bo_phan text; -- null = chỉ tiêu cá nhân thuần
-```
+- Dòng chấm chung: `cap_do='BO_PHAN'`, `nhan_vien_id=null`, `lien_ket_bo_phan='CHUYEN_CAN_KHO'`, `trong_so=0`.
+- Dòng của từng nhân viên: `cap_do='CA_NHAN'`, `lien_ket_bo_phan='CHUYEN_CAN_KHO'`, `trong_so` riêng của người đó.
+
+Engine thấy `lien_ket_bo_phan` khác null thì lấy **điểm đạt** từ dòng `BO_PHAN` cùng `(ky, lien_ket_bo_phan)`, còn **trọng số** vẫn của dòng cá nhân. Chấm 1 lần → cả nhóm tự cập nhật. `lien_ket_bo_phan = null` nghĩa là chỉ tiêu cá nhân thuần.
 
 RLS: theo nếp `security_3_rls_lockdown.sql`. Đọc: mọi user đăng nhập (công khai toàn bộ). Ghi: theo cap của tab (`edit` cho nhật ký + điểm chốt, `create` cho bảng chỉ tiêu).
 
@@ -178,4 +179,4 @@ Chỉ tiêu chuyển auto: đổi `cach_cham='TU_DONG'` → UI khoá nhập tay,
 ## 10. Câu hỏi mở
 
 1. ~~Sheet BÍCH dòng 24 có công thức `=SUM(...)/2` (chia đôi tổng)~~ — **Đã chốt (21/07/2026): công thức cũ sót, KHÔNG chia đôi.** Bích tính giống mọi nhân viên khác; import bỏ qua dòng này. Engine không có luật chia đôi.
-2. `nhan_vien` đã có cột bộ phận chưa — kiểm lúc viết plan, chưa có thì thêm trong migration.
+2. ~~`nhan_vien` đã có cột bộ phận chưa~~ — **Đã kiểm (21/07/2026): không có, và không cần.** Chỉ tiêu bộ phận liên kết qua khoá nhóm `lien_ket_bo_phan` đặt trên chính dòng chỉ tiêu, không đụng bảng `nhan_vien`.
