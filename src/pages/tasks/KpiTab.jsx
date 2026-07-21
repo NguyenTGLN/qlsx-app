@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
 import { tinhBangKpi, giaiThich, kiemTraTrongSo } from '../../lib/kpiEngine';
+import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import { xuatExcelKpi, dungDuLieuSheet } from '../../lib/kpiExcel';
 import KpiPrint from '../../components/KpiPrint';
 import {
@@ -237,20 +238,24 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
       chi_tieu: ct.chi_tieu,
       trong_so: ct.trong_so,
     };
-    const { error } = ct.id
-      ? await supabase.from('kpi_chi_tieu').update(ban).eq('id', ct.id)
+    // `.select()` BẮT BUỘC: không có nó, một UPDATE bị RLS lọc hết dòng trả 204 + error=null
+    // và ta báo "đã lưu" cho một thao tác không chạm được dòng nào. Xem lib/kpiWriteGuard.js.
+    const { data, error } = ct.id
+      ? await supabase.from('kpi_chi_tieu').update(ban).eq('id', ct.id).select()
       : await supabase.from('kpi_chi_tieu').insert({
           ...ban, ky, cap_do: 'CA_NHAN', nhan_vien_id: nvId,
           // thu_tu lớn nhất + 1, KHÔNG phải số dòng: xoá bớt dòng giữa chừng rồi thêm mới
           // sẽ đụng thu_tu cũ và bảng nhảy lung tung thứ tự.
           thu_tu: rows.reduce((m, r) => Math.max(m, r.thu_tu || 0), 0) + 1,
-        });
-    if (error) return error.message;
+        }).select();
+    const loi = loiGhiKpi(error, data);
+    if (loi) return loi;
     setSuaCT(null);
     onReload?.();
     return null;
   }
 
+  // Trả chuỗi lỗi (để form hiện inline) hoặc null khi xong/người dùng huỷ xác nhận.
   async function xoaChiTieu(id) {
     // Nhật ký bị cascade xoá theo. Đếm đúng nhật ký GẮN VÀO DÒNG NÀY (`chi_tieu_id === id`),
     // không dùng `d.logs` — với dòng liên kết bộ phận thì `d.logs` là nhật ký của dòng chung
@@ -260,11 +265,15 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
     const canhBao = soNhatKy > 0
       ? `\n\nXoá luôn ${soNhatKy} dòng nhật ký cộng/trừ điểm của chỉ tiêu này — toàn bộ bằng chứng chấm điểm sẽ mất và KHÔNG khôi phục được.`
       : '\n\nChỉ tiêu này chưa có nhật ký nào.';
-    if (!window.confirm(`Xoá "${ten}"?${canhBao}`)) return;
-    const { error } = await supabase.from('kpi_chi_tieu').delete().eq('id', id);
-    if (error) { window.alert('Lỗi xoá: ' + error.message); return; }
+    if (!window.confirm(`Xoá "${ten}"?${canhBao}`)) return null;
+    // `.select()` như ở luuChiTieu: DELETE bị RLS lọc hết cũng trả 204 + error=null, không có
+    // nó thì bấm Xoá xong form đóng êm mà dòng vẫn còn nguyên sau khi reload.
+    const { data, error } = await supabase.from('kpi_chi_tieu').delete().eq('id', id).select();
+    const loi = loiGhiKpi(error, data);
+    if (loi) return loi;
     setSuaCT(null);
     onReload?.();
+    return null;
   }
 
   const ctDangXem = popupId && popupId !== 'TONG'
@@ -725,11 +734,12 @@ function FormGhiDiem({ chiTieuId, dangChotTay, me, onXong }) {
     setLoi('');
     setBusy(true);
     try {
-      const { error } = await supabase.from('kpi_nhat_ky').insert({
+      const { data, error } = await supabase.from('kpi_nhat_ky').insert({
         chi_tieu_id: chiTieuId, ngay: f.ngay, so_diem: diem,
         ly_do: f.ly_do.trim(), nguoi_ghi: me?.name || me?.id, nguon: 'TAY',
-      });
-      if (error) { setLoi('Lỗi lưu: ' + error.message); return; }
+      }).select();
+      const loiGhi = loiGhiKpi(error, data);
+      if (loiGhi) { setLoi(loiGhi); return; }
       setF({ ngay: homNay(), so_diem: '', ly_do: '' });
       setMo(false);
       onXong?.();
@@ -799,15 +809,20 @@ function FormChotDiem({ ctGhi, me, onXong }) {
   async function ghi(giaTriMoi) {
     setBusy(true);
     try {
-      const { error } = await supabase
+      // `.select()` BẮT BUỘC — đây là chỗ nguy hiểm nhất của module: điểm chốt đi thẳng vào
+      // bảng lương. Không có nó, người không phải ADMIN gõ điểm chốt 3, bấm Lưu, form đóng
+      // êm (204 + error=null), reload thấy vẫn 10 — họ tin là đã chốt. Xem lib/kpiWriteGuard.js.
+      const { data, error } = await supabase
         .from('kpi_chi_tieu')
         .update({
           diem_chot: giaTriMoi,
           chot_boi: giaTriMoi === null ? null : (me?.name || me?.id || null),
           chot_luc: giaTriMoi === null ? null : new Date().toISOString(),
         })
-        .eq('id', ctGhi.id);
-      if (error) { setLoi('Lỗi lưu: ' + error.message); return; }
+        .eq('id', ctGhi.id)
+        .select();
+      const loiGhi = loiGhiKpi(error, data);
+      if (loiGhi) { setLoi(loiGhi); return; }
       setMo(false);
       setLoi('');
       onXong?.();
@@ -904,8 +919,10 @@ function FormSuaChiTieu({ ct, onLuu, onXoa, onHuy }) {
     setLoi('');
     setBusy(true);
     try {
+      // onLuu trả về chuỗi đã có ngữ cảnh sẵn (xem lib/kpiWriteGuard.js) — KHÔNG thêm tiền tố
+      // "Lỗi lưu:" nữa, sẽ thành "Lỗi lưu: Lỗi lưu: ...".
       const err = await onLuu({ ...f, chi_tieu: chiTieu, trong_so: trongSo });
-      if (err) setLoi('Lỗi lưu: ' + err);
+      if (err) setLoi(err);
     } finally {
       setBusy(false);
     }
@@ -983,7 +1000,18 @@ function FormSuaChiTieu({ ct, onLuu, onXoa, onHuy }) {
           </button>
           {f.id && (
             <button
-              onClick={() => onXoa(f.id)} disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                // Lỗi xoá hiện inline ngay trong form (như lỗi lưu), không dùng alert():
+                // alert() bật lên rồi tắt là hết dấu vết, người dùng đóng form và tưởng đã xoá.
+                try {
+                  const err = await onXoa(f.id);
+                  if (err) setLoi(err);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              disabled={busy}
               style={{ ...nutPhu, border: '1px solid #fecaca', color: '#dc2626' }}
             >
               Xoá
