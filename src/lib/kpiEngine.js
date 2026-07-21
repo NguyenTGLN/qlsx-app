@@ -11,10 +11,20 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // Điểm đạt của MỘT chỉ tiêu. `diem_chot` (quản lý chốt tay) thắng nhật ký.
 // So sánh với null/undefined chứ không dùng falsy — diem_chot = 0 là giá trị hợp lệ.
+//
+// `diem_chot` cũng bị kẹp trong [0, chi_tieu] y như đường nhật ký: về ngữ nghĩa nó CHÍNH LÀ
+// điểm đạt, mà điểm đạt vượt chỉ tiêu hoặc âm là trạng thái vô nghĩa. Kẹp ở đây (thay vì chỉ
+// chặn ở form nhập) để dữ liệu xấu sẵn có trong DB — nhất là bản import từ Excel — không chảy
+// ra giao diện, Excel và bản in. Form vẫn phải validate riêng để quản lý biết mình gõ sai.
 export function diemDat(ct, logs = []) {
-  if (ct.diem_chot !== null && ct.diem_chot !== undefined) return num(ct.diem_chot);
-  const tong = logs.reduce((s, l) => s + num(l.so_diem), 0);
+  // Dòng thưởng ngoài trọng số: chi_tieu bỏ trống nên KHÔNG có trần để kẹp.
+  // Kẹp về [0, 0] ở đây sẽ nuốt sạch điểm thưởng.
+  const laThuong = ct.chi_tieu == null;
   const max = num(ct.chi_tieu);
+  if (ct.diem_chot != null) {
+    return laThuong ? num(ct.diem_chot) : clamp(num(ct.diem_chot), 0, max);
+  }
+  const tong = logs.reduce((s, l) => s + num(l.so_diem), 0);
   return clamp(max + tong, 0, max);
 }
 
@@ -29,13 +39,20 @@ export function tinhChiTieu(ct, logs = [], bpMap = {}) {
   const max = num(ct.chi_tieu);
   const trongSo = num(ct.trong_so);
 
-  // chi_tieu null/0 = dòng thưởng ngoài trọng số: cộng thẳng điểm nhật ký, không có tỉ lệ.
-  if (!max) {
+  // Dòng thưởng ngoài trọng số nhận diện bằng chi_tieu BỎ TRỐNG (null/undefined), KHÔNG phải
+  // chi_tieu = 0. Trong Excel gốc cột chỉ tiêu chỉ có 2/5/6/10/15/24 và dòng thưởng để trống,
+  // nên số 0 chỉ có thể là lỗi nhập — suy "thưởng" từ !max sẽ nuốt mất lỗi đó.
+  if (ct.chi_tieu == null) {
     const thuong = logs.reduce((s, l) => s + num(l.so_diem), 0);
+    // CHÚ Ý cho người đọc sau: `diemDat` của dòng thưởng KHÔNG phải điểm thật của dòng
+    // (mặc định là 0) — điểm thật nằm ở `diemQuyDoi`. UI/Excel phải đọc cờ `laThuong`
+    // để render đúng cột, đừng lấy `diemDat` ra hiển thị.
     return { diemDat: dat, tiLeDat: null, diemQuyDoi: thuong, diemMat: 0, laThuong: true };
   }
 
-  const tiLeDat = clamp(dat / max, 0, 1);
+  // chi_tieu = 0 (lỗi nhập): không chia cho 0, cho mất trọn trọng số để lỗi lộ ra ngay
+  // trên bảng thay vì âm thầm thành dòng thưởng 0 điểm.
+  const tiLeDat = max > 0 ? clamp(dat / max, 0, 1) : 0;
   const diemQuyDoi = tiLeDat * trongSo;
   return { diemDat: dat, tiLeDat, diemQuyDoi, diemMat: trongSo - diemQuyDoi, laThuong: false };
 }
@@ -87,9 +104,11 @@ export function tinhBangKpi(rows = [], logs = []) {
 
 // Σ trọng số phải = 100. Excel không cảnh báo cái này nên rất dễ lệch mà không ai biết.
 // Chỉ cộng dòng cá nhân có chi_tieu (bỏ dòng BO_PHAN và dòng thưởng ngoài trọng số).
+// Lọc theo `chi_tieu != null` chứ không phải `> 0`: dòng lỗi nhập chi_tieu = 0 vẫn mang
+// trọng số thật, phải cộng vào thì cảnh báo lệch mới nổ đúng lúc.
 export function kiemTraTrongSo(rows = []) {
   const tong = rows
-    .filter(r => r.cap_do !== 'BO_PHAN' && num(r.chi_tieu) > 0)
+    .filter(r => r.cap_do !== 'BO_PHAN' && r.chi_tieu != null)
     .reduce((s, r) => s + num(r.trong_so), 0);
   const lech = Math.round((tong - 100) * 1000) / 1000;
   return { tong, lech, hopLe: Math.abs(lech) < 0.001 };

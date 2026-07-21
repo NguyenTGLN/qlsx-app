@@ -28,6 +28,18 @@ describe('diemDat', () => {
   it('diem_chot = 0 vẫn được tôn trọng (không nhầm với null)', () => {
     expect(diemDat({ chi_tieu: 10, diem_chot: 0 }, [])).toBe(0);
   });
+
+  it('diem_chot vượt chỉ tiêu bị kẹp về trần — điểm đạt > chỉ tiêu là vô nghĩa', () => {
+    expect(diemDat({ chi_tieu: 10, diem_chot: 20 }, [])).toBe(10);
+  });
+
+  it('diem_chot âm bị kẹp về sàn 0', () => {
+    expect(diemDat({ chi_tieu: 10, diem_chot: -5 }, [])).toBe(0);
+  });
+
+  it('dòng thưởng (chi_tieu rỗng) không có trần nên diem_chot giữ nguyên', () => {
+    expect(diemDat({ chi_tieu: null, diem_chot: 2 }, [])).toBe(2);
+  });
 });
 
 describe('tinhChiTieu', () => {
@@ -69,6 +81,21 @@ describe('tinhChiTieu', () => {
       [{ so_diem: -10 }],            // nhật ký này KHÔNG được tính
       { X: 8 });
     expect(r.diemDat).toBe(8);
+  });
+
+  it('chi_tieu undefined cũng là dòng thưởng như chi_tieu null', () => {
+    const r = tinhChiTieu({ trong_so: 0 }, [{ so_diem: 2 }]);
+    expect(r.laThuong).toBe(true);
+    expect(r.tiLeDat).toBeNull();
+    expect(r.diemQuyDoi).toBeCloseTo(2);
+  });
+
+  it('chi_tieu = 0 là lỗi nhập, KHÔNG phải dòng thưởng → mất trọn trọng số', () => {
+    const r = tinhChiTieu({ chi_tieu: 0, trong_so: 6 }, [{ so_diem: 5 }]);
+    expect(r.laThuong).toBe(false);
+    expect(r.tiLeDat).toBe(0);
+    expect(r.diemQuyDoi).toBe(0);
+    expect(r.diemMat).toBe(6);
   });
 });
 
@@ -152,6 +179,16 @@ describe('kiemTraTrongSo', () => {
     ]);
     expect(r.tong).toBe(100);
     expect(r.hopLe).toBe(true);
+  });
+
+  it('dòng chi_tieu = 0 vẫn được cộng trọng số để lỗi nhập lộ ra', () => {
+    const r = kiemTraTrongSo([
+      { cap_do: 'CA_NHAN', chi_tieu: 0, trong_so: 10 },
+      { cap_do: 'CA_NHAN', chi_tieu: 10, trong_so: 80 },
+    ]);
+    expect(r.tong).toBe(90);
+    expect(r.lech).toBe(-10);
+    expect(r.hopLe).toBe(false);
   });
 });
 
