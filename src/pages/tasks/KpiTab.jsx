@@ -335,6 +335,23 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
             {soNgan(canhBaoTrongSo.lech)}) — bảng chỉ tiêu chưa chuẩn.
           </div>
         )}
+
+        {/* Thiếu dòng chấm chung = mất TRỌN trọng số nhưng con số nhìn y hệt "chấm chung được
+            0 điểm". Phải nói ra ở đây, không thì người xem tưởng đã bị chấm 0 thật. */}
+        {kq.nhomThieuDongChung.length > 0 && (
+          <div style={{
+            marginTop: 8, padding: '0.5rem 0.6rem', borderRadius: 8,
+            background: '#fffbeb', color: '#b45309', fontSize: '0.74rem',
+            display: 'flex', alignItems: 'flex-start', gap: 6,
+          }}>
+            <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>
+              Thiếu dòng chấm chung cho {kq.nhomThieuDongChung.length > 1 ? 'các nhóm' : 'nhóm'}{' '}
+              <b>{kq.nhomThieuDongChung.join(', ')}</b> — các chỉ tiêu này đang tính 0 điểm vì
+              CHƯA CÓ dữ liệu chấm, không phải vì bị chấm 0. Tạo dòng chấm chung rồi xem lại.
+            </span>
+          </div>
+        )}
       </div>
 
       {kq.danhSachMatDiem.length > 0 && (

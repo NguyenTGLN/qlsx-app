@@ -35,7 +35,15 @@ export function diemDat(ct, logs = []) {
 // chấm một lần cho cả bộ phận, mỗi người quy đổi theo trọng số của mình.
 export function tinhChiTieu(ct, logs = [], bpMap = {}) {
   const laBoPhan = !!ct.lien_ket_bo_phan;
-  const dat = laBoPhan ? num(bpMap[ct.lien_ket_bo_phan]) : diemDat(ct, logs);
+  // "Chưa có dòng chấm chung" và "đã chấm chung, được 0 điểm" cùng ra con số 0 nhưng là hai
+  // chuyện khác hẳn: một bên dữ liệu THIẾU, một bên kết quả chấm thật. Phải tra bằng
+  // hasOwnProperty chứ không phải `bpMap[k] == null` — dòng chung chấm 0 điểm là hợp lệ và
+  // hay gặp (cả bộ phận đi muộn thì đúng là 0). Thiếu dòng chung = mất TRỌN trọng số của mọi
+  // người trong nhóm, nên phải trả cờ ra để UI/diễn giải nói đúng bản chất, đừng trình bày
+  // dữ liệu thiếu như điểm đã chấm.
+  const thieuDongChung = laBoPhan
+    && !Object.prototype.hasOwnProperty.call(bpMap || {}, ct.lien_ket_bo_phan);
+  const dat = laBoPhan ? num((bpMap || {})[ct.lien_ket_bo_phan]) : diemDat(ct, logs);
   const max = num(ct.chi_tieu);
   const trongSo = num(ct.trong_so);
 
@@ -51,14 +59,14 @@ export function tinhChiTieu(ct, logs = [], bpMap = {}) {
     // CHÚ Ý cho người đọc sau: `diemDat` của dòng thưởng KHÔNG phải điểm thật của dòng
     // (mặc định là 0) — điểm thật nằm ở `diemQuyDoi`. UI/Excel phải đọc cờ `laThuong`
     // để render đúng cột, đừng lấy `diemDat` ra hiển thị.
-    return { diemDat: dat, tiLeDat: null, diemQuyDoi: thuong, diemMat: 0, laThuong: true };
+    return { diemDat: dat, tiLeDat: null, diemQuyDoi: thuong, diemMat: 0, laThuong: true, thieuDongChung };
   }
 
   // chi_tieu = 0 (lỗi nhập): không chia cho 0, cho mất trọn trọng số để lỗi lộ ra ngay
   // trên bảng thay vì âm thầm thành dòng thưởng 0 điểm.
   const tiLeDat = max > 0 ? clamp(dat / max, 0, 1) : 0;
   const diemQuyDoi = tiLeDat * trongSo;
-  return { diemDat: dat, tiLeDat, diemQuyDoi, diemMat: trongSo - diemQuyDoi, laThuong: false };
+  return { diemDat: dat, tiLeDat, diemQuyDoi, diemMat: trongSo - diemQuyDoi, laThuong: false, thieuDongChung };
 }
 
 // Tính cả bảng KPI của MỘT người trong MỘT kỳ.
@@ -103,7 +111,13 @@ export function tinhBangKpi(rows = [], logs = []) {
     .filter(d => d.diemMat > 0.0001)
     .sort((a, b) => b.diemMat - a.diemMat);
 
-  return { dong, tongKpi, tongMat, danhSachMatDiem, bpMap };
+  // Khoá nhóm có dòng cá nhân trỏ tới nhưng KHÔNG có dòng BO_PHAN nào để lấy điểm.
+  // Đây là hỏng dữ liệu (import sót, hoặc ai đó xoá dòng chung) chứ không phải kết quả
+  // chấm: cả nhóm mất trọn trọng số. UI phải cảnh báo, không được để nó trôi im lặng.
+  const nhomThieuDongChung = [...new Set(
+    dong.filter(d => d.thieuDongChung).map(d => d.lien_ket_bo_phan))];
+
+  return { dong, tongKpi, tongMat, danhSachMatDiem, bpMap, nhomThieuDongChung };
 }
 
 // Σ trọng số phải = 100. Excel không cảnh báo cái này nên rất dễ lệch mà không ai biết.
@@ -154,7 +168,15 @@ export function giaiThich(ct, logs = [], bpMap = {}) {
   const boPhan = !!ct.lien_ket_bo_phan;
 
   let buocDat;
-  if (boPhan) {
+  if (kq.thieuDongChung) {
+    // Popup này là BẰNG CHỨNG của điểm số. Viết "Chấm chung cả bộ phận: 0/10" khi thực ra
+    // chưa ai chấm là nói dối chính người đang bị mất trọn trọng số vì dòng chung bị thiếu.
+    buocDat = {
+      nhan: 'Điểm đạt', nguon: 'THIEU_DONG_CHUNG',
+      dienGiai: `Chưa có dòng chấm chung cho nhóm ${ct.lien_ket_bo_phan} — điểm đang tính là 0`,
+      ketQua: soGon(kq.diemDat),
+    };
+  } else if (boPhan) {
     buocDat = {
       nhan: 'Điểm đạt', nguon: 'BO_PHAN',
       dienGiai: `Chấm chung cả bộ phận: ${soGon(kq.diemDat)}/${ct.chi_tieu}`,

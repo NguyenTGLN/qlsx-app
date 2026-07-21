@@ -107,6 +107,30 @@ describe('tinhChiTieu', () => {
     const r = tinhChiTieu({ chi_tieu: null, trong_so: 0, diem_chot: null }, [{ so_diem: 1.5 }]);
     expect(r.diemQuyDoi).toBeCloseTo(1.5);
   });
+
+  // "Chưa có dòng chấm chung" và "đã chấm chung, được 0 điểm" cho ra CÙNG một con số 0
+  // nhưng là hai chuyện hoàn toàn khác nhau: một bên là dữ liệu THIẾU, một bên là kết quả
+  // chấm thật. Không phân biệt được thì UI sẽ trình bày dữ liệu thiếu như điểm đã chấm.
+  it('THIẾU dòng chấm chung: bật cờ thieuDongChung', () => {
+    const r = tinhChiTieu({ chi_tieu: 10, trong_so: 5, lien_ket_bo_phan: 'X' }, [], {});
+    expect(r.thieuDongChung).toBe(true);
+    expect(r.diemDat).toBe(0);
+    expect(r.diemMat).toBe(5);
+  });
+
+  it('CÓ dòng chấm chung với điểm 0: KHÔNG phải thiếu dữ liệu', () => {
+    const r = tinhChiTieu({ chi_tieu: 10, trong_so: 5, lien_ket_bo_phan: 'X' }, [], { X: 0 });
+    expect(r.thieuDongChung).toBe(false);
+    expect(r.diemDat).toBe(0);
+  });
+
+  it('dòng cá nhân thường không bao giờ bị coi là thiếu dòng chung', () => {
+    expect(tinhChiTieu({ chi_tieu: 10, trong_so: 5 }, [], {}).thieuDongChung).toBe(false);
+  });
+
+  it('bpMap không truyền (undefined) vẫn nhận ra là thiếu dòng chung', () => {
+    expect(tinhChiTieu({ chi_tieu: 10, trong_so: 5, lien_ket_bo_phan: 'X' }).thieuDongChung).toBe(true);
+  });
 });
 
 // Bảng thật của Lê Văn Bích, kỳ 2026-06, rút gọn còn các dòng có mất điểm
@@ -175,6 +199,24 @@ describe('tinhBangKpi', () => {
     ];
     const r = tinhBangKpi(rows, [{ chi_tieu_id: 'b', so_diem: 1.5 }]);
     expect(r.tongKpi).toBeCloseTo(103);
+  });
+
+  // Thiếu dòng chung = mất TRỌN trọng số của mọi người trong nhóm. Đây là hỏng dữ liệu,
+  // không phải kết quả chấm — bảng phải trả khoá nhóm ra để UI cảnh báo, không im lặng.
+  it('trả danh sách khoá nhóm thiếu dòng chấm chung, không lặp', () => {
+    const rows = [
+      { id: 'c1', cap_do: 'CA_NHAN', ten: 'A', chi_tieu: 10, trong_so: 30, lien_ket_bo_phan: 'NHOM_X' },
+      { id: 'c2', cap_do: 'CA_NHAN', ten: 'B', chi_tieu: 10, trong_so: 30, lien_ket_bo_phan: 'NHOM_X' },
+      { id: 'c3', cap_do: 'CA_NHAN', ten: 'C', chi_tieu: 10, trong_so: 40, lien_ket_bo_phan: 'NHOM_Y' },
+    ];
+    const r = tinhBangKpi(rows, []);
+    expect(r.nhomThieuDongChung).toEqual(['NHOM_X', 'NHOM_Y']);
+    expect(r.dong.every(d => d.thieuDongChung)).toBe(true);
+    expect(r.tongKpi).toBe(0);
+  });
+
+  it('đủ dòng chung thì danh sách thiếu rỗng', () => {
+    expect(tinhBangKpi(bangBich(), []).nhomThieuDongChung).toEqual([]);
   });
 });
 
@@ -260,5 +302,25 @@ describe('giaiThich', () => {
     expect(g.buoc[0].ketQua).toBe(3);
     // Chuỗi diễn giải KHÔNG được nói "+1.5" trong khi kết quả là 3.
     expect(g.buoc[0].dienGiai).not.toContain('1.5');
+  });
+
+  it('chỉ tiêu bộ phận ĐÃ có dòng chung: diễn giải là kết quả chấm thật', () => {
+    const g = giaiThich(
+      { ten: 'CHUYÊN CẦN BỘ PHẬN', chi_tieu: 10, trong_so: 5, lien_ket_bo_phan: 'CHUYEN_CAN_KHO' },
+      [], { CHUYEN_CAN_KHO: 0 });
+    expect(g.buoc[0].nguon).toBe('BO_PHAN');
+    expect(g.buoc[0].dienGiai).toContain('Chấm chung cả bộ phận');
+  });
+
+  // Popup này là "bằng chứng" của điểm số. Hiện "Chấm chung cả bộ phận: 0/10" khi thực ra
+  // CHƯA AI CHẤM là nói dối người bị trừ điểm — phải nói rõ đang thiếu dữ liệu.
+  it('thiếu dòng chấm chung: nói rõ chưa có, KHÔNG trình bày như đã chấm', () => {
+    const g = giaiThich(
+      { ten: 'CHUYÊN CẦN BỘ PHẬN', chi_tieu: 10, trong_so: 5, lien_ket_bo_phan: 'CHUYEN_CAN_KHO' },
+      [], {});
+    expect(g.buoc[0].nguon).toBe('THIEU_DONG_CHUNG');
+    expect(g.buoc[0].dienGiai).toContain('Chưa có dòng chấm chung');
+    expect(g.buoc[0].dienGiai).toContain('CHUYEN_CAN_KHO');
+    expect(g.buoc[0].dienGiai).not.toContain('Chấm chung cả bộ phận');
   });
 });
