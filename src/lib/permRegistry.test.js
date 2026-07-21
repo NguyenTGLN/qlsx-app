@@ -140,3 +140,20 @@ describe('cancelDoc cap (Hủy Phiếu)', () => {
     expect(getTabPerm(u2, 'kho', 'print_queue').cancelDoc).toBe(true);
   });
 });
+
+describe('tab KPI', () => {
+  test('có trong module tasks với đủ 4 cap', () => {
+    const tasks = PERM_REGISTRY.find(m => m.module === 'tasks');
+    const kpi = tasks.tabs.find(t => t.id === 'kpi');
+    expect(kpi).toBeDefined();
+    expect(kpi.label).toBe('KPI');
+    expect(kpi.caps).toEqual(['view', 'create', 'edit', 'io']);
+  });
+
+  test('admin mặc định có mọi cap; user thường phải tick đúng key', () => {
+    expect(getTabPerm({ role: 'ADMIN', permissions: {} }, 'tasks', 'kpi').edit).toBe(true);
+    const u = { role: 'USER', permissions: { 'tab.tasks.kpi.view': true } };
+    expect(getTabPerm(u, 'tasks', 'kpi').view).toBe(true);
+    expect(getTabPerm(u, 'tasks', 'kpi').edit).toBe(false);
+  });
+});

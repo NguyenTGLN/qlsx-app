@@ -39,6 +39,9 @@ export const PERM_REGISTRY = [
       { id: 'dashboard',   label: 'Tổng quan', caps: ['view'] },
       { id: 'tasks',       label: 'Công việc', caps: ['view', 'create', 'edit', 'delete'] },
       { id: 'work_report', label: 'Báo Cáo',   caps: ['view', 'io'] },
+      // view = xem KPI mọi người (điểm công khai toàn bộ theo quyết định nghiệp vụ)
+      // edit = ghi nhật ký ± điểm, chốt điểm | create = sửa bảng chỉ tiêu, tạo kỳ mới
+      { id: 'kpi',         label: 'KPI',       caps: ['view', 'create', 'edit', 'io'] },
     ],
   },
   {
