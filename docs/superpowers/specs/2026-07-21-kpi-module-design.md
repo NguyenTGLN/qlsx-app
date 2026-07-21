@@ -177,5 +177,5 @@ Chỉ tiêu chuyển auto: đổi `cach_cham='TU_DONG'` → UI khoá nhập tay,
 
 ## 10. Câu hỏi mở
 
-1. **Sheet BÍCH dòng 24 có công thức `=SUM(...)/2` (chia đôi tổng)** — không sheet nào khác có, và Σ trọng số của Bích đã đúng 100. Nghi là công thức cũ sót. **Cần chủ app xác nhận với người chấm trước khi import kỳ T6.** Engine KHÔNG có luật chia đôi.
+1. ~~Sheet BÍCH dòng 24 có công thức `=SUM(...)/2` (chia đôi tổng)~~ — **Đã chốt (21/07/2026): công thức cũ sót, KHÔNG chia đôi.** Bích tính giống mọi nhân viên khác; import bỏ qua dòng này. Engine không có luật chia đôi.
 2. `nhan_vien` đã có cột bộ phận chưa — kiểm lúc viết plan, chưa có thì thêm trong migration.
