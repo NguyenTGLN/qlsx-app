@@ -39,3 +39,58 @@ export function tinhChiTieu(ct, logs = [], bpMap = {}) {
   const diemQuyDoi = tiLeDat * trongSo;
   return { diemDat: dat, tiLeDat, diemQuyDoi, diemMat: trongSo - diemQuyDoi, laThuong: false };
 }
+
+// Tính cả bảng KPI của MỘT người trong MỘT kỳ.
+//   rows: mọi dòng kpi_chi_tieu của kỳ đó — gồm cả dòng cap_do='BO_PHAN' (dùng để lấy
+//         điểm chung, KHÔNG hiển thị như chỉ tiêu của cá nhân).
+//   logs: mọi dòng kpi_nhat_ky liên quan, gom theo chi_tieu_id.
+export function tinhBangKpi(rows = [], logs = []) {
+  const logMap = new Map();
+  for (const l of logs) {
+    if (!logMap.has(l.chi_tieu_id)) logMap.set(l.chi_tieu_id, []);
+    logMap.get(l.chi_tieu_id).push(l);
+  }
+
+  // Điểm đạt chung của từng nhóm bộ phận, tính trước vì dòng cá nhân phụ thuộc vào nó.
+  // Đồng thời nhớ luôn id dòng chung để dòng cá nhân tra ra ngay, khỏi quét lại rows.
+  const bpMap = {};
+  const bpIdMap = {};
+  for (const r of rows) {
+    if (r.cap_do !== 'BO_PHAN') continue;
+    bpMap[r.lien_ket_bo_phan] = diemDat(r, logMap.get(r.id) || []);
+    bpIdMap[r.lien_ket_bo_phan] = r.id;
+  }
+
+  const dong = rows
+    .filter(r => r.cap_do !== 'BO_PHAN')
+    .map(r => {
+      const rLogs = logMap.get(r.id) || [];
+      // Dòng liên kết bộ phận: bằng chứng VÀ chỗ ghi nhật ký đều nằm ở dòng chung,
+      // không phải dòng cá nhân. `__bpId` để form ghi điểm biết insert vào đâu.
+      const bpId = r.lien_ket_bo_phan ? bpIdMap[r.lien_ket_bo_phan] : undefined;
+      return {
+        ...r,
+        ...tinhChiTieu(r, rLogs, bpMap),
+        logs: bpId ? (logMap.get(bpId) || []) : rLogs,
+        __bpId: bpId,
+      };
+    });
+
+  const tongKpi = dong.reduce((s, d) => s + d.diemQuyDoi, 0);
+  const tongMat = dong.reduce((s, d) => s + d.diemMat, 0);
+  const danhSachMatDiem = dong
+    .filter(d => d.diemMat > 0.0001)
+    .sort((a, b) => b.diemMat - a.diemMat);
+
+  return { dong, tongKpi, tongMat, danhSachMatDiem, bpMap };
+}
+
+// Σ trọng số phải = 100. Excel không cảnh báo cái này nên rất dễ lệch mà không ai biết.
+// Chỉ cộng dòng cá nhân có chi_tieu (bỏ dòng BO_PHAN và dòng thưởng ngoài trọng số).
+export function kiemTraTrongSo(rows = []) {
+  const tong = rows
+    .filter(r => r.cap_do !== 'BO_PHAN' && num(r.chi_tieu) > 0)
+    .reduce((s, r) => s + num(r.trong_so), 0);
+  const lech = Math.round((tong - 100) * 1000) / 1000;
+  return { tong, lech, hopLe: Math.abs(lech) < 0.001 };
+}

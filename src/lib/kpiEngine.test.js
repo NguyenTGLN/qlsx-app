@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { diemDat, tinhChiTieu } from './kpiEngine';
+import { diemDat, tinhChiTieu, tinhBangKpi, kiemTraTrongSo } from './kpiEngine';
 
 describe('diemDat', () => {
   it('không có nhật ký thì đạt tối đa', () => {
@@ -67,5 +67,88 @@ describe('tinhChiTieu', () => {
       [{ so_diem: -10 }],            // nhật ký này KHÔNG được tính
       { X: 8 });
     expect(r.diemDat).toBe(8);
+  });
+});
+
+// Bảng thật của Lê Văn Bích, kỳ 2026-06, rút gọn còn các dòng có mất điểm
+// + 1 dòng gộp đại diện 8 chỉ tiêu đạt đủ (tổng trọng số 84).
+function bangBich() {
+  const rows = [
+    { id: 'bp1', cap_do: 'BO_PHAN', lien_ket_bo_phan: 'CHUYEN_CAN_KHO',
+      ten: 'CHUYÊN CẦN BỘ PHẬN', chi_tieu: 10, trong_so: 0, diem_chot: 0 },
+    { id: 'c1', cap_do: 'CA_NHAN', lien_ket_bo_phan: 'CHUYEN_CAN_KHO',
+      ten: 'CHUYÊN CẦN BỘ PHẬN', chi_tieu: 10, trong_so: 5, nhom: 'A' },
+    { id: 'c2', cap_do: 'CA_NHAN', ten: 'CHUYÊN CẦN CÁ NHÂN',
+      chi_tieu: 10, trong_so: 7, diem_chot: 3, nhom: 'A' },
+    { id: 'c3', cap_do: 'CA_NHAN', ten: 'ĐÓNG GÓP CẢI TIẾN',
+      chi_tieu: 2, trong_so: 4, diem_chot: 0, nhom: 'C' },
+    { id: 'c4', cap_do: 'CA_NHAN', ten: 'CÁC CHỈ TIÊU ĐẠT ĐỦ',
+      chi_tieu: 10, trong_so: 84, diem_chot: 10, nhom: 'B' },
+  ];
+  return rows;
+}
+
+describe('tinhBangKpi', () => {
+  it('tổng điểm Bích T6/2026 = 86.1 (đối chiếu Excel thật)', () => {
+    const r = tinhBangKpi(bangBich(), []);
+    expect(r.tongKpi).toBeCloseTo(86.1);
+    expect(r.tongMat).toBeCloseTo(13.9);
+  });
+
+  it('dòng BO_PHAN không nằm trong danh sách hiển thị của cá nhân', () => {
+    const r = tinhBangKpi(bangBich(), []);
+    expect(r.dong.map(d => d.id)).toEqual(['c1', 'c2', 'c3', 'c4']);
+  });
+
+  it('danhSachMatDiem xếp giảm dần theo điểm mất', () => {
+    const r = tinhBangKpi(bangBich(), []);
+    expect(r.danhSachMatDiem.map(d => d.id)).toEqual(['c1', 'c2', 'c3']);
+    expect(r.danhSachMatDiem[0].diemMat).toBe(5);
+  });
+
+  it('nhật ký được gom đúng về từng chỉ tiêu', () => {
+    const rows = [{ id: 'c1', cap_do: 'CA_NHAN', ten: 'X', chi_tieu: 10, trong_so: 100 }];
+    const logs = [{ chi_tieu_id: 'c1', so_diem: -4, ly_do: 'Đi muộn' }];
+    const r = tinhBangKpi(rows, logs);
+    expect(r.tongKpi).toBeCloseTo(60);
+    expect(r.dong[0].logs).toHaveLength(1);
+  });
+
+  it('dòng liên kết bộ phận trả __bpId để ghi nhật ký đúng chỗ chung', () => {
+    const r = tinhBangKpi(bangBich(), []);
+    expect(r.dong.find(d => d.id === 'c1').__bpId).toBe('bp1');
+    expect(r.dong.find(d => d.id === 'c2').__bpId).toBeUndefined();
+  });
+
+  it('dòng thưởng đẩy tổng vượt 100', () => {
+    const rows = [
+      { id: 'a', cap_do: 'CA_NHAN', ten: 'X', chi_tieu: 10, trong_so: 100, diem_chot: 10 },
+      { id: 'b', cap_do: 'CA_NHAN', ten: 'THƯỞNG', chi_tieu: null, trong_so: 0 },
+    ];
+    const r = tinhBangKpi(rows, [{ chi_tieu_id: 'b', so_diem: 2 }]);
+    expect(r.tongKpi).toBeCloseTo(102);
+  });
+});
+
+describe('kiemTraTrongSo', () => {
+  it('Σ trọng số = 100 thì không cảnh báo', () => {
+    expect(kiemTraTrongSo(bangBich()).hopLe).toBe(true);
+  });
+
+  it('Σ trọng số ≠ 100 thì cảnh báo kèm độ lệch', () => {
+    const r = kiemTraTrongSo([{ cap_do: 'CA_NHAN', chi_tieu: 10, trong_so: 90 }]);
+    expect(r.hopLe).toBe(false);
+    expect(r.tong).toBe(90);
+    expect(r.lech).toBe(-10);
+  });
+
+  it('bỏ qua dòng BO_PHAN và dòng thưởng khi cộng trọng số', () => {
+    const r = kiemTraTrongSo([
+      { cap_do: 'BO_PHAN', lien_ket_bo_phan: 'X', chi_tieu: 10, trong_so: 999 },
+      { cap_do: 'CA_NHAN', chi_tieu: null, trong_so: 999 },
+      { cap_do: 'CA_NHAN', chi_tieu: 10, trong_so: 100 },
+    ]);
+    expect(r.tong).toBe(100);
+    expect(r.hopLe).toBe(true);
   });
 });
