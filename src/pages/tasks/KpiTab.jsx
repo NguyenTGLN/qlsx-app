@@ -399,15 +399,64 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
 
       <div style={{ marginTop: 14 }}>
         <div style={{ fontSize: '0.76rem', fontWeight: 700, color: '#475569', marginBottom: 6 }}>
-          TOÀN BỘ CHỈ TIÊU ({kq.dong.length})
+          BẢNG CHỈ TIÊU ({kq.dong.length})
         </div>
-        {kq.dong.map(d => (
-          <DongChiTieu
-            key={d.id} d={d}
-            onClick={() => setPopupId(d.id)}
-            onSua={perm?.create ? () => setSuaCT(d) : null}
-          />
-        ))}
+        <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 560, background: '#fff', fontSize: '0.78rem' }}>
+            <thead>
+              <tr>
+                <th style={thKpi.num}>#</th>
+                <th style={thKpi.left}>Chỉ tiêu</th>
+                <th style={thKpi.num}>Điểm tối đa</th>
+                <th style={thKpi.num}>Điểm hiện tại</th>
+                <th style={thKpi.left}>Ghi chú</th>
+                {perm?.create && <th style={{ ...thKpi.left, width: 34 }} aria-label="Sửa" />}
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                // Đi dọc kq.dong: chèn dòng tiêu đề nhóm mỗi khi `nhom` đổi, đánh STT liên tục
+                // 1→N (KHÔNG reset theo nhóm), rồi chốt bằng dòng TỔNG CỘNG.
+                const out = [];
+                const colSpan = perm?.create ? 6 : 5;
+                let nhomHienTai = null, stt = 0;
+                for (const d of kq.dong) {
+                  if (d.nhom && d.nhom !== nhomHienTai) {
+                    nhomHienTai = d.nhom;
+                    out.push(
+                      <tr key={`g-${nhomHienTai}`}>
+                        <td colSpan={colSpan} style={tdKpi.group}>{nhomHienTai}</td>
+                      </tr>
+                    );
+                  }
+                  stt += 1;
+                  out.push(
+                    <DongBangKpi
+                      key={d.id} d={d} stt={stt} coCotSua={!!perm?.create}
+                      onClick={() => setPopupId(d.id)}
+                      onSua={perm?.create ? () => setSuaCT(d) : null}
+                    />
+                  );
+                }
+                out.push(
+                  <tr key="tong">
+                    <td style={tdKpi.total} />
+                    <td style={{ ...tdKpi.total, fontWeight: 800 }}>TỔNG CỘNG</td>
+                    <td style={{ ...tdKpi.total, textAlign: 'right', fontWeight: 800 }}>
+                      {soNgan(canhBaoTrongSo.tong)}
+                    </td>
+                    <td style={{ ...tdKpi.total, textAlign: 'right', fontWeight: 800, color: mauTheoDiem(kq.tongKpi) }}>
+                      {so1(kq.tongKpi)}
+                    </td>
+                    <td style={tdKpi.total} />
+                    {perm?.create && <td style={tdKpi.total} />}
+                  </tr>
+                );
+                return out;
+              })()}
+            </tbody>
+          </table>
+        </div>
 
         {perm?.create && (
           <button
@@ -470,67 +519,111 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
   );
 }
 
-// Một dòng trong bảng "toàn bộ chỉ tiêu".
-// Dòng thưởng ngoài trọng số (laThuong): `diemDat` LUÔN là 0 và không có tỉ lệ — điểm thật
-// nằm ở `diemQuyDoi`. Vì vậy phải render khác hẳn, tuyệt đối không hiện "0/null" hay "×0".
-function DongChiTieu({ d, onClick, onSua }) {
+// Ghi chú của một dòng cho BẢNG. Nguyên tắc chủ app đặt: "không trừ gì thì bỏ trống, trừ gì
+// thì hiển thị luôn" — nên ô này CHỈ hiện với dòng đang mất điểm. Dòng đủ điểm dù có ghi chú
+// nhập từ Excel (vd cột O của SẢN XUẤT ghi tỉ lệ năng suất "1.021") vẫn để TRỐNG; chữ đó vẫn
+// xem được khi bấm vào dòng để mở popup cách tính.
+//   - Có nhật ký: ghép các ly_do; nhật ký nhập tay có điểm ± thì hiện kèm dấu, nhật ký giữ
+//     ghi chú từ Excel có so_diem = 0 thì chỉ hiện chữ.
+//   - Mất điểm nhưng KHÔNG có nhật ký (điểm chốt tay lúc import, không kèm lý do): nói rõ
+//     "chưa ghi lý do" thay vì để trống — trống ở dòng mất điểm dễ bị hiểu nhầm là đủ điểm.
+function ghiChuDong(d) {
+  if (d.laThuong || d.diemMat <= 0.001) return null;
+  const logs = d.logs || [];
+  if (logs.length) {
+    const text = logs.map(l => {
+      const s = Number(l.so_diem);
+      const dau = s ? `${s > 0 ? '+' : ''}${soNgan(s)} · ` : '';
+      return dau + (l.ly_do || '');
+    }).join('  •  ');
+    return { text, mo: false };
+  }
+  return { text: `Đạt ${soNgan(d.diemDat)}/${soNgan(d.chi_tieu)} — chưa ghi lý do`, mo: true };
+}
+
+// Một dòng <tr> trong BẢNG chỉ tiêu. Ba loại render khác nhau:
+//  - thường: tối đa = trọng số, hiện tại = điểm quy đổi; mất điểm thì bôi hồng + ghi chú.
+//  - thưởng ngoài trọng số (laThuong): chi_tieu = null nên KHÔNG có "tối đa" → cột tối đa để
+//    "—", hiện tại là điểm cộng thêm (kèm dấu +). Tuyệt đối không hiện "0/null" hay "×0".
+//  - liên kết bộ phận: gắn nhãn "chung bộ phận".
+// Bấm cả dòng để mở popup cách tính; ô bút chì chặn lan (stopPropagation) để mở form sửa.
+function DongBangKpi({ d, stt, coCotSua, onClick, onSua }) {
   const thuong = d.laThuong;
+  const mat = !thuong && d.diemMat > 0.001;
+  const gc = ghiChuDong(d);
   return (
-    <div style={{
-      display: 'flex', alignItems: 'stretch', gap: 0, marginBottom: 4, borderRadius: 9,
-      border: thuong ? '1px solid #bbf7d0' : '1px solid #e2e8f0', background: '#fff',
-      overflow: 'hidden',
-    }}>
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex', flex: 1, minWidth: 0, alignItems: 'center', gap: 8, textAlign: 'left',
-        padding: '0.5rem 0.65rem', border: 'none', background: 'none', cursor: 'pointer',
-      }}
-    >
-      <span style={{ flex: 1, fontSize: '0.76rem', minWidth: 0 }}>
-        {d.ten}
-        {d.lien_ket_bo_phan && (
-          <span style={{ fontSize: '0.64rem', color: '#2563eb', marginLeft: 5 }}>chung bộ phận</span>
+    <tr onClick={onClick} style={{ background: mat ? '#fff5f6' : '#fff', cursor: 'pointer' }}>
+      <td style={{ ...tdKpi.body, textAlign: 'right', color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>{stt}</td>
+      <td style={tdKpi.body}>
+        {/* Tên vài chỉ tiêu (VĂN HÓA CÔNG TY...) trong file gốc là cả đoạn văn dài — cắt còn
+            2 dòng cho bảng gọn; bấm vào dòng mở popup xem đầy đủ tên + mô tả. */}
+        <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          {d.ten}
+        </div>
+        {(d.lien_ket_bo_phan || thuong) && (
+          <div style={{ marginTop: 3 }}>
+            {d.lien_ket_bo_phan && <span style={tagChung}>chung bộ phận</span>}
+            {thuong && <span style={tagThuong}>ngoài trọng số</span>}
+          </div>
         )}
-        {thuong && (
-          <span style={{ fontSize: '0.64rem', color: '#059669', marginLeft: 5 }}>ngoài trọng số</span>
-        )}
-      </span>
-
-      {thuong ? (
-        <span style={{ fontSize: '0.7rem', color: '#94a3b8', flexShrink: 0 }}>thưởng</span>
-      ) : (
-        <>
-          <span style={{ fontSize: '0.7rem', color: '#94a3b8', flexShrink: 0 }}>
-            {soNgan(d.diemDat)}/{soNgan(d.chi_tieu)}
-          </span>
-          <span style={{ fontSize: '0.7rem', color: '#cbd5e1', flexShrink: 0 }}>×{soNgan(d.trong_so)}</span>
-        </>
-      )}
-
-      <span style={{
-        fontWeight: 700, fontSize: '0.8rem', minWidth: 40, textAlign: 'right', flexShrink: 0,
-        color: thuong ? '#059669' : d.diemMat > 0.001 ? '#dc2626' : '#059669',
+      </td>
+      <td style={{ ...tdKpi.body, textAlign: 'right', fontWeight: 600, color: thuong ? '#94a3b8' : '#334155', fontVariantNumeric: 'tabular-nums' }}>
+        {thuong ? '—' : soNgan(d.trong_so)}
+      </td>
+      <td style={{
+        ...tdKpi.body, textAlign: 'right', fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+        color: thuong ? '#059669' : mat ? '#dc2626' : '#059669',
       }}>
         {thuong && d.diemQuyDoi >= 0 ? '+' : ''}{so1(d.diemQuyDoi)}
-      </span>
-    </button>
-
-    {onSua && (
-      <button
-        onClick={onSua} title="Sửa chỉ tiêu" aria-label={`Sửa chỉ tiêu ${d.ten}`}
-        style={{
-          border: 'none', borderLeft: '1px solid #f1f5f9', background: '#fff',
-          padding: '0 0.6rem', cursor: 'pointer', color: '#94a3b8', flexShrink: 0,
-        }}
-      >
-        <Pencil size={13} />
-      </button>
-    )}
-    </div>
+      </td>
+      <td style={{ ...tdKpi.body, fontSize: '0.74rem' }}>
+        {gc && (
+          <span style={{ color: gc.mo ? '#94a3b8' : '#dc2626', fontStyle: gc.mo ? 'italic' : 'normal' }}>
+            {gc.text}
+          </span>
+        )}
+      </td>
+      {coCotSua && (
+        <td
+          style={{ ...tdKpi.body, textAlign: 'center' }}
+          onClick={e => { e.stopPropagation(); onSua?.(); }}
+          title="Sửa chỉ tiêu" aria-label={`Sửa chỉ tiêu ${d.ten}`}
+        >
+          {onSua && <Pencil size={13} color="#94a3b8" />}
+        </td>
+      )}
+    </tr>
   );
 }
+
+const thKpi = {
+  left: {
+    background: '#f8fafc', textAlign: 'left', padding: '8px 10px', fontSize: '0.68rem',
+    textTransform: 'uppercase', letterSpacing: '0.03em', color: '#64748b',
+    borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap',
+  },
+  num: {
+    background: '#f8fafc', textAlign: 'right', padding: '8px 10px', fontSize: '0.68rem',
+    textTransform: 'uppercase', letterSpacing: '0.03em', color: '#64748b',
+    borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap',
+  },
+};
+const tdKpi = {
+  body: { padding: '8px 10px', borderBottom: '1px solid #eef2f7', verticalAlign: 'top', color: '#0f172a' },
+  group: {
+    padding: '6px 10px', background: '#f1f5f9', fontWeight: 700, fontSize: '0.68rem',
+    textTransform: 'uppercase', letterSpacing: '0.03em', color: '#64748b',
+  },
+  total: { padding: '10px', borderTop: '2px solid #e2e8f0', background: '#f8fafc' },
+};
+const tagChung = {
+  display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
+  borderRadius: 6, background: 'rgba(37,99,235,0.12)', color: '#2563eb', marginLeft: 6, whiteSpace: 'nowrap',
+};
+const tagThuong = {
+  display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
+  borderRadius: 6, background: 'rgba(5,150,105,0.12)', color: '#059669', marginLeft: 6, whiteSpace: 'nowrap',
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Popup bằng chứng
