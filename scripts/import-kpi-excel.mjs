@@ -9,22 +9,24 @@ const FILE = 'KPI/Copy of KPI kho 06.2026.xls';
 const KY = '2026-06';
 const OUT = 'sql/seed_kpi_2026_06.sql';
 
-// Bản cũ T12/2023 còn sót trong file (công thức cột P bị ngược =N-H) — bỏ qua.
-const BO_QUA = ['KPI T9 - BH - NB Ngọc', 'KPI T12 - KTSX'];
+// Sheet bỏ qua:
+//  - 2 sheet đầu: bản cũ T12/2023 còn sót (công thức cột P bị ngược =N-H).
+//  - ĐỨC (Trần Minh Đức): không có tài khoản trong bảng nhan_vien (chủ app xác nhận
+//    22/07/2026 — bỏ qua, nạp bù sau nếu có tài khoản).
+const BO_QUA = ['KPI T9 - BH - NB Ngọc', 'KPI T12 - KTSX', 'ĐỨC'];
 
 // Ánh xạ KHAI TAY sheet → nhan_vien.id. Tên sheet không khớp tên nhân viên
 // (thừa dấu cách, sai chính tả, có tiền tố phòng ban) nên KHÔNG đoán tự động —
 // ghép nhầm KPI sang người khác là lỗi không sửa được sau khi đã chấm.
 //
-// Các id dưới đây là GIẢ ĐỊNH. Trước khi chạy thật phải chạy
-// `select id, name from nhan_vien` trên Supabase và thay bằng id thật —
-// script tự dừng nếu còn id giả định (xem kiểm tra bên dưới).
+// Id thật lấy từ bảng nhan_vien (22/07/2026). Khớp cao vì id = viết tắt tên đầy đủ:
+// ntth = Nguyễn Thị Thu Hà, vta = Vương Tuấn Anh, nbn = Nguyễn Bá Ngọc...
 const MAP_NV = {
-  'NGUYÊN ': 'NV_NGUYEN', 'HÀ ': 'NV_HA', 'NGỌC': 'NV_NGOC',
-  'PHONG': 'NV_PHONG', 'TUẤN': 'NV_TUAN', 'HĨU': 'NV_HUU',
-  'BÍCH': 'NV_BICH', 'XUÂN': 'NV_XUAN', 'ĐỨC': 'NV_DUC',
-  'THIỆN': 'NV_THIEN', 'THƠ': 'NV_THO', 'XUYÊN': 'NV_XUYEN',
-  'DUYÊN': 'NV_DUYEN', 'DƯƠNG': 'NV_DUONG',
+  'NGUYÊN ': 'admin', 'HÀ ': 'ntth', 'NGỌC': 'nbn',
+  'PHONG': 'ndp', 'TUẤN': 'vta', 'HĨU': 'nvh',
+  'BÍCH': 'lvb', 'XUÂN': 'dvx',
+  'THIỆN': 'nxt', 'THƠ': 'ptt', 'XUYÊN': 'hhx',
+  'DUYÊN': 'nv8', 'DƯƠNG': 'nttd',
 };
 
 // Chỉ tiêu chấm chung cả bộ phận → gom về một dòng BO_PHAN duy nhất mỗi nhóm.
