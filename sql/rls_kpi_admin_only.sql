@@ -54,6 +54,18 @@ drop policy if exists kpi_nhat_ky_all  on public.kpi_nhat_ky;
 drop policy if exists auth_all         on public.kpi_chi_tieu;
 drop policy if exists auth_all         on public.kpi_nhat_ky;
 
+-- Drop luôn chính 8 policy dưới đây trước khi tạo lại: `create policy` KHÔNG có dạng
+-- "if not exists", nên chạy file này lần thứ hai sẽ báo trùng nếu không dọn trước.
+-- Nhờ đó cả file chạy lại bao nhiêu lần cũng ra cùng một trạng thái.
+drop policy if exists kpi_ct_sel on public.kpi_chi_tieu;
+drop policy if exists kpi_ct_ins on public.kpi_chi_tieu;
+drop policy if exists kpi_ct_upd on public.kpi_chi_tieu;
+drop policy if exists kpi_ct_del on public.kpi_chi_tieu;
+drop policy if exists kpi_nk_sel on public.kpi_nhat_ky;
+drop policy if exists kpi_nk_ins on public.kpi_nhat_ky;
+drop policy if exists kpi_nk_upd on public.kpi_nhat_ky;
+drop policy if exists kpi_nk_del on public.kpi_nhat_ky;
+
 -- ── kpi_chi_tieu ─────────────────────────────────────────────
 -- Đọc: mọi người đã đăng nhập (điểm KPI công khai toàn công ty — quyết định nghiệp vụ).
 create policy kpi_ct_sel on public.kpi_chi_tieu
