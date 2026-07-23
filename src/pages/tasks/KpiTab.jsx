@@ -311,7 +311,18 @@ export default function KpiTab({ me, users = [], perm = {} }) {
 }
 
 // Các mốc điểm để nhân viên biết mình cần vượt qua ngưỡng nào tiếp theo.
-const MOC_DIEM = [86, 90, 96];
+//
+// Mỗi mốc MỘT MÀU, và chú thích nằm DƯỚI bảng chứ không phải nhãn số đặt trên đầu mỗi vạch:
+// ba mốc chỉ cách nhau 4% và 6% bề ngang, đặt số lên đó thì "86 90 96" dính liền thành một
+// vệt không đọc được. Màu thì không bao giờ chồng lên nhau dù các vạch sát đến đâu.
+//
+// Ba màu này cố ý KHÔNG trùng bảng màu của thanh điểm (#059669 xanh / #d97706 cam / #dc2626
+// đỏ) — trùng thì người xem tưởng vạch mốc là một phần của thanh.
+const MOC_DIEM = [
+  { diem: 86, mau: '#0891b2' },   // xanh mòng két
+  { diem: 90, mau: '#7c3aed' },   // tím
+  { diem: 96, mau: '#be185d' },   // hồng sẫm
+];
 
 // Bảng xếp hạng dạng thanh ngang: tên nằm cột trái, điểm là chiều dài thanh.
 //
@@ -321,26 +332,6 @@ const MOC_DIEM = [86, 90, 96];
 function BangXepHang({ ds, meId, onChon }) {
   return (
     <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, background: '#fff', padding: '0.6rem 0.7rem' }}>
-      {/* Hàng nhãn mốc, canh đúng vị trí các vạch bên dưới. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <div style={{ width: 26, flexShrink: 0 }} />
-        <div style={{ width: 96, flexShrink: 0 }} />
-        <div style={{ flex: 1, position: 'relative', height: 14 }}>
-          {MOC_DIEM.map(m => (
-            <span
-              key={m}
-              style={{
-                position: 'absolute', left: `${m}%`, transform: 'translateX(-50%)',
-                fontSize: '0.62rem', fontWeight: 700, color: '#94a3b8', whiteSpace: 'nowrap',
-              }}
-            >
-              {m}
-            </span>
-          ))}
-        </div>
-        <div style={{ width: 46, flexShrink: 0 }} />
-      </div>
-
       {ds.map((p, i) => {
         const laMinh = p.nvId === meId;
         const mau = mauTheoDiem(p.tongKpi);
@@ -375,10 +366,10 @@ function BangXepHang({ ds, meId, onChon }) {
                   mà đó đúng là chỗ người ta cần nhìn nhất — "mình đã qua mốc nào rồi". */}
               {MOC_DIEM.map(m => (
                 <div
-                  key={m}
+                  key={m.diem}
                   style={{
-                    position: 'absolute', left: `${m}%`, top: -2, bottom: -2, width: 0,
-                    borderLeft: '1px dashed #94a3b8',
+                    position: 'absolute', left: `${m.diem}%`, top: -3, bottom: -3, width: 2,
+                    marginLeft: -1, background: m.mau, borderRadius: 1,
                   }}
                 />
               ))}
@@ -393,6 +384,20 @@ function BangXepHang({ ds, meId, onChon }) {
           </button>
         );
       })}
+
+      {/* Chú thích mốc — đặt dưới bảng vì đây là chỗ DUY NHẤT ba con số đứng cạnh nhau mà
+          không bị bề ngang ép cho chồng lên nhau. */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 8, paddingTop: 8,
+        borderTop: '1px solid #f1f5f9', fontSize: '0.7rem', color: '#64748b',
+      }}>
+        {MOC_DIEM.map(m => (
+          <span key={m.diem} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ display: 'inline-block', width: 4, height: 14, background: m.mau, borderRadius: 2 }} />
+            Mốc {m.diem} điểm
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
