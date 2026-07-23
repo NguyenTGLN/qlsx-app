@@ -230,3 +230,42 @@ describe('luật BC_KET_QUA_CONG_VIEC (báo cáo cuối ngày)', () => {
     expect(kq.ghiChu).not.toContain('Chưa làm');
   });
 });
+
+describe('HT_CONG_VIEC_DUNG_HAN loại việc báo cáo cuối ngày', () => {
+  const luat = LUAT_TU_DONG.HT_CONG_VIEC_DUNG_HAN;
+  const bc = (o = {}) => viec({ title: 'Báo cáo công việc cuối ngày', ...o });
+
+  it('báo cáo cuối ngày không lọt vào mẫu số — nếu không là tính điểm hai lần', () => {
+    // 1 việc thường trễ + 3 báo cáo đúng hạn. Không loại thì ra 3/4 (75%), loại thì 0/1 (0%).
+    const kq = luat({ chi_tieu: 10 }, [
+      viec({ id: 'X', title: 'Sửa máy', completed_date: '2026-07-20T10:00:00Z' }),
+      bc({ id: 'B1' }), bc({ id: 'B2' }), bc({ id: 'B3' }),
+    ]);
+    expect(kq.tiLe).toBe(0);
+    expect(kq.ghiChu).toContain('0/1');
+  });
+
+  it('ghi chú nói rõ đã bỏ bao nhiêu báo cáo, để đối chiếu với tab Công việc không thấy hụt số', () => {
+    const kq = luat({ chi_tieu: 10 }, [viec({ id: 'X' }), bc({ id: 'B1' }), bc({ id: 'B2' })]);
+    expect(kq.ghiChu).toContain('không tính 2 báo cáo cuối ngày');
+  });
+
+  it('không có báo cáo nào thì ghi chú không nhắc tới chuyện loại trừ', () => {
+    expect(luat({ chi_tieu: 10 }, [viec()]).ghiChu).not.toContain('không tính');
+  });
+
+  it('cả tháng chỉ có báo cáo cuối ngày → đủ điểm, ghi chú nói rõ vì sao trống', () => {
+    const kq = luat({ chi_tieu: 10 }, [bc({ id: 'B1' }), bc({ id: 'B2' })]);
+    expect(kq.tiLe).toBe(1);
+    expect(kq.ghiChu).toContain('không tính báo cáo cuối ngày');
+  });
+
+  it('tên việc trễ liệt kê ra không còn lẫn báo cáo cuối ngày', () => {
+    const kq = luat({ chi_tieu: 10 }, [
+      viec({ id: 'X', title: 'Sửa máy', completed_date: '2026-07-20T10:00:00Z' }),
+      bc({ id: 'B1', status: 'IN_PROGRESS', completed_date: null }),
+    ]);
+    expect(kq.ghiChu).toContain('Sửa máy');
+    expect(kq.ghiChu).not.toContain('Báo cáo công việc cuối ngày');
+  });
+});

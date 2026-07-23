@@ -41,26 +41,47 @@ export function viecTrongThang(tasks = [], nvId, ky) {
 
 const MAX_TEN_TRE = 5;
 
+// Việc báo cáo cuối ngày. Khớp bằng HAI MẢNH rời chứ không phải cả cụm: tên thật trong app
+// đang là 'Báo cáo công việc cuối ngày', nhưng chủ app gọi nó là 'Báo cáo kết quả công việc
+// cuối ngày'. Khớp cả cụm thì chỉ cần lệch một chữ là chỉ tiêu tụt về 0 điểm mà không ai hiểu
+// vì sao — mà chấm oan thì tệ hơn nhiều so với khớp rộng một chút.
+const MANH_BAO_CAO = [khongDau('báo cáo'), khongDau('cuối ngày')];
+const laBaoCaoCuoiNgay = t => {
+  const k = khongDau(t.title);
+  return MANH_BAO_CAO.every(m => k.includes(m));
+};
+
 // Đúng hạn = đã xong VÀ không xong muộn. Việc chưa xong tính là không đúng hạn — nếu không,
 // để việc treo mãi lại thành có lợi hơn làm xong muộn.
 const dungHan = t => t.status === 'COMPLETED' && !laTre(t);
 
 function luatHoanThanhDungHan(ct, viec) {
-  if (!viec.length) {
-    return { tiLe: 1, ghiChu: 'Tự động: không có việc nào được giao trong tháng — tính đủ điểm.' };
+  // BỎ việc báo cáo cuối ngày: chúng đã có chỉ tiêu BÁO CÁO KẾT QUẢ CÔNG VIỆC chấm riêng, để
+  // lại là một việc bị tính điểm hai lần. Nặng hơn thế: báo cáo lặp HẰNG NGÀY nên áp đảo về
+  // số lượng (có người 14/17 việc trong tháng là báo cáo), giữ lại thì chỉ tiêu này thực chất
+  // chỉ còn đo chuyện báo cáo chứ không đo công việc nữa.
+  const dem = viec.filter(t => !laBaoCaoCuoiNgay(t));
+  const boBaoCao = viec.length - dem.length;
+
+  if (!dem.length) {
+    const vi = boBaoCao ? ' (không tính báo cáo cuối ngày — có chỉ tiêu riêng)' : '';
+    return { tiLe: 1, ghiChu: `Tự động: không có việc nào được giao trong tháng${vi} — tính đủ điểm.` };
   }
-  const dat = viec.filter(dungHan);
-  const tre = viec.filter(t => !dungHan(t));
-  const tiLe = dat.length / viec.length;
+  const dat = dem.filter(dungHan);
+  const tre = dem.filter(t => !dungHan(t));
+  const tiLe = dat.length / dem.length;
 
   // Cắt danh sách tên việc trễ: ô ghi chú nằm trong một ô bảng, liệt kê 30 việc là vỡ bảng.
   const ten = tre.slice(0, MAX_TEN_TRE).map(t => t.title || t.id).join(', ');
   const them = tre.length > MAX_TEN_TRE ? ` …và ${tre.length - MAX_TEN_TRE} việc nữa` : '';
   const phanTre = tre.length ? ` Chưa đúng hạn: ${ten}${them}.` : '';
+  // Nói rõ đã bỏ bao nhiêu việc, nếu không người đọc đối chiếu với tab Công việc sẽ thấy hụt
+  // số và tưởng máy đếm sai.
+  const phanBo = boBaoCao ? `, không tính ${boBaoCao} báo cáo cuối ngày` : '';
 
   return {
     tiLe,
-    ghiChu: `Tự động: ${dat.length}/${viec.length} việc đúng hạn (${Math.round(tiLe * 100)}%).${phanTre}`,
+    ghiChu: `Tự động: ${dat.length}/${dem.length} việc đúng hạn (${Math.round(tiLe * 100)}%)${phanBo}.${phanTre}`,
   };
 }
 
@@ -84,16 +105,6 @@ function luatVideoKyThuat(ct, viec) {
 
   return { tiLe, ghiChu };
 }
-
-// Việc báo cáo cuối ngày. Khớp bằng HAI MẢNH rời chứ không phải cả cụm: tên thật trong app
-// đang là 'Báo cáo công việc cuối ngày', nhưng chủ app gọi nó là 'Báo cáo kết quả công việc
-// cuối ngày'. Khớp cả cụm thì chỉ cần lệch một chữ là chỉ tiêu tụt về 0 điểm mà không ai hiểu
-// vì sao — mà chấm oan thì tệ hơn nhiều so với khớp rộng một chút.
-const MANH_BAO_CAO = [khongDau('báo cáo'), khongDau('cuối ngày')];
-const laBaoCaoCuoiNgay = t => {
-  const k = khongDau(t.title);
-  return MANH_BAO_CAO.every(m => k.includes(m));
-};
 
 // Ngày dạng 'dd/MM' để ghi chú nói được NGÀY NÀO chưa báo cáo. Việc báo cáo cuối ngày lặp
 // hằng ngày nên tên chúng giống hệt nhau — liệt kê tên thì được một dãy chữ trùng lặp vô
