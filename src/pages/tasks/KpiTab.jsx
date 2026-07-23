@@ -4,9 +4,10 @@ import { tinhBangKpi, giaiThich, kiemTraTrongSo } from '../../lib/kpiEngine';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import { xuatExcelKpi, dungDuLieuSheet } from '../../lib/kpiExcel';
 import KpiPrint from '../../components/KpiPrint';
+import KpiBangChung from './KpiBangChung';
 import {
   Trophy, ChevronRight, ChevronLeft, AlertTriangle, Plus, X, Loader2,
-  FileDown, Printer, Pencil, CalendarPlus,
+  FileDown, Printer, Pencil, CalendarPlus, Table2,
 } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -50,9 +51,10 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
   const [chon, setChon] = useState(null);   // nhan_vien_id đang xem chi tiết
+  const [xemBangChung, setXemBangChung] = useState(false);
 
-  const taiDuLieu = useCallback(async () => {
-    setLoading(true);
+  const taiDuLieu = useCallback(async (im = false) => {
+    if (!im) setLoading(true);
     setLoi('');
     try {
       // fetchAllRows trả { data, error } chứ KHÔNG trả thẳng mảng — phải destructure.
@@ -116,6 +118,13 @@ export default function KpiTab({ me, users = [], perm = {} }) {
     </div>
   );
 
+  if (xemBangChung) return (
+    <KpiBangChung
+      ky={ky} rows={rows} logs={logs} users={users} me={me} perm={perm}
+      onBack={() => setXemBangChung(false)} onReload={() => taiDuLieu(true)}
+    />
+  );
+
   if (chon) return (
     <BangKpiMotNguoi
       nvId={chon} ky={ky} users={users} me={me} perm={perm}
@@ -148,6 +157,15 @@ export default function KpiTab({ me, users = [], perm = {} }) {
             style={{ ...nutPhu, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}
           >
             <FileDown size={13} /> Xuất Excel cả team
+          </button>
+        )}
+
+        {rows.length > 0 && (
+          <button
+            onClick={() => setXemBangChung(true)}
+            style={{ ...nutPhu, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}
+          >
+            <Table2 size={13} /> Bảng chấm chung
           </button>
         )}
       </div>
@@ -560,9 +578,10 @@ function DongBangKpi({ d, stt, coCotSua, onClick, onSua }) {
         <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
           {d.ten}
         </div>
-        {(d.lien_ket_bo_phan || thuong) && (
+        {(d.lien_ket_bo_phan || thuong || d.cham_chung) && (
           <div style={{ marginTop: 3 }}>
             {d.lien_ket_bo_phan && <span style={tagChung}>chung bộ phận</span>}
+            {d.cham_chung && <span style={tagBangChung}>chấm ở bảng chung</span>}
             {thuong && <span style={tagThuong}>ngoài trọng số</span>}
           </div>
         )}
@@ -619,6 +638,10 @@ const tdKpi = {
 const tagChung = {
   display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
   borderRadius: 6, background: 'rgba(37,99,235,0.12)', color: '#2563eb', marginLeft: 6, whiteSpace: 'nowrap',
+};
+const tagBangChung = {
+  display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
+  borderRadius: 6, background: 'rgba(217,119,6,0.12)', color: '#b45309', marginLeft: 6, whiteSpace: 'nowrap',
 };
 const tagThuong = {
   display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
@@ -785,12 +808,21 @@ function PopupDienGiai({ ct, ctGhi, bpMap, perm, me, onReload, onClose }) {
               Ghi vào dòng chung của bộ phận — mọi người trong nhóm đều đổi điểm theo.
             </div>
           )}
+          {ghi.cham_chung && (
+            <div style={{
+              marginTop: 10, padding: '0.45rem 0.6rem', borderRadius: 8,
+              background: '#fffbeb', color: '#b45309', fontSize: '0.72rem',
+            }}>
+              Chỉ tiêu này chấm ở màn hình Bảng chấm chung. Sửa điểm tại đó để cả bảng
+              cùng nhất quán — nút chốt tay ẩn đi để không có hai chỗ sửa một con số.
+            </div>
+          )}
           <FormGhiDiem
             chiTieuId={ghi.id}
             dangChotTay={ghi.diem_chot !== null && ghi.diem_chot !== undefined}
             me={me} onXong={onReload}
           />
-          <FormChotDiem ctGhi={ghi} me={me} onXong={onReload} />
+          {!ghi.cham_chung && <FormChotDiem ctGhi={ghi} me={me} onXong={onReload} />}
         </>
       )}
     </KhungPopup>
