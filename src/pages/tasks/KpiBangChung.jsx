@@ -92,7 +92,8 @@ export default function KpiBangChung({ ky, rows, logs, users, me, perm, onBack, 
                   <td key={nhanVien[i].id} style={{ ...tdChung, padding: 4, textAlign: 'center' }}>
                     {ct
                       ? <OChamDiem
-                          ct={ct} logs={logTheoCT.get(ct.id) || []} me={me}
+                          ct={ct} tenNhanVien={nhanVien[i].ten}
+                          logs={logTheoCT.get(ct.id) || []} me={me}
                           doiDuoc={!!perm?.edit} onXong={onReload}
                         />
                       : <span title="Nhân viên này không có chỉ tiêu đó" style={oTrong}>▨</span>}
@@ -134,30 +135,51 @@ export default function KpiBangChung({ ky, rows, logs, users, me, perm, onBack, 
 
 // Một ô của ma trận. Lưu khi rời ô (blur) chứ không có nút "Lưu tất cả": điền tới đâu chắc
 // tới đó, và lỗi hiện ngay tại ô sai thay vì một thông báo chung chung cho 52 ô.
-function OChamDiem({ ct, logs, me, doiDuoc, onXong }) {
+function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
   const dongLyDo = timDongLyDo(logs);
-  const [diem, setDiem] = useState(ct.diem_chot == null ? '' : String(ct.diem_chot));
+  // Chưa chấm thì ô HIỆN MỨC TỐI ĐA chứ không để trống. Engine coi `diem_chot = null` là đạt
+  // đủ điểm, nên ô trống nói dối: bảng KPI cá nhân của người đó đang hiện điểm tối đa.
+  const macDinh = ct.diem_chot != null
+    ? String(ct.diem_chot)
+    : (ct.chi_tieu != null ? String(ct.chi_tieu) : '');
+  const [diem, setDiem] = useState(macDinh);
   const [lyDo, setLyDo] = useState(dongLyDo?.ly_do || '');
+  const [moLyDo, setMoLyDo] = useState(false);
   const [loi, setLoi] = useState('');
   const [dangLuu, setDangLuu] = useState(false);
 
   const soDiem = diem.trim() === '' ? null : Number(diem);
-  const hoiLyDo = canHoiLyDo(ct, soDiem);
-  const thieu = hoiLyDo;
-  const du = soDiem != null && !thieu;
+  const thieu = canHoiLyDo(ct, soDiem);
 
-  async function luu() {
-    setLoi('');
-    if (diem.trim() !== '' && !Number.isFinite(soDiem)) { setLoi('Không phải số'); return; }
+  function loiNhapLieu() {
+    if (diem.trim() !== '' && !Number.isFinite(soDiem)) return 'Không phải số';
     if (soDiem != null && (soDiem < 0 || (ct.chi_tieu != null && soDiem > ct.chi_tieu))) {
-      setLoi(`Phải trong khoảng 0…${soNgan(ct.chi_tieu)}`);
-      return;
+      return `Phải trong khoảng 0…${soNgan(ct.chi_tieu)}`;
     }
+    return '';
+  }
+
+  // `lyDoMoi` truyền tường minh chứ không đọc state `lyDo`: bảng lý do gọi hàm này ngay sau
+  // setLyDo, mà state React chưa kịp mới ở lượt render đó.
+  async function luu(lyDoMoi = lyDo) {
+    const l0 = loiNhapLieu();
+    setLoi(l0);
+    if (l0) return false;
     setDangLuu(true);
-    const l = await ghiOChamChung({ ct, diem: soDiem, lyDo, me });
+    const l = await ghiOChamChung({ ct, diem: soDiem, lyDo: lyDoMoi, me });
     setDangLuu(false);
-    if (l) { setLoi(l); return; }
+    if (l) { setLoi(l); return false; }
     onXong?.();
+    return true;
+  }
+
+  // Rời ô điểm: lưu số trước cho chắc, rồi mới mở bảng lý do nếu chấm thiếu — làm ngược lại
+  // thì đóng bảng lý do giữa chừng là mất luôn số vừa gõ.
+  // Không đổi gì so với lúc mở thì không ghi: tab qua 52 ô không được biến thành 52 lệnh ghi.
+  async function roiO() {
+    if (diem === macDinh) return;
+    const xong = await luu();
+    if (xong && thieu) setMoLyDo(true);
   }
 
   return (
@@ -165,29 +187,77 @@ function OChamDiem({ ct, logs, me, doiDuoc, onXong }) {
       <input
         type="text" inputMode="decimal" value={diem} disabled={!doiDuoc || dangLuu}
         onChange={e => setDiem(e.target.value)}
-        onBlur={luu}
+        onBlur={roiO}
         aria-label={`Điểm ${ct.ten}`}
         style={{
           width: 62, padding: '0.35rem', borderRadius: 7, textAlign: 'center',
           border: `1px solid ${loi ? '#dc2626' : '#e2e8f0'}`,
-          background: loi ? '#fef2f2' : thieu ? '#fff5f6' : du ? '#f0fdf4' : '#fff',
+          background: loi ? '#fef2f2' : thieu ? '#fff5f6' : '#f0fdf4',
           fontWeight: 700, fontSize: '0.82rem',
         }}
       />
-      {hoiLyDo && (
-        <input
-          type="text" value={lyDo} disabled={!doiDuoc || dangLuu}
-          onChange={e => setLyDo(e.target.value)}
-          onBlur={luu}
-          placeholder="lý do trừ điểm"
-          aria-label={`Lý do ${ct.ten}`}
+      {thieu && (
+        <button
+          onClick={() => setMoLyDo(true)} disabled={!doiDuoc}
+          title={lyDo || 'Chưa ghi lý do — bấm để ghi'}
           style={{
-            marginTop: 3, width: 100, padding: '0.25rem 0.35rem', borderRadius: 6,
-            border: '1px solid #fecaca', fontSize: '0.68rem',
+            marginTop: 3, width: 100, padding: '0.2rem 0.3rem', borderRadius: 6,
+            border: '1px solid #fecaca', background: lyDo ? '#fff' : '#fff1f2',
+            fontSize: '0.65rem', color: lyDo ? '#334155' : '#b91c1c', cursor: 'pointer',
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block',
           }}
-        />
+        >
+          {lyDo || '＋ ghi lý do'}
+        </button>
       )}
       {loi && <div style={{ fontSize: '0.65rem', color: '#b91c1c', marginTop: 2 }}>{loi}</div>}
+
+      {moLyDo && (
+        <PopupLyDo
+          ct={ct} tenNhanVien={tenNhanVien} diem={soDiem} lyDo={lyDo} dangLuu={dangLuu}
+          onLuu={async chu => {
+            setLyDo(chu);
+            const xong = await luu(chu);
+            if (xong) setMoLyDo(false);
+          }}
+          onClose={() => setMoLyDo(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Bảng ghi lý do trừ điểm. Mở khi chấm thiếu, hoặc bấm lại vào dòng lý do dưới ô để sửa/bổ
+// sung. Dùng textarea chứ không phải ô một dòng nhét trong ô bảng — lý do trừ điểm thường là
+// cả câu có ngày tháng, sự việc.
+function PopupLyDo({ ct, tenNhanVien, diem, lyDo, dangLuu, onLuu, onClose }) {
+  const [chu, setChu] = useState(lyDo || '');
+  return (
+    <div onClick={onClose} style={nenPopup}>
+      <div onClick={e => e.stopPropagation()} style={{ ...hopPopup, width: 'min(460px,100%)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: '0.9rem', flex: 1 }}>Lý do trừ điểm</div>
+          <button onClick={onClose} style={{ ...nutPhu, padding: '0.25rem 0.5rem' }}><X size={13} /></button>
+        </div>
+        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#0f172a' }}>{tenNhanVien}</div>
+        <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginBottom: 8 }}>
+          {ct.ten} — chấm {soNgan(Number(diem))}/{soNgan(ct.chi_tieu)}
+        </div>
+        <textarea
+          value={chu} onChange={e => setChu(e.target.value)} rows={4} autoFocus
+          placeholder="Vì sao bị trừ điểm? Ghi rõ ngày tháng, sự việc…"
+          style={{
+            width: '100%', padding: '0.5rem', borderRadius: 8, border: '1px solid #e2e8f0',
+            fontSize: '0.8rem', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box',
+          }}
+        />
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <button onClick={onClose} style={nutPhu}>Huỷ</button>
+          <button onClick={() => onLuu(chu)} disabled={dangLuu} style={nutChinh}>
+            {dangLuu ? 'Đang lưu…' : 'Lưu lý do'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -262,20 +332,8 @@ function PopupThemChiTieu({ rows, onChon, onClose }) {
     || (c.ma || '').toLowerCase().includes(tim.toLowerCase()));
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 60,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: '#fff', borderRadius: 14, padding: 16, width: 'min(560px,100%)',
-          maxHeight: '80vh', overflowY: 'auto',
-        }}
-      >
+    <div onClick={onClose} style={nenPopup}>
+      <div onClick={e => e.stopPropagation()} style={{ ...hopPopup, width: 'min(560px,100%)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <div style={{ fontWeight: 700, fontSize: '0.9rem', flex: 1 }}>Thêm chỉ tiêu vào bảng chung</div>
           <button onClick={onClose} style={{ ...nutPhu, padding: '0.25rem 0.5rem' }}><X size={13} /></button>
@@ -335,4 +393,15 @@ const nutPhu = {
 const khungLoi = {
   padding: '0.6rem 0.7rem', borderRadius: 10, background: '#fef2f2', color: '#b91c1c',
   fontSize: '0.78rem', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
+};
+const nenPopup = {
+  position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 60,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+};
+const hopPopup = {
+  background: '#fff', borderRadius: 14, padding: 16, maxHeight: '80vh', overflowY: 'auto',
+};
+const nutChinh = {
+  flex: 1, padding: '0.4rem', borderRadius: 8, border: 'none',
+  background: '#2563eb', color: '#fff', fontWeight: 600, fontSize: '0.76rem', cursor: 'pointer',
 };
