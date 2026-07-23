@@ -176,3 +176,57 @@ describe('apDungChamTuDong', () => {
     expect(kq.logs).toHaveLength(0);
   });
 });
+
+describe('luật BC_KET_QUA_CONG_VIEC (báo cáo cuối ngày)', () => {
+  const luat = LUAT_TU_DONG.BC_KET_QUA_CONG_VIEC;
+  const bc = (o = {}) => viec({ title: 'Báo cáo công việc cuối ngày', ...o });
+
+  it('tính theo tỉ lệ HOÀN THÀNH, không theo đúng hạn', () => {
+    // 3 việc: 1 xong đúng hạn, 1 xong nhưng trễ, 1 chưa xong → 2/3 chứ không phải 1/3.
+    const kq = luat({ chi_tieu: 10 }, [
+      bc(),
+      bc({ id: 'CV-2', due_date: '2026-07-10T10:00:00Z', completed_date: '2026-07-15T10:00:00Z' }),
+      bc({ id: 'CV-3', status: 'IN_PROGRESS', completed_date: null }),
+    ]);
+    expect(kq.tiLe).toBeCloseTo(2 / 3);
+  });
+
+  it('ghi chú liệt kê NGÀY chưa báo cáo, không liệt kê tên việc trùng nhau', () => {
+    const kq = luat({ chi_tieu: 10 }, [
+      bc(),
+      bc({ id: 'CV-2', status: 'IN_PROGRESS', completed_date: null, due_date: '2026-07-05T10:00:00Z' }),
+    ]);
+    expect(kq.ghiChu).toContain('1/2');
+    expect(kq.ghiChu).toContain('05/07');
+    expect(kq.ghiChu).not.toContain('Báo cáo công việc cuối ngày');
+  });
+
+  it('khớp cả tên có thêm chữ "kết quả"', () => {
+    const kq = luat({ chi_tieu: 10 }, [bc({ title: 'Báo cáo kết quả công việc cuối ngày 05/07' })]);
+    expect(kq.tiLe).toBe(1);
+  });
+
+  it('việc khác trong tháng không bị nhận nhầm', () => {
+    expect(luat({ chi_tieu: 10 }, [viec({ title: 'Dọn kho cuối ngày' })]).tiLe).toBeNull();
+  });
+
+  it('chưa có việc báo cáo nào thì KHÔNG chấm, chỉ ghi chú', () => {
+    const kq = luat({ chi_tieu: 10 }, []);
+    expect(kq.tiLe).toBeNull();
+    expect(kq.ghiChu).toContain('Chưa có việc báo cáo cuối ngày');
+  });
+
+  it('thiếu quá 5 ngày thì cắt bớt, ghi số ngày còn lại', () => {
+    const ds = Array.from({ length: 8 }, (_, i) => bc({
+      id: `CV-${i}`, status: 'IN_PROGRESS', completed_date: null,
+      due_date: `2026-07-1${i}T10:00:00Z`,
+    }));
+    expect(luat({ chi_tieu: 10 }, ds).ghiChu).toContain('3 ngày nữa');
+  });
+
+  it('làm đủ mọi ngày thì không có phần "Chưa làm"', () => {
+    const kq = luat({ chi_tieu: 10 }, [bc(), bc({ id: 'CV-2' })]);
+    expect(kq.tiLe).toBe(1);
+    expect(kq.ghiChu).not.toContain('Chưa làm');
+  });
+});

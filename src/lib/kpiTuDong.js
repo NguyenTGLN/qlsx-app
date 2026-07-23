@@ -85,10 +85,55 @@ function luatVideoKyThuat(ct, viec) {
   return { tiLe, ghiChu };
 }
 
+// Việc báo cáo cuối ngày. Khớp bằng HAI MẢNH rời chứ không phải cả cụm: tên thật trong app
+// đang là 'Báo cáo công việc cuối ngày', nhưng chủ app gọi nó là 'Báo cáo kết quả công việc
+// cuối ngày'. Khớp cả cụm thì chỉ cần lệch một chữ là chỉ tiêu tụt về 0 điểm mà không ai hiểu
+// vì sao — mà chấm oan thì tệ hơn nhiều so với khớp rộng một chút.
+const MANH_BAO_CAO = [khongDau('báo cáo'), khongDau('cuối ngày')];
+const laBaoCaoCuoiNgay = t => {
+  const k = khongDau(t.title);
+  return MANH_BAO_CAO.every(m => k.includes(m));
+};
+
+// Ngày dạng 'dd/MM' để ghi chú nói được NGÀY NÀO chưa báo cáo. Việc báo cáo cuối ngày lặp
+// hằng ngày nên tên chúng giống hệt nhau — liệt kê tên thì được một dãy chữ trùng lặp vô
+// nghĩa, phải liệt kê ngày mới tra ra được.
+const ngayNgan = t => {
+  const d = t.due_date || t.created_date;
+  if (!d) return null;
+  const x = new Date(d);
+  return `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}`;
+};
+
+function luatBaoCaoCuoiNgay(ct, viec) {
+  const bc = viec.filter(laBaoCaoCuoiNgay);
+
+  // Chưa tạo việc → KHÔNG chấm (tiLe null), không chấm 0. Cùng lý do như việc quay video.
+  if (!bc.length) {
+    return { tiLe: null, ghiChu: 'Chưa có việc báo cáo cuối ngày nào trong tháng — chưa có căn cứ chấm.' };
+  }
+
+  // Tính theo TỈ LỆ HOÀN THÀNH (chủ app chốt), không theo đúng hạn: báo cáo nộp muộn vẫn là
+  // đã báo cáo. Muốn siết theo đúng hạn thì đổi `xong` sang dùng laTre() như luật bên trên.
+  const xong = bc.filter(t => t.status === 'COMPLETED');
+  const thieu = bc.filter(t => t.status !== 'COMPLETED');
+  const tiLe = xong.length / bc.length;
+
+  const ngay = thieu.slice(0, MAX_TEN_TRE).map(ngayNgan).filter(Boolean).join(', ');
+  const them = thieu.length > MAX_TEN_TRE ? ` …và ${thieu.length - MAX_TEN_TRE} ngày nữa` : '';
+  const phanThieu = thieu.length ? ` Chưa làm: ${ngay}${them}.` : '';
+
+  return {
+    tiLe,
+    ghiChu: `Tự động: ${xong.length}/${bc.length} báo cáo cuối ngày đã hoàn thành (${Math.round(tiLe * 100)}%).${phanThieu}`,
+  };
+}
+
 // Bảng đăng ký luật, khoá theo `ma` của chỉ tiêu.
 export const LUAT_TU_DONG = {
   HT_CONG_VIEC_DUNG_HAN: luatHoanThanhDungHan,
   VIDEO_KY_THUAT: luatVideoKyThuat,
+  BC_KET_QUA_CONG_VIEC: luatBaoCaoCuoiNgay,
 };
 
 const homNay = () => new Date().toISOString().slice(0, 10);
