@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════════════
--- ĐÁNH DẤU 3 CHỈ TIÊU CHẤM TỰ ĐỘNG
+-- ĐÁNH DẤU 4 CHỈ TIÊU CHẤM TỰ ĐỘNG
 -- Dán vào Supabase SQL Editor, bấm Run. Chạy lại nhiều lần đều an toàn.
 --
 -- `cach_cham = 'TU_DONG'` KHÔNG làm app tính điểm — điểm vẫn tính ở phía app từ bảng
@@ -13,13 +13,13 @@ begin;
 
 update kpi_chi_tieu
 set cach_cham = 'TU_DONG'
-where ma in ('HT_CONG_VIEC_DUNG_HAN', 'VIDEO_KY_THUAT', 'BC_KET_QUA_CONG_VIEC')
+where ma in ('HT_CONG_VIEC_DUNG_HAN', 'VIDEO_KY_THUAT', 'BC_KET_QUA_CONG_VIEC', 'SAN_XUAT')
   and cach_cham is distinct from 'TU_DONG';
 
 commit;
 
--- KIỂM TRA: kỳ vọng đúng 3 mã, mỗi mã CHỈ MỘT dòng kết quả (một dòng = còn sót THU_CONG).
+-- KIỂM TRA: kỳ vọng đúng 4 mã, mỗi mã CHỈ MỘT dòng kết quả (một dòng = còn sót THU_CONG).
 select ma, min(ten) ten, cach_cham, count(*) so_dong
 from kpi_chi_tieu
-where ma in ('HT_CONG_VIEC_DUNG_HAN', 'VIDEO_KY_THUAT', 'BC_KET_QUA_CONG_VIEC')
+where ma in ('HT_CONG_VIEC_DUNG_HAN', 'VIDEO_KY_THUAT', 'BC_KET_QUA_CONG_VIEC', 'SAN_XUAT')
 group by ma, cach_cham order by ma, cach_cham;

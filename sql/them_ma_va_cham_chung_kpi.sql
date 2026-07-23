@@ -58,6 +58,7 @@ with anh_xa(ten, ma) as (values
   ('QUẢN LÝ NHÂN VIÊN', 'QUAN_LY_NHAN_VIEN'),
   ('QUẢN LÝ,ĐÁNH GIÁ, CẢI TIẾN CHẤT LƯỢNG ĐÀO TẠO ZOOM', 'QL_DAO_TAO_ZOOM'),
   ('SẢN XUẤT', 'SAN_XUAT'),
+  ('HIỆU SUẤT SẢN XUẤT', 'SAN_XUAT'),
   ('SẮP XẾP KHO HÀNG', 'SAP_XEP_KHO_HANG'),
   ('THẺ KHO', 'THE_KHO'),
   ('TRÁNH BẢO HÀNH 2 LẦN', 'TRANH_BAO_HANH_2_LAN'),

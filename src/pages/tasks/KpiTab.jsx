@@ -51,6 +51,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   const [rows, setRows] = useState([]);
   const [logs, setLogs] = useState([]);
   const [viec, setViec] = useState([]);        // công việc tạo trong tháng của kỳ
+  const [sanXuat, setSanXuat] = useState([]);  // bản ghi production_logs của tháng
   const [loiViec, setLoiViec] = useState('');
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
@@ -109,15 +110,35 @@ export default function KpiTab({ me, users = [], perm = {} }) {
         loiTaiViec = err?.message || String(err);
       }
 
+      // Bản ghi sản xuất của tháng, để chấm tự động chỉ tiêu HIỆU SUẤT SẢN XUẤT.
+      // `execution_date` là cột DATE nên lọc bằng chuỗi 'YYYY-MM-DD' là đủ, không cần dựng
+      // mốc giờ như bảng công việc.
+      // Cùng một lưới an toàn: hỏng chỗ này không được kéo sập cả màn hình KPI.
+      let dsSanXuat = [];
+      try {
+        const { data, error } = await fetchAllRows(() => supabase
+          .from('production_logs')
+          .select('id, worker_id, performance_rate, execution_date')
+          .gte('execution_date', `${ky}-01`)
+          .lt('execution_date', `${thang === 12 ? nam + 1 : nam}-${String(thang === 12 ? 1 : thang + 1).padStart(2, '0')}-01`)
+          .order('id'));
+        if (error) throw error;
+        dsSanXuat = data || [];
+      } catch (err) {
+        loiTaiViec = loiTaiViec || err?.message || String(err);
+      }
+
       setRows(ct || []);
       setLogs(nk);
       setViec(dsViec);
+      setSanXuat(dsSanXuat);
       setLoiViec(loiTaiViec);
     } catch (err) {
       setLoi(err?.message || String(err));
       setRows([]);
       setLogs([]);
       setViec([]);
+      setSanXuat([]);
     } finally {
       setLoading(false);
     }
@@ -128,7 +149,8 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   // Chấm tự động chèn vào TRƯỚC mọi thứ khác: từ đây trở xuống dùng rowsTD/logsTD, không dùng
   // rows/logs thô nữa. Bỏ sót một chỗ là chỗ đó hiện điểm cũ trong khi chỗ khác hiện điểm mới.
   const { rows: rowsTD, logs: logsTD } = useMemo(
-    () => apDungChamTuDong(rows, logs, viec, ky), [rows, logs, viec, ky]);
+    () => apDungChamTuDong(rows, logs, viec, ky, undefined, sanXuat),
+    [rows, logs, viec, ky, sanXuat]);
 
   // Dòng BO_PHAN dùng chung cho mọi người → luôn kèm vào bảng của từng cá nhân.
   const dongBoPhan = useMemo(() => rowsTD.filter(r => r.cap_do === 'BO_PHAN'), [rowsTD]);
@@ -236,7 +258,8 @@ export default function KpiTab({ me, users = [], perm = {} }) {
           fontSize: '0.78rem', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
         }}>
           <AlertTriangle size={14} />
-          Không tải được dữ liệu công việc — 2 chỉ tiêu chấm tự động đang tạm tính theo cách cũ.
+          Không tải được dữ liệu công việc / sản xuất — các chỉ tiêu chấm tự động đang tạm
+          tính theo cách cũ, chưa phản ánh dữ liệu thật.
         </div>
       )}
 

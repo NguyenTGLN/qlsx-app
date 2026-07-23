@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { viecTrongThang, LUAT_TU_DONG, apDungChamTuDong, NGUON_TU_DONG } from './kpiTuDong';
+import { viecTrongThang, sanXuatTrongThang, LUAT_TU_DONG, apDungChamTuDong, NGUON_TU_DONG } from './kpiTuDong';
 
 // Việc mẫu: mặc định tạo tháng 7/2026, giao cho 'a', đã xong đúng hạn.
 const viec = (o = {}) => ({
@@ -267,5 +267,76 @@ describe('HT_CONG_VIEC_DUNG_HAN loại việc báo cáo cuối ngày', () => {
     ]);
     expect(kq.ghiChu).toContain('Sửa máy');
     expect(kq.ghiChu).not.toContain('Báo cáo công việc cuối ngày');
+  });
+});
+
+describe('sanXuatTrongThang', () => {
+  const log = (o = {}) => ({ worker_id: 'a', performance_rate: 100, execution_date: '2026-07-05', ...o });
+
+  it('lấy bản ghi của đúng người trong đúng tháng', () => {
+    const ds = [log(), log({ execution_date: '2026-06-30' }), log({ worker_id: 'b' })];
+    expect(sanXuatTrongThang(ds, 'a', '2026-07')).toHaveLength(1);
+  });
+
+  it('kỳ thiếu hoặc danh sách rỗng thì trả rỗng, không nổ', () => {
+    expect(sanXuatTrongThang([log()], 'a', '')).toEqual([]);
+    expect(sanXuatTrongThang()).toEqual([]);
+  });
+});
+
+describe('luật SAN_XUAT (hiệu suất sản xuất)', () => {
+  const luat = LUAT_TU_DONG.SAN_XUAT;
+  const log = (r) => ({ worker_id: 'a', performance_rate: r, execution_date: '2026-07-05' });
+
+  it('điểm theo hiệu suất trung bình cộng, không gia quyền theo sản lượng', () => {
+    // 90 và 70 → trung bình 80% → 0.8, dù sản lượng hai lần có khác nhau.
+    const kq = luat({ chi_tieu: 40 }, [], [log(90), log(70)]);
+    expect(kq.tiLe).toBeCloseTo(0.8);
+    expect(kq.ghiChu).toContain('80%');
+    expect(kq.ghiChu).toContain('2 lần chấm');
+  });
+
+  it('vượt 100% chỉ tính tối đa, và ghi chú nói rõ', () => {
+    const kq = luat({ chi_tieu: 40 }, [], [log(120), log(110)]);
+    expect(kq.tiLe).toBe(1);
+    expect(kq.ghiChu).toContain('115%');
+    expect(kq.ghiChu).toContain('vượt 100%');
+  });
+
+  it('hiệu suất 0 thì 0 điểm chứ không phải bỏ qua', () => {
+    expect(luat({ chi_tieu: 40 }, [], [log(0)]).tiLe).toBe(0);
+  });
+
+  it('chưa có bản ghi sản xuất nào thì KHÔNG chấm, chỉ ghi chú', () => {
+    const kq = luat({ chi_tieu: 40 }, [], []);
+    expect(kq.tiLe).toBeNull();
+    expect(kq.ghiChu).toContain('Chưa có bản ghi sản xuất');
+  });
+
+  it('luật này không đụng tới danh sách công việc', () => {
+    const kq = luat({ chi_tieu: 40 }, [viec(), viec({ id: 'CV-2' })], [log(50)]);
+    expect(kq.tiLe).toBe(0.5);
+  });
+});
+
+describe('apDungChamTuDong truyền dữ liệu sản xuất', () => {
+  it('gán diem_chot cho chỉ tiêu SAN_XUAT theo hiệu suất của đúng người', () => {
+    const rows = [
+      { id: 'ct-a', cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'SAN_XUAT', chi_tieu: 40 },
+      { id: 'ct-b', cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'SAN_XUAT', chi_tieu: 40 },
+    ];
+    const sx = [
+      { worker_id: 'a', performance_rate: 50, execution_date: '2026-07-05' },
+      { worker_id: 'b', performance_rate: 100, execution_date: '2026-07-05' },
+    ];
+    const kq = apDungChamTuDong(rows, [], [], '2026-07', '2026-07-23', sx);
+    expect(kq.rows[0].diem_chot).toBe(20);
+    expect(kq.rows[1].diem_chot).toBe(40);
+  });
+
+  it('không truyền dữ liệu sản xuất thì chỉ tiêu đó không bị chấm 0 oan', () => {
+    const rows = [{ id: 'ct-a', cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'SAN_XUAT', chi_tieu: 40 }];
+    const kq = apDungChamTuDong(rows, [], [], '2026-07', '2026-07-23');
+    expect(kq.rows[0].diem_chot).toBeUndefined();
   });
 });

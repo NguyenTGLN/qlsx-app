@@ -39,6 +39,17 @@ export function viecTrongThang(tasks = [], nvId, ky) {
   });
 }
 
+// Bản ghi sản xuất của một người trong tháng, lấy từ bảng `production_logs`.
+//
+// `execution_date` là cột DATE (chuỗi 'YYYY-MM-DD') chứ không phải timestamptz, nên cắt tháng
+// bằng tiền tố chuỗi là an toàn — không có phần giờ thì không có chuyện lệch múi giờ như
+// `created_date` của công việc.
+export function sanXuatTrongThang(logs = [], nvId, ky) {
+  if (!ky) return [];
+  return (logs || []).filter(
+    l => l?.worker_id === nvId && String(l.execution_date || '').startsWith(ky));
+}
+
 const MAX_TEN_TRE = 5;
 
 // Việc báo cáo cuối ngày. Khớp bằng HAI MẢNH rời chứ không phải cả cụm: tên thật trong app
@@ -140,11 +151,38 @@ function luatBaoCaoCuoiNgay(ct, viec) {
   };
 }
 
+// Chỉ tiêu HIỆU SUẤT SẢN XUẤT: lấy thẳng hiệu suất trung bình tháng ở bảng phân tích sản xuất.
+// Nhận thêm tham số thứ 3 là bản ghi production_logs của người đó — hai luật trên không cần
+// nên bỏ qua, đó là lý do tham số này đứng cuối.
+function luatHieuSuatSanXuat(ct, viec, sanXuat = []) {
+  if (!sanXuat.length) {
+    return { tiLe: null, ghiChu: 'Chưa có bản ghi sản xuất nào trong tháng — chưa có căn cứ chấm.' };
+  }
+
+  // TRUNG BÌNH CỘNG các lần chấm, KHÔNG bình quân gia quyền theo sản lượng. Phải khớp đúng
+  // cách tab Báo cáo tính `avgPerf` (WorkReport.jsx) — hai màn hình mà tính khác nhau thì
+  // cùng một người sẽ thấy hai con số "hiệu suất trung bình", và không ai biết tin cái nào.
+  const ds = sanXuat.map(l => Number(l.performance_rate) || 0);
+  const tb = ds.reduce((a, b) => a + b, 0) / ds.length;
+
+  // Kẹp trong [0,1]: hiệu suất vượt 100% là chuyện thường (làm nhanh hơn định mức), nhưng
+  // điểm chỉ tiêu thì không được vượt trần — engine cũng kẹp, kẹp sẵn ở đây để ghi chú nói
+  // đúng chuyện đang xảy ra thay vì để người đọc tự đoán vì sao 110% mà không thêm điểm.
+  const tiLe = Math.min(1, Math.max(0, tb / 100));
+  const vuot = tb > 100 ? ' (vượt 100% chỉ tính tối đa)' : '';
+
+  return {
+    tiLe,
+    ghiChu: `Tự động: hiệu suất trung bình ${Math.round(tb)}% trên ${ds.length} lần chấm trong tháng${vuot}.`,
+  };
+}
+
 // Bảng đăng ký luật, khoá theo `ma` của chỉ tiêu.
 export const LUAT_TU_DONG = {
   HT_CONG_VIEC_DUNG_HAN: luatHoanThanhDungHan,
   VIDEO_KY_THUAT: luatVideoKyThuat,
   BC_KET_QUA_CONG_VIEC: luatBaoCaoCuoiNgay,
+  SAN_XUAT: luatHieuSuatSanXuat,
 };
 
 const homNay = () => new Date().toISOString().slice(0, 10);
@@ -162,7 +200,7 @@ const homNay = () => new Date().toISOString().slice(0, 10);
 //
 // ⚠ Dòng ảo có id 'ao-…' và KHÔNG BAO GIỜ được ghi xuống DB. Mọi chỗ ghi nhật ký đều đi qua
 // form riêng, không lấy từ mảng này.
-export function apDungChamTuDong(rows = [], logs = [], tasks = [], ky, ngay = homNay()) {
+export function apDungChamTuDong(rows = [], logs = [], tasks = [], ky, ngay = homNay(), sanXuat = []) {
   const rowsMoi = [];
   const logsAo = [];
 
@@ -170,7 +208,10 @@ export function apDungChamTuDong(rows = [], logs = [], tasks = [], ky, ngay = ho
     const luat = LUAT_TU_DONG[r?.ma];
     if (!luat || r.cap_do === 'BO_PHAN' || !r.nhan_vien_id) { rowsMoi.push(r); continue; }
 
-    const kq = luat(r, viecTrongThang(tasks, r.nhan_vien_id, ky));
+    const kq = luat(
+      r,
+      viecTrongThang(tasks, r.nhan_vien_id, ky),
+      sanXuatTrongThang(sanXuat, r.nhan_vien_id, ky));
     // tiLe = null → KHÔNG chấm: giữ nguyên đường tính cũ, chỉ kèm lời giải thích.
     rowsMoi.push(kq.tiLe == null ? r : { ...r, diem_chot: (r.chi_tieu ?? 0) * kq.tiLe });
     logsAo.push({
