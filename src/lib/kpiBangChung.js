@@ -89,3 +89,32 @@ export function canHoiLyDo(ct, diem) {
 export function timDongLyDo(logs = []) {
   return (logs || []).find(l => l.nguon === NGUON_BANG_CHUNG) || null;
 }
+
+// Số NGƯỜI có mỗi chỉ tiêu trong kỳ → Map(khoaChiTieu → số người).
+// Đếm theo tập nhân viên chứ không đếm dòng: dữ liệu lỡ có dòng trùng thì con số vẫn đúng,
+// và "chỉ tiêu ai cũng có" mới là khái niệm đáng tin để tô màu bảng.
+export function demNguoiTheoChiTieu(rows = []) {
+  const nguoi = new Map();
+  for (const r of rows) {
+    if (r.cap_do === 'BO_PHAN' || !r.nhan_vien_id) continue;
+    const k = khoaChiTieu(r);
+    if (!nguoi.has(k)) nguoi.set(k, new Set());
+    nguoi.get(k).add(r.nhan_vien_id);
+  }
+  const dem = new Map();
+  for (const [k, s] of nguoi) dem.set(k, s.size);
+  return dem;
+}
+
+// Phân loại một dòng chỉ tiêu để bảng KPI cá nhân tô nền:
+//   'BANG_CHUNG'      — đang chấm ở màn hình Bảng chấm chung
+//   'CHUNG_MOI_NGUOI' — chưa vào bảng chung nhưng mọi nhân viên đều có
+//   'RIENG'           — còn lại
+//
+// `soNhanVien <= 0` (chưa tải xong danh sách) thì KHÔNG được kết luận là chung: đoán bừa ở
+// đây sẽ tô cả bảng thành một màu trong lúc đang tải, người dùng đọc sai ngay từ cái nhìn đầu.
+export function phanLoaiChiTieu(ct, demNguoi, soNhanVien = 0) {
+  if (ct?.cham_chung) return 'BANG_CHUNG';
+  const n = demNguoi?.get?.(khoaChiTieu(ct || {})) || 0;
+  return soNhanVien > 0 && n >= soNhanVien ? 'CHUNG_MOI_NGUOI' : 'RIENG';
+}

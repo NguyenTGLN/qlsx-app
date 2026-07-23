@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   dsNhanVienChamChung, dungMaTran, dsChiTieuThemDuoc, canHoiLyDo, timDongLyDo, NGUON_BANG_CHUNG,
+  demNguoiTheoChiTieu, phanLoaiChiTieu,
 } from './kpiBangChung';
 
 describe('dsNhanVienChamChung', () => {
@@ -146,5 +147,72 @@ describe('timDongLyDo', () => {
 
   it('danh sách rỗng cũng không nổ', () => {
     expect(timDongLyDo()).toBeNull();
+  });
+});
+
+describe('demNguoiTheoChiTieu', () => {
+  it('đếm theo NGƯỜI chứ không theo dòng — một người lỡ có 2 dòng cùng chỉ tiêu vẫn là 1', () => {
+    const rows = [
+      { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: '5S', ten: '5S' },
+      { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: '5S', ten: '5S' },
+      { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: '5S', ten: '5S' },
+    ];
+    expect(demNguoiTheoChiTieu(rows).get('5S')).toBe(2);
+  });
+
+  it('bỏ dòng BO_PHAN', () => {
+    const rows = [
+      { cap_do: 'BO_PHAN', nhan_vien_id: null, ma: 'CHUYEN_CAN_BO_PHAN', ten: 'CHUYÊN CẦN BỘ PHẬN' },
+      { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'CHUYEN_CAN_BO_PHAN', ten: 'CHUYÊN CẦN BỘ PHẬN' },
+    ];
+    expect(demNguoiTheoChiTieu(rows).get('CHUYEN_CAN_BO_PHAN')).toBe(1);
+  });
+
+  it('chưa có mã thì gom theo tên', () => {
+    const rows = [
+      { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: null, ten: 'THẺ KHO' },
+      { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: null, ten: 'THẺ KHO' },
+    ];
+    expect(demNguoiTheoChiTieu(rows).get('THẺ KHO')).toBe(2);
+  });
+
+  it('danh sách rỗng trả Map rỗng, không nổ', () => {
+    expect(demNguoiTheoChiTieu().size).toBe(0);
+  });
+});
+
+describe('phanLoaiChiTieu', () => {
+  const dem = new Map([['5S', 13], ['SAN_XUAT', 13], ['THE_KHO', 12], ['LAM_SO_KHO', 1]]);
+
+  it('đang chấm ở bảng chung → BANG_CHUNG, kể cả khi chỉ vài người có', () => {
+    expect(phanLoaiChiTieu({ ma: 'LAM_SO_KHO', cham_chung: true }, dem, 13)).toBe('BANG_CHUNG');
+  });
+
+  it('chưa vào bảng chung nhưng đủ mọi người → CHUNG_MOI_NGUOI', () => {
+    expect(phanLoaiChiTieu({ ma: 'SAN_XUAT', cham_chung: false }, dem, 13)).toBe('CHUNG_MOI_NGUOI');
+  });
+
+  it('thiếu một người thôi cũng là RIENG — "gần đủ" không phải "đủ"', () => {
+    expect(phanLoaiChiTieu({ ma: 'THE_KHO', cham_chung: false }, dem, 13)).toBe('RIENG');
+  });
+
+  it('chỉ một người có → RIENG', () => {
+    expect(phanLoaiChiTieu({ ma: 'LAM_SO_KHO', cham_chung: false }, dem, 13)).toBe('RIENG');
+  });
+
+  it('cham_chung thắng, không cần biết đếm được bao nhiêu', () => {
+    expect(phanLoaiChiTieu({ ma: '5S', cham_chung: true }, dem, 13)).toBe('BANG_CHUNG');
+  });
+
+  it('chưa biết có bao nhiêu nhân viên (0) thì không được kết luận là chung', () => {
+    expect(phanLoaiChiTieu({ ma: '5S', cham_chung: false }, dem, 0)).toBe('RIENG');
+  });
+
+  it('chỉ tiêu không có trong bảng đếm → RIENG, không nổ', () => {
+    expect(phanLoaiChiTieu({ ma: 'LA_HOAC', cham_chung: false }, dem, 13)).toBe('RIENG');
+  });
+
+  it('không truyền bảng đếm cũng không nổ', () => {
+    expect(phanLoaiChiTieu({ ma: '5S' })).toBe('RIENG');
   });
 });
