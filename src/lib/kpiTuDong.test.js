@@ -340,3 +340,149 @@ describe('apDungChamTuDong truyền dữ liệu sản xuất', () => {
     expect(kq.rows[0].diem_chot).toBeUndefined();
   });
 });
+
+describe('luật CHUYEN_CAN_BO_PHAN (trung bình đầu người)', () => {
+  const luat = LUAT_TU_DONG.CHUYEN_CAN_BO_PHAN;
+  const cc = (id, o = {}) => ({ nhan_vien_id: id, ky: '2026-07', di_muon_phut: 0, ve_som_phut: 0, nghi: false, ...o });
+
+  it('trung bình dưới 30 phút thì không trừ', () => {
+    // 2 người, tổng 40 phút → trung bình 20.
+    const kq = luat({ chi_tieu: 10 }, [], [], [cc('a', { di_muon_phut: 40 })], ['a', 'b']);
+    expect(kq.tiLe).toBe(1);
+  });
+
+  it('CHIA cho số người chứ không lấy tổng — nhóm đông không bị phạt vì đông', () => {
+    // Tổng 206 phút: nhóm 7 người → TB 29 → không trừ; nhóm 2 người → TB 103 → trừ 10.
+    const ds = [cc('a', { di_muon_phut: 206 })];
+    expect(luat({ chi_tieu: 10 }, [], [], ds, ['a', 'b', 'c', 'd', 'e', 'f', 'g']).tiLe).toBe(1);
+    expect(luat({ chi_tieu: 10 }, [], [], ds, ['a', 'b']).tiLe).toBe(0);
+  });
+
+  it('cộng cả về sớm vào số phút, không chỉ đi muộn', () => {
+    const kq = luat({ chi_tieu: 10 }, [], [], [cc('a', { di_muon_phut: 30, ve_som_phut: 40 })], ['a']);
+    expect(kq.tiLe).toBe(0.7);   // TB 70 phút → trừ 3
+  });
+
+  it('ba bậc ngưỡng phút: 30-60 trừ 1, 61-90 trừ 3, từ 91 trừ 10', () => {
+    const diem = p => luat({ chi_tieu: 10 }, [], [], [cc('a', { di_muon_phut: p })], ['a']).tiLe * 10;
+    expect(diem(29)).toBe(10);
+    expect(diem(30)).toBe(9);
+    expect(diem(61)).toBe(7);
+    expect(diem(91)).toBe(0);
+  });
+
+  it('nghỉ vượt phép trừ thêm, tính trên số ngày nghỉ trung bình', () => {
+    // 1 người, 5 ngày nghỉ, phép 1 ngày → vượt 4 → trừ 10.
+    const ds = Array.from({ length: 5 }, (_, i) => cc('a', { nghi: true, ngay: `2026-07-0${i + 1}` }));
+    expect(luat({ chi_tieu: 10 }, [], [], ds, ['a']).tiLe).toBe(0);
+  });
+
+  it('ghi chú nói rõ cả số trung bình lẫn số tổng của nhóm', () => {
+    const kq = luat({ chi_tieu: 10 }, [], [], [cc('a', { di_muon_phut: 60 })], ['a', 'b']);
+    expect(kq.ghiChu).toContain('2 người');
+    expect(kq.ghiChu).toContain('30 phút');
+    expect(kq.ghiChu).toContain('60 phút');
+  });
+
+  it('chưa có chấm công thì KHÔNG chấm, không chấm 0', () => {
+    expect(luat({ chi_tieu: 10 }, [], [], [], ['a']).tiLe).toBeNull();
+  });
+
+  it('nhóm không có thành viên nào thì KHÔNG chấm — chia cho 0 sẽ ra Infinity', () => {
+    expect(luat({ chi_tieu: 10 }, [], [], [cc('a', { di_muon_phut: 60 })], []).tiLe).toBeNull();
+  });
+});
+
+describe('luật CHUYEN_CAN_CA_NHAN', () => {
+  const luat = LUAT_TU_DONG.CHUYEN_CAN_CA_NHAN;
+  const cc = (o = {}) => ({ nhan_vien_id: 'a', ky: '2026-07', di_muon_phut: 0, nghi: false, ...o });
+
+  it('muộn quá 15 phút trừ 5 mỗi lần', () => {
+    expect(luat({ chi_tieu: 10 }, [], [], [cc({ di_muon_phut: 20 })]).tiLe).toBe(0.5);
+  });
+
+  it('muộn 6–15 phút trừ 1 mỗi lần', () => {
+    expect(luat({ chi_tieu: 10 }, [], [], [cc({ di_muon_phut: 10 })]).tiLe).toBe(0.9);
+  });
+
+  it('muộn từ 5 phút trở xuống không trừ', () => {
+    expect(luat({ chi_tieu: 10 }, [], [], [cc({ di_muon_phut: 5 })]).tiLe).toBe(1);
+  });
+
+  it('hai bậc KHÔNG cộng chồng — muộn 20 phút trừ 5, không phải 6', () => {
+    const kq = luat({ chi_tieu: 10 }, [], [], [cc({ di_muon_phut: 20 })]);
+    expect(kq.tiLe).toBe(0.5);
+    expect(kq.ghiChu).toContain('0 lần muộn 6–15 phút');
+  });
+
+  it('nghỉ vượt phép trừ 3 mỗi ngày', () => {
+    const ds = [cc({ nghi: true }), cc({ nghi: true }), cc({ nghi: true })];
+    expect(luat({ chi_tieu: 10 }, [], [], ds).tiLe).toBeCloseTo(0.4);   // vượt 2 ngày → −6
+  });
+
+  it('trừ quá mức chỉ tiêu thì sàn 0, không ra điểm âm', () => {
+    const ds = Array.from({ length: 5 }, () => cc({ di_muon_phut: 30 }));
+    expect(luat({ chi_tieu: 10 }, [], [], ds).tiLe).toBe(0);
+  });
+
+  it('luôn nhường điểm chốt tay — dữ liệu chấm công chỉ đo được một phần quy định', () => {
+    expect(luat({ chi_tieu: 10 }, [], [], [cc()]).nhuongChamTay).toBe(true);
+    expect(luat({ chi_tieu: 10 }, [], [], []).nhuongChamTay).toBe(true);
+  });
+
+  it('ghi chú nói rõ phần chưa tính được', () => {
+    expect(luat({ chi_tieu: 10 }, [], [], [cc()]).ghiChu).toContain('có phép/không phép');
+  });
+});
+
+describe('apDungChamTuDong với chỉ tiêu bộ phận', () => {
+  const NGAY = '2026-07-23';
+  const bp = { id: 'bp-sx', cap_do: 'BO_PHAN', nhan_vien_id: null, lien_ket_bo_phan: 'CHUYEN_CAN_SX', ma: 'CHUYEN_CAN_BO_PHAN', chi_tieu: 10 };
+  const cn = id => ({ id: `ct-${id}`, cap_do: 'CA_NHAN', nhan_vien_id: id, lien_ket_bo_phan: 'CHUYEN_CAN_SX', ma: 'CHUYEN_CAN_BO_PHAN', chi_tieu: 10 });
+  const cc = (id, phut) => ({ nhan_vien_id: id, ky: '2026-07', di_muon_phut: phut, ve_som_phut: 0, nghi: false });
+
+  it('chấm vào DÒNG CHUNG, không chấm dòng cá nhân', () => {
+    const rows = [bp, cn('a'), cn('b')];
+    const kq = apDungChamTuDong(rows, [], [], '2026-07', NGAY, [], [cc('a', 122), cc('b', 0)]);
+    expect(kq.rows[0].diem_chot).toBe(7);          // TB 61 phút / 2 người → bậc 61-90 → trừ 3
+    expect(kq.rows[1].diem_chot).toBeUndefined();  // dòng cá nhân không bị chấm
+    expect(kq.rows[2].diem_chot).toBeUndefined();
+  });
+
+  it('chỉ đếm thành viên nối vào ĐÚNG nhóm đó', () => {
+    const nguoiNhomKhac = { ...cn('z'), id: 'ct-z', lien_ket_bo_phan: 'CHUYEN_CAN_BH' };
+    const rows = [bp, cn('a'), nguoiNhomKhac];
+    const kq = apDungChamTuDong(rows, [], [], '2026-07', NGAY, [], [cc('a', 60), cc('z', 600)]);
+    // Chỉ tính a: 60 phút / 1 người → bậc 30-60 → trừ 1. Nếu tính lẫn z thì TB 330 → 0 điểm.
+    expect(kq.rows[0].diem_chot).toBe(9);
+  });
+
+  it('nhóm toàn công ty tính trên MỌI nhân viên dù chỉ nối 1 người', () => {
+    const bpAll = { ...bp, id: 'bp-all', lien_ket_bo_phan: 'CHUYEN_CAN_TOAN_CTY' };
+    const admin = { ...cn('admin'), id: 'ct-admin', lien_ket_bo_phan: 'CHUYEN_CAN_TOAN_CTY' };
+    const rows = [bpAll, admin, cn('a'), cn('b')];
+    // 3 người (admin, a, b), tổng 90 phút → TB 30 → trừ 1.
+    const kq = apDungChamTuDong(rows, [], [], '2026-07', NGAY, [], [cc('admin', 90)]);
+    expect(kq.rows[0].diem_chot).toBe(9);
+  });
+
+  it('chấm công của kỳ khác không lọt vào', () => {
+    const rows = [bp, cn('a')];
+    const cu = { ...cc('a', 600), ky: '2026-06' };
+    const kq = apDungChamTuDong(rows, [], [], '2026-07', NGAY, [], [cu]);
+    expect(kq.rows[0].diem_chot).toBeUndefined();  // không có dữ liệu kỳ này → không chấm
+  });
+
+  it('điểm chốt tay của người thật thắng điểm tự động ở chuyên cần cá nhân', () => {
+    const r = { id: 'ct-cn', cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'CHUYEN_CAN_CA_NHAN', chi_tieu: 10, diem_chot: 4, chot_boi: 'Nguyên' };
+    const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY, [], [cc('a', 0)]);
+    expect(kq.rows[0].diem_chot).toBe(4);
+    expect(kq.logs[0].ly_do).toContain('đang dùng điểm chốt tay của Nguyên');
+  });
+
+  it('không có ai chốt tay thì điểm tự động vẫn được dùng', () => {
+    const r = { id: 'ct-cn', cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'CHUYEN_CAN_CA_NHAN', chi_tieu: 10 };
+    const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY, [], [cc('a', 20)]);
+    expect(kq.rows[0].diem_chot).toBe(5);
+  });
+});

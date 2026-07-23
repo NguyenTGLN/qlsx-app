@@ -177,12 +177,104 @@ function luatHieuSuatSanXuat(ct, viec, sanXuat = []) {
   };
 }
 
+// ── Chuyên cần ──────────────────────────────────────────────────────────────
+// Ngưỡng chép nguyên từ mô tả chỉ tiêu trong file KPI gốc. Đọc từ nặng xuống nhẹ, lấy mức
+// đầu tiên khớp.
+const NGUONG_PHUT = [[91, 10], [61, 3], [30, 1]];   // phút đi muộn + về sớm cộng dồn
+const NGUONG_NGHI = [[4, 10], [1, 5]];              // số ngày nghỉ VƯỢT phép
+
+// ⚠ GIẢ ĐỊNH CHỜ XÁC NHẬN: quy định chỉ nói "nghỉ quá số ngày quy định" mà không nói là mấy
+// ngày. Đang lấy 1 ngày phép/tháng (12 ngày/năm, mức phổ biến). Con số này hiện thẳng trong
+// ghi chú của từng dòng nên sai là thấy ngay, sửa ở đây một chỗ là xong.
+const NGAY_PHEP_THANG = 1;
+
+const truTheoNguong = (v, bang) => (bang.find(([m]) => v >= m) || [0, 0])[1];
+
+// Nhóm "toàn công ty": người phụ trách chung chịu trách nhiệm chuyên cần của TẤT CẢ nhân
+// viên chứ không riêng mình. Ngoại lệ có chủ đích — đặt tên rõ để người đọc sau không tưởng
+// là lỗi khi thấy nhóm chỉ nối 1 người mà lại tính trên 13 người.
+export const NHOM_TOAN_CTY = 'CHUYEN_CAN_TOAN_CTY';
+
+// Luật nào chấm được cho DÒNG CHUNG cấp bộ phận. Danh sách trắng chứ không mặc định cho tất
+// cả: luật lấy dữ liệu theo từng người (việc được giao, sản xuất) mà gặp dòng chung sẽ thấy
+// danh sách rỗng và kết luận "không có việc nào → đủ điểm", tức chấm tối đa cho một dòng nó
+// không hề có dữ liệu.
+export const LUAT_THEO_NHOM = new Set(['CHUYEN_CAN_BO_PHAN']);
+
+// Điểm từ số điểm bị trừ. Sàn 0 — trừ quá mức chỉ tiêu không ra điểm âm.
+function tuDiemTru(ct, tru, ghiChu) {
+  const max = Number(ct?.chi_tieu) || 0;
+  if (!max) return { tiLe: null, ghiChu };
+  return { tiLe: Math.max(0, max - tru) / max, ghiChu };
+}
+
+// CHUYÊN CẦN BỘ PHẬN — một điểm cho cả nhóm, tính trên TRUNG BÌNH ĐẦU NGƯỜI.
+//
+// Vì sao trung bình chứ không phải tổng nhóm hay người tệ nhất (chủ app chốt 23/07):
+//   - Tổng nhóm phạt nhóm ĐÔNG NGƯỜI: 7 người mỗi người muộn 20 phút là đã 140 phút, mất
+//     trọn điểm — nhóm lớn không bao giờ với tới điểm tối đa dù kỷ luật ngang nhóm nhỏ.
+//   - Người tệ nhất làm công sức của 6 người còn lại thành vô hình: họ đi đúng giờ cả tháng
+//     mà con số của nhóm không nhúc nhích. Đó là cách chắc nhất để họ bỏ cuộc.
+//   - Trung bình: ai cố gắng thì con số nhóm nhúc nhích theo, và ngưỡng 30/61/91 vốn được
+//     viết cho MỘT người nên hợp với con số trung bình đầu người.
+function luatChuyenCanBoPhan(ct, viec, sanXuat, chamCong = [], thanhVien = []) {
+  const soNguoi = thanhVien.length;
+  if (!soNguoi || !chamCong.length) {
+    return { tiLe: null, ghiChu: 'Chưa có dữ liệu chấm công của nhóm trong tháng — chưa có căn cứ chấm.' };
+  }
+
+  const phut = chamCong.reduce(
+    (s, c) => s + (Number(c.di_muon_phut) || 0) + (Number(c.ve_som_phut) || 0), 0);
+  const nghi = chamCong.filter(c => c.nghi).length;
+  const phutTB = phut / soNguoi;
+  const nghiTB = nghi / soNguoi;
+  const vuotPhep = Math.max(0, nghiTB - NGAY_PHEP_THANG);
+
+  const truPhut = truTheoNguong(phutTB, NGUONG_PHUT);
+  const truNghi = truTheoNguong(vuotPhep, NGUONG_NGHI);
+
+  const ghiChu = `Tự động: ${soNguoi} người — trung bình ${Math.round(phutTB)} phút muộn/về sớm`
+    + ` (−${truPhut}) và ${nghiTB.toFixed(1)} ngày nghỉ mỗi người, vượt ${vuotPhep.toFixed(1)}`
+    + ` ngày so với ${NGAY_PHEP_THANG} ngày phép (−${truNghi}).`
+    + ` Cả nhóm: ${phut} phút, ${nghi} ngày nghỉ.`;
+
+  return tuDiemTru(ct, truPhut + truNghi, ghiChu);
+}
+
+// CHUYÊN CẦN CÁ NHÂN — tính phần ĐO ĐƯỢC từ chấm công, phần còn lại để người chấm tự trừ.
+//
+// Bảng chấm công KHÔNG có: có phép / không phép, quên chấm công, chấm công sai. Ba thứ đó
+// chiếm phần lớn quy định trừ điểm của chỉ tiêu này. Nên luật này KHÔNG khoá chấm tay:
+// `nhuongChamTay` báo cho phần chèn biết là điểm chốt tay của người thật thắng điểm tự động.
+function luatChuyenCanCaNhan(ct, viec, sanXuat, chamCong = []) {
+  if (!chamCong.length) {
+    return { tiLe: null, nhuongChamTay: true, ghiChu: 'Chưa có dữ liệu chấm công trong tháng — chưa có căn cứ chấm.' };
+  }
+
+  const muon = chamCong.map(c => Number(c.di_muon_phut) || 0);
+  // Hai bậc TÁCH RỜI, không cộng chồng: quá 15 phút trừ 5, còn 6–15 phút trừ 1. Một lần muộn
+  // 20 phút bị trừ 5, không phải 6.
+  const nang = muon.filter(p => p > 15).length;
+  const nhe = muon.filter(p => p > 5 && p <= 15).length;
+  const nghi = chamCong.filter(c => c.nghi).length;
+  const vuotPhep = Math.max(0, nghi - NGAY_PHEP_THANG);
+  const tru = nang * 5 + nhe * 1 + vuotPhep * 3;
+
+  const ghiChu = `Tự động: ${nang} lần muộn quá 15 phút (−${nang * 5}), ${nhe} lần muộn 6–15 phút`
+    + ` (−${nhe}), nghỉ ${nghi} ngày vượt ${vuotPhep} ngày phép (−${vuotPhep * 3}).`
+    + ' Chưa tính phần có phép/không phép, quên chấm công, chấm công sai — chốt tay để đè lên.';
+
+  return { ...tuDiemTru(ct, tru, ghiChu), nhuongChamTay: true };
+}
+
 // Bảng đăng ký luật, khoá theo `ma` của chỉ tiêu.
 export const LUAT_TU_DONG = {
   HT_CONG_VIEC_DUNG_HAN: luatHoanThanhDungHan,
   VIDEO_KY_THUAT: luatVideoKyThuat,
   BC_KET_QUA_CONG_VIEC: luatBaoCaoCuoiNgay,
   SAN_XUAT: luatHieuSuatSanXuat,
+  CHUYEN_CAN_BO_PHAN: luatChuyenCanBoPhan,
+  CHUYEN_CAN_CA_NHAN: luatChuyenCanCaNhan,
 };
 
 const homNay = () => new Date().toISOString().slice(0, 10);
@@ -200,23 +292,52 @@ const homNay = () => new Date().toISOString().slice(0, 10);
 //
 // ⚠ Dòng ảo có id 'ao-…' và KHÔNG BAO GIỜ được ghi xuống DB. Mọi chỗ ghi nhật ký đều đi qua
 // form riêng, không lấy từ mảng này.
-export function apDungChamTuDong(rows = [], logs = [], tasks = [], ky, ngay = homNay(), sanXuat = []) {
+export function apDungChamTuDong(
+  rows = [], logs = [], tasks = [], ky, ngay = homNay(), sanXuat = [], chamCong = []) {
   const rowsMoi = [];
   const logsAo = [];
+  const ds = rows || [];
 
-  for (const r of rows || []) {
+  for (const r of ds) {
     const luat = LUAT_TU_DONG[r?.ma];
-    if (!luat || r.cap_do === 'BO_PHAN' || !r.nhan_vien_id) { rowsMoi.push(r); continue; }
+    const laBoPhan = r?.cap_do === 'BO_PHAN';
+    if (!luat || (!laBoPhan && !r.nhan_vien_id)) { rowsMoi.push(r); continue; }
+    if (laBoPhan && !LUAT_THEO_NHOM.has(r.ma)) { rowsMoi.push(r); continue; }
+
+    // Dòng CÁ NHÂN có liên kết bộ phận thì chấm nó là vô nghĩa: engine lấy điểm TỪ dòng chung
+    // và bỏ qua diem_chot của dòng này, nhật ký hiển thị cũng là nhật ký của dòng chung. Chấm
+    // ở đây chỉ tạo ra một con số không ai nhìn thấy.
+    if (!laBoPhan && r.lien_ket_bo_phan) { rowsMoi.push(r); continue; }
+
+    // Ai nằm trong phạm vi tính của dòng này.
+    const thanhVien = laBoPhan
+      ? [...new Set(ds
+        .filter(x => x.cap_do === 'CA_NHAN' && x.nhan_vien_id
+          && (r.lien_ket_bo_phan === NHOM_TOAN_CTY || x.lien_ket_bo_phan === r.lien_ket_bo_phan))
+        .map(x => x.nhan_vien_id))]
+      : [r.nhan_vien_id];
+
+    const cc = (chamCong || []).filter(
+      c => thanhVien.includes(c.nhan_vien_id) && String(c.ky || '') === ky);
 
     const kq = luat(
       r,
-      viecTrongThang(tasks, r.nhan_vien_id, ky),
-      sanXuatTrongThang(sanXuat, r.nhan_vien_id, ky));
+      laBoPhan ? [] : viecTrongThang(tasks, r.nhan_vien_id, ky),
+      laBoPhan ? [] : sanXuatTrongThang(sanXuat, r.nhan_vien_id, ky),
+      cc,
+      thanhVien);
+
+    // Luật nhường chấm tay: có người thật đã chốt điểm thì giữ nguyên số của họ, chỉ kèm lời
+    // giải thích. Dùng cho chỉ tiêu mà dữ liệu chỉ đo được một phần (chuyên cần cá nhân).
+    const daChotTay = kq.nhuongChamTay && r.diem_chot != null && !!r.chot_boi;
     // tiLe = null → KHÔNG chấm: giữ nguyên đường tính cũ, chỉ kèm lời giải thích.
-    rowsMoi.push(kq.tiLe == null ? r : { ...r, diem_chot: (r.chi_tieu ?? 0) * kq.tiLe });
+    const boQua = daChotTay || kq.tiLe == null;
+    rowsMoi.push(boQua ? r : { ...r, diem_chot: (r.chi_tieu ?? 0) * kq.tiLe });
+
     logsAo.push({
-      id: `ao-${r.id}`, chi_tieu_id: r.id, ngay,
-      so_diem: 0, ly_do: kq.ghiChu, nguon: NGUON_TU_DONG, nguoi_ghi: null,
+      id: `ao-${r.id}`, chi_tieu_id: r.id, ngay, so_diem: 0,
+      ly_do: daChotTay ? `${kq.ghiChu} (đang dùng điểm chốt tay của ${r.chot_boi})` : kq.ghiChu,
+      nguon: NGUON_TU_DONG, nguoi_ghi: null,
     });
   }
 

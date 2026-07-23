@@ -53,6 +53,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   const [viec, setViec] = useState([]);        // công việc tạo trong tháng của kỳ
   const [sanXuat, setSanXuat] = useState([]);  // bản ghi production_logs của tháng
   const [danhMuc, setDanhMuc] = useState([]);  // chỉ tiêu của MỌI kỳ, cho ô chọn khi thêm
+  const [chamCong, setChamCong] = useState([]);  // bảng chấm công của kỳ
   const [loiViec, setLoiViec] = useState('');
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
@@ -145,9 +146,24 @@ export default function KpiTab({ me, users = [], perm = {} }) {
         dsDanhMuc = [];   // hỏng thì ô chọn lùi về dùng đúng kỳ đang xem, xem prop coSan
       }
 
+      // Chấm công của kỳ, để chấm tự động 2 chỉ tiêu chuyên cần. Lọc theo `ky` ở phía server.
+      // Cùng lưới an toàn: hỏng chỗ này không được kéo sập cả màn hình KPI.
+      let dsChamCong = [];
+      try {
+        const { data, error } = await fetchAllRows(() => supabase
+          .from('cham_cong')
+          .select('nhan_vien_id, ngay, di_muon_phut, ve_som_phut, nghi, ky')
+          .eq('ky', ky).order('id'));
+        if (error) throw error;
+        dsChamCong = data || [];
+      } catch (err) {
+        loiTaiViec = loiTaiViec || err?.message || String(err);
+      }
+
       setRows(ct || []);
       setLogs(nk);
       setDanhMuc(dsDanhMuc);
+      setChamCong(dsChamCong);
       setViec(dsViec);
       setSanXuat(dsSanXuat);
       setLoiViec(loiTaiViec);
@@ -157,6 +173,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
       setLogs([]);
       setViec([]);
       setSanXuat([]);
+      setChamCong([]);
     } finally {
       setLoading(false);
     }
@@ -167,8 +184,8 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   // Chấm tự động chèn vào TRƯỚC mọi thứ khác: từ đây trở xuống dùng rowsTD/logsTD, không dùng
   // rows/logs thô nữa. Bỏ sót một chỗ là chỗ đó hiện điểm cũ trong khi chỗ khác hiện điểm mới.
   const { rows: rowsTD, logs: logsTD } = useMemo(
-    () => apDungChamTuDong(rows, logs, viec, ky, undefined, sanXuat),
-    [rows, logs, viec, ky, sanXuat]);
+    () => apDungChamTuDong(rows, logs, viec, ky, undefined, sanXuat, chamCong),
+    [rows, logs, viec, ky, sanXuat, chamCong]);
 
   // Dòng BO_PHAN dùng chung cho mọi người → luôn kèm vào bảng của từng cá nhân.
   const dongBoPhan = useMemo(() => rowsTD.filter(r => r.cap_do === 'BO_PHAN'), [rowsTD]);
@@ -277,7 +294,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
           fontSize: '0.78rem', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
         }}>
           <AlertTriangle size={14} />
-          Không tải được dữ liệu công việc / sản xuất — các chỉ tiêu chấm tự động đang tạm
+          Không tải được dữ liệu công việc / sản xuất / chấm công — các chỉ tiêu tự động đang tạm
           tính theo cách cũ, chưa phản ánh dữ liệu thật.
         </div>
       )}
