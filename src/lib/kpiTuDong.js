@@ -183,9 +183,12 @@ function luatHieuSuatSanXuat(ct, viec, sanXuat = []) {
 const NGUONG_PHUT = [[91, 10], [61, 3], [30, 1]];   // phút đi muộn + về sớm cộng dồn
 const NGUONG_NGHI = [[4, 10], [1, 5]];              // số ngày nghỉ VƯỢT phép
 
-// ⚠ GIẢ ĐỊNH CHỜ XÁC NHẬN: quy định chỉ nói "nghỉ quá số ngày quy định" mà không nói là mấy
-// ngày. Đang lấy 1 ngày phép/tháng (12 ngày/năm, mức phổ biến). Con số này hiện thẳng trong
-// ghi chú của từng dòng nên sai là thấy ngay, sửa ở đây một chỗ là xong.
+// Số ngày nghỉ KHÔNG bị trừ điểm trong một tháng — chủ app xác nhận 23/07/2026: 1 ngày phép.
+//
+// Cột `nghi` trong bảng chấm công là nghỉ CHUNG, gồm cả ngày phép. Nên số ngày vượt phép =
+// tổng ngày nghỉ − 1, không phải đếm riêng loại nghỉ nào. Đây là chỗ ảnh hưởng mạnh nhất tới
+// điểm chuyên cần: nghỉ 5 ngày là trừ 12 điểm, quá cả mức chỉ tiêu, trong khi muộn 200 phút
+// cả tháng chỉ trừ 6. Đổi con số này là đổi thứ hạng của cả bảng.
 const NGAY_PHEP_THANG = 1;
 
 const truTheoNguong = (v, bang) => (bang.find(([m]) => v >= m) || [0, 0])[1];
