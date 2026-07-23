@@ -480,7 +480,13 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 6, fontSize: '0.7rem', color: '#64748b' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ ...oMau, background: mauLoai.TU_DONG }} /> tự động từ công việc
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ ...oMau, background: mauLoai.BANG_CHUNG }} /> chấm ở bảng chung
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ ...oMau, background: mauLoai.BO_PHAN }} /> chung cả bộ phận
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ ...oMau, background: mauLoai.CHUNG_MOI_NGUOI }} /> ai cũng có
@@ -655,11 +661,9 @@ function DongBangKpi({ d, stt, coCotSua, loai, onClick, onSua }) {
         <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
           {d.ten}
         </div>
-        {(d.lien_ket_bo_phan || thuong || d.cach_cham === 'TU_DONG') && (
+        {thuong && (
           <div style={{ marginTop: 3 }}>
-            {d.lien_ket_bo_phan && <span style={tagChung}>chung bộ phận</span>}
-            {d.cach_cham === 'TU_DONG' && <span style={tagTuDong}>tự động</span>}
-            {thuong && <span style={tagThuong}>ngoài trọng số</span>}
+            <span style={tagThuong}>ngoài trọng số</span>
           </div>
         )}
       </td>
@@ -712,24 +716,21 @@ const tdKpi = {
   },
   total: { padding: '10px', borderTop: '2px solid #e2e8f0', background: '#f8fafc' },
 };
-const tagChung = {
-  display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
-  borderRadius: 6, background: 'rgba(37,99,235,0.12)', color: '#2563eb', marginLeft: 6, whiteSpace: 'nowrap',
-};
 const tagThuong = {
   display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
   borderRadius: 6, background: 'rgba(5,150,105,0.12)', color: '#059669', marginLeft: 6, whiteSpace: 'nowrap',
 };
-const tagTuDong = {
-  display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
-  borderRadius: 6, background: 'rgba(79,70,229,0.12)', color: '#4338ca', marginLeft: 6, whiteSpace: 'nowrap',
-};
-// Nền dòng theo phân loại chỉ tiêu. Bậc 200 (không phải 50): bậc nhạt nhất nhìn trên màn hình
-// gần như trắng, phân loại thành ra vô hình. Vẫn đủ nhạt cho chữ đen #0f172a đọc rõ.
+// Nền dòng = CÁCH CHẤM của chỉ tiêu đó. Bậc 200 (không phải 50): bậc nhạt nhất nhìn trên màn
+// hình gần như trắng, phân loại thành ra vô hình. Vẫn đủ nhạt cho chữ đen #0f172a đọc rõ.
+//
+// Năm hue khác hẳn nhau chứ không phải năm sắc độ của cùng một màu — hai sắc độ gần nhau đặt
+// cạnh nhau trong bảng thì mắt không tách được, mà tách được mới là mục đích của việc tô màu.
 const mauLoai = {
+  TU_DONG: '#e9d5ff',          // tím — app tự tính từ bảng công việc
   BANG_CHUNG: '#fed7aa',       // cam — chấm ở bảng chấm chung
+  BO_PHAN: '#fef08a',          // vàng — một điểm cho cả bộ phận
   CHUNG_MOI_NGUOI: '#bbf7d0',  // xanh lá — ai cũng có, chưa đưa vào bảng chung
-  RIENG: '#e0f2fe',            // xanh nhạt — riêng vị trí này
+  RIENG: '#e0f2fe',            // xanh nhạt — chấm tay riêng vị trí này
 };
 const oMau = {
   display: 'inline-block', width: 12, height: 12, borderRadius: 3, border: '1px solid #e2e8f0',
