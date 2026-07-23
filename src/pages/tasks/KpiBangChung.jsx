@@ -154,7 +154,7 @@ function OChamDiem({ ct, logs, me, doiDuoc, onXong }) {
       return;
     }
     setDangLuu(true);
-    const l = await ghiOChamChung({ ct, diem: soDiem, lyDo, logs, me });
+    const l = await ghiOChamChung({ ct, diem: soDiem, lyDo, me });
     setDangLuu(false);
     if (l) { setLoi(l); return; }
     onXong?.();
@@ -199,7 +199,7 @@ function OChamDiem({ ct, logs, me, doiDuoc, onXong }) {
 // trả 204 với error = null. Không kiểm qua loiGhiKpi thì người không phải ADMIN gõ điểm,
 // thấy form đóng êm, tưởng đã chấm — cuối tháng bảng lương lấy số cũ.
 // Trả null nếu ghi được, hoặc chuỗi lỗi tiếng Việt.
-async function ghiOChamChung({ ct, diem, lyDo, logs, me }) {
+async function ghiOChamChung({ ct, diem, lyDo, me }) {
   const nguoi = me?.name || me?.id || null;
   const { data, error } = await supabase
     .from('kpi_chi_tieu')
@@ -213,22 +213,35 @@ async function ghiOChamChung({ ct, diem, lyDo, logs, me }) {
   const l = loiGhiKpi(error, data);
   if (l) return l;
 
-  const cu = timDongLyDo(logs);
+  // Dòng lý do cũ phải tra TỪ DB, KHÔNG lấy từ `logs` của props: props chỉ mới lại sau khi
+  // vòng tải lại chạy xong, mà ô này lưu ngay lúc rời ô. Sửa lý do hai lần liên tiếp đủ
+  // nhanh thì lần sau vẫn thấy props cũ ("chưa có dòng nào") và chèn dòng thứ hai — chỉ tiêu
+  // đeo 2 lý do, sai giao kèo mỗi chỉ tiêu đúng MỘT dòng BANG_CHUNG.
+  const { data: dsCu, error: loiTra } = await supabase
+    .from('kpi_nhat_ky').select('id')
+    .eq('chi_tieu_id', ct.id).eq('nguon', NGUON_BANG_CHUNG);
+  if (loiTra) return 'Lỗi đọc nhật ký: ' + (loiTra.message || String(loiTra));
+  const coDongCu = (dsCu || []).length > 0;
+
   const can = canHoiLyDo(ct, diem);
   const chu = (lyDo || '').trim();
 
+  // Lọc theo (chi_tieu_id, nguon) chứ không theo id: dữ liệu lỡ có sẵn 2 dòng trùng thì
+  // lệnh này dọn/ghi đè hết, tự lành lại về đúng một dòng.
+  //
   // Kéo điểm về tối đa (hoặc xoá điểm) → dọn luôn dòng lý do, đừng để lý do cũ nằm lại
   // trên một chỉ tiêu đã đủ điểm.
   if (!can || !chu) {
-    if (!cu) return null;
-    const r = await supabase.from('kpi_nhat_ky').delete().eq('id', cu.id).select();
+    if (!coDongCu) return null;
+    const r = await supabase.from('kpi_nhat_ky').delete()
+      .eq('chi_tieu_id', ct.id).eq('nguon', NGUON_BANG_CHUNG).select();
     return loiGhiKpi(r.error, r.data);
   }
 
-  if (cu) {
+  if (coDongCu) {
     const r = await supabase.from('kpi_nhat_ky')
       .update({ ly_do: chu, ngay: homNay(), nguoi_ghi: nguoi })
-      .eq('id', cu.id).select();
+      .eq('chi_tieu_id', ct.id).eq('nguon', NGUON_BANG_CHUNG).select();
     return loiGhiKpi(r.error, r.data);
   }
 
