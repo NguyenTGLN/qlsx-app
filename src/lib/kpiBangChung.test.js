@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   dsNhanVienChamChung, dungMaTran, dsChiTieuThemDuoc, canHoiLyDo, timDongLyDo, NGUON_BANG_CHUNG,
-  demNguoiTheoChiTieu, phanLoaiChiTieu,
+  demNguoiTheoChiTieu, phanLoaiChiTieu, xepTheoLoai, THU_TU_LOAI,
 } from './kpiBangChung';
 
 describe('dsNhanVienChamChung', () => {
@@ -244,5 +244,57 @@ describe('phanLoaiChiTieu — thứ tự ưu tiên giữa các cách chấm', ()
 
   it('cach_cham khác TU_DONG không đổi gì', () => {
     expect(phanLoaiChiTieu({ ma: '5S', cach_cham: 'THU_CONG' }, dem, 13)).toBe('CHUNG_MOI_NGUOI');
+  });
+});
+
+describe('xepTheoLoai', () => {
+  const dem = new Map([['5S', 13], ['CC_BP', 13], ['THE_KHO', 1], ['HT_CV', 6]]);
+  // Cố tình xếp lộn xộn để thấy hàm thật sự sắp lại, không phải ăn may theo thứ tự đầu vào.
+  const dong = [
+    { id: 'r1', ma: 'THE_KHO', ten: 'THẺ KHO' },                                   // RIENG
+    { id: 't1', ma: 'HT_CV', ten: 'HOÀN THÀNH CV', cach_cham: 'TU_DONG' },         // TU_DONG
+    { id: 'c1', ma: '5S', ten: '5S', cham_chung: true },                           // BANG_CHUNG
+    { id: 'g1', ma: 'AI_CUNG_CO', ten: 'CHUYÊN CẦN CÁ NHÂN' },                     // sẽ là RIENG
+    { id: 'b1', ma: 'CC_BP', ten: 'CHUYÊN CẦN BỘ PHẬN', lien_ket_bo_phan: 'CC_BP' }, // BO_PHAN
+    { id: 'c2', ma: 'CHAM_KPI', ten: 'CHẤM KPI', cham_chung: true },               // BANG_CHUNG
+  ];
+
+  it('xếp đúng thứ tự bảng chung → bộ phận → ai cũng có → tự động → riêng', () => {
+    const ds = xepTheoLoai(dong, dem, 13);
+    expect(ds.map(x => x.loai)).toEqual([
+      'BANG_CHUNG', 'BANG_CHUNG', 'BO_PHAN', 'TU_DONG', 'RIENG', 'RIENG',
+    ]);
+  });
+
+  it('giữ nguyên thứ tự cũ bên trong mỗi khối', () => {
+    const ds = xepTheoLoai(dong, dem, 13);
+    expect(ds.filter(x => x.loai === 'BANG_CHUNG').map(x => x.d.id)).toEqual(['c1', 'c2']);
+    expect(ds.filter(x => x.loai === 'RIENG').map(x => x.d.id)).toEqual(['r1', 'g1']);
+  });
+
+  it('khối "ai cũng có" xếp trước khối tự động', () => {
+    const ds = xepTheoLoai([
+      { id: 'x', ma: 'HT_CV', cach_cham: 'TU_DONG' },
+      { id: 'y', ma: '5S' },
+    ], dem, 13);
+    expect(ds.map(x => x.d.id)).toEqual(['y', 'x']);
+  });
+
+  it('không làm rơi dòng nào và không sửa mảng gốc', () => {
+    const goc = [...dong];
+    const ds = xepTheoLoai(dong, dem, 13);
+    expect(ds).toHaveLength(dong.length);
+    expect(dong).toEqual(goc);
+    expect(dong[0].id).toBe('r1');
+  });
+
+  it('mảng rỗng hoặc thiếu thì trả rỗng, không nổ', () => {
+    expect(xepTheoLoai([], dem, 13)).toEqual([]);
+    expect(xepTheoLoai()).toEqual([]);
+  });
+
+  it('THU_TU_LOAI phủ đủ 5 loại phanLoaiChiTieu có thể trả về', () => {
+    expect([...THU_TU_LOAI].sort()).toEqual(
+      ['BANG_CHUNG', 'BO_PHAN', 'CHUNG_MOI_NGUOI', 'RIENG', 'TU_DONG']);
   });
 });

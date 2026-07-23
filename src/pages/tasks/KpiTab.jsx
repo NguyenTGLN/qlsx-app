@@ -3,7 +3,7 @@ import { supabase, fetchAllRows } from '../../lib/supabase';
 import { tinhBangKpi, giaiThich, kiemTraTrongSo } from '../../lib/kpiEngine';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import { xuatExcelKpi, dungDuLieuSheet } from '../../lib/kpiExcel';
-import { demNguoiTheoChiTieu, phanLoaiChiTieu } from '../../lib/kpiBangChung';
+import { demNguoiTheoChiTieu, xepTheoLoai } from '../../lib/kpiBangChung';
 import { apDungChamTuDong, laDongAo } from '../../lib/kpiTuDong';
 import KpiPrint from '../../components/KpiPrint';
 import KpiBangChung from './KpiBangChung';
@@ -522,12 +522,12 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
                 // Việc phân loại giờ do MÀU NỀN đảm nhiệm, và màu thì tính từ cách chấm thật.
                 const out = [];
                 let stt = 0;
-                for (const d of kq.dong) {
+                for (const { d, loai } of xepTheoLoai(kq.dong, demNguoi, soNhanVien)) {
                   stt += 1;
                   out.push(
                     <DongBangKpi
                       key={d.id} d={d} stt={stt} coCotSua={!!perm?.create}
-                      loai={phanLoaiChiTieu(d, demNguoi, soNhanVien)}
+                      loai={loai}
                       onClick={() => setPopupId(d.id)}
                       onSua={perm?.create ? () => setSuaCT(d) : null}
                     />

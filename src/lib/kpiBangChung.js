@@ -126,3 +126,22 @@ export function phanLoaiChiTieu(ct, demNguoi, soNhanVien = 0) {
   const n = demNguoi?.get?.(khoaChiTieu(ct || {})) || 0;
   return soNhanVien > 0 && n >= soNhanVien ? 'CHUNG_MOI_NGUOI' : 'RIENG';
 }
+
+// Thứ tự các khối khi xếp bảng KPI cá nhân — do chủ app chốt, đi từ chỗ chấm tập trung nhất
+// tới chỗ riêng của từng người. KHÁC với thứ tự ưu tiên trong phanLoaiChiTieu ở trên: cái kia
+// trả lời "dòng này thuộc loại nào", cái này trả lời "loại nào xếp trước". Đừng gộp hai cái.
+export const THU_TU_LOAI = ['BANG_CHUNG', 'BO_PHAN', 'CHUNG_MOI_NGUOI', 'TU_DONG', 'RIENG'];
+
+// Xếp các dòng chỉ tiêu thành từng khối theo cách chấm, GIỮ NGUYÊN thứ tự cũ trong mỗi khối
+// (nên vẫn theo `thu_tu` như trước). Trả mảng { d, loai } để nơi gọi khỏi phân loại lại lúc
+// render. Không sửa mảng gốc — `kq.dong` còn được bản in và Excel dùng lại.
+export function xepTheoLoai(dong = [], demNguoi, soNhanVien = 0) {
+  const hang = loai => {
+    const i = THU_TU_LOAI.indexOf(loai);
+    return i === -1 ? THU_TU_LOAI.length : i;   // loại lạ thì xuống cuối, không nuốt mất dòng
+  };
+  return (dong || [])
+    .map((d, i) => ({ d, loai: phanLoaiChiTieu(d, demNguoi, soNhanVien), i }))
+    .sort((a, b) => hang(a.loai) - hang(b.loai) || a.i - b.i)
+    .map(({ d, loai }) => ({ d, loai }));
+}
