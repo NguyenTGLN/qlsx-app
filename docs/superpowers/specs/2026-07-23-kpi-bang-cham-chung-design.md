@@ -24,7 +24,7 @@ Chủ app chọn 4 chỉ tiêu chuyển sang chấm ở một bảng chung:
 | Quyết định | Lựa chọn | Vì sao |
 |---|---|---|
 | Ô nhập chứa gì | Điểm cuối cùng (0…mức chỉ tiêu) | 4 chỉ tiêu này là đánh giá cuối tháng theo cảm nhận quản lý, không phải đếm sự vụ |
-| Điểm thiếu | Hiện ô nhập lý do ngay dưới; đủ điểm thì không hỏi | Bảng KPI cá nhân phải giải thích được vì sao mất điểm |
+| Điểm thiếu | Mở bảng nhập lý do (textarea); đủ điểm thì không hỏi | Bảng KPI cá nhân phải giải thích được vì sao mất điểm |
 | Chọn chỉ tiêu nào vào bảng chung | Mở sẵn 4 cái, có nút "＋ Thêm chỉ tiêu" chọn từ danh sách còn lại | Chủ app muốn tự mở rộng dần, không phải nhờ sửa code |
 | Lưu trạng thái đó ở đâu | 2 cột mới trên `kpi_chi_tieu`: `ma`, `cham_chung` | Xem mục 3 |
 | Định danh chỉ tiêu | Cột `ma` — chữ viết tắt có nghĩa, mọi nhân viên cùng chỉ tiêu thì cùng mã | Tên chỉ tiêu dài và đã đổi 2 lần; danh sách chọn cần khoá ổn định để không nhầm |
@@ -92,17 +92,24 @@ Màn hình thứ 3 của tab KPI, bên cạnh "danh sách nhân viên" và "bả
 └───────────────────────────────────────────────────┘
 ```
 
-- Ô đủ điểm nền xanh, thiếu điểm nền hồng, chưa chấm để trống nền xám.
+- **Ô chưa chấm hiện sẵn mức tối đa**, không để trống (sửa 23/07 sau khi chủ app dùng thử). Engine coi `diem_chot = null` là đạt đủ điểm, nên ô trống nói dối — bảng KPI cá nhân của người đó đang hiện điểm tối đa. Rời ô mà số không đổi thì không ghi gì: tab qua 52 ô không được biến thành 52 lệnh ghi.
+- Ô đủ điểm nền xanh, thiếu điểm nền hồng.
 - Nhân viên không có chỉ tiêu đó → ô gạch chéo `▨`, không nhập được (7 chỉ tiêu chung thì ai cũng có, nhưng chỉ tiêu thêm vào sau có thể chỉ 6/13 người có).
 - **＋ Thêm chỉ tiêu**: popup liệt kê các chỉ tiêu chưa chấm chung dạng `mã · tên · (có ở 7/13 người)`, tick nhiều cái một lúc.
 - Mỗi dòng có nút bỏ khỏi bảng chung. **Bỏ thì điểm đã chấm giữ nguyên**, chỉ mở khoá để chấm lại ở bảng cá nhân.
 
 ### Bảng KPI cá nhân
 
-Gần như không đổi. Thêm hai thứ:
-
-- Dòng có `cham_chung` gắn nhãn **"chấm ở bảng chung"** (dùng lại style `tagChung` sẵn có).
-- Popup diễn giải của dòng đó ẩn nút "Chốt điểm tay" — không để hai chỗ cùng sửa một con số.
+- **Nền mỗi dòng nói loại chỉ tiêu** (chốt 23/07 sau khi chủ app dùng thử, thay cho nhãn chữ):
+  cam `#fff7ed` = đang chấm ở bảng chung · xanh lá `#f0fdf4` = chưa vào bảng chung nhưng mọi
+  nhân viên đều có (ứng viên đưa vào tiếp) · xanh nhạt `#f0f9ff` = riêng vị trí này. Có chú
+  thích màu ngay trên bảng.
+- Nền đã dùng để phân loại nên **dòng mất điểm chuyển sang vạch đỏ dọc bên trái** thay vì tô
+  hồng cả dòng.
+- Phân loại tính bằng `phanLoaiChiTieu` trên **toàn bộ dòng của kỳ**, không phải dòng của một
+  người — lọc theo người rồi thì chỉ tiêu nào cũng chỉ có 1 người và không cái nào là "chung".
+- Popup diễn giải của dòng `cham_chung` ẩn nút "Chốt điểm tay" và giải thích vì sao — không để
+  hai chỗ cùng sửa một con số.
 
 Cột ghi chú không phải sửa: nó đã đọc `ly_do` từ nhật ký rồi.
 
