@@ -90,3 +90,38 @@ export const LUAT_TU_DONG = {
   HT_CONG_VIEC_DUNG_HAN: luatHoanThanhDungHan,
   VIDEO_KY_THUAT: luatVideoKyThuat,
 };
+
+const homNay = () => new Date().toISOString().slice(0, 10);
+
+// Chèn kết quả chấm tự động vào dữ liệu TRƯỚC khi engine chạy. Trả về BẢN SAO của rows/logs,
+// không sửa mảng gốc.
+//
+// Với mỗi dòng chỉ tiêu có luật:
+//   - gán `diem_chot` = chỉ tiêu × tỉ lệ (engine đã biết diem_chot thắng mọi đường tính khác)
+//   - thêm MỘT dòng nhật ký ẢO `so_diem = 0` chở lời giải thích.
+//
+// Dòng ảo là mẹo đã dùng ở bảng chấm chung: `so_diem = 0` nên không đụng phép tính, chỉ chở
+// chữ. Nhờ nó, diễn giải tự chảy ra cột ghi chú, popup bấm vào điểm, file Excel và bản in mà
+// không phải sửa engine, màn hình hay phần xuất.
+//
+// ⚠ Dòng ảo có id 'ao-…' và KHÔNG BAO GIỜ được ghi xuống DB. Mọi chỗ ghi nhật ký đều đi qua
+// form riêng, không lấy từ mảng này.
+export function apDungChamTuDong(rows = [], logs = [], tasks = [], ky, ngay = homNay()) {
+  const rowsMoi = [];
+  const logsAo = [];
+
+  for (const r of rows || []) {
+    const luat = LUAT_TU_DONG[r?.ma];
+    if (!luat || r.cap_do === 'BO_PHAN' || !r.nhan_vien_id) { rowsMoi.push(r); continue; }
+
+    const kq = luat(r, viecTrongThang(tasks, r.nhan_vien_id, ky));
+    // tiLe = null → KHÔNG chấm: giữ nguyên đường tính cũ, chỉ kèm lời giải thích.
+    rowsMoi.push(kq.tiLe == null ? r : { ...r, diem_chot: (r.chi_tieu ?? 0) * kq.tiLe });
+    logsAo.push({
+      id: `ao-${r.id}`, chi_tieu_id: r.id, ngay,
+      so_diem: 0, ly_do: kq.ghiChu, nguon: NGUON_TU_DONG, nguoi_ghi: null,
+    });
+  }
+
+  return { rows: rowsMoi, logs: [...(logs || []), ...logsAo] };
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { viecTrongThang, LUAT_TU_DONG } from './kpiTuDong';
+import { viecTrongThang, LUAT_TU_DONG, apDungChamTuDong, NGUON_TU_DONG } from './kpiTuDong';
 
 // Việc mẫu: mặc định tạo tháng 7/2026, giao cho 'a', đã xong đúng hạn.
 const viec = (o = {}) => ({
@@ -112,5 +112,67 @@ describe('luật VIDEO_KY_THUAT', () => {
   it('hai việc khớp, một đúng hạn một trễ → trung bình 75%', () => {
     const kq = luat({ chi_tieu: 6 }, [video(), video({ id: 'CV-2', completed_date: '2026-07-20T10:00:00Z' })]);
     expect(kq.tiLe).toBe(0.75);
+  });
+});
+
+describe('apDungChamTuDong', () => {
+  const dong = (o = {}) => ({
+    id: 'ct-1', cap_do: 'CA_NHAN', nhan_vien_id: 'a',
+    ma: 'HT_CONG_VIEC_DUNG_HAN', ten: 'HOÀN THÀNH CÔNG VIỆC ĐÚNG THỜI HẠN',
+    chi_tieu: 10, trong_so: 10, ...o,
+  });
+  const NGAY = '2026-07-23';
+
+  it('gán diem_chot theo tỉ lệ luật tính ra', () => {
+    const ds = [viec(), viec({ id: 'CV-2', completed_date: '2026-07-20T10:00:00Z' })];
+    const kq = apDungChamTuDong([dong()], [], ds, '2026-07', NGAY);
+    expect(kq.rows[0].diem_chot).toBe(5);   // 1/2 đúng hạn × chỉ tiêu 10
+  });
+
+  it('kèm một dòng nhật ký ảo chở lời giải thích', () => {
+    const kq = apDungChamTuDong([dong()], [], [viec()], '2026-07', NGAY);
+    const ao = kq.logs.find(l => l.chi_tieu_id === 'ct-1');
+    expect(ao.so_diem).toBe(0);
+    expect(ao.nguon).toBe(NGUON_TU_DONG);
+    expect(ao.ngay).toBe(NGAY);
+    expect(ao.ly_do).toContain('Tự động');
+  });
+
+  it('luật trả tiLe null thì KHÔNG gán diem_chot, nhưng vẫn có ghi chú', () => {
+    const r = dong({ id: 'ct-2', ma: 'VIDEO_KY_THUAT', chi_tieu: 6 });
+    const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY);
+    expect(kq.rows[0].diem_chot).toBeUndefined();
+    expect(kq.logs.find(l => l.chi_tieu_id === 'ct-2').ly_do).toContain('Chưa tạo việc');
+  });
+
+  it('chỉ tiêu không có luật thì giữ nguyên, không mọc dòng ảo', () => {
+    const r = dong({ id: 'ct-3', ma: '5S' });
+    const kq = apDungChamTuDong([r], [], [viec()], '2026-07', NGAY);
+    expect(kq.rows[0]).toEqual(r);
+    expect(kq.logs).toHaveLength(0);
+  });
+
+  it('nhật ký thật vẫn còn nguyên bên cạnh dòng ảo', () => {
+    const that = { id: 'nk-1', chi_tieu_id: 'ct-1', so_diem: -2, ly_do: 'trừ tay', nguon: 'TAY' };
+    const kq = apDungChamTuDong([dong()], [that], [viec()], '2026-07', NGAY);
+    expect(kq.logs.filter(l => l.chi_tieu_id === 'ct-1')).toHaveLength(2);
+    expect(kq.logs).toContain(that);
+  });
+
+  it('KHÔNG sửa mảng gốc — dữ liệu vừa tải về phải nguyên vẹn', () => {
+    const r = dong();
+    const rows = [r];
+    const logs = [];
+    apDungChamTuDong(rows, logs, [viec({ completed_date: '2026-07-20T10:00:00Z' })], '2026-07', NGAY);
+    expect(r.diem_chot).toBeUndefined();
+    expect(rows).toHaveLength(1);
+    expect(logs).toHaveLength(0);
+  });
+
+  it('dòng BO_PHAN không bị luật đụng vào', () => {
+    const r = { id: 'bp-1', cap_do: 'BO_PHAN', nhan_vien_id: null, ma: 'HT_CONG_VIEC_DUNG_HAN', chi_tieu: 10 };
+    const kq = apDungChamTuDong([r], [], [viec()], '2026-07', NGAY);
+    expect(kq.rows[0]).toEqual(r);
+    expect(kq.logs).toHaveLength(0);
   });
 });
