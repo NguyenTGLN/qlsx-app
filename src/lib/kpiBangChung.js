@@ -106,15 +106,23 @@ export function demNguoiTheoChiTieu(rows = []) {
   return dem;
 }
 
-// Phân loại một dòng chỉ tiêu để bảng KPI cá nhân tô nền:
-//   'BANG_CHUNG'      — đang chấm ở màn hình Bảng chấm chung
-//   'CHUNG_MOI_NGUOI' — chưa vào bảng chung nhưng mọi nhân viên đều có
-//   'RIENG'           — còn lại
+// Phân loại một dòng chỉ tiêu để bảng KPI cá nhân tô nền — mỗi màu là một CÁCH CHẤM:
+//   'TU_DONG'         — app tự tính từ dữ liệu công việc
+//   'BANG_CHUNG'      — chấm ở màn hình Bảng chấm chung
+//   'BO_PHAN'         — một điểm chấm chung cho cả bộ phận
+//   'CHUNG_MOI_NGUOI' — chấm tay, nhưng mọi nhân viên đều có (ứng viên đưa vào bảng chung)
+//   'RIENG'           — chấm tay, riêng vị trí này
+//
+// THỨ TỰ Ở ĐÂY LÀ MỘT QUYẾT ĐỊNH, không phải tình cờ: CHUYÊN CẦN BỘ PHẬN vừa liên kết bộ phận
+// vừa có ở 13/13 người, nên phải nói rõ cái nào thắng. Ưu tiên theo mức "điểm này từ đâu ra":
+// nguồn điểm càng đặc biệt càng cần được nhìn thấy trước.
 //
 // `soNhanVien <= 0` (chưa tải xong danh sách) thì KHÔNG được kết luận là chung: đoán bừa ở
 // đây sẽ tô cả bảng thành một màu trong lúc đang tải, người dùng đọc sai ngay từ cái nhìn đầu.
 export function phanLoaiChiTieu(ct, demNguoi, soNhanVien = 0) {
+  if (ct?.cach_cham === 'TU_DONG') return 'TU_DONG';
   if (ct?.cham_chung) return 'BANG_CHUNG';
+  if (ct?.lien_ket_bo_phan) return 'BO_PHAN';
   const n = demNguoi?.get?.(khoaChiTieu(ct || {})) || 0;
   return soNhanVien > 0 && n >= soNhanVien ? 'CHUNG_MOI_NGUOI' : 'RIENG';
 }

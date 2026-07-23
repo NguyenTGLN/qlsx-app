@@ -216,3 +216,33 @@ describe('phanLoaiChiTieu', () => {
     expect(phanLoaiChiTieu({ ma: '5S' })).toBe('RIENG');
   });
 });
+
+describe('phanLoaiChiTieu — thứ tự ưu tiên giữa các cách chấm', () => {
+  const dem = new Map([['5S', 13], ['CHUYEN_CAN_BO_PHAN', 13], ['THE_KHO', 1]]);
+
+  it('chỉ tiêu tự động ra TU_DONG', () => {
+    expect(phanLoaiChiTieu({ ma: 'THE_KHO', cach_cham: 'TU_DONG' }, dem, 13)).toBe('TU_DONG');
+  });
+
+  it('tự động thắng bảng chung — điểm thật sự đến từ luật tự động', () => {
+    expect(phanLoaiChiTieu({ ma: '5S', cach_cham: 'TU_DONG', cham_chung: true }, dem, 13)).toBe('TU_DONG');
+  });
+
+  it('chỉ tiêu liên kết bộ phận ra BO_PHAN', () => {
+    expect(phanLoaiChiTieu({ ma: 'THE_KHO', lien_ket_bo_phan: 'CHUYEN_CAN_BO_PHAN' }, dem, 13)).toBe('BO_PHAN');
+  });
+
+  it('bộ phận thắng "ai cũng có" — CHUYÊN CẦN BỘ PHẬN vừa là 13/13 vừa là chấm chung cả nhóm', () => {
+    const ct = { ma: 'CHUYEN_CAN_BO_PHAN', lien_ket_bo_phan: 'CHUYEN_CAN_BO_PHAN' };
+    expect(phanLoaiChiTieu(ct, dem, 13)).toBe('BO_PHAN');
+  });
+
+  it('bảng chung thắng bộ phận', () => {
+    const ct = { ma: '5S', cham_chung: true, lien_ket_bo_phan: 'X' };
+    expect(phanLoaiChiTieu(ct, dem, 13)).toBe('BANG_CHUNG');
+  });
+
+  it('cach_cham khác TU_DONG không đổi gì', () => {
+    expect(phanLoaiChiTieu({ ma: '5S', cach_cham: 'THU_CONG' }, dem, 13)).toBe('CHUNG_MOI_NGUOI');
+  });
+});
