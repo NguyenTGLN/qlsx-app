@@ -4,6 +4,7 @@ import { tinhBangKpi, giaiThich, kiemTraTrongSo } from '../../lib/kpiEngine';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import { xuatExcelKpi, dungDuLieuSheet } from '../../lib/kpiExcel';
 import { demNguoiTheoChiTieu, phanLoaiChiTieu } from '../../lib/kpiBangChung';
+import { apDungChamTuDong } from '../../lib/kpiTuDong';
 import KpiPrint from '../../components/KpiPrint';
 import KpiBangChung from './KpiBangChung';
 import {
@@ -49,6 +50,8 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   const [ky, setKy] = useState(kyHienTai());
   const [rows, setRows] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [viec, setViec] = useState([]);        // công việc tạo trong tháng của kỳ
+  const [loiViec, setLoiViec] = useState('');
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
   const [chon, setChon] = useState(null);   // nhan_vien_id đang xem chi tiết
@@ -80,12 +83,41 @@ export default function KpiTab({ me, users = [], perm = {} }) {
         if (data) nk.push(...data);
       }
 
+      // Công việc của tháng, để chấm tự động 2 chỉ tiêu HT_CONG_VIEC_DUNG_HAN + VIDEO_KY_THUAT.
+      // Lọc sẵn theo tháng ở phía server và chỉ lấy 8 cột cần dùng: cong_viec_duoc_giao là bảng
+      // lớn nhất app, kéo cả bảng về chỉ để đếm vài chục việc là phí băng thông của mọi người.
+      //
+      // Mốc tháng dựng bằng `new Date(nam, thang-1, 1)` = nửa đêm GIỜ MÁY (giờ VN), không phải
+      // giờ UTC: việc tạo 06:00 ngày 01/08 giờ VN là 23:00 ngày 31/07 giờ UTC, cắt theo UTC sẽ
+      // xếp nhầm nó sang tháng 7.
+      //
+      // Lỗi tải việc KHÔNG được làm hỏng cả màn hình KPI — bắt riêng, để danh sách rỗng và báo
+      // một dòng cảnh báo, phần còn lại của bảng vẫn dùng được.
+      const [nam, thang] = ky.split('-').map(Number);
+      let dsViec = [];
+      let loiTaiViec = '';
+      try {
+        const { data, error } = await fetchAllRows(() => supabase
+          .from('cong_viec_duoc_giao')
+          .select('id, title, status, due_date, completed_date, created_date, assignee_ids, assignee_id')
+          .gte('created_date', new Date(nam, thang - 1, 1).toISOString())
+          .lt('created_date', new Date(nam, thang, 1).toISOString())
+          .order('id'));
+        if (error) throw error;
+        dsViec = data || [];
+      } catch (err) {
+        loiTaiViec = err?.message || String(err);
+      }
+
       setRows(ct || []);
       setLogs(nk);
+      setViec(dsViec);
+      setLoiViec(loiTaiViec);
     } catch (err) {
       setLoi(err?.message || String(err));
       setRows([]);
       setLogs([]);
+      setViec([]);
     } finally {
       setLoading(false);
     }
@@ -93,32 +125,37 @@ export default function KpiTab({ me, users = [], perm = {} }) {
 
   useEffect(() => { taiDuLieu(); }, [taiDuLieu]);
 
+  // Chấm tự động chèn vào TRƯỚC mọi thứ khác: từ đây trở xuống dùng rowsTD/logsTD, không dùng
+  // rows/logs thô nữa. Bỏ sót một chỗ là chỗ đó hiện điểm cũ trong khi chỗ khác hiện điểm mới.
+  const { rows: rowsTD, logs: logsTD } = useMemo(
+    () => apDungChamTuDong(rows, logs, viec, ky), [rows, logs, viec, ky]);
+
   // Dòng BO_PHAN dùng chung cho mọi người → luôn kèm vào bảng của từng cá nhân.
-  const dongBoPhan = useMemo(() => rows.filter(r => r.cap_do === 'BO_PHAN'), [rows]);
+  const dongBoPhan = useMemo(() => rowsTD.filter(r => r.cap_do === 'BO_PHAN'), [rowsTD]);
 
   // Đếm trên TOÀN BỘ dòng của kỳ, không phải dòng của một người: "chỉ tiêu ai cũng có" là
   // khái niệm cấp kỳ. Truyền xuống bảng cá nhân để tô nền theo phân loại.
-  const demNguoi = useMemo(() => demNguoiTheoChiTieu(rows), [rows]);
+  const demNguoi = useMemo(() => demNguoiTheoChiTieu(rowsTD), [rowsTD]);
   const soNhanVien = useMemo(
-    () => new Set(rows.filter(r => r.cap_do !== 'BO_PHAN' && r.nhan_vien_id)
+    () => new Set(rowsTD.filter(r => r.cap_do !== 'BO_PHAN' && r.nhan_vien_id)
       .map(r => r.nhan_vien_id)).size,
-    [rows]);
+    [rowsTD]);
 
   const bangTheoNguoi = useMemo(() => {
     const m = new Map();
-    for (const r of rows) {
+    for (const r of rowsTD) {
       if (r.cap_do === 'BO_PHAN') continue;
       if (!m.has(r.nhan_vien_id)) m.set(r.nhan_vien_id, []);
       m.get(r.nhan_vien_id).push(r);
     }
     const out = [];
     for (const [nvId, list] of m) {
-      const kq = tinhBangKpi([...dongBoPhan, ...list], logs);
+      const kq = tinhBangKpi([...dongBoPhan, ...list], logsTD);
       const u = users.find(x => x.id === nvId);
       out.push({ nvId, ten: u?.name || nvId, avatar: u?.avatar, ...kq });
     }
     return out.sort((a, b) => b.tongKpi - a.tongKpi);
-  }, [rows, logs, users, dongBoPhan]);
+  }, [rowsTD, logsTD, users, dongBoPhan]);
 
   if (loading) return (
     <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
@@ -129,7 +166,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
 
   if (xemBangChung) return (
     <KpiBangChung
-      ky={ky} rows={rows} logs={logs} users={users} me={me} perm={perm}
+      ky={ky} rows={rowsTD} logs={logsTD} users={users} me={me} perm={perm}
       onBack={() => setXemBangChung(false)} onReload={() => taiDuLieu(true)}
     />
   );
@@ -137,8 +174,8 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   if (chon) return (
     <BangKpiMotNguoi
       nvId={chon} ky={ky} users={users} me={me} perm={perm}
-      rows={[...dongBoPhan, ...rows.filter(r => r.nhan_vien_id === chon)]}
-      logs={logs} onBack={() => setChon(null)} onReload={taiDuLieu}
+      rows={[...dongBoPhan, ...rowsTD.filter(r => r.nhan_vien_id === chon)]}
+      logs={logsTD} onBack={() => setChon(null)} onReload={taiDuLieu}
       demNguoi={demNguoi} soNhanVien={soNhanVien}
     />
   );
@@ -160,8 +197,8 @@ export default function KpiTab({ me, users = [], perm = {} }) {
           <button
             onClick={() => xuatExcelKpi(
               bangTheoNguoi.map(p => ({
-                rows: [...dongBoPhan, ...rows.filter(r => r.nhan_vien_id === p.nvId)],
-                logs,
+                rows: [...dongBoPhan, ...rowsTD.filter(r => r.nhan_vien_id === p.nvId)],
+                logs: logsTD,
                 tenNhanVien: p.ten,
               })), ky)}
             style={{ ...nutPhu, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}
@@ -170,7 +207,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
           </button>
         )}
 
-        {rows.length > 0 && (
+        {rowsTD.length > 0 && (
           <button
             onClick={() => setXemBangChung(true)}
             style={{ ...nutPhu, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}
@@ -181,7 +218,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
       </div>
 
       {perm?.create && (
-        <TaoKyMoi ky={ky} daCoDuLieu={rows.length > 0} onXong={taiDuLieu} />
+        <TaoKyMoi ky={ky} daCoDuLieu={rowsTD.length > 0} onXong={taiDuLieu} />
       )}
 
       {loi && (
@@ -190,6 +227,16 @@ export default function KpiTab({ me, users = [], perm = {} }) {
           fontSize: '0.78rem', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
         }}>
           <AlertTriangle size={14} /> Không tải được KPI: {loi}
+        </div>
+      )}
+
+      {loiViec && (
+        <div style={{
+          padding: '0.6rem 0.7rem', borderRadius: 10, background: '#fffbeb', color: '#b45309',
+          fontSize: '0.78rem', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <AlertTriangle size={14} />
+          Không tải được dữ liệu công việc — 2 chỉ tiêu chấm tự động đang tạm tính theo cách cũ.
         </div>
       )}
 
@@ -606,9 +653,10 @@ function DongBangKpi({ d, stt, coCotSua, loai, onClick, onSua }) {
         <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
           {d.ten}
         </div>
-        {(d.lien_ket_bo_phan || thuong) && (
+        {(d.lien_ket_bo_phan || thuong || d.cach_cham === 'TU_DONG') && (
           <div style={{ marginTop: 3 }}>
             {d.lien_ket_bo_phan && <span style={tagChung}>chung bộ phận</span>}
+            {d.cach_cham === 'TU_DONG' && <span style={tagTuDong}>tự động</span>}
             {thuong && <span style={tagThuong}>ngoài trọng số</span>}
           </div>
         )}
@@ -669,6 +717,10 @@ const tagChung = {
 const tagThuong = {
   display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
   borderRadius: 6, background: 'rgba(5,150,105,0.12)', color: '#059669', marginLeft: 6, whiteSpace: 'nowrap',
+};
+const tagTuDong = {
+  display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
+  borderRadius: 6, background: 'rgba(79,70,229,0.12)', color: '#4338ca', marginLeft: 6, whiteSpace: 'nowrap',
 };
 // Nền dòng theo phân loại chỉ tiêu. Bậc 200 (không phải 50): bậc nhạt nhất nhìn trên màn hình
 // gần như trắng, phân loại thành ra vô hình. Vẫn đủ nhạt cho chữ đen #0f172a đọc rõ.
@@ -850,12 +902,24 @@ function PopupDienGiai({ ct, ctGhi, bpMap, perm, me, onReload, onClose }) {
               cùng nhất quán — nút chốt tay ẩn đi để không có hai chỗ sửa một con số.
             </div>
           )}
-          <FormGhiDiem
-            chiTieuId={ghi.id}
-            dangChotTay={ghi.diem_chot !== null && ghi.diem_chot !== undefined}
-            me={me} onXong={onReload}
-          />
-          {!ghi.cham_chung && <FormChotDiem ctGhi={ghi} me={me} onXong={onReload} />}
+          {ghi.cach_cham === 'TU_DONG' ? (
+            <div style={{
+              marginTop: 10, padding: '0.45rem 0.6rem', borderRadius: 8,
+              background: '#eef2ff', color: '#4338ca', fontSize: '0.72rem',
+            }}>
+              Chỉ tiêu này tính tự động từ bảng công việc, mỗi lần mở là tính lại theo dữ liệu
+              mới nhất. Không chấm tay được — muốn đổi điểm thì sửa ở bảng công việc.
+            </div>
+          ) : (
+            <>
+              <FormGhiDiem
+                chiTieuId={ghi.id}
+                dangChotTay={ghi.diem_chot !== null && ghi.diem_chot !== undefined}
+                me={me} onXong={onReload}
+              />
+              {!ghi.cham_chung && <FormChotDiem ctGhi={ghi} me={me} onXong={onReload} />}
+            </>
+          )}
         </>
       )}
     </KhungPopup>
