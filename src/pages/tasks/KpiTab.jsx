@@ -3,6 +3,7 @@ import { supabase, fetchAllRows } from '../../lib/supabase';
 import { tinhBangKpi, giaiThich, kiemTraTrongSo } from '../../lib/kpiEngine';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import { xuatExcelKpi, dungDuLieuSheet } from '../../lib/kpiExcel';
+import { demNguoiTheoChiTieu, phanLoaiChiTieu } from '../../lib/kpiBangChung';
 import KpiPrint from '../../components/KpiPrint';
 import KpiBangChung from './KpiBangChung';
 import {
@@ -95,6 +96,14 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   // Dòng BO_PHAN dùng chung cho mọi người → luôn kèm vào bảng của từng cá nhân.
   const dongBoPhan = useMemo(() => rows.filter(r => r.cap_do === 'BO_PHAN'), [rows]);
 
+  // Đếm trên TOÀN BỘ dòng của kỳ, không phải dòng của một người: "chỉ tiêu ai cũng có" là
+  // khái niệm cấp kỳ. Truyền xuống bảng cá nhân để tô nền theo phân loại.
+  const demNguoi = useMemo(() => demNguoiTheoChiTieu(rows), [rows]);
+  const soNhanVien = useMemo(
+    () => new Set(rows.filter(r => r.cap_do !== 'BO_PHAN' && r.nhan_vien_id)
+      .map(r => r.nhan_vien_id)).size,
+    [rows]);
+
   const bangTheoNguoi = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
@@ -130,6 +139,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
       nvId={chon} ky={ky} users={users} me={me} perm={perm}
       rows={[...dongBoPhan, ...rows.filter(r => r.nhan_vien_id === chon)]}
       logs={logs} onBack={() => setChon(null)} onReload={taiDuLieu}
+      demNguoi={demNguoi} soNhanVien={soNhanVien}
     />
   );
 
@@ -234,7 +244,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
 // Màn hình 2: bảng KPI chi tiết một người
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onReload }) {
+function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onReload, demNguoi, soNhanVien }) {
   // Chỉ giữ ID chứ KHÔNG giữ nguyên object dòng chỉ tiêu: sau khi ghi điểm và tải lại,
   // object cũ đã cũ dữ liệu — popup phải lấy lại từ kết quả engine mới nhất.
   const [popupId, setPopupId] = useState(null);   // id chỉ tiêu | 'TONG' | null
@@ -419,6 +429,20 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
         <div style={{ fontSize: '0.76rem', fontWeight: 700, color: '#475569', marginBottom: 6 }}>
           BẢNG CHỈ TIÊU ({kq.dong.length})
         </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 6, fontSize: '0.7rem', color: '#64748b' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ ...oMau, background: mauLoai.BANG_CHUNG }} /> chấm ở bảng chung
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ ...oMau, background: mauLoai.CHUNG_MOI_NGUOI }} /> ai cũng có
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ ...oMau, background: mauLoai.RIENG }} /> riêng vị trí này
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ ...oMau, background: '#fff', boxShadow: 'inset 3px 0 0 #dc2626' }} /> đang mất điểm
+          </span>
+        </div>
         <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12 }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 560, background: '#fff', fontSize: '0.78rem' }}>
             <thead>
@@ -451,6 +475,7 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
                   out.push(
                     <DongBangKpi
                       key={d.id} d={d} stt={stt} coCotSua={!!perm?.create}
+                      loai={phanLoaiChiTieu(d, demNguoi, soNhanVien)}
                       onClick={() => setPopupId(d.id)}
                       onSua={perm?.create ? () => setSuaCT(d) : null}
                     />
@@ -565,23 +590,25 @@ function ghiChuDong(d) {
 //    "—", hiện tại là điểm cộng thêm (kèm dấu +). Tuyệt đối không hiện "0/null" hay "×0".
 //  - liên kết bộ phận: gắn nhãn "chung bộ phận".
 // Bấm cả dòng để mở popup cách tính; ô bút chì chặn lan (stopPropagation) để mở form sửa.
-function DongBangKpi({ d, stt, coCotSua, onClick, onSua }) {
+function DongBangKpi({ d, stt, coCotSua, loai, onClick, onSua }) {
   const thuong = d.laThuong;
   const mat = !thuong && d.diemMat > 0.001;
   const gc = ghiChuDong(d);
   return (
-    <tr onClick={onClick} style={{ background: mat ? '#fff5f6' : '#fff', cursor: 'pointer' }}>
-      <td style={{ ...tdKpi.body, textAlign: 'right', color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>{stt}</td>
+    <tr onClick={onClick} style={{ background: mauLoai[loai] || '#fff', cursor: 'pointer' }}>
+      <td style={{
+        ...tdKpi.body, textAlign: 'right', color: '#94a3b8', fontVariantNumeric: 'tabular-nums',
+        boxShadow: mat ? 'inset 3px 0 0 #dc2626' : 'none',
+      }}>{stt}</td>
       <td style={tdKpi.body}>
         {/* Tên vài chỉ tiêu (VĂN HÓA CÔNG TY...) trong file gốc là cả đoạn văn dài — cắt còn
             2 dòng cho bảng gọn; bấm vào dòng mở popup xem đầy đủ tên + mô tả. */}
         <div style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
           {d.ten}
         </div>
-        {(d.lien_ket_bo_phan || thuong || d.cham_chung) && (
+        {(d.lien_ket_bo_phan || thuong) && (
           <div style={{ marginTop: 3 }}>
             {d.lien_ket_bo_phan && <span style={tagChung}>chung bộ phận</span>}
-            {d.cham_chung && <span style={tagBangChung}>chấm ở bảng chung</span>}
             {thuong && <span style={tagThuong}>ngoài trọng số</span>}
           </div>
         )}
@@ -639,13 +666,18 @@ const tagChung = {
   display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
   borderRadius: 6, background: 'rgba(37,99,235,0.12)', color: '#2563eb', marginLeft: 6, whiteSpace: 'nowrap',
 };
-const tagBangChung = {
-  display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
-  borderRadius: 6, background: 'rgba(217,119,6,0.12)', color: '#b45309', marginLeft: 6, whiteSpace: 'nowrap',
-};
 const tagThuong = {
   display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
   borderRadius: 6, background: 'rgba(5,150,105,0.12)', color: '#059669', marginLeft: 6, whiteSpace: 'nowrap',
+};
+// Nền dòng theo phân loại chỉ tiêu. Nhạt để chữ vẫn đọc rõ và bản in không tốn mực.
+const mauLoai = {
+  BANG_CHUNG: '#fff7ed',       // cam — chấm ở bảng chấm chung
+  CHUNG_MOI_NGUOI: '#f0fdf4',  // xanh lá — ai cũng có, chưa đưa vào bảng chung
+  RIENG: '#f0f9ff',            // xanh nhạt — riêng vị trí này
+};
+const oMau = {
+  display: 'inline-block', width: 12, height: 12, borderRadius: 3, border: '1px solid #e2e8f0',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
