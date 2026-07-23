@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   dsNhanVienChamChung, dungMaTran, dsChiTieuThemDuoc, canHoiLyDo, timDongLyDo, NGUON_BANG_CHUNG,
-  demNguoiTheoChiTieu, phanLoaiChiTieu, xepTheoLoai, THU_TU_LOAI,
+  demNguoiTheoChiTieu, phanLoaiChiTieu, xepTheoLoai, THU_TU_LOAI, sinhMaChiTieu, dsChiTieuCoSan,
 } from './kpiBangChung';
 
 describe('dsNhanVienChamChung', () => {
@@ -296,5 +296,67 @@ describe('xepTheoLoai', () => {
   it('THU_TU_LOAI phủ đủ 5 loại phanLoaiChiTieu có thể trả về', () => {
     expect([...THU_TU_LOAI].sort()).toEqual(
       ['BANG_CHUNG', 'BO_PHAN', 'CHUNG_MOI_NGUOI', 'RIENG', 'TU_DONG']);
+  });
+});
+
+describe('sinhMaChiTieu', () => {
+  it('bỏ dấu, hoa, gạch dưới', () => {
+    expect(sinhMaChiTieu('Quản lý kho hàng')).toBe('QUAN_LY_KHO_HANG');
+  });
+
+  it('cắt phần trong ngoặc — vài tên chỉ tiêu kéo theo cả đoạn giải thích', () => {
+    expect(sinhMaChiTieu('VĂN HÓA CÔNG TY. ( Đây là KPI rất quan trọng…)')).toBe('VAN_HOA_CONG_TY');
+  });
+
+  it('tối đa 4 từ', () => {
+    expect(sinhMaChiTieu('Một hai ba bốn năm sáu')).toBe('MOT_HAI_BA_BON');
+  });
+
+  it('tên rỗng trả null chứ không trả chuỗi rỗng', () => {
+    expect(sinhMaChiTieu('')).toBeNull();
+    expect(sinhMaChiTieu()).toBeNull();
+  });
+});
+
+describe('dsChiTieuCoSan', () => {
+  const rows = [
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: '5S', ten: '5S', chi_tieu: 10, trong_so: 3 },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: '5S', ten: '5S', chi_tieu: 10, trong_so: 2 },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'THE_KHO', ten: 'THẺ KHO', mo_ta: 'ghi thẻ', chi_tieu: 10, trong_so: 5 },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'c', ma: 'THE_KHO', ten: 'THẺ KHO', chi_tieu: 10, trong_so: 5 },
+    { cap_do: 'BO_PHAN', nhan_vien_id: null, ma: 'CC_BP', ten: 'CHUYÊN CẦN BỘ PHẬN' },
+  ];
+
+  it('không liệt kê chỉ tiêu người đó đã có', () => {
+    expect(dsChiTieuCoSan(rows, 'a').map(c => c.ma)).toEqual(['THE_KHO']);
+  });
+
+  it('người chưa có gì thì thấy đủ mọi chỉ tiêu', () => {
+    expect(dsChiTieuCoSan(rows, 'z').map(c => c.ma).sort()).toEqual(['5S', 'THE_KHO']);
+  });
+
+  it('kèm sẵn mô tả/mức/trọng số của dòng mẫu để điền tự động', () => {
+    const c = dsChiTieuCoSan(rows, 'a')[0];
+    expect(c).toMatchObject({ ten: 'THẺ KHO', mo_ta: 'ghi thẻ', chi_tieu: 10, trong_so: 5 });
+  });
+
+  it('đếm số NGƯỜI đang có chỉ tiêu đó', () => {
+    expect(dsChiTieuCoSan(rows, 'a')[0].soNguoi).toBe(2);
+  });
+
+  it('bỏ dòng BO_PHAN — không thêm dòng cấp bộ phận cho một cá nhân', () => {
+    expect(dsChiTieuCoSan(rows, 'a').some(c => c.ma === 'CC_BP')).toBe(false);
+  });
+
+  it('nhiều người có thì xếp lên trước', () => {
+    const r = [
+      ...rows,
+      { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'LE_LOI', ten: 'LẺ LOI', chi_tieu: 10, trong_so: 1 },
+    ];
+    expect(dsChiTieuCoSan(r, 'a').map(c => c.ma)).toEqual(['THE_KHO', 'LE_LOI']);
+  });
+
+  it('danh sách rỗng không nổ', () => {
+    expect(dsChiTieuCoSan()).toEqual([]);
   });
 });

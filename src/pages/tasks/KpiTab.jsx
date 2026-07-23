@@ -3,7 +3,7 @@ import { supabase, fetchAllRows } from '../../lib/supabase';
 import { tinhBangKpi, giaiThich, kiemTraTrongSo } from '../../lib/kpiEngine';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import { xuatExcelKpi, dungDuLieuSheet } from '../../lib/kpiExcel';
-import { demNguoiTheoChiTieu, xepTheoLoai } from '../../lib/kpiBangChung';
+import { demNguoiTheoChiTieu, xepTheoLoai, dsChiTieuCoSan, sinhMaChiTieu } from '../../lib/kpiBangChung';
 import { apDungChamTuDong, laDongAo } from '../../lib/kpiTuDong';
 import KpiPrint from '../../components/KpiPrint';
 import KpiBangChung from './KpiBangChung';
@@ -198,7 +198,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
       nvId={chon} ky={ky} users={users} me={me} perm={perm}
       rows={[...dongBoPhan, ...rowsTD.filter(r => r.nhan_vien_id === chon)]}
       logs={logsTD} onBack={() => setChon(null)} onReload={taiDuLieu}
-      demNguoi={demNguoi} soNhanVien={soNhanVien}
+      demNguoi={demNguoi} soNhanVien={soNhanVien} tatCaRows={rowsTD}
     />
   );
 
@@ -314,7 +314,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
 // Màn hình 2: bảng KPI chi tiết một người
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onReload, demNguoi, soNhanVien }) {
+function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onReload, demNguoi, soNhanVien, tatCaRows = [] }) {
   // Chỉ giữ ID chứ KHÔNG giữ nguyên object dòng chỉ tiêu: sau khi ghi điểm và tải lại,
   // object cũ đã cũ dữ liệu — popup phải lấy lại từ kết quả engine mới nhất.
   const [popupId, setPopupId] = useState(null);   // id chỉ tiêu | 'TONG' | null
@@ -343,6 +343,10 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
       nhom: ct.nhom?.trim() || null,
       chi_tieu: ct.chi_tieu,
       trong_so: ct.trong_so,
+      // `ma` là khoá mọi thứ khác bám vào: bảng chấm chung gom theo nó, luật chấm tự động tra
+      // theo nó, màu nền phân loại theo nó. Dòng thêm tay mà thiếu mã sẽ LẶNG LẼ đứng ngoài
+      // tất cả — không lỗi, không cảnh báo, chỉ là mãi mãi không được tính vào đâu.
+      ma: ct.ma || sinhMaChiTieu(ct.ten),
     };
     // `.select()` BẮT BUỘC: không có nó, một UPDATE bị RLS lọc hết dòng trả 204 + error=null
     // và ta báo "đã lưu" cho một thao tác không chạm được dòng nào. Xem lib/kpiWriteGuard.js.
@@ -350,6 +354,10 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
       ? await supabase.from('kpi_chi_tieu').update(ban).eq('id', ct.id).select()
       : await supabase.from('kpi_chi_tieu').insert({
           ...ban, ky, cap_do: 'CA_NHAN', nhan_vien_id: nvId,
+          // Chép từ dòng mẫu khi chọn chỉ tiêu có sẵn. Thiếu `lien_ket_bo_phan` thì chỉ tiêu
+          // chấm chung cả bộ phận sẽ mất đường nối và tự chấm riêng, ra điểm khác cả nhóm.
+          lien_ket_bo_phan: ct.lien_ket_bo_phan || null,
+          cach_cham: ct.cach_cham || 'THU_CONG',
           // thu_tu lớn nhất + 1, KHÔNG phải số dòng: xoá bớt dòng giữa chừng rồi thêm mới
           // sẽ đụng thu_tu cũ và bảng nhảy lung tung thứ tự.
           thu_tu: rows.reduce((m, r) => Math.max(m, r.thu_tu || 0), 0) + 1,
@@ -588,7 +596,8 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
 
       {suaCT && (
         <FormSuaChiTieu
-          ct={suaCT} onLuu={luuChiTieu} onXoa={xoaChiTieu} onHuy={() => setSuaCT(null)}
+          ct={suaCT} coSan={dsChiTieuCoSan(tatCaRows, nvId)}
+          onLuu={luuChiTieu} onXoa={xoaChiTieu} onHuy={() => setSuaCT(null)}
         />
       )}
 
@@ -1129,7 +1138,7 @@ function FormChotDiem({ ctGhi, me, onXong }) {
 // Sửa / thêm / xoá chỉ tiêu (quyền `create`)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function FormSuaChiTieu({ ct, onLuu, onXoa, onHuy }) {
+function FormSuaChiTieu({ ct, coSan = [], onLuu, onXoa, onHuy }) {
   // Giữ chi_tieu/trong_so dạng CHUỖI trong lúc gõ: ép Number ngay mỗi phím sẽ biến ô đang
   // xoá dở thành 0, và "" → 0 làm dòng thưởng (chi_tieu để trống) âm thầm thành chỉ tiêu 0.
   const [f, setF] = useState({
@@ -1193,6 +1202,41 @@ function FormSuaChiTieu({ ct, onLuu, onXoa, onHuy }) {
         }}
       >
         <h3 style={{ margin: 0, fontSize: '0.88rem' }}>{f.id ? 'Sửa chỉ tiêu' : 'Thêm chỉ tiêu'}</h3>
+
+        {/* Chọn từ chỉ tiêu người khác đang có, thay vì gõ tay. Gõ tay chỉ cần thừa một dấu
+            cách là thành chỉ tiêu KHÁC: bảng chấm chung tách thành hai dòng nhìn y hệt nhau,
+            và luật chấm tự động không nhận ra nó. */}
+        {!f.id && coSan.length > 0 && (
+          <label style={{ display: 'grid', gap: 3, fontSize: '0.72rem', color: '#475569' }}>
+            Chép từ chỉ tiêu người khác đang có
+            <select
+              value={f.__chon || ''}
+              onChange={e => {
+                const k = e.target.value;
+                const c = coSan.find(x => (x.ma || x.ten) === k);
+                if (!c) { setF(p => ({ ...p, __chon: '' })); return; }
+                setF(p => ({
+                  ...p, __chon: k,
+                  ma: c.ma, ten: c.ten, mo_ta: c.mo_ta || '', nhom: c.nhom || '',
+                  chi_tieu: c.chi_tieu == null ? '' : String(c.chi_tieu),
+                  trong_so: String(c.trong_so ?? 0),
+                  cach_cham: c.cach_cham, lien_ket_bo_phan: c.lien_ket_bo_phan,
+                }));
+              }}
+              style={oInput}
+            >
+              <option value="">— Tự nhập chỉ tiêu mới —</option>
+              {coSan.map(c => (
+                <option key={c.ma || c.ten} value={c.ma || c.ten}>
+                  {(c.ma ? `${c.ma} · ` : '') + c.ten} ({c.soNguoi} người)
+                </option>
+              ))}
+            </select>
+            <span style={{ color: '#94a3b8' }}>
+              Chọn xong vẫn sửa lại trọng số được — trọng số thường khác nhau theo từng người.
+            </span>
+          </label>
+        )}
 
         {laBoPhan && (
           <div style={{

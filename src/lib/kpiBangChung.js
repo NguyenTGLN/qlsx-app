@@ -127,6 +127,57 @@ export function phanLoaiChiTieu(ct, demNguoi, soNhanVien = 0) {
   return soNhanVien > 0 && n >= soNhanVien ? 'CHUNG_MOI_NGUOI' : 'RIENG';
 }
 
+// Sinh mã cho chỉ tiêu gõ tay: bỏ dấu, hoa, gạch dưới, tối đa 4 từ. Cắt phần trong ngoặc vì
+// vài tên chỉ tiêu kéo theo cả đoạn giải thích dài.
+//
+// Vì sao BẮT BUỘC phải có: `ma` là khoá mà mọi thứ khác bám vào — bảng chấm chung gom theo nó,
+// luật chấm tự động tra theo nó, màu nền phân loại theo nó. Một dòng thêm tay thiếu mã sẽ
+// LẶNG LẼ đứng ngoài tất cả những thứ đó, không báo lỗi gì.
+export function sinhMaChiTieu(ten) {
+  const ma = String(ten || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/gi, 'd')
+    .toUpperCase()
+    .split('(')[0]
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .split('_').filter(Boolean).slice(0, 4).join('_');
+  return ma || null;   // tên rỗng thì trả null, đừng ghi chuỗi rỗng xuống DB
+}
+
+// Các chỉ tiêu ĐANG CÓ ở người khác trong kỳ mà người này chưa có — nội dung ô chọn của form
+// "Thêm chỉ tiêu". Kèm sẵn mô tả/mức/trọng số/mã của một dòng mẫu để điền tự động.
+//
+// Chọn từ danh sách này thay vì gõ tay giữ cho cùng một chỉ tiêu có cùng TÊN và cùng MÃ ở mọi
+// người. Gõ tay thì chỉ cần thừa một dấu cách là thành chỉ tiêu khác, và bảng chấm chung sẽ
+// tách nó thành hai dòng riêng mà nhìn ngoài y hệt nhau.
+export function dsChiTieuCoSan(rows = [], nvId) {
+  const daCo = new Set();
+  for (const r of rows || []) {
+    if (r.cap_do !== 'BO_PHAN' && r.nhan_vien_id === nvId) daCo.add(khoaChiTieu(r));
+  }
+
+  const nhom = new Map();
+  for (const r of rows || []) {
+    if (r.cap_do === 'BO_PHAN' || !r.nhan_vien_id) continue;
+    const k = khoaChiTieu(r);
+    if (daCo.has(k)) continue;
+    if (!nhom.has(k)) {
+      nhom.set(k, {
+        ma: r.ma || null, ten: r.ten, mo_ta: r.mo_ta ?? null, nhom: r.nhom ?? null,
+        chi_tieu: r.chi_tieu ?? null, trong_so: r.trong_so ?? 0,
+        cach_cham: r.cach_cham ?? null, lien_ket_bo_phan: r.lien_ket_bo_phan ?? null,
+        nguoi: new Set(),
+      });
+    }
+    nhom.get(k).nguoi.add(r.nhan_vien_id);
+  }
+
+  return [...nhom.values()]
+    .map(({ nguoi, ...c }) => ({ ...c, soNguoi: nguoi.size }))
+    .sort((a, b) => b.soNguoi - a.soNguoi || a.ten.localeCompare(b.ten, 'vi'));
+}
+
 // Thứ tự các khối khi xếp bảng KPI cá nhân — do chủ app chốt, đi từ chỗ chấm tập trung nhất
 // tới chỗ riêng của từng người. KHÁC với thứ tự ưu tiên trong phanLoaiChiTieu ở trên: cái kia
 // trả lời "dòng này thuộc loại nào", cái này trả lời "loại nào xếp trước". Đừng gộp hai cái.
