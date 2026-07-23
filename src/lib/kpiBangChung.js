@@ -56,3 +56,36 @@ export function dungMaTran(rows = [], nhanVien = []) {
   }
   return dong.sort((a, b) => a.thuTu - b.thuTu || a.ten.localeCompare(b.ten, 'vi'));
 }
+
+// Nguồn của dòng nhật ký do bảng chấm chung sinh ra. Dòng này mang `so_diem = 0` nên
+// KHÔNG đụng vào phép tính điểm — nó chỉ chở lý do sang bảng KPI cá nhân, Excel và bản in.
+// Có khoá riêng để tìm lại đúng dòng của mình mà sửa/xoá, không đụng nhật ký nhập tay.
+export const NGUON_BANG_CHUNG = 'BANG_CHUNG';
+
+// Các chỉ tiêu CHƯA vào bảng chung — nội dung popup "＋ Thêm chỉ tiêu".
+// `soNguoi` để chủ app biết thêm vào thì bảng rộng ra bao nhiêu ô thật, bao nhiêu ô gạch chéo.
+export function dsChiTieuThemDuoc(rows = []) {
+  const nhom = new Map();
+  for (const r of rows) {
+    if (r.cap_do === 'BO_PHAN' || r.cham_chung || !r.nhan_vien_id) continue;
+    const k = khoaChiTieu(r);
+    if (!nhom.has(k)) nhom.set(k, { ma: r.ma || null, ten: r.ten, soNguoi: 0 });
+    nhom.get(k).soNguoi += 1;
+  }
+  return [...nhom.values()]
+    .sort((a, b) => b.soNguoi - a.soNguoi || a.ten.localeCompare(b.ten, 'vi'));
+}
+
+// Có phải hỏi lý do cho ô này không: chỉ khi đã chấm và chấm thiếu so với mức chỉ tiêu.
+// So sánh với null/undefined chứ không dùng falsy — 0 điểm là giá trị hợp lệ, và đó chính
+// là lúc bắt buộc phải có lý do.
+export function canHoiLyDo(ct, diem) {
+  if (diem === null || diem === undefined) return false;
+  if (ct?.chi_tieu === null || ct?.chi_tieu === undefined) return false;
+  return Number(diem) < Number(ct.chi_tieu);
+}
+
+// Dòng lý do của bảng chung trong nhật ký của một chỉ tiêu. Mỗi chỉ tiêu giữ đúng một dòng.
+export function timDongLyDo(logs = []) {
+  return (logs || []).find(l => l.nguon === NGUON_BANG_CHUNG) || null;
+}

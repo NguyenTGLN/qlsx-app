@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { dsNhanVienChamChung, dungMaTran } from './kpiBangChung';
+import {
+  dsNhanVienChamChung, dungMaTran, dsChiTieuThemDuoc, canHoiLyDo, timDongLyDo, NGUON_BANG_CHUNG,
+} from './kpiBangChung';
 
 describe('dsNhanVienChamChung', () => {
   const rows = [
@@ -78,5 +80,71 @@ describe('dungMaTran', () => {
       .filter(r => r.cap_do === 'CA_NHAN' && r.cham_chung)
       .map(r => ({ ...r, ma: null }));
     expect(dungMaTran(cuMa, nv).map(d => d.ten)).toEqual(['5S', 'CHẤM KPI']);
+  });
+});
+
+describe('dsChiTieuThemDuoc', () => {
+  const rows = [
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: '5S', ten: '5S', cham_chung: true },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'SAN_XUAT', ten: 'SẢN XUẤT', cham_chung: false },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'SAN_XUAT', ten: 'SẢN XUẤT', cham_chung: false },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'THE_KHO', ten: 'THẺ KHO', cham_chung: false },
+    { cap_do: 'BO_PHAN', nhan_vien_id: null, ma: 'CHUYEN_CAN_BO_PHAN', ten: 'CHUYÊN CẦN BỘ PHẬN', cham_chung: false },
+  ];
+
+  it('không liệt kê chỉ tiêu đã ở trong bảng chung', () => {
+    expect(dsChiTieuThemDuoc(rows).some(c => c.ma === '5S')).toBe(false);
+  });
+
+  it('đếm đúng số người có mỗi chỉ tiêu', () => {
+    expect(dsChiTieuThemDuoc(rows).find(c => c.ma === 'SAN_XUAT').soNguoi).toBe(2);
+  });
+
+  it('nhiều người có thì xếp lên trước', () => {
+    expect(dsChiTieuThemDuoc(rows).map(c => c.ma)).toEqual(['SAN_XUAT', 'THE_KHO']);
+  });
+
+  it('bỏ dòng BO_PHAN — không đưa chỉ tiêu cả bộ phận vào bảng chung được', () => {
+    expect(dsChiTieuThemDuoc(rows).some(c => c.ma === 'CHUYEN_CAN_BO_PHAN')).toBe(false);
+  });
+});
+
+describe('canHoiLyDo', () => {
+  it('đủ điểm tối đa thì không hỏi lý do', () => {
+    expect(canHoiLyDo({ chi_tieu: 10 }, 10)).toBe(false);
+  });
+
+  it('thiếu điểm thì hỏi lý do', () => {
+    expect(canHoiLyDo({ chi_tieu: 10 }, 9)).toBe(true);
+  });
+
+  it('0 điểm cũng phải có lý do — đây là lúc cần giải thích nhất', () => {
+    expect(canHoiLyDo({ chi_tieu: 10 }, 0)).toBe(true);
+  });
+
+  it('chưa chấm (null) thì chưa hỏi gì', () => {
+    expect(canHoiLyDo({ chi_tieu: 10 }, null)).toBe(false);
+  });
+
+  it('dòng thưởng ngoài trọng số (chi_tieu null) không có mức để so', () => {
+    expect(canHoiLyDo({ chi_tieu: null }, 3)).toBe(false);
+  });
+});
+
+describe('timDongLyDo', () => {
+  it('chỉ nhận dòng do bảng chung ghi ra', () => {
+    const logs = [
+      { id: 1, nguon: 'TAY', ly_do: 'trừ tay' },
+      { id: 2, nguon: NGUON_BANG_CHUNG, ly_do: 'để bàn bừa' },
+    ];
+    expect(timDongLyDo(logs).id).toBe(2);
+  });
+
+  it('không có thì trả null chứ không trả dòng nhật ký tay', () => {
+    expect(timDongLyDo([{ id: 1, nguon: 'TAY' }])).toBeNull();
+  });
+
+  it('danh sách rỗng cũng không nổ', () => {
+    expect(timDongLyDo()).toBeNull();
   });
 });
