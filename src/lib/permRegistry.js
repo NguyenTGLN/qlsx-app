@@ -42,6 +42,8 @@ export const PERM_REGISTRY = [
       // view = xem KPI mọi người (điểm công khai toàn bộ theo quyết định nghiệp vụ)
       // edit = ghi nhật ký ± điểm, chốt điểm | create = sửa bảng chỉ tiêu, tạo kỳ mới
       { id: 'kpi',         label: 'KPI',       caps: ['view', 'create', 'edit', 'io'] },
+      // view = xem bảng chấm công (căn cứ của 2 chỉ tiêu KPI chuyên cần)
+      { id: 'cham_cong',   label: 'Chấm công', caps: ['view'] },
     ],
   },
   {
