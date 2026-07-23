@@ -38,3 +38,5 @@ qlsx-deploy-moi.zip
 /avatar/
 seed_kpi_*.sql
 KPI/
+
+seed_cham_cong_*.sql
