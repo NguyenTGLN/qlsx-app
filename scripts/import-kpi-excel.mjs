@@ -5,6 +5,20 @@ import XLSX from 'xlsx';
 import { writeFileSync } from 'node:fs';
 import { q, n, ngayCuoiKy, sqlChiTieuKemGhiChu } from '../src/lib/kpiImportSql.js';
 
+// Mã chỉ tiêu: bỏ dấu, hoa, gạch dưới, tối đa 4 từ. Cùng tên → cùng mã, nên bảng chấm
+// chung gom được các dòng của mọi nhân viên. Mã trùng nhau sau khi cắt thì sửa tay trong
+// sql/them_ma_va_cham_chung_kpi.sql — file đó là bảng ánh xạ chuẩn.
+function sinhMa(ten) {
+  return String(ten)
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/gi, 'd')
+    .toUpperCase()
+    .split('(')[0]
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .split('_').filter(Boolean).slice(0, 4).join('_');
+}
+
 const FILE = 'KPI/Copy of KPI kho 06.2026.xls';
 const KY = '2026-06';
 const OUT = 'sql/seed_kpi_2026_06.sql';
@@ -139,8 +153,8 @@ for (const sheet of wb.SheetNames) {
     // Dòng BO_PHAN tạo một lần cho cả kỳ, dùng chung cho mọi người trong nhóm.
     if (r.lien_ket_bo_phan && !boPhanDaTao.has(r.lien_ket_bo_phan)) {
       boPhanDaTao.add(r.lien_ket_bo_phan);
-      const insBP = `insert into kpi_chi_tieu (ky, cap_do, lien_ket_bo_phan, ten, mo_ta, chi_tieu, trong_so, cach_cham, diem_chot)`
-        + ` values ('${KY}', 'BO_PHAN', ${q(r.lien_ket_bo_phan)}, ${q(r.ten)}, ${q(r.mo_ta)}, ${n(r.chi_tieu)}, 0, 'THU_CONG', ${n(r.diem_chot)})`;
+      const insBP = `insert into kpi_chi_tieu (ky, cap_do, lien_ket_bo_phan, ten, mo_ta, chi_tieu, trong_so, cach_cham, diem_chot, ma)`
+        + ` values ('${KY}', 'BO_PHAN', ${q(r.lien_ket_bo_phan)}, ${q(r.ten)}, ${q(r.mo_ta)}, ${n(r.chi_tieu)}, 0, 'THU_CONG', ${n(r.diem_chot)}, ${q(sinhMa(r.ten))})`;
       // Ghi chú của dòng chấm chung gắn vào ĐÚNG dòng BO_PHAN, không phải dòng cá nhân:
       // engine đọc bằng chứng của chỉ tiêu liên kết bộ phận từ dòng chung (`__bpId` trong
       // kpiEngine.tinhBangKpi), gắn vào dòng cá nhân là popup không bao giờ hiện ra.
@@ -150,8 +164,8 @@ for (const sheet of wb.SheetNames) {
       if (r.ghi_chu) soNhatKy++;
     }
     soDongCaNhan++;
-    const insCN = `insert into kpi_chi_tieu (ky, cap_do, nhan_vien_id, lien_ket_bo_phan, nhom, thu_tu, ten, mo_ta, chi_tieu, trong_so, cach_cham, diem_tu_cham, diem_chot)`
-      + ` values ('${KY}', 'CA_NHAN', ${q(nvId)}, ${q(r.lien_ket_bo_phan)}, ${q(r.nhom)}, ${r.thu_tu}, ${q(r.ten)}, ${q(r.mo_ta)}, ${n(r.chi_tieu)}, ${r.trong_so}, 'THU_CONG', ${n(r.diem_tu_cham)}, ${n(r.diem_chot)})`;
+    const insCN = `insert into kpi_chi_tieu (ky, cap_do, nhan_vien_id, lien_ket_bo_phan, nhom, thu_tu, ten, mo_ta, chi_tieu, trong_so, cach_cham, diem_tu_cham, diem_chot, ma)`
+      + ` values ('${KY}', 'CA_NHAN', ${q(nvId)}, ${q(r.lien_ket_bo_phan)}, ${q(r.nhom)}, ${r.thu_tu}, ${q(r.ten)}, ${q(r.mo_ta)}, ${n(r.chi_tieu)}, ${r.trong_so}, 'THU_CONG', ${n(r.diem_tu_cham)}, ${n(r.diem_chot)}, ${q(sinhMa(r.ten))})`;
     // Dòng liên kết bộ phận đã gửi ghi chú lên dòng chung ở trên rồi → không lặp lại.
     const ghiChuCaNhan = r.lien_ket_bo_phan ? null : r.ghi_chu;
     sql.push(sqlChiTieuKemGhiChu(insCN, { ghiChu: ghiChuCaNhan, ngay: NGAY_CHOT }));
