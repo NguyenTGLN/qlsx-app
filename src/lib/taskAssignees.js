@@ -36,6 +36,16 @@ export function assigneesPayload(task, userMap) {
   return memberUsers(task, userMap).map(u => ({ id: u.id, name: u.name, email: u.email ?? null }));
 }
 
+// Trễ hạn hay không. Nới 60 giây cho lệch giờ giữa máy người dùng và server.
+//
+// Việc CHƯA XONG hoặc KHÔNG CÓ HẠN đều trả false ở đây — hàm này chỉ trả lời "xong muộn
+// hay không", nơi gọi tự quyết định phần còn lại: báo cáo công việc không tính việc chưa
+// xong là trễ, còn KPI thì coi việc chưa xong là không đúng hạn.
+export function laTre(task) {
+  if (!task?.due_date || !task?.completed_date) return false;
+  return (new Date(task.completed_date).getTime() - new Date(task.due_date).getTime()) > 60000;
+}
+
 // Cộng điểm công việc cho báo cáo. Dùng chung cho WorkReport (tab Báo cáo) và AdminDashboard —
 // hai nơi phải ra CÙNG một con số, nên luật chỉ được viết ở đây.
 //
@@ -59,11 +69,7 @@ export function tallyTasks(tasks, startStr, endStr) {
     const isPending = task.status !== 'COMPLETED' && task.status !== 'CANCELLED';
     if (!isDoneInRange && !isPending) continue;
 
-    // Trễ quá 60 giây mới coi là trễ — nới cho lệch giờ giữa máy và server.
-    let isLate = false;
-    if (task.due_date && task.completed_date) {
-      isLate = (new Date(task.completed_date).getTime() - new Date(task.due_date).getTime()) > 60000;
-    }
+    const isLate = laTre(task);
 
     company.total += 1;
     if (isDoneInRange) {

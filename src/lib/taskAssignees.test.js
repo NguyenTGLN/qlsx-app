@@ -1,5 +1,5 @@
-import { test, expect, describe } from 'vitest';
-import { memberIds, memberUsers, joinAssignees, assigneesPayload, tallyTasks } from './taskAssignees';
+import { test, expect, describe, it } from 'vitest';
+import { memberIds, memberUsers, joinAssignees, assigneesPayload, tallyTasks, laTre } from './taskAssignees';
 
 const USERS = [
   { id: 'NV01', name: 'Ngọc', email: 'ngoc@x.vn' },
@@ -142,6 +142,32 @@ describe('tallyTasks', () => {
     const r = tally([{ title: 'x', status: 'IN_PROGRESS', assignee_ids: [] }]);
     expect(r.company.total).toBe(1);
     expect(r.perStaff.size).toBe(0);
+  });
+});
+
+describe('laTre', () => {
+  it('xong trước hạn thì không trễ', () => {
+    expect(laTre({ due_date: '2026-07-10T17:00:00Z', completed_date: '2026-07-09T10:00:00Z' })).toBe(false);
+  });
+
+  it('xong trễ 30 giây vẫn tính đúng hạn — nới cho lệch giờ máy với server', () => {
+    expect(laTre({ due_date: '2026-07-10T17:00:00Z', completed_date: '2026-07-10T17:00:30Z' })).toBe(false);
+  });
+
+  it('xong trễ 5 phút là trễ', () => {
+    expect(laTre({ due_date: '2026-07-10T17:00:00Z', completed_date: '2026-07-10T17:05:00Z' })).toBe(true);
+  });
+
+  it('không có hạn thì không tính là trễ', () => {
+    expect(laTre({ completed_date: '2026-07-10T17:00:00Z' })).toBe(false);
+  });
+
+  it('chưa hoàn thành thì không tính là trễ ở đây — nơi gọi tự quyết định', () => {
+    expect(laTre({ due_date: '2026-07-10T17:00:00Z' })).toBe(false);
+  });
+
+  it('không truyền gì cũng không nổ', () => {
+    expect(laTre()).toBe(false);
   });
 });
 
