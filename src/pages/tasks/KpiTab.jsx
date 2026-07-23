@@ -52,6 +52,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   const [logs, setLogs] = useState([]);
   const [viec, setViec] = useState([]);        // công việc tạo trong tháng của kỳ
   const [sanXuat, setSanXuat] = useState([]);  // bản ghi production_logs của tháng
+  const [danhMuc, setDanhMuc] = useState([]);  // chỉ tiêu của MỌI kỳ, cho ô chọn khi thêm
   const [loiViec, setLoiViec] = useState('');
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
@@ -128,8 +129,25 @@ export default function KpiTab({ me, users = [], perm = {} }) {
         loiTaiViec = loiTaiViec || err?.message || String(err);
       }
 
+      // Danh mục chỉ tiêu của MỌI kỳ, cho ô chọn ở form "Thêm chỉ tiêu". Phải rộng hơn kỳ
+      // đang xem: chỉ tiêu bị gỡ khỏi kỳ này (HOÀN THÀNH ĐƠN BẢO HÀNH bị đợt chuyển cấu trúc
+      // tháng 7 xoá) vẫn phải chọn lại được, không thì chỉ còn cách gõ tay từ đầu.
+      // Kỳ mới nhất trước để bản gặp đầu tiên của mỗi mã là bản mới nhất.
+      let dsDanhMuc = [];
+      try {
+        const { data, error } = await fetchAllRows(() => supabase
+          .from('kpi_chi_tieu')
+          .select('ma, ten, mo_ta, nhom, chi_tieu, trong_so, cach_cham, lien_ket_bo_phan, cap_do, nhan_vien_id, ky')
+          .order('ky', { ascending: false }).order('id'));
+        if (error) throw error;
+        dsDanhMuc = data || [];
+      } catch {
+        dsDanhMuc = [];   // hỏng thì ô chọn lùi về dùng đúng kỳ đang xem, xem prop coSan
+      }
+
       setRows(ct || []);
       setLogs(nk);
+      setDanhMuc(dsDanhMuc);
       setViec(dsViec);
       setSanXuat(dsSanXuat);
       setLoiViec(loiTaiViec);
@@ -199,6 +217,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
       rows={[...dongBoPhan, ...rowsTD.filter(r => r.nhan_vien_id === chon)]}
       logs={logsTD} onBack={() => setChon(null)} onReload={taiDuLieu}
       demNguoi={demNguoi} soNhanVien={soNhanVien} tatCaRows={rowsTD}
+      danhMuc={danhMuc}
     />
   );
 
@@ -314,7 +333,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
 // Màn hình 2: bảng KPI chi tiết một người
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onReload, demNguoi, soNhanVien, tatCaRows = [] }) {
+function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onReload, demNguoi, soNhanVien, tatCaRows = [], danhMuc = [] }) {
   // Chỉ giữ ID chứ KHÔNG giữ nguyên object dòng chỉ tiêu: sau khi ghi điểm và tải lại,
   // object cũ đã cũ dữ liệu — popup phải lấy lại từ kết quả engine mới nhất.
   const [popupId, setPopupId] = useState(null);   // id chỉ tiêu | 'TONG' | null
@@ -596,7 +615,7 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
 
       {suaCT && (
         <FormSuaChiTieu
-          ct={suaCT} coSan={dsChiTieuCoSan(tatCaRows, nvId)}
+          ct={suaCT} coSan={dsChiTieuCoSan(danhMuc.length ? danhMuc : tatCaRows, tatCaRows, nvId)}
           onLuu={luuChiTieu} onXoa={xoaChiTieu} onHuy={() => setSuaCT(null)}
         />
       )}
@@ -1228,7 +1247,8 @@ function FormSuaChiTieu({ ct, coSan = [], onLuu, onXoa, onHuy }) {
               <option value="">— Tự nhập chỉ tiêu mới —</option>
               {coSan.map(c => (
                 <option key={c.ma || c.ten} value={c.ma || c.ten}>
-                  {(c.ma ? `${c.ma} · ` : '') + c.ten} ({c.soNguoi} người)
+                  {(c.ma ? `${c.ma} · ` : '') + c.ten}
+                  {c.soNguoi ? ` (${c.soNguoi} người)` : ' (kỳ này chưa ai dùng)'}
                 </option>
               ))}
             </select>

@@ -319,41 +319,49 @@ describe('sinhMaChiTieu', () => {
 });
 
 describe('dsChiTieuCoSan', () => {
-  const rows = [
+  // danhMuc = mọi kỳ (kỳ mới nhất trước), rowsKy = kỳ đang xem.
+  const rowsKy = [
     { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: '5S', ten: '5S', chi_tieu: 10, trong_so: 3 },
     { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: '5S', ten: '5S', chi_tieu: 10, trong_so: 2 },
     { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'THE_KHO', ten: 'THẺ KHO', mo_ta: 'ghi thẻ', chi_tieu: 10, trong_so: 5 },
     { cap_do: 'CA_NHAN', nhan_vien_id: 'c', ma: 'THE_KHO', ten: 'THẺ KHO', chi_tieu: 10, trong_so: 5 },
     { cap_do: 'BO_PHAN', nhan_vien_id: null, ma: 'CC_BP', ten: 'CHUYÊN CẦN BỘ PHẬN' },
   ];
+  // Chỉ tiêu đã bị gỡ khỏi kỳ này, chỉ còn trong lịch sử.
+  const daGo = { cap_do: 'CA_NHAN', nhan_vien_id: 'admin', ma: 'HT_DON_BAO_HANH', ten: 'HOÀN THÀNH ĐƠN BẢO HÀNH', chi_tieu: 6, trong_so: 2 };
+  const danhMuc = [...rowsKy, daGo];
 
   it('không liệt kê chỉ tiêu người đó đã có', () => {
-    expect(dsChiTieuCoSan(rows, 'a').map(c => c.ma)).toEqual(['THE_KHO']);
+    expect(dsChiTieuCoSan(danhMuc, rowsKy, 'a').some(c => c.ma === '5S')).toBe(false);
   });
 
-  it('người chưa có gì thì thấy đủ mọi chỉ tiêu', () => {
-    expect(dsChiTieuCoSan(rows, 'z').map(c => c.ma).sort()).toEqual(['5S', 'THE_KHO']);
+  it('VẪN liệt kê chỉ tiêu đã bị gỡ khỏi kỳ này — không thì không thêm lại được', () => {
+    const c = dsChiTieuCoSan(danhMuc, rowsKy, 'a').find(x => x.ma === 'HT_DON_BAO_HANH');
+    expect(c).toBeTruthy();
+    expect(c.soNguoi).toBe(0);
+  });
+
+  it('đếm số NGƯỜI theo KỲ ĐANG XEM, không theo cả danh mục', () => {
+    expect(dsChiTieuCoSan(danhMuc, rowsKy, 'a').find(c => c.ma === 'THE_KHO').soNguoi).toBe(2);
   });
 
   it('kèm sẵn mô tả/mức/trọng số của dòng mẫu để điền tự động', () => {
-    const c = dsChiTieuCoSan(rows, 'a')[0];
+    const c = dsChiTieuCoSan(danhMuc, rowsKy, 'a').find(x => x.ma === 'THE_KHO');
     expect(c).toMatchObject({ ten: 'THẺ KHO', mo_ta: 'ghi thẻ', chi_tieu: 10, trong_so: 5 });
   });
 
-  it('đếm số NGƯỜI đang có chỉ tiêu đó', () => {
-    expect(dsChiTieuCoSan(rows, 'a')[0].soNguoi).toBe(2);
+  it('bản gặp đầu tiên thắng — danh mục xếp kỳ mới nhất trước nên lấy tên mới nhất', () => {
+    const moi = { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'THE_KHO', ten: 'THẺ KHO (mới)', chi_tieu: 10, trong_so: 5 };
+    const c = dsChiTieuCoSan([moi, ...danhMuc], rowsKy, 'a').find(x => x.ma === 'THE_KHO');
+    expect(c.ten).toBe('THẺ KHO (mới)');
   });
 
   it('bỏ dòng BO_PHAN — không thêm dòng cấp bộ phận cho một cá nhân', () => {
-    expect(dsChiTieuCoSan(rows, 'a').some(c => c.ma === 'CC_BP')).toBe(false);
+    expect(dsChiTieuCoSan(danhMuc, rowsKy, 'a').some(c => c.ma === 'CC_BP')).toBe(false);
   });
 
-  it('nhiều người có thì xếp lên trước', () => {
-    const r = [
-      ...rows,
-      { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'LE_LOI', ten: 'LẺ LOI', chi_tieu: 10, trong_so: 1 },
-    ];
-    expect(dsChiTieuCoSan(r, 'a').map(c => c.ma)).toEqual(['THE_KHO', 'LE_LOI']);
+  it('chỉ tiêu nhiều người dùng xếp trước, cái không còn ai dùng xuống cuối', () => {
+    expect(dsChiTieuCoSan(danhMuc, rowsKy, 'a').map(c => c.ma)).toEqual(['THE_KHO', 'HT_DON_BAO_HANH']);
   });
 
   it('danh sách rỗng không nổ', () => {

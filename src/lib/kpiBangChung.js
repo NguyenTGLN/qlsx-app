@@ -145,36 +145,42 @@ export function sinhMaChiTieu(ten) {
   return ma || null;   // tên rỗng thì trả null, đừng ghi chuỗi rỗng xuống DB
 }
 
-// Các chỉ tiêu ĐANG CÓ ở người khác trong kỳ mà người này chưa có — nội dung ô chọn của form
-// "Thêm chỉ tiêu". Kèm sẵn mô tả/mức/trọng số/mã của một dòng mẫu để điền tự động.
+// Nội dung ô chọn của form "Thêm chỉ tiêu": mọi chỉ tiêu TỪNG DÙNG mà người này chưa có,
+// kèm mô tả/mức/trọng số/mã của một dòng mẫu để điền tự động.
 //
-// Chọn từ danh sách này thay vì gõ tay giữ cho cùng một chỉ tiêu có cùng TÊN và cùng MÃ ở mọi
+// Hai nguồn khác nhau, đừng gộp:
+//   `danhMuc` — dòng chỉ tiêu của MỌI KỲ. Danh mục phải rộng hơn một kỳ: chỉ tiêu bị gỡ khỏi
+//               kỳ này (HOÀN THÀNH ĐƠN BẢO HÀNH bị đợt chuyển cấu trúc tháng 7 xoá) vẫn phải
+//               chọn lại được, nếu không muốn thêm lại thì chỉ còn cách gõ tay từ đầu.
+//   `rowsKy`  — dòng của KỲ ĐANG XEM. Dùng để biết người này đã có gì, và để đếm "mấy người
+//               đang dùng" — con số đó chỉ có nghĩa trong kỳ hiện tại.
+//
+// Chọn từ danh sách thay vì gõ tay giữ cho cùng một chỉ tiêu có cùng TÊN và cùng MÃ ở mọi
 // người. Gõ tay thì chỉ cần thừa một dấu cách là thành chỉ tiêu khác, và bảng chấm chung sẽ
 // tách nó thành hai dòng riêng mà nhìn ngoài y hệt nhau.
-export function dsChiTieuCoSan(rows = [], nvId) {
+export function dsChiTieuCoSan(danhMuc = [], rowsKy = [], nvId) {
   const daCo = new Set();
-  for (const r of rows || []) {
+  for (const r of rowsKy || []) {
     if (r.cap_do !== 'BO_PHAN' && r.nhan_vien_id === nvId) daCo.add(khoaChiTieu(r));
   }
+  const dem = demNguoiTheoChiTieu(rowsKy);
 
+  // `danhMuc` xếp kỳ mới nhất trước, nên bản gặp đầu tiên của mỗi mã là bản mới nhất — tên và
+  // mô tả lấy theo lần sửa gần nhất chứ không phải bản cũ từ nhiều tháng trước.
   const nhom = new Map();
-  for (const r of rows || []) {
+  for (const r of danhMuc || []) {
     if (r.cap_do === 'BO_PHAN' || !r.nhan_vien_id) continue;
     const k = khoaChiTieu(r);
-    if (daCo.has(k)) continue;
-    if (!nhom.has(k)) {
-      nhom.set(k, {
-        ma: r.ma || null, ten: r.ten, mo_ta: r.mo_ta ?? null, nhom: r.nhom ?? null,
-        chi_tieu: r.chi_tieu ?? null, trong_so: r.trong_so ?? 0,
-        cach_cham: r.cach_cham ?? null, lien_ket_bo_phan: r.lien_ket_bo_phan ?? null,
-        nguoi: new Set(),
-      });
-    }
-    nhom.get(k).nguoi.add(r.nhan_vien_id);
+    if (daCo.has(k) || nhom.has(k)) continue;
+    nhom.set(k, {
+      ma: r.ma || null, ten: r.ten, mo_ta: r.mo_ta ?? null, nhom: r.nhom ?? null,
+      chi_tieu: r.chi_tieu ?? null, trong_so: r.trong_so ?? 0,
+      cach_cham: r.cach_cham ?? null, lien_ket_bo_phan: r.lien_ket_bo_phan ?? null,
+      soNguoi: dem.get(k) || 0,
+    });
   }
 
   return [...nhom.values()]
-    .map(({ nguoi, ...c }) => ({ ...c, soNguoi: nguoi.size }))
     .sort((a, b) => b.soNguoi - a.soNguoi || a.ten.localeCompare(b.ten, 'vi'));
 }
 
