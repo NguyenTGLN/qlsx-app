@@ -8,7 +8,7 @@ import { apDungChamTuDong, laDongAo } from '../../lib/kpiTuDong';
 import KpiPrint from '../../components/KpiPrint';
 import KpiBangChung from './KpiBangChung';
 import {
-  Trophy, ChevronRight, ChevronLeft, AlertTriangle, Plus, X, Loader2,
+  Trophy, ChevronLeft, AlertTriangle, Plus, X, Loader2,
   FileDown, Printer, Pencil, CalendarPlus, Table2,
 } from 'lucide-react';
 
@@ -305,43 +305,94 @@ export default function KpiTab({ me, users = [], perm = {} }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))' }}>
-        {bangTheoNguoi.map((p, i) => (
+      {bangTheoNguoi.length > 0 && <BangXepHang ds={bangTheoNguoi} meId={me?.id} onChon={setChon} />}
+    </div>
+  );
+}
+
+// Các mốc điểm để nhân viên biết mình cần vượt qua ngưỡng nào tiếp theo.
+const MOC_DIEM = [86, 90, 96];
+
+// Bảng xếp hạng dạng thanh ngang: tên nằm cột trái, điểm là chiều dài thanh.
+//
+// Trục 0–100 nguyên vẹn, KHÔNG cắt gốc để "cho dễ nhìn khác biệt": cắt trục làm 96 điểm trông
+// dài gấp mấy lần 86 điểm trong khi thực tế hơn nhau 10%. Bảng này treo cho cả công ty xem và
+// gắn với thưởng — phóng đại khoảng cách ở đây là nói dối bằng hình vẽ.
+function BangXepHang({ ds, meId, onChon }) {
+  return (
+    <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, background: '#fff', padding: '0.6rem 0.7rem' }}>
+      {/* Hàng nhãn mốc, canh đúng vị trí các vạch bên dưới. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ width: 26, flexShrink: 0 }} />
+        <div style={{ width: 96, flexShrink: 0 }} />
+        <div style={{ flex: 1, position: 'relative', height: 14 }}>
+          {MOC_DIEM.map(m => (
+            <span
+              key={m}
+              style={{
+                position: 'absolute', left: `${m}%`, transform: 'translateX(-50%)',
+                fontSize: '0.62rem', fontWeight: 700, color: '#94a3b8', whiteSpace: 'nowrap',
+              }}
+            >
+              {m}
+            </span>
+          ))}
+        </div>
+        <div style={{ width: 46, flexShrink: 0 }} />
+      </div>
+
+      {ds.map((p, i) => {
+        const laMinh = p.nvId === meId;
+        const mau = mauTheoDiem(p.tongKpi);
+        return (
           <button
-            key={p.nvId} onClick={() => setChon(p.nvId)}
+            key={p.nvId} onClick={() => onChon(p.nvId)}
+            title={p.danhSachMatDiem[0]
+              ? `Mất nhiều nhất: ${p.danhSachMatDiem[0].ten}`
+              : 'Đạt đủ mọi chỉ tiêu'}
             style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '0.7rem',
-              borderRadius: 12, border: '1px solid #e2e8f0', background: '#fff',
-              cursor: 'pointer', textAlign: 'left', width: '100%',
-              outline: p.nvId === me?.id ? '2px solid #2563eb' : 'none',
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+              padding: '0.3rem 0.2rem', border: 'none', borderRadius: 8, cursor: 'pointer',
+              background: laMinh ? '#eff6ff' : 'transparent',
             }}
           >
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#94a3b8', width: 22, flexShrink: 0 }}>
-              {i === 0 ? <Trophy size={14} color="#f59e0b" /> : `#${i + 1}`}
+            <div style={{ width: 26, flexShrink: 0, fontSize: '0.7rem', fontWeight: 700, color: '#94a3b8' }}>
+              {i === 0 ? <Trophy size={13} color="#f59e0b" /> : `#${i + 1}`}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{
-                fontWeight: 600, fontSize: '0.85rem',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {p.ten}{p.nvId === me?.id && ' (bạn)'}
-              </div>
-              <div style={{
-                fontSize: '0.7rem', color: '#94a3b8',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}>
-                {p.danhSachMatDiem[0]
-                  ? `Mất nhiều nhất: ${p.danhSachMatDiem[0].ten}`
-                  : 'Đạt đủ mọi chỉ tiêu'}
-              </div>
+            <div style={{
+              width: 96, flexShrink: 0, fontSize: '0.8rem', fontWeight: laMinh ? 800 : 600,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {p.ten}
             </div>
-            <div style={{ fontWeight: 800, fontSize: '1.05rem', color: mauTheoDiem(p.tongKpi) }}>
+
+            <div style={{ flex: 1, position: 'relative', height: 18, background: '#f1f5f9', borderRadius: 5 }}>
+              <div style={{
+                position: 'absolute', inset: 0, width: `${Math.max(0, Math.min(100, p.tongKpi))}%`,
+                background: mau, borderRadius: 5, opacity: 0.85,
+              }} />
+              {/* Vạch mốc vẽ ĐÈ LÊN thanh: nằm dưới thì phần thanh đã vượt qua sẽ che mất vạch,
+                  mà đó đúng là chỗ người ta cần nhìn nhất — "mình đã qua mốc nào rồi". */}
+              {MOC_DIEM.map(m => (
+                <div
+                  key={m}
+                  style={{
+                    position: 'absolute', left: `${m}%`, top: -2, bottom: -2, width: 0,
+                    borderLeft: '1px dashed #94a3b8',
+                  }}
+                />
+              ))}
+            </div>
+
+            <div style={{
+              width: 46, flexShrink: 0, textAlign: 'right',
+              fontWeight: 800, fontSize: '0.85rem', color: mau, fontVariantNumeric: 'tabular-nums',
+            }}>
               {so1(p.tongKpi)}
             </div>
-            <ChevronRight size={14} color="#cbd5e1" />
           </button>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
