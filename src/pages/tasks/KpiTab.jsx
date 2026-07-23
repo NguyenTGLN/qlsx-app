@@ -670,11 +670,12 @@ const tagThuong = {
   display: 'inline-block', fontSize: '0.62rem', fontWeight: 700, padding: '1px 6px',
   borderRadius: 6, background: 'rgba(5,150,105,0.12)', color: '#059669', marginLeft: 6, whiteSpace: 'nowrap',
 };
-// Nền dòng theo phân loại chỉ tiêu. Nhạt để chữ vẫn đọc rõ và bản in không tốn mực.
+// Nền dòng theo phân loại chỉ tiêu. Bậc 200 (không phải 50): bậc nhạt nhất nhìn trên màn hình
+// gần như trắng, phân loại thành ra vô hình. Vẫn đủ nhạt cho chữ đen #0f172a đọc rõ.
 const mauLoai = {
-  BANG_CHUNG: '#fff7ed',       // cam — chấm ở bảng chấm chung
-  CHUNG_MOI_NGUOI: '#f0fdf4',  // xanh lá — ai cũng có, chưa đưa vào bảng chung
-  RIENG: '#f0f9ff',            // xanh nhạt — riêng vị trí này
+  BANG_CHUNG: '#fed7aa',       // cam — chấm ở bảng chấm chung
+  CHUNG_MOI_NGUOI: '#bbf7d0',  // xanh lá — ai cũng có, chưa đưa vào bảng chung
+  RIENG: '#e0f2fe',            // xanh nhạt — riêng vị trí này
 };
 const oMau = {
   display: 'inline-block', width: 12, height: 12, borderRadius: 3, border: '1px solid #e2e8f0',
