@@ -4,7 +4,7 @@ import { tinhBangKpi, giaiThich, kiemTraTrongSo } from '../../lib/kpiEngine';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import { xuatExcelKpi, dungDuLieuSheet } from '../../lib/kpiExcel';
 import { demNguoiTheoChiTieu, phanLoaiChiTieu } from '../../lib/kpiBangChung';
-import { apDungChamTuDong } from '../../lib/kpiTuDong';
+import { apDungChamTuDong, laDongAo } from '../../lib/kpiTuDong';
 import KpiPrint from '../../components/KpiPrint';
 import KpiBangChung from './KpiBangChung';
 import {
@@ -343,7 +343,9 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
     // Nhật ký bị cascade xoá theo. Đếm đúng nhật ký GẮN VÀO DÒNG NÀY (`chi_tieu_id === id`),
     // không dùng `d.logs` — với dòng liên kết bộ phận thì `d.logs` là nhật ký của dòng chung
     // và sẽ KHÔNG mất, báo nhầm số làm người chấm sợ oan hoặc chủ quan.
-    const soNhatKy = logs.filter(l => l.chi_tieu_id === id).length;
+    // `laDongAo`: dòng diễn giải của chấm tự động không nằm trong DB nên xoá chỉ tiêu chẳng
+    // mất gì. Đếm cả nó vào đây là dọa người dùng mất một bằng chứng vốn không tồn tại.
+    const soNhatKy = logs.filter(l => l.chi_tieu_id === id && !laDongAo(l)).length;
     const ten = rows.find(r => r.id === id)?.ten || 'chỉ tiêu này';
     const canhBao = soNhatKy > 0
       ? `\n\nXoá luôn ${soNhatKy} dòng nhật ký cộng/trừ điểm của chỉ tiêu này — toàn bộ bằng chứng chấm điểm sẽ mất và KHÔNG khôi phục được.`

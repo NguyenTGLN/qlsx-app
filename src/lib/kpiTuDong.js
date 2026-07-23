@@ -125,3 +125,10 @@ export function apDungChamTuDong(rows = [], logs = [], tasks = [], ky, ngay = ho
 
   return { rows: rowsMoi, logs: [...(logs || []), ...logsAo] };
 }
+
+// Dòng nhật ký này là dòng ảo do chấm tự động sinh ra, hay dòng thật nằm trong DB?
+//
+// Phải phân biệt ở mọi chỗ NÓI VỀ dữ liệu thật: đếm nhật ký sẽ mất khi xoá chỉ tiêu, đếm số
+// bằng chứng đã ghi, hay bất cứ câu nào hứa hẹn với người dùng về cái đang nằm trong DB.
+// Đếm nhầm dòng ảo vào đó là dọa người ta mất một bằng chứng vốn không tồn tại.
+export const laDongAo = l => typeof l?.id === 'string' && l.id.startsWith('ao-');
