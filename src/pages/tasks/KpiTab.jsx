@@ -512,20 +512,17 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
             </thead>
             <tbody>
               {(() => {
-                // Đi dọc kq.dong: chèn dòng tiêu đề nhóm mỗi khi `nhom` đổi, đánh STT liên tục
-                // 1→N (KHÔNG reset theo nhóm), rồi chốt bằng dòng TỔNG CỘNG.
+                // Đi dọc kq.dong đánh STT liên tục 1→N rồi chốt bằng dòng TỔNG CỘNG.
+                //
+                // KHÔNG hiện tiêu đề nhóm (`nhom`) nữa: sau đợt chuyển cấu trúc tháng 7, chỉ
+                // tiêu chép từ người khác mang theo luôn tên nhóm của người đó, nên nhóm hiện
+                // đang sai — CHẤM KPI nằm trong "ĐÓNG GÓP CẢI TIẾN", HOÀN THÀNH CÔNG VIỆC nằm
+                // trong "KĨ THUẬT BẢO HÀNH", và có hai nhóm cùng tên "DỊCH VỤ KHÁCH HÀNG".
+                // Cột `nhom` vẫn giữ trong DB, chỉ thôi trưng ra một cách phân loại sai.
+                // Việc phân loại giờ do MÀU NỀN đảm nhiệm, và màu thì tính từ cách chấm thật.
                 const out = [];
-                const colSpan = perm?.create ? 6 : 5;
-                let nhomHienTai = null, stt = 0;
+                let stt = 0;
                 for (const d of kq.dong) {
-                  if (d.nhom && d.nhom !== nhomHienTai) {
-                    nhomHienTai = d.nhom;
-                    out.push(
-                      <tr key={`g-${nhomHienTai}`}>
-                        <td colSpan={colSpan} style={tdKpi.group}>{nhomHienTai}</td>
-                      </tr>
-                    );
-                  }
                   stt += 1;
                   out.push(
                     <DongBangKpi
@@ -710,10 +707,6 @@ const thKpi = {
 };
 const tdKpi = {
   body: { padding: '8px 10px', borderBottom: '1px solid #eef2f7', verticalAlign: 'top', color: '#0f172a' },
-  group: {
-    padding: '6px 10px', background: '#f1f5f9', fontWeight: 700, fontSize: '0.68rem',
-    textTransform: 'uppercase', letterSpacing: '0.03em', color: '#64748b',
-  },
   total: { padding: '10px', borderTop: '2px solid #e2e8f0', background: '#f8fafc' },
 };
 const tagThuong = {
