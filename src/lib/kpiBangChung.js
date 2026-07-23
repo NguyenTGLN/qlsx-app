@@ -23,3 +23,36 @@ export function dsNhanVienChamChung(rows = [], users = []) {
     })
     .sort((a, b) => a.ten.localeCompare(b.ten, 'vi'));
 }
+
+// Ma trận của màn hình: mỗi phần tử là MỘT DÒNG (một chỉ tiêu), `o[i]` là ô ứng với
+// nhanVien[i].
+//
+//   o[i] === null  → người đó KHÔNG có chỉ tiêu này (vẽ gạch chéo)
+//   o[i] === dòng  → có chỉ tiêu; chấm hay chưa xem `diem_chot`
+//
+// Hai trạng thái đó tuyệt đối không được lẫn: "không có chỉ tiêu" mà vẽ thành ô nhập
+// trống sẽ mời người dùng chấm điểm cho một dòng không tồn tại.
+export function dungMaTran(rows = [], nhanVien = []) {
+  const nhom = new Map();
+  for (const r of rows) {
+    if (r.cap_do === 'BO_PHAN' || !r.cham_chung || !r.nhan_vien_id) continue;
+    const k = khoaChiTieu(r);
+    if (!nhom.has(k)) nhom.set(k, []);
+    nhom.get(k).push(r);
+  }
+
+  const dong = [];
+  for (const [, ds] of nhom) {
+    const mucs = [...new Set(ds.map(r => r.chi_tieu))];
+    dong.push({
+      ma: ds[0].ma || null,
+      ten: ds[0].ten,
+      // Mức chỉ tiêu chỉ hiện ở đầu dòng khi MỌI người cùng mức. Lệch nhau (VIDEO KỸ
+      // THUẬT có người 6 người 2) thì để null — mỗi ô tự biết mức của mình.
+      chi_tieu: mucs.length === 1 ? mucs[0] : null,
+      thuTu: Math.min(...ds.map(r => (typeof r.thu_tu === 'number' ? r.thu_tu : 9999))),
+      o: nhanVien.map(nv => ds.find(r => r.nhan_vien_id === nv.id) || null),
+    });
+  }
+  return dong.sort((a, b) => a.thuTu - b.thuTu || a.ten.localeCompare(b.ten, 'vi'));
+}
