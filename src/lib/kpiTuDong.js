@@ -241,9 +241,13 @@ function luatChuyenCanBoPhan(ct, viec, sanXuat, chamCong = [], thanhVien = []) {
     return { tiLe: null, ghiChu: 'Chưa có dữ liệu chấm công của nhóm trong tháng — chưa có căn cứ chấm.' };
   }
 
-  const phut = chamCong.reduce(
+  // Ngày được miễn (giải trình) không tính vào phút trễ lẫn ngày nghỉ của nhóm.
+  const ccTru = chamCong.filter(c => !c.mien);
+  const soMien = chamCong.length - ccTru.length;
+
+  const phut = ccTru.reduce(
     (s, c) => s + (Number(c.di_muon_phut) || 0) + (Number(c.ve_som_phut) || 0), 0);
-  const nghi = chamCong.filter(c => c.nghi).length;
+  const nghi = ccTru.filter(c => c.nghi).length;
   const phutTB = phut / soNguoi;
   const nghiTB = nghi / soNguoi;
   const vuotPhep = Math.max(0, nghiTB - NGAY_PHEP_THANG);
@@ -251,10 +255,11 @@ function luatChuyenCanBoPhan(ct, viec, sanXuat, chamCong = [], thanhVien = []) {
   const truPhut = truTheoNguong(phutTB, NGUONG_PHUT);
   const truNghi = truTheoNguong(vuotPhep, NGUONG_NGHI);
 
+  const phanMien = soMien ? ` (miễn ${soMien} ngày có giải trình)` : '';
   const ghiChu = `Tự động: ${soNguoi} người — trung bình ${Math.round(phutTB)} phút muộn/về sớm`
     + ` (−${truPhut}) và ${nghiTB.toFixed(1)} ngày nghỉ mỗi người, vượt ${vuotPhep.toFixed(1)}`
     + ` ngày so với ${NGAY_PHEP_THANG} ngày phép (−${truNghi}).`
-    + ` Cả nhóm: ${phut} phút, ${nghi} ngày nghỉ.`;
+    + ` Cả nhóm: ${phut} phút, ${nghi} ngày nghỉ${phanMien}.`;
 
   return tuDiemTru(ct, truPhut + truNghi, ghiChu);
 }

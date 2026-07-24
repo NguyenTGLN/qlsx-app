@@ -391,6 +391,20 @@ describe('luật CHUYEN_CAN_BO_PHAN (trung bình đầu người)', () => {
   it('nhóm không có thành viên nào thì KHÔNG chấm — chia cho 0 sẽ ra Infinity', () => {
     expect(luat({ chi_tieu: 10 }, [], [], [cc('a', { di_muon_phut: 60 })], []).tiLe).toBeNull();
   });
+
+  it('ngày được miễn không tính vào phút/nghỉ của bộ phận', () => {
+    const ds = [
+      cc('a', { nghi: true, ngay: '2026-07-01' }),
+      cc('a', { nghi: true, ngay: '2026-07-02', mien: true }),
+    ];
+    // ccTru còn 1 ngày nghỉ / 1 người → trong phép → không trừ.
+    expect(luat({ chi_tieu: 10 }, [], [], ds, ['a']).tiLe).toBe(1);
+  });
+
+  it('ghi chú nêu số ngày miễn của nhóm', () => {
+    const ds = [cc('a', { nghi: true, ngay: '2026-07-01', mien: true })];
+    expect(luat({ chi_tieu: 10 }, [], [], ds, ['a']).ghiChu).toContain('miễn 1 ngày có giải trình');
+  });
 });
 
 describe('luật CHUYEN_CAN_CA_NHAN', () => {
