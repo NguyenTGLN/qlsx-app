@@ -301,7 +301,9 @@ function luatChuyenCanCaNhan(ct, viec, sanXuat, chamCong = []) {
   if (mienNgay.length) {
     phan.push(`Miễn ${mienNgay.length} ngày có giải trình (không trừ): ${noiNgay(mienNgay.map(c => ngayDM(c.ngay)))}.`);
   }
-  if (!tru && !mienNgay.length) {
+  // Chỉ nói "đủ điểm" khi KHÔNG có mảnh nào ở trên — nếu không, một ngày nghỉ trong phép sẽ
+  // vừa ghi "Nghỉ 1 ngày (trong phép)" vừa ghi "không nghỉ quá phép", đọc mâu thuẫn.
+  if (!phan.length) {
     phan.push('Không muộn, không nghỉ quá phép — đủ điểm.');
   }
 
