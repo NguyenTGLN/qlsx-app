@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup UI — Trang Cải Tiến (Kaizen)</title>
+<style>
+  :root{
+    --bg-primary:#f6f8fb; --bg-card:#ffffff; --text-primary:#0f172a;
+    --text-secondary:#64748b; --border-color:#e2e8f0;
+    --accent:#2563eb; --accent-gradient:linear-gradient(135deg,#2563eb 0%,#3b82f6 100%);
+    --r-sm:8px; --r-md:10px; --r-lg:16px;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',system-ui,-apple-system,sans-serif}
+  body{background:var(--bg-primary);color:var(--text-primary);padding:24px 16px 60px}
+  .wrap{max-width:1150px;margin:0 auto}
+  h1{font-size:24px;margin-bottom:4px}
+  .sub{color:var(--text-secondary);font-size:14px;margin-bottom:20px}
+
+  /* flow strip */
+  .flow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:var(--bg-card);
+    border:1px solid var(--border-color);border-radius:var(--r-lg);padding:14px 18px;margin-bottom:24px}
+  .flow .fstep{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+  .flow .fnum{width:26px;height:26px;border-radius:50%;background:var(--accent-gradient);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+  .flow .farrow{color:#94a3b8;font-size:16px;padding:0 4px}
+
+  /* screen tabs */
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px}
+  .tab{padding:9px 16px;border-radius:999px;border:1px solid var(--border-color);background:var(--bg-card);
+    font-size:14px;font-weight:600;color:var(--text-secondary);cursor:pointer;transition:.15s}
+  .tab.active{background:var(--accent-gradient);color:#fff;border-color:transparent;box-shadow:0 4px 12px rgba(37,99,235,.3)}
+
+  .screen{display:none;gap:28px;align-items:flex-start;flex-wrap:wrap}
+  .screen.active{display:flex}
+
+  /* phone frame */
+  .phone{width:390px;flex-shrink:0;background:#0f172a;border-radius:38px;padding:10px;box-shadow:0 18px 50px rgba(15,23,42,.25)}
+  .phone-inner{background:var(--bg-primary);border-radius:30px;overflow:hidden;height:760px;display:flex;flex-direction:column}
+  .statusbar{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;
+    font-size:11px;font-weight:600;color:var(--text-secondary);background:var(--bg-primary)}
+  .app-body{flex:1;overflow-y:auto;padding:0 14px 90px;position:relative}
+  .app-body::-webkit-scrollbar{width:0}
+
+  /* app header */
+  .app-head{padding:10px 2px 12px;display:flex;align-items:center;justify-content:space-between}
+  .app-head h2{font-size:19px}
+  .app-head .mo{font-size:12.5px;font-weight:600;color:var(--accent);background:#eff6ff;
+    padding:5px 10px;border-radius:999px;border:1px solid #bfdbfe}
+
+  /* stat strip */
+  .stats{display:flex;gap:8px;margin-bottom:12px}
+  .stat{flex:1;background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--r-md);
+    padding:9px 8px;text-align:center}
+  .stat b{display:block;font-size:16px}
+  .stat span{font-size:10.5px;color:var(--text-secondary);font-weight:600}
+  .stat.hl b{color:#059669}
+
+  /* filter chips */
+  .chips{display:flex;gap:6px;margin-bottom:12px;overflow-x:auto}
+  .chip{padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;
+    background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-secondary)}
+  .chip.on{background:#0f172a;color:#fff;border-color:#0f172a}
+
+  /* kaizen card */
+  .kcard{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--r-lg);
+    padding:13px;margin-bottom:12px}
+  .ktop{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    color:#fff;font-weight:700;font-size:13px;flex-shrink:0}
+  .kwho b{font-size:13.5px;display:block}
+  .kwho span{font-size:11px;color:var(--text-secondary)}
+  .ktitle{font-size:14.5px;font-weight:700;margin-bottom:8px;line-height:1.35}
+  .cat{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;
+    padding:3px 9px;border-radius:999px;margin-left:auto}
+  .ba{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+  .ba .img{flex:1;height:92px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:3px;font-size:11px;font-weight:700;color:#fff;position:relative;overflow:hidden}
+  .ba .img .lbl{position:absolute;top:6px;left:6px;background:rgba(15,23,42,.65);padding:2px 8px;
+    border-radius:999px;font-size:9.5px;letter-spacing:.5px}
+  .ba .arr{color:var(--accent);font-size:18px;font-weight:800}
+  .kfoot{display:flex;align-items:center;gap:8px}
+  .val{background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-size:12px;font-weight:800;
+    padding:5px 11px;border-radius:999px}
+  .st{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px}
+  .st.wait{background:#fef3c7;color:#b45309}
+  .st.ok{background:#d1fae5;color:#047857}
+  .likes{margin-left:auto;font-size:12px;color:var(--text-secondary);font-weight:600}
+
+  /* FAB */
+  .fab{position:absolute;bottom:18px;right:16px;width:56px;height:56px;border-radius:50%;
+    background:var(--accent-gradient);color:#fff;font-size:28px;display:flex;align-items:center;
+    justify-content:center;box-shadow:0 8px 20px rgba(37,99,235,.45);cursor:pointer}
+  .fab-tip{position:absolute;bottom:32px;right:80px;background:#0f172a;color:#fff;font-size:11.5px;
+    font-weight:600;padding:6px 12px;border-radius:999px;white-space:nowrap}
+
+  /* wizard */
+  .wsteps{display:flex;gap:0;align-items:center;margin:6px 0 16px}
+  .wstep{display:flex;align-items:center;gap:6px;cursor:pointer}
+  .wnum{width:26px;height:26px;border-radius:50%;background:#e2e8f0;color:var(--text-secondary);
+    font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  .wstep.on .wnum{background:var(--accent-gradient);color:#fff}
+  .wstep.done .wnum{background:#059669;color:#fff}
+  .wlbl{font-size:11.5px;font-weight:700;color:var(--text-secondary)}
+  .wstep.on .wlbl{color:var(--text-primary)}
+  .wline{flex:1;height:2px;background:#e2e8f0;margin:0 8px}
+
+  .catgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .catcard{background:var(--bg-card);border:1.5px solid var(--border-color);border-radius:var(--r-lg);
+    padding:14px 12px;cursor:pointer;transition:.15s}
+  .catcard:hover{border-color:#93c5fd}
+  .catcard.sel{border-color:var(--accent);background:#eff6ff;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+  .catcard .ic{font-size:26px;margin-bottom:6px;display:block}
+  .catcard b{font-size:13.5px;display:block;margin-bottom:3px}
+  .catcard span{font-size:11px;color:var(--text-secondary);line-height:1.35;display:block}
+
+  .fld{margin-bottom:13px}
+  .fld label{font-size:12.5px;font-weight:700;display:block;margin-bottom:5px}
+  .fld label em{color:var(--text-secondary);font-weight:600;font-style:normal;font-size:11.5px}
+  .fld input,.fld textarea,.fld select{width:100%;border:1px solid var(--border-color);border-radius:var(--r-md);
+    padding:10px 12px;font-size:13.5px;font-family:inherit;background:var(--bg-card);color:var(--text-primary)}
+  .fld textarea{resize:none;line-height:1.45}
+  .fld input:focus,.fld textarea:focus{outline:2px solid rgba(37,99,235,.35);border-color:var(--accent)}
+  .phototiles{display:flex;gap:8px;margin-top:8px}
+  .ptile{width:64px;height:64px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;
+    font-size:20px;color:#fff}
+  .ptile.add{border:1.5px dashed #94a3b8;color:#94a3b8;background:transparent;font-size:22px;cursor:pointer}
+  .tip{background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r-md);padding:9px 12px;
+    font-size:12px;color:#92400e;line-height:1.45;margin-bottom:13px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+  .calcbox{background:var(--accent-gradient);border-radius:var(--r-lg);padding:16px;color:#fff;margin:4px 0 14px}
+  .calcbox .cb-t{font-size:11.5px;font-weight:700;opacity:.85;letter-spacing:.5px;margin-bottom:6px}
+  .calcbox .cb-main{font-size:22px;font-weight:800;margin-bottom:2px}
+  .calcbox .cb-sub{font-size:13px;font-weight:600;opacity:.92}
+  .cfgnote{font-size:11px;color:var(--text-secondary);margin-bottom:12px}
+  .switchrow{display:flex;align-items:center;gap:9px;background:var(--bg-card);border:1px solid var(--border-color);
+    border-radius:var(--r-md);padding:10px 12px;margin-bottom:14px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .sw{width:36px;height:20px;border-radius:999px;background:#cbd5e1;position:relative;flex-shrink:0;transition:.15s}
+  .sw::after{content:'';position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:2px;left:2px;transition:.15s}
+  .switchrow.on .sw{background:var(--accent)}
+  .switchrow.on .sw::after{left:18px}
+
+  .btn{width:100%;border:none;border-radius:var(--r-md);padding:13px;font-size:14.5px;font-weight:700;
+    cursor:pointer;font-family:inherit}
+  .btn.pri{background:var(--accent-gradient);color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.35)}
+  .btn.ghost{background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-secondary);margin-top:8px}
+  .btnrow{display:flex;gap:8px}
+  .btnrow .btn{flex:1}
+
+  /* detail screen */
+  .dethead{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+  .panel{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--r-lg);
+    padding:13px;margin-bottom:12px}
+  .panel h4{font-size:12px;letter-spacing:.5px;color:var(--text-secondary);margin-bottom:8px;text-transform:uppercase}
+  .panel p{font-size:13px;line-height:1.5}
+  .panel.before{border-left:4px solid #f43f5e}
+  .panel.after{border-left:4px solid #059669}
+  .mtable{width:100%;font-size:12.5px;border-collapse:collapse}
+  .mtable td{padding:6px 0;border-bottom:1px dashed var(--border-color)}
+  .mtable td:last-child{text-align:right;font-weight:700}
+  .mtable tr:last-child td{border-bottom:none}
+  .scorerow{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .scorerow .sn{font-size:12.5px;font-weight:600;width:118px;flex-shrink:0}
+  .scorerow .sw2{font-size:10.5px;color:var(--text-secondary);width:32px}
+  .dots{display:flex;gap:4px;flex:1}
+  .dot{width:18px;height:18px;border-radius:50%;background:#e2e8f0;cursor:pointer}
+  .dot.f{background:var(--accent)}
+  .totalscore{display:flex;align-items:center;justify-content:space-between;background:#eff6ff;
+    border:1px solid #bfdbfe;border-radius:var(--r-md);padding:10px 14px;margin-top:4px}
+  .totalscore b{font-size:15px}
+  .rankA{background:linear-gradient(135deg,#d97706,#f59e0b);color:#fff;font-weight:800;font-size:14px;
+    padding:5px 14px;border-radius:999px}
+
+  /* leaderboard */
+  .podium{display:flex;align-items:flex-end;gap:8px;margin:16px 0 14px}
+  .pod{flex:1;text-align:center}
+  .pod .pav{width:52px;height:52px;border-radius:50%;margin:0 auto 6px;display:flex;align-items:center;
+    justify-content:center;color:#fff;font-weight:800;font-size:17px;border:3px solid #fff;box-shadow:0 4px 12px rgba(15,23,42,.18)}
+  .pod .pname{font-size:12px;font-weight:700}
+  .pod .pval{font-size:11px;color:#059669;font-weight:800}
+  .pod .pbar{border-radius:10px 10px 0 0;margin-top:6px;display:flex;align-items:flex-start;
+    justify-content:center;padding-top:6px;font-weight:800;color:#fff;font-size:15px}
+  .lrow{display:flex;align-items:center;gap:10px;background:var(--bg-card);border:1px solid var(--border-color);
+    border-radius:var(--r-md);padding:9px 12px;margin-bottom:8px}
+  .lrow .rn{width:22px;font-weight:800;color:var(--text-secondary);font-size:13px}
+  .lrow .ln{flex:1}
+  .lrow .ln b{font-size:13px;display:block}
+  .lrow .ln span{font-size:10.5px;color:var(--text-secondary)}
+  .lrow .lv{font-size:12.5px;font-weight:800;color:#059669}
+  .badges{display:flex;gap:8px;margin-top:12px}
+  .badge{flex:1;background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--r-md);
+    padding:10px 6px;text-align:center}
+  .badge .bi{font-size:22px}
+  .badge b{font-size:10.5px;display:block;margin-top:4px}
+
+  /* notes column */
+  .notes{flex:1;min-width:300px}
+  .note{background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--r-lg);
+    padding:16px 18px;margin-bottom:14px}
+  .note h3{font-size:15px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .note ul{padding-left:18px}
+  .note li{font-size:13.5px;line-height:1.65;color:#334155;margin-bottom:4px}
+  .note li b{color:var(--text-primary)}
+  .kbd{background:#eff6ff;border:1px solid #bfdbfe;color:var(--accent);font-weight:700;
+    padding:1px 7px;border-radius:6px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🛠️ Trang "Cải Tiến" — Mockup UI</h1>
+  <div class="sub">Tab mới trong phân hệ Công việc · Nhân viên gửi cải tiến trong &lt; 2 phút · App tự quy đổi giá trị thành tiền · Quản lý chấm điểm &amp; xếp hạng</div>
+
+  <div class="flow">
+    <div class="fstep"><span class="fnum">1</span> Nhân viên gửi cải tiến<br>(3 bước, kèm ảnh/video)</div>
+    <span class="farrow">→</span>
+    <div class="fstep"><span class="fnum">2</span> App tự tính giá trị<br>(giờ công → tiền/năm)</div>
+    <span class="farrow">→</span>
+    <div class="fstep"><span class="fnum">3</span> Quản lý duyệt &amp;<br>chấm điểm 5 tiêu chí</div>
+    <span class="farrow">→</span>
+    <div class="fstep"><span class="fnum">4</span> Xếp hạng, vinh danh<br>&amp; nhân rộng</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-s="s1">📋 1 · Danh sách cải tiến</button>
+    <button class="tab" data-s="s2">✏️ 2 · Gửi cải tiến (3 bước)</button>
+    <button class="tab" data-s="s3">✅ 3 · Chi tiết & chấm điểm</button>
+    <button class="tab" data-s="s4">🏆 4 · Bảng xếp hạng</button>
+  </div>
+
+  <!-- ============ SCREEN 1: FEED ============ -->
+  <div class="screen active" id="s1">
+    <div class="phone"><div class="phone-inner">
+      <div class="statusbar"><span>9:41</span><span>📶 🔋</span></div>
+      <div class="app-body">
+        <div class="app-head"><h2>Cải tiến</h2><span class="mo">Tháng 7/2026 ▾</span></div>
+        <div class="stats">
+          <div class="stat"><b>18</b><span>Cải tiến tháng này</span></div>
+          <div class="stat hl"><b>212 tr</b><span>Giá trị làm lợi/năm</span></div>
+          <div class="stat"><b>3</b><span>Của tôi</span></div>
+        </div>
+        <div class="chips">
+          <span class="chip on">Tất cả</span><span class="chip">⏳ Chờ duyệt</span>
+          <span class="chip">✅ Đã duyệt</span><span class="chip">👤 Của tôi</span><span class="chip">⚡ Năng suất</span>
+        </div>
+
+        <div class="kcard">
+          <div class="ktop">
+            <div class="avatar" style="background:#7c3aed">H</div>
+            <div class="kwho"><b>Nguyễn Văn Hùng</b><span>Xưởng SX2 · 2 giờ trước</span></div>
+            <span class="cat" style="background:#fef3c7;color:#b45309">⚡ Năng suất</span>
+          </div>
+          <div class="ktitle">Làm đồ gá bắn vít nắp trên — bỏ thao tác căn chỉnh bằng tay</div>
+          <div class="ba">
+            <div class="img" style="background:linear-gradient(135deg,#64748b,#94a3b8)"><span class="lbl">TRƯỚC</span>📷<span>12 phút/SP</span></div>
+            <span class="arr">➜</span>
+            <div class="img" style="background:linear-gradient(135deg,#059669,#34d399)"><span class="lbl">SAU</span>🎬<span>9 phút/SP</span></div>
+          </div>
+          <div class="kfoot">
+            <span class="val">≈ 65,5 tr/năm</span>
+            <span class="st ok">✓ Đã duyệt · Loại A</span>
+            <span class="likes">👍 12</span>
+          </div>
+        </div>
+
+        <div class="kcard">
+          <div class="ktop">
+            <div class="avatar" style="background:#0891b2">L</div>
+            <div class="kwho"><b>Trần Thị Lan</b><span>Kho NVL · Hôm qua</span></div>
+            <span class="cat" style="background:#ede9fe;color:#6d28d9">🧹 5S</span>
+          </div>
+          <div class="ktitle">Kẻ vạch + bảng tên vị trí kệ khu A — hết cảnh tìm hàng 10 phút</div>
+          <div class="ba">
+            <div class="img" style="background:linear-gradient(135deg,#64748b,#94a3b8)"><span class="lbl">TRƯỚC</span>📷<span>Lộn xộn</span></div>
+            <span class="arr">➜</span>
+            <div class="img" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)"><span class="lbl">SAU</span>📷<span>Có vạch + tên</span></div>
+          </div>
+          <div class="kfoot">
+            <span class="val">≈ 18,2 tr/năm</span>
+            <span class="st wait">⏳ Chờ duyệt</span>
+            <span class="likes">👍 8</span>
+          </div>
+        </div>
+
+        <div class="kcard">
+          <div class="ktop">
+            <div class="avatar" style="background:#059669">T</div>
+            <div class="kwho"><b>Lê Minh Tuấn</b><span>QC · 3 ngày trước</span></div>
+            <span class="cat" style="background:#d1fae5;color:#047857">🎯 Chất lượng</span>
+          </div>
+          <div class="ktitle">Thêm cữ kiểm tra nhanh độ sâu ren — giảm lỗi ren lửng</div>
+          <div class="ba">
+            <div class="img" style="background:linear-gradient(135deg,#64748b,#94a3b8)"><span class="lbl">TRƯỚC</span>📷<span>Lỗi 4%</span></div>
+            <span class="arr">➜</span>
+            <div class="img" style="background:linear-gradient(135deg,#059669,#34d399)"><span class="lbl">SAU</span>📷<span>Lỗi 1,5%</span></div>
+          </div>
+          <div class="kfoot">
+            <span class="val">≈ 135 tr/năm</span>
+            <span class="st ok">✓ Đã duyệt · Loại A</span>
+            <span class="likes">👍 21</span>
+          </div>
+        </div>
+
+        <div class="fab-tip">Gửi cải tiến mới</div>
+        <div class="fab">+</div>
+      </div>
+    </div></div>
+
+    <div class="notes">
+      <div class="note"><h3>💡 Ý tưởng màn hình này</h3><ul>
+        <li><b>Dạng feed như mạng xã hội</b> — ảnh TRƯỚC/SAU đặt cạnh nhau là "ngôn ngữ" dễ hiểu nhất, ai lướt qua cũng thấy ngay cải tiến làm được gì.</li>
+        <li><b>Badge tiền xanh lá</b> nổi bật nhất card — giá trị quy đổi là thứ mọi người quan tâm và là cơ sở xếp hạng.</li>
+        <li><b>Nút 👍 để đồng nghiệp ủng hộ</b> — tạo động lực, đồng thời là 1 tín hiệu tham khảo khi admin chấm điểm.</li>
+        <li>3 ô thống kê trên đầu tạo "nhịp thi đua" theo tháng.</li>
+        <li>Nút <span class="kbd">+</span> luôn nổi — vào là gửi được ngay.</li>
+      </ul></div>
+      <div class="note"><h3>🔐 Phân quyền (theo hệ thống sẵn có)</h3><ul>
+        <li>Tab đăng ký vào <b>PERM_REGISTRY</b> module <span class="kbd">tasks</span> như các tab khác: quyền xem / gửi / duyệt tách riêng.</li>
+        <li>Nhân viên: xem feed + gửi + sửa bài của mình khi chưa duyệt.</li>
+        <li>Quản lý: thêm quyền chấm điểm, duyệt, từ chối.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 2: WIZARD ============ -->
+  <div class="screen" id="s2">
+    <div class="phone"><div class="phone-inner">
+      <div class="statusbar"><span>9:41</span><span>📶 🔋</span></div>
+      <div class="app-body">
+        <div class="app-head"><h2>Gửi cải tiến</h2><span style="font-size:13px;color:var(--text-secondary);font-weight:600">✕</span></div>
+        <div class="wsteps">
+          <div class="wstep on" data-w="1"><span class="wnum">1</span><span class="wlbl">Loại</span></div>
+          <div class="wline"></div>
+          <div class="wstep" data-w="2"><span class="wnum">2</span><span class="wlbl">Mô tả</span></div>
+          <div class="wline"></div>
+          <div class="wstep" data-w="3"><span class="wnum">3</span><span class="wlbl">Số liệu</span></div>
+        </div>
+
+        <!-- STEP 1 -->
+        <div id="w1">
+          <div class="tip">👇 Chọn loại cải tiến — app sẽ gợi ý số liệu cần nhập và <b>tự tính giá trị làm lợi</b> giúp bạn.</div>
+          <div class="catgrid">
+            <div class="catcard sel" data-cat="nangsuat"><span class="ic">⚡</span><b>Năng suất / Tốc độ</b><span>Làm nhanh hơn, bớt thao tác thừa</span></div>
+            <div class="catcard" data-cat="chatluong"><span class="ic">🎯</span><b>Chất lượng</b><span>Giảm lỗi, giảm hàng hỏng, bảo hành</span></div>
+            <div class="catcard" data-cat="dongian"><span class="ic">🧩</span><b>Đơn giản hóa</b><span>Ai cũng làm được, đào tạo nhanh hơn</span></div>
+            <div class="catcard" data-cat="ruiro"><span class="ic">🛡️</span><b>Giảm rủi ro</b><span>An toàn hơn, bớt nguy cơ sự cố</span></div>
+            <div class="catcard" data-cat="5s"><span class="ic">🧹</span><b>5S</b><span>Sàng lọc, sắp xếp, sạch sẽ...</span></div>
+            <div class="catcard" data-cat="moitruong"><span class="ic">🌿</span><b>Môi trường làm việc</b><span>Nơi làm việc đẹp, thoải mái hơn</span></div>
+            <div class="catcard" data-cat="quytrinh"><span class="ic">🔄</span><b>Quy trình</b><span>Bớt bước, bớt chờ đợi, bớt giấy tờ</span></div>
+            <div class="catcard" data-cat="chiphi"><span class="ic">💰</span><b>Tiết kiệm chi phí</b><span>Giảm vật tư, điện nước, phế liệu</span></div>
+          </div>
+          <div style="height:14px"></div>
+          <button class="btn pri" onclick="goStep(2)">Tiếp tục →</button>
+        </div>
+
+        <!-- STEP 2 -->
+        <div id="w2" style="display:none">
+          <div class="fld"><label>Tên cải tiến</label>
+            <input value="Làm đồ gá bắn vít nắp trên"></div>
+          <div class="fld"><label>🔴 TRƯỚC cải tiến — hiện trạng &amp; vấn đề</label>
+            <textarea rows="3" placeholder="Trước đây phải... mất khoảng... phút, hay bị...">Phải căn chỉnh nắp bằng tay, mỗi SP mất ~12 phút, hay bị lệch lỗ vít.</textarea>
+            <div class="phototiles">
+              <div class="ptile" style="background:linear-gradient(135deg,#64748b,#94a3b8)">📷</div>
+              <div class="ptile" style="background:linear-gradient(135deg,#64748b,#94a3b8)">🎬</div>
+              <div class="ptile add">＋</div>
+            </div></div>
+          <div class="fld"><label>🟢 SAU cải tiến — giải pháp &amp; kết quả</label>
+            <textarea rows="3" placeholder="Tôi đã... nhờ đó bây giờ...">Làm đồ gá định vị nắp, đặt vào là bắn vít luôn. Còn ~9 phút/SP, không còn lệch lỗ.</textarea>
+            <div class="phototiles">
+              <div class="ptile" style="background:linear-gradient(135deg,#059669,#34d399)">📷</div>
+              <div class="ptile add">＋</div>
+            </div></div>
+          <div class="tip">💡 Mẹo: quay <b>video 15–30 giây</b> thao tác trước và sau — bằng chứng tốt nhất, được cộng điểm "bằng chứng đầy đủ".</div>
+          <div class="btnrow">
+            <button class="btn ghost" onclick="goStep(1)">← Quay lại</button>
+            <button class="btn pri" onclick="goStep(3)">Tiếp tục →</button>
+          </div>
+        </div>
+
+        <!-- STEP 3 -->
+        <div id="w3" style="display:none">
+          <div id="f-nangsuat">
+            <div class="tip">⚡ Nhập 3 con số — app tự quy đổi ra <b>giờ công và tiền</b>. Số liệu sẽ được quản lý xác nhận khi duyệt.</div>
+            <div class="grid2">
+              <div class="fld"><label>Thời gian TRƯỚC <em>(phút/SP)</em></label><input type="number" id="ns-truoc" value="12"></div>
+              <div class="fld"><label>Thời gian SAU <em>(phút/SP)</em></label><input type="number" id="ns-sau" value="9"></div>
+            </div>
+            <div class="fld"><label>Sản lượng áp dụng <em>(SP/ngày)</em></label><input type="number" id="ns-sl" value="120"></div>
+            <div class="cfgnote">⚙️ Đơn giá giờ công <b>35.000 đ/giờ</b>, 26 ngày công/tháng — admin cấu hình, nhân viên không phải nhập.</div>
+            <div class="calcbox">
+              <div class="cb-t">💎 GIÁ TRỊ LÀM LỢI (APP TỰ TÍNH)</div>
+              <div class="cb-main" id="ns-nam">≈ 65,5 triệu/năm</div>
+              <div class="cb-sub" id="ns-thang">Tiết kiệm 156 giờ/tháng ≈ 5,46 triệu/tháng</div>
+            </div>
+          </div>
+          <div id="f-chatluong" style="display:none">
+            <div class="tip">🎯 Nhập tỷ lệ lỗi trước/sau — app quy đổi số lỗi giảm được thành tiền.</div>
+            <div class="grid2">
+              <div class="fld"><label>Tỷ lệ lỗi TRƯỚC <em>(%)</em></label><input type="number" id="cl-truoc" value="4" step="0.1"></div>
+              <div class="fld"><label>Tỷ lệ lỗi SAU <em>(%)</em></label><input type="number" id="cl-sau" value="1.5" step="0.1"></div>
+            </div>
+            <div class="grid2">
+              <div class="fld"><label>Sản lượng <em>(SP/tháng)</em></label><input type="number" id="cl-sl" value="2500"></div>
+              <div class="fld"><label>Chi phí 1 SP lỗi <em>(đ)</em></label><input type="number" id="cl-cp" value="180000"></div>
+            </div>
+            <div class="cfgnote">⚙️ Chi phí 1 SP lỗi gợi ý sẵn từ cấu hình (sửa lại + bảo hành + uy tín), có thể sửa.</div>
+            <div class="calcbox">
+              <div class="cb-t">💎 GIÁ TRỊ LÀM LỢI (APP TỰ TÍNH)</div>
+              <div class="cb-main" id="cl-nam">≈ 135 triệu/năm</div>
+              <div class="cb-sub" id="cl-thang">Giảm 62,5 lỗi/tháng ≈ 11,25 triệu/tháng</div>
+            </div>
+          </div>
+          <div id="f-khac" style="display:none">
+            <div class="tip">🧭 Loại này khó đo trực tiếp — trả lời nhanh mấy câu, app ước lượng mức đóng góp; quản lý sẽ thẩm định thêm.</div>
+            <div class="fld"><label>Cải tiến có giúp tiết kiệm thời gian không?</label>
+              <select><option>Có — khoảng 15 phút/ngày cho cả khu vực</option><option>Không đáng kể</option></select></div>
+            <div class="fld"><label>Phạm vi hưởng lợi</label>
+              <select><option>Cả xưởng / bộ phận (8 người)</option><option>Chỉ vị trí của tôi</option><option>Toàn công ty</option></select></div>
+            <div class="calcbox" style="background:linear-gradient(135deg,#7c3aed,#a78bfa)">
+              <div class="cb-t">💎 ƯỚC LƯỢNG ĐÓNG GÓP</div>
+              <div class="cb-main">≈ 18,2 triệu/năm</div>
+              <div class="cb-sub">65 giờ/tháng của khu vực + điểm 5S · quản lý xác nhận khi duyệt</div>
+            </div>
+          </div>
+          <div class="switchrow" id="nodata" onclick="this.classList.toggle('on')">
+            <span class="sw"></span> Chưa đo được số liệu — nhờ quản lý đánh giá giúp
+          </div>
+          <div class="btnrow">
+            <button class="btn ghost" onclick="goStep(2)">← Quay lại</button>
+            <button class="btn pri">📤 Gửi cải tiến</button>
+          </div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="notes">
+      <div class="note"><h3>💡 Vì sao chia 3 bước?</h3><ul>
+        <li><b>Bước 1 — chọn loại bằng icon lớn</b>: không cần gõ chữ, chọn loại xong app biết cần hỏi số liệu gì.</li>
+        <li><b>Bước 2 — kể chuyện TRƯỚC/SAU</b>: 2 ô đỏ/xanh với placeholder gợi ý sẵn câu ("Trước đây phải... mất... phút") — công nhân không quen viết vẫn điền nhanh. Ảnh/video upload ngay khi chọn (dùng lại <b>AttachmentInput</b> sẵn có).</li>
+        <li><b>Bước 3 — form số liệu ĐỘNG theo loại</b>: Năng suất hỏi 3 số; Chất lượng hỏi tỷ lệ lỗi; loại khó đo (5S, môi trường...) chỉ hỏi 2 câu trắc nghiệm.</li>
+        <li><b>Ô kết quả gradient cập nhật realtime</b> khi gõ số — nhân viên thấy ngay "cải tiến của mình đáng giá bao nhiêu" → động lực gửi tiếp. <i>(Hãy thử sửa số ở Bước 3 trong mockup!)</i></li>
+        <li>Có lối thoát <b>"Chưa đo được số liệu"</b> — không ai bị chặn vì thiếu con số.</li>
+      </ul></div>
+      <div class="note"><h3>🧮 Công thức app tự tính (engine thuần + test)</h3><ul>
+        <li><b>Năng suất</b>: (phút trước − phút sau) × SL/ngày × 26 ngày ÷ 60 = giờ/tháng × đơn giá giờ công → đ/tháng, ×12 → đ/năm.</li>
+        <li><b>Chất lượng</b>: (% lỗi trước − % lỗi sau) × SL/tháng × chi phí 1 lỗi.</li>
+        <li><b>Chi phí</b>: (chi phí trước − sau) × số lượng kỳ.</li>
+        <li><b>Rủi ro</b>: điểm rủi ro (khả năng × mức độ 1–5) trước/sau + thiệt hại ước tính × xác suất/năm.</li>
+        <li><b>5S / Môi trường / Quy trình</b>: thời gian tiết kiệm khu vực + phạm vi hưởng lợi → giá trị ước lượng, quản lý xác nhận.</li>
+        <li>Đơn giá giờ công, chi phí lỗi mặc định... để trong bảng <span class="kbd">cai_tien_config</span> — admin sửa 1 chỗ, không hard-code.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 3: DETAIL + REVIEW ============ -->
+  <div class="screen" id="s3">
+    <div class="phone"><div class="phone-inner">
+      <div class="statusbar"><span>9:41</span><span>📶 🔋</span></div>
+      <div class="app-body">
+        <div class="app-head"><h2 style="font-size:16px">← Chi tiết cải tiến</h2><span class="st wait">⏳ Chờ duyệt</span></div>
+        <div class="dethead">
+          <div class="avatar" style="background:#7c3aed">H</div>
+          <div class="kwho"><b>Nguyễn Văn Hùng · Xưởng SX2</b><span>Gửi 24/07/2026 · ⚡ Năng suất</span></div>
+        </div>
+        <div class="ktitle" style="font-size:16px">Làm đồ gá bắn vít nắp trên — bỏ thao tác căn chỉnh bằng tay</div>
+        <div class="panel before"><h4>🔴 Trước cải tiến</h4>
+          <p>Phải căn chỉnh nắp bằng tay, mỗi SP mất ~12 phút, hay bị lệch lỗ vít.</p>
+          <div class="phototiles"><div class="ptile" style="background:linear-gradient(135deg,#64748b,#94a3b8)">📷</div><div class="ptile" style="background:linear-gradient(135deg,#64748b,#94a3b8)">🎬</div></div>
+        </div>
+        <div class="panel after"><h4>🟢 Sau cải tiến</h4>
+          <p>Làm đồ gá định vị nắp, đặt vào là bắn vít luôn. Còn ~9 phút/SP, không còn lệch lỗ.</p>
+          <div class="phototiles"><div class="ptile" style="background:linear-gradient(135deg,#059669,#34d399)">📷</div></div>
+        </div>
+        <div class="panel"><h4>📊 Số liệu &amp; giá trị</h4>
+          <table class="mtable">
+            <tr><td>Thời gian / SP</td><td>12 → 9 phút (−25%)</td></tr>
+            <tr><td>Sản lượng áp dụng</td><td>120 SP/ngày</td></tr>
+            <tr><td>Giờ công tiết kiệm</td><td>156 giờ/tháng</td></tr>
+            <tr><td style="color:#047857;font-weight:700">Giá trị làm lợi</td><td style="color:#047857">≈ 65,5 triệu/năm</td></tr>
+          </table>
+        </div>
+        <div class="panel" style="border-left:4px solid var(--accent)"><h4>⭐ Chấm điểm (quản lý)</h4>
+          <div class="scorerow"><span class="sn">Giá trị làm lợi</span><span class="sw2">40%</span>
+            <div class="dots"><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span><span class="dot"></span></div></div>
+          <div class="scorerow"><span class="sn">Tính sáng tạo</span><span class="sw2">20%</span>
+            <div class="dots"><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span><span class="dot"></span></div></div>
+          <div class="scorerow"><span class="sn">Khả năng nhân rộng</span><span class="sw2">20%</span>
+            <div class="dots"><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span></div></div>
+          <div class="scorerow"><span class="sn">Nỗ lực thực hiện</span><span class="sw2">10%</span>
+            <div class="dots"><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span><span class="dot"></span><span class="dot"></span></div></div>
+          <div class="scorerow"><span class="sn">Bằng chứng đầy đủ</span><span class="sw2">10%</span>
+            <div class="dots"><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span><span class="dot f"></span></div></div>
+          <div class="totalscore"><span>Tổng điểm: <b>86/100</b></span><span class="rankA">Loại A 🏅</span></div>
+        </div>
+        <div class="btnrow">
+          <button class="btn ghost">Cần bổ sung</button>
+          <button class="btn pri">✓ Duyệt · Loại A</button>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="notes">
+      <div class="note"><h3>💡 Cơ sở đánh giá xếp hạng</h3><ul>
+        <li><b>5 tiêu chí có trọng số</b> → tổng 100 điểm → tự xếp loại: <b>A ≥ 80 · B ≥ 60 · C ≥ 40 · Ghi nhận &lt; 40</b>. Trọng số admin chỉnh được trong cấu hình.</li>
+        <li>"Giá trị làm lợi" chiếm 40% và <b>app đã tính sẵn</b> — quản lý chỉ xác nhận số liệu, đỡ tranh cãi.</li>
+        <li>Chấm bằng <b>chạm 1–5 chấm tròn</b> — quản lý duyệt trên điện thoại 30 giây/bài.</li>
+        <li>3 hành động: <b>Duyệt</b> (chốt điểm + xếp loại) · <b>Cần bổ sung</b> (trả lại kèm ghi chú, nhân viên sửa gửi lại) · <b>Từ chối</b>.</li>
+        <li>Sau duyệt, cải tiến hay có thể đánh dấu <b>"Nhân rộng toàn nhà máy"</b> → cộng thêm điểm thưởng cho tác giả.</li>
+      </ul></div>
+      <div class="note"><h3>🔁 Vòng đời trạng thái</h3><ul>
+        <li><span class="kbd">Nháp</span> → <span class="kbd">Chờ duyệt</span> → <span class="kbd">Đã duyệt (A/B/C)</span> hoặc <span class="kbd">Cần bổ sung</span> / <span class="kbd">Từ chối</span> → <span class="kbd">Nhân rộng</span></li>
+        <li>Có thể nối vào n8n/Zalo sẵn có: gửi thông báo khi có cải tiến mới chờ duyệt, và chúc mừng khi đạt loại A.</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <!-- ============ SCREEN 4: LEADERBOARD ============ -->
+  <div class="screen" id="s4">
+    <div class="phone"><div class="phone-inner">
+      <div class="statusbar"><span>9:41</span><span>📶 🔋</span></div>
+      <div class="app-body">
+        <div class="app-head"><h2>🏆 Xếp hạng cải tiến</h2></div>
+        <div class="chips">
+          <span class="chip on">Tháng 7</span><span class="chip">Quý 3</span><span class="chip">Năm 2026</span>
+        </div>
+        <div class="podium">
+          <div class="pod">
+            <div class="pav" style="background:#0891b2">L</div>
+            <div class="pname">Trần T. Lan</div><div class="pval">98,4 tr · 4 CT</div>
+            <div class="pbar" style="height:64px;background:linear-gradient(180deg,#cbd5e1,#94a3b8)">2</div>
+          </div>
+          <div class="pod">
+            <div class="pav" style="background:#7c3aed;width:60px;height:60px">H</div>
+            <div class="pname">Nguyễn V. Hùng</div><div class="pval">142 tr · 5 CT</div>
+            <div class="pbar" style="height:86px;background:linear-gradient(180deg,#fbbf24,#d97706)">1</div>
+          </div>
+          <div class="pod">
+            <div class="pav" style="background:#059669">T</div>
+            <div class="pname">Lê M. Tuấn</div><div class="pval">67 tr · 2 CT</div>
+            <div class="pbar" style="height:48px;background:linear-gradient(180deg,#fda4af,#fb7185)">3</div>
+          </div>
+        </div>
+        <div class="lrow"><span class="rn">4</span><div class="avatar" style="background:#d97706;width:30px;height:30px;font-size:12px">P</div>
+          <div class="ln"><b>Phạm Văn Phú</b><span>Xưởng SX1 · 2 cải tiến · 2 loại B</span></div><span class="lv">31 tr</span></div>
+        <div class="lrow"><span class="rn">5</span><div class="avatar" style="background:#dc2626;width:30px;height:30px;font-size:12px">M</div>
+          <div class="ln"><b>Vũ Thị Mai</b><span>Lắp ráp · 3 cải tiến · 1 loại B</span></div><span class="lv">24 tr</span></div>
+        <div class="lrow"><span class="rn">6</span><div class="avatar" style="background:#64748b;width:30px;height:30px;font-size:12px">D</div>
+          <div class="ln"><b>Hoàng Đức Duy</b><span>Kho TP · 1 cải tiến · loại C</span></div><span class="lv">9 tr</span></div>
+        <div class="panel" style="margin-top:12px"><h4>🏭 Theo bộ phận</h4>
+          <table class="mtable">
+            <tr><td>🥇 Xưởng SX2</td><td>168 tr · 7 CT</td></tr>
+            <tr><td>🥈 Kho NVL</td><td>102 tr · 5 CT</td></tr>
+            <tr><td>🥉 QC</td><td>78 tr · 3 CT</td></tr>
+          </table>
+        </div>
+        <div class="badges">
+          <div class="badge"><span class="bi">🌱</span><b>Khởi đầu<br>CT đầu tiên</b></div>
+          <div class="badge"><span class="bi">💎</span><b>Làm lợi<br>&gt; 50 triệu</b></div>
+          <div class="badge"><span class="bi">🔥</span><b>3 tháng<br>liên tiếp</b></div>
+          <div class="badge"><span class="bi">🚀</span><b>Được<br>nhân rộng</b></div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="notes">
+      <div class="note"><h3>💡 Thi đua &amp; động lực</h3><ul>
+        <li><b>Bục vinh danh top 3</b> + xếp hạng theo <b>tổng giá trị làm lợi đã duyệt</b> (đã có xác nhận của quản lý — công bằng).</li>
+        <li>Xếp hạng cả <b>theo bộ phận</b> — tạo thi đua tập thể, quản đốc cũng có động lực thúc đẩy.</li>
+        <li><b>Huy hiệu</b> cho các mốc (CT đầu tiên, &gt;50tr, 3 tháng liên tiếp, được nhân rộng) — người chưa lên top vẫn có mục tiêu.</li>
+        <li>Màn này có thể chiếu lên <b>TV Dashboard</b> sẵn có của app ở xưởng.</li>
+      </ul></div>
+      <div class="note"><h3>🗄️ Dữ liệu (Supabase)</h3><ul>
+        <li><span class="kbd">cai_tien</span>: id, user_id, title, category, status, before_text, after_text, attachments_before/after (jsonb), metrics (jsonb theo loại), computed_value (jsonb: giờ/tháng, đ/tháng, đ/năm), score (jsonb 5 tiêu chí), rank_grade, reviewer_id, review_note, adopted (nhân rộng), timestamps.</li>
+        <li><span class="kbd">cai_tien_config</span>: đơn giá giờ công, ngày công/tháng, chi phí lỗi mặc định, trọng số 5 tiêu chí, ngưỡng A/B/C.</li>
+        <li>Engine tính giá trị: <span class="kbd">src/lib/caiTienValue.js</span> — hàm thuần + unit test (theo pattern kpiTuDong.js, stagingMove.js).</li>
+        <li>Ảnh/video: dùng lại <span class="kbd">AttachmentInput</span> + Supabase Storage như tab Công việc.</li>
+      </ul></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // chuyển màn hình
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById(t.dataset.s).classList.add('active');
+  }));
+
+  // wizard
+  let cat = 'nangsuat';
+  function goStep(n){
+    [1,2,3].forEach(i => {
+      document.getElementById('w'+i).style.display = i===n ? '' : 'none';
+      const el = document.querySelector('.wstep[data-w="'+i+'"]');
+      el.classList.toggle('on', i===n);
+      el.classList.toggle('done', i<n);
+    });
+    if(n===3){
+      document.getElementById('f-nangsuat').style.display  = cat==='nangsuat' ? '' : 'none';
+      document.getElementById('f-chatluong').style.display = cat==='chatluong' ? '' : 'none';
+      document.getElementById('f-khac').style.display      = (cat!=='nangsuat' && cat!=='chatluong') ? '' : 'none';
+    }
+  }
+  document.querySelectorAll('.wstep').forEach(s => s.addEventListener('click', () => goStep(+s.dataset.w)));
+  document.querySelectorAll('.catcard').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll('.catcard').forEach(x => x.classList.remove('sel'));
+    c.classList.add('sel'); cat = c.dataset.cat;
+  }));
+
+  // tính realtime
+  const fmt = v => {
+    if (v >= 1e9) return (v/1e9).toLocaleString('vi-VN',{maximumFractionDigits:2}) + ' tỷ';
+    if (v >= 1e6) return (v/1e6).toLocaleString('vi-VN',{maximumFractionDigits:1}) + ' triệu';
+    return Math.round(v).toLocaleString('vi-VN') + ' đ';
+  };
+  const RATE = 35000, DAYS = 26;
+  function calcNS(){
+    const t = +document.getElementById('ns-truoc').value || 0;
+    const s = +document.getElementById('ns-sau').value || 0;
+    const q = +document.getElementById('ns-sl').value || 0;
+    const savedMin = Math.max(0, t - s) * q * DAYS;
+    const hrs = savedMin / 60, month = hrs * RATE;
+    document.getElementById('ns-nam').textContent = '≈ ' + fmt(month*12) + '/năm';
+    document.getElementById('ns-thang').textContent =
+      'Tiết kiệm ' + Math.round(hrs).toLocaleString('vi-VN') + ' giờ/tháng ≈ ' + fmt(month) + '/tháng';
+  }
+  function calcCL(){
+    const t = +document.getElementById('cl-truoc').value || 0;
+    const s = +document.getElementById('cl-sau').value || 0;
+    const q = +document.getElementById('cl-sl').value || 0;
+    const c = +document.getElementById('cl-cp').value || 0;
+    const defects = Math.max(0, t - s)/100 * q, month = defects * c;
+    document.getElementById('cl-nam').textContent = '≈ ' + fmt(month*12) + '/năm';
+    document.getElementById('cl-thang').textContent =
+      'Giảm ' + defects.toLocaleString('vi-VN',{maximumFractionDigits:1}) + ' lỗi/tháng ≈ ' + fmt(month) + '/tháng';
+  }
+  ['ns-truoc','ns-sau','ns-sl'].forEach(id => document.getElementById(id).addEventListener('input', calcNS));
+  ['cl-truoc','cl-sau','cl-sl','cl-cp'].forEach(id => document.getElementById(id).addEventListener('input', calcCL));
+  calcNS(); calcCL();
+</script>
+</body>
+</html>
