@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase as db } from '../../lib/supabase';
-import { Search, Loader2, Play, Printer, AlertCircle, CheckCircle, Package, Upload, Check, Download, RefreshCw, Edit3 } from 'lucide-react';
+import { Search, Loader2, Play, Printer, AlertCircle, CheckCircle, Package, Upload, Check, Download, RefreshCw, Edit3, Forklift } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
 import { aggregateComponentDemand, allocateFIFO, allocateExport, buildFinishedItems, round1, compareLocations, sortStockForFIFO, sortResultByLocation } from '../../lib/productionAlloc';
+import { buildStagingLocation, buildStagingMoves } from '../../lib/stagingMove';
 import { getCatalogItems, getBomProducts } from '../../lib/catalogCache';
 import { missingCapacities, capacityMap } from '../../lib/capacityGuard';
 import { parseManualOrders } from '../../lib/manualOrderParse';
@@ -298,6 +299,9 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   // + cờ chặn bấm-kép tức thì cho nút "LƯU PHIẾU".
   const batchTokenRef = useRef(null);
   const submittingRef = useRef(false);
+  // Token chống trùng RIÊNG cho thao tác "Chuyển SX trước" (không dùng chung với
+  // token lưu phiếu SX). Giữ nguyên qua các lần bấm để lần 2 bị DB chặn.
+  const moveTokenRef = useRef(null);
   
   // Form State (Persist across tab switch)
   // Danh sách thành phẩm trên 1 phiếu SX (multi). Mỗi dòng: { id, code, name, qty }
@@ -337,6 +341,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
   const [isShortage, setIsShortage] = useState(() => localStorage.getItem('prod_isShortage') === 'true');
   const [orderCreated, setOrderCreated] = useState(() => localStorage.getItem('prod_orderCreated') === 'true');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isMoving, setIsMoving] = useState(false); // đang chạy "Chuyển SX trước"
 
   // New States for Delivery Mode & Manual Export
   const [mode, setMode] = useState(() => localStorage.getItem('prod_mode') || 'production'); // 'production' | 'delivery' | 'manual_export'
@@ -877,6 +882,133 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     }
   };
 
+  // ── CHUYỂN SX TRƯỚC ────────────────────────────────────────────────────────
+  // Dồn toàn bộ nguyên liệu đang có của phiếu về 1 vị trí tập kết SX4-<ngày phiếu>.
+  // KHÔNG tạo phiếu/lệnh sản xuất, KHÔNG trừ nhu cầu DKSX, KHÔNG ghi luu_xuat:
+  // hàng vẫn nằm trong kho, chỉ đổi vị trí. Chứng từ PCV-... để in & hủy được.
+  // Spec: docs/superpowers/specs/2026-07-24-chuyen-sx-truoc-design.md
+  const handleMoveToStaging = async () => {
+    if (!allocations) return;
+
+    let destLocation, plan;
+    try {
+      destLocation = buildStagingLocation(prodDate);
+      plan = buildStagingMoves(allocations, destLocation);
+    } catch (e) {
+      return alert(e.message);
+    }
+
+    if (plan.totalCodes === 0) {
+      return alert(`Không có linh kiện nào để chuyển (hết hàng, hoặc đã nằm sẵn ở ${destLocation}).`);
+    }
+
+    const warn = plan.skippedCodes.length > 0
+      ? `\n\nBỏ qua ${plan.skippedCodes.length} mã không có hàng để chuyển: ${plan.skippedCodes.join(', ')}`
+      : '';
+    const ok = window.confirm(
+      `Chuyển ${plan.totalCodes} mã / tổng ${fmtQty(plan.totalQty)} sang vị trí ${destLocation}?\n\n`
+      + 'KHÔNG tạo phiếu sản xuất, KHÔNG tạo lệnh SX, KHÔNG trừ nhu cầu DKSX.\n'
+      + 'Hàng vẫn nằm trong kho, chỉ đổi vị trí.' + warn
+    );
+    if (!ok) return;
+
+    // Chặn bấm-kép tức thì (đồng bộ), không chờ re-render như disabled=
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsMoving(true);
+    if (!moveTokenRef.current) moveTokenRef.current = newDocToken();
+
+    try {
+      const userStr = localStorage.getItem('user_id') || localStorage.getItem('username') || localStorage.getItem('staffName') || 'Nhân viên';
+
+      // 1) Mã phiếu chuyển PCV-YYYYMMDD-NN
+      const todayStr = new Date(prodDate).toISOString().split('T')[0].replace(/-/g, '');
+      const { data: latestPcv } = await db.from('inventory_picking_logs')
+        .select('order_code').ilike('order_code', `PCV-${todayStr}-%`)
+        .order('order_code', { ascending: false }).limit(1);
+      let seq = 1;
+      if (latestPcv && latestPcv.length > 0) {
+        const l = parseInt(latestPcv[0].order_code.split('-').pop(), 10);
+        if (!isNaN(l)) seq = l + 1;
+      }
+      const pcvCode = `PCV-${todayStr}-${seq.toString().padStart(2, '0')}`;
+
+      // 2) Chiếm token TRƯỚC khi động vào kho (bấm lại / nhiều tab → dừng)
+      const claim = await claimDocToken(moveTokenRef.current, { orderCode: pcvCode, kind: 'staging_move', createdBy: userStr });
+      if (!claim.ok) {
+        alert('Thao tác chuyển này đã được gửi trước đó'
+          + (claim.orderCode ? ` (phiếu ${claim.orderCode})` : '')
+          + '.\nBấm "← Quay lại" rồi tính lại để xem tồn kho hiện tại.');
+        return;
+      }
+
+      const baseTimeMs = Date.now();
+      const pickingLogs = [];
+
+      for (const mv of plan.moves) {
+        // 2.1 Trừ từng vị trí nguồn. Giữ nguyên dòng có SL 0 (không xoá) để
+        //     Hủy Phiếu tìm đúng dòng mà cộng trả lại.
+        for (const src of mv.sources) {
+          const { error: upErr } = await db.from('inventory_stock')
+            .update({ quantity: src.remaining }).eq('id', src.stock_id);
+          if (upErr) throw upErr;
+          pickingLogs.push({
+            order_code: pcvCode, product_code: 'CHUYEN_SX',
+            component_code: mv.code, component_name: mv.name,
+            location: src.location,
+            quantity_before: src.before, quantity_taken: -src.taken, quantity_after: src.remaining,
+            created_by: userStr, notes: `Chuyển SX trước → ${destLocation}`,
+            created_at: new Date(baseTimeMs).toISOString(),
+          });
+        }
+
+        // 2.2 Cộng vào vị trí đích. inventory_stock DUY NHẤT theo (item_code, location)
+        //     nên phải tìm-rồi-update, chưa có mới insert.
+        const { data: dest, error: destErr } = await db.from('inventory_stock')
+          .select('id, quantity').eq('item_code', mv.code).eq('location', destLocation).maybeSingle();
+        if (destErr) throw destErr;
+        const destBefore = dest ? Number(dest.quantity) : 0;
+        if (dest) {
+          const { error: e2 } = await db.from('inventory_stock')
+            .update({ quantity: destBefore + mv.total }).eq('id', dest.id);
+          if (e2) throw e2;
+        } else {
+          const { error: e2 } = await db.from('inventory_stock').insert({
+            item_code: mv.code, item_name: mv.name, unit: mv.unit,
+            location: destLocation, quantity: mv.total, import_date: todayLocal(),
+          });
+          if (e2) throw e2;
+        }
+        pickingLogs.push({
+          order_code: pcvCode, product_code: 'CHUYEN_SX',
+          component_code: mv.code, component_name: mv.name,
+          location: destLocation,
+          quantity_before: destBefore, quantity_taken: mv.total, quantity_after: destBefore + mv.total,
+          created_by: userStr, notes: 'Nhận hàng chuyển SX trước',
+          created_at: new Date(baseTimeMs + 1000).toISOString(), // in sau dòng xuất
+        });
+      }
+
+      const { error: logErr } = await db.from('inventory_picking_logs').insert(pickingLogs);
+      if (logErr) console.warn('Không thể lưu log chuyển SX:', logErr);
+
+      alert(`Đã chuyển ${plan.totalCodes} mã sang vị trí ${destLocation}.\n`
+        + `Phiếu chuyển: ${pcvCode} — in ở tab Quản Lý Chứng Từ.\n`
+        + 'Không có phiếu sản xuất nào được tạo.');
+      handleResetToCards();
+    } catch (e) {
+      console.error(e);
+      // CỐ Ý KHÔNG nhả token: cộng vào vị trí đích không idempotent, bấm lại có
+      // thể cộng đúp. Đường phục hồi an toàn là tính lại từ tồn kho thật.
+      alert('Lỗi khi chuyển SX trước: ' + e.message
+        + '\n\nCó thể MỘT PHẦN đã được chuyển. Bấm "← Quay lại", tính lại phiếu'
+        + ' và kiểm tra tab Tồn vị trí trước khi thử lần nữa.');
+    } finally {
+      setIsMoving(false);
+      submittingRef.current = false;
+    }
+  };
+
   const handleExecuteSave = async () => {
     if (isShortage) return alert('Không thể tạo lệnh vì thiếu linh kiện!');
     if (!allocations) return;
@@ -1414,6 +1546,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     setEditingCompIdx(null);
     setPriorityLocations([]);
     setRecomputeDemand(null);
+    moveTokenRef.current = null; // phiếu mới → được phép chuyển SX trước lần nữa
   };
 
   // Lưu phân bổ sửa tay vào allocations[compIdx] rồi tính lại trạng thái thiếu toàn cục
@@ -1800,14 +1933,29 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
                   ĐÃ XÁC NHẬN LỆNH & TRỪ KHO (Chờ In)
                 </div>
               ) : (
-                <button 
-                  onClick={handleExecuteSave} 
-                  disabled={isShortage || isProcessing} 
-                  style={{...s.btn, ...(isShortage || isProcessing ? s.btnDisabled : {background:'#10b981', color:'#fff'})}}
-                >
-                  {isProcessing ? <Loader2 size={16} style={{animation:'spin 1s linear infinite'}}/> : <Check size={16}/>}
-                  LƯU PHIẾU (Chờ in)
-                </button>
+                <>
+                  {/* Chuyển SX trước: CỐ Ý không khoá khi thiếu hàng — đó chính là
+                      tình huống dùng nó (sản xuất trước bằng số nguyên liệu đang có). */}
+                  {mode === 'production' && (
+                    <button
+                      onClick={handleMoveToStaging}
+                      disabled={isProcessing || isMoving}
+                      title="Dồn toàn bộ nguyên liệu đang có của phiếu về vị trí SX4 để sản xuất trước — KHÔNG tạo phiếu sản xuất"
+                      style={{...s.btn, ...(isProcessing || isMoving ? s.btnDisabled : {background:'#f59e0b', color:'#fff'})}}
+                    >
+                      {isMoving ? <Loader2 size={16} style={{animation:'spin 1s linear infinite'}}/> : <Forklift size={16}/>}
+                      CHUYỂN SX TRƯỚC
+                    </button>
+                  )}
+                  <button
+                    onClick={handleExecuteSave}
+                    disabled={isShortage || isProcessing || isMoving}
+                    style={{...s.btn, ...(isShortage || isProcessing || isMoving ? s.btnDisabled : {background:'#10b981', color:'#fff'})}}
+                  >
+                    {isProcessing ? <Loader2 size={16} style={{animation:'spin 1s linear infinite'}}/> : <Check size={16}/>}
+                    LƯU PHIẾU (Chờ in)
+                  </button>
+                </>
               )}
             </div>
 
