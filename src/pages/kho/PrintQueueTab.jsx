@@ -510,7 +510,7 @@ export default function PrintQueueTab({ cancelPerm = false }) {
             return (
             <div key={order.order_code} style={{padding:'24px 20px', pageBreakAfter: index < printingOrders.length - 1 ? 'always' : 'auto'}}>
               <WarehouseReceiptPrint
-                kind={isNK ? 'NK' : 'XK'}
+                kind={isNK ? 'NK' : (order.type === 'CHUYỂN VỊ TRÍ SX' ? 'CV' : 'XK')}
                 code={order.order_code}
                 date={order.created_at}
                 source={source || reason}

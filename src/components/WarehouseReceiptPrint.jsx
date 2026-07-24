@@ -6,7 +6,7 @@ import React from 'react';
 // phiếu nhập (ImportStockTab). Chỉ render nội dung — host tự lo hiện/ẩn khi in.
 //
 // Props:
-//  - kind: 'NK' | 'XK'
+//  - kind: 'NK' | 'XK' | 'CV' (chuyển vị trí trong kho — hàng không rời kho)
 //  - code: mã phiếu
 //  - date: Date | ISO string (ngày lập)
 //  - source: Nguồn nhập (NK) — thường là loại nhập + NCC/nguồn
@@ -37,6 +37,7 @@ function Field({ label, value }) {
 
 export default function WarehouseReceiptPrint({ kind, code, date, source, reason, diaChi, sdt, rows = [] }) {
   const isNK = kind === 'NK';
+  const isCV = kind === 'CV'; // phiếu chuyển vị trí: dùng khung XK nhưng không có khách hàng
   const { dd, mm, yyyy } = fmtDate(date);
 
   // Bảng nén để vừa khổ A4 dọc (NK 10 cột nên chữ nhỏ hơn XK 8 cột).
@@ -49,7 +50,7 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
   return (
     <div style={{ width: '100%', color: '#000', fontFamily: 'Times New Roman, serif' }}>
       <h2 style={{ textAlign: 'center', fontSize: '1.3rem', fontWeight: 700, margin: '0 0 4px' }}>
-        {isNK ? 'PHIẾU NHẬP KHO' : 'PHIẾU XUẤT KHO'}
+        {isNK ? 'PHIẾU NHẬP KHO' : isCV ? 'PHIẾU CHUYỂN VỊ TRÍ' : 'PHIẾU XUẤT KHO'}
       </h2>
       <div style={{ textAlign: 'center', fontSize: '0.82rem', marginBottom: 8 }}>
         Ngày {dd} tháng {mm} năm {yyyy}
@@ -64,6 +65,10 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
             <Field label="Địa chỉ:" value={diaChi} />
             <Field label="ĐT:" value={sdt} />
             <Field label="Lý do nhập:" value={reason} />
+          </>
+        ) : isCV ? (
+          <>
+            <Field label="Nội dung:" value={reason} />
           </>
         ) : (
           <>
