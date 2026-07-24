@@ -923,6 +923,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     if (!moveTokenRef.current) moveTokenRef.current = newDocToken();
 
     let pcvCode = '';
+    let movedAny = false; // đã có ghi kho thật chưa — quyết định cách xử lý khi lỗi (đọc được ở catch nên phải khai báo NGOÀI try)
     try {
       const userStr = localStorage.getItem('user_id') || localStorage.getItem('username') || localStorage.getItem('staffName') || 'Nhân viên';
 
@@ -956,6 +957,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
           const { error: upErr } = await db.from('inventory_stock')
             .update({ quantity: src.remaining }).eq('id', src.stock_id);
           if (upErr) throw upErr;
+          movedAny = true;
         }
 
         // 2.2 Cộng vào vị trí đích. inventory_stock DUY NHẤT theo (item_code, location)
@@ -989,8 +991,17 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       handleResetToCards();
     } catch (e) {
       console.error(e);
-      // CỐ Ý KHÔNG nhả token: cộng vào vị trí đích không idempotent, bấm lại có thể
-      // cộng đúp. Phần đã chuyển đã có chứng từ PCV nên hủy phiếu đảo lại được.
+      if (!movedAny) {
+        // Chưa động vào kho (thường là lỗi mạng lúc chiếm token) → nhả token,
+        // GIỮ NGUYÊN phiếu nháp để bấm lại được, giống luồng lưu phiếu hiện có.
+        await releaseDocToken(moveTokenRef.current);
+        moveTokenRef.current = newDocToken();
+        alert('Lỗi khi chuyển SX trước: ' + e.message
+          + '\n\nChưa có gì được chuyển, tồn kho không đổi — có thể thử lại.');
+        return;
+      }
+      // Đã ghi kho: CỐ Ý KHÔNG nhả token vì cộng vào vị trí đích không idempotent,
+      // bấm lại có thể cộng đúp. Phần đã chuyển đã có chứng từ PCV nên hủy được.
       // Reset màn hình để không ai bấm LƯU PHIẾU trên bảng phân bổ đã lỗi thời.
       alert('Lỗi khi chuyển SX trước: ' + e.message
         + `\n\nCó thể MỘT PHẦN đã được chuyển. Phần đã chuyển nằm ở phiếu ${pcvCode || 'PCV'}`
