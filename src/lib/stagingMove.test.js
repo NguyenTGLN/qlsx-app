@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildStagingLocation, buildStagingMoves } from './stagingMove';
+import { buildStagingLocation, buildStagingMoves, buildStagingLogs } from './stagingMove';
 
 describe('buildStagingLocation', () => {
   it('ngày phiếu YYYY-MM-DD → SX4-DD/MM/YYYY', () => {
@@ -95,5 +95,57 @@ describe('buildStagingMoves', () => {
 
   it('allocations rỗng/null → kế hoạch rỗng, không ném lỗi', () => {
     expect(buildStagingMoves(null, DEST)).toEqual({ moves: [], totalQty: 0, totalCodes: 0, skippedCodes: [] });
+  });
+});
+
+describe('buildStagingLogs', () => {
+  const DEST = 'SX4-24/07/2026';
+  const BASE_MS = 1753000000000;
+  const move = {
+    code: 'A', name: 'Linh kiện A', unit: 'Cái', total: 15,
+    sources: [
+      { stock_id: 1, location: 'HH1', before: 10, taken: 10, remaining: 0 },
+      { stock_id: 2, location: 'HH2', before: 8, taken: 5, remaining: 3 },
+    ],
+  };
+  const ctx = { orderCode: 'PCV-20260724-01', destLocation: DEST, destBefore: 20, createdBy: 'NV1', baseTimeMs: BASE_MS };
+
+  it('mọi dòng thoả before + taken === after', () => {
+    const rows = buildStagingLogs(move, ctx);
+    expect(rows).toHaveLength(3); // 2 dòng xuất (nguồn) + 1 dòng nhập (đích)
+    rows.forEach(row => {
+      expect(row.quantity_before + row.quantity_taken).toBe(row.quantity_after);
+    });
+  });
+
+  it('đảo theo công thức huy_phieu (stock -= quantity_taken) trả tồn về đúng trước khi chuyển', () => {
+    const rows = buildStagingLogs(move, ctx);
+    // Tồn NGAY SAU khi chuyển (những gì thực sự nằm trong inventory_stock lúc này)
+    const stock = { HH1: 0, HH2: 3, [DEST]: 35 };
+    rows.forEach(row => {
+      stock[row.location] -= row.quantity_taken;
+    });
+    expect(stock.HH1).toBe(10); // = before của dòng nguồn HH1
+    expect(stock.HH2).toBe(8);  // = before của dòng nguồn HH2
+    expect(stock[DEST]).toBe(20); // = destBefore
+  });
+
+  it('dòng nhập ở vị trí đích đóng dấu sau các dòng xuất', () => {
+    const rows = buildStagingLogs(move, ctx);
+    const destRow = rows[rows.length - 1];
+    expect(destRow.location).toBe(DEST);
+    const sourceRows = rows.slice(0, -1);
+    expect(sourceRows.every(r => r.location !== DEST)).toBe(true);
+    sourceRows.forEach(srcRow => {
+      expect(new Date(destRow.created_at).getTime()).toBeGreaterThan(new Date(srcRow.created_at).getTime());
+    });
+  });
+
+  it('mọi dòng mang order_code và product_code CHUYEN_SX', () => {
+    const rows = buildStagingLogs(move, ctx);
+    rows.forEach(row => {
+      expect(row.order_code).toBe(ctx.orderCode);
+      expect(row.product_code).toBe('CHUYEN_SX');
+    });
   });
 });

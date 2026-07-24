@@ -66,6 +66,13 @@ Quy tắc lọc từng `alloc`:
 
 Hàm thuần, không gọi DB → test được đầy đủ các nhánh trên.
 
+### `buildStagingLogs(move, { orderCode, destLocation, destBefore, createdBy, baseTimeMs })`
+Dựng các dòng `inventory_picking_logs` cho MỘT mã: mỗi vị trí nguồn 1 dòng xuất (âm), rồi 1
+dòng nhập tại vị trí đích (dương). Tách khỏi tầng I/O vì đây chính là dữ liệu mà hàm hủy phiếu
+dựa vào; test khoá 2 bất biến: `before + taken === after` ở mọi dòng, và áp công thức đảo của
+`huy_phieu` (`stock -= quantity_taken`) trả tồn về đúng trạng thái trước khi chuyển. Nhận
+`baseTimeMs` từ ngoài nên hoàn toàn tất định.
+
 ## Ghi kho — `handleMoveToStaging()` trong `ProductionOrderTab.jsx`
 
 Chạy tuần tự, có `submittingRef` chặn bấm kép đồng bộ + `claimDocToken` chống trùng ở DB
@@ -84,7 +91,8 @@ Chạy tuần tự, có `submittingRef` chặn bấm kép đồng bộ + `claimD
    `import_date = todayLocal()`.
    Bắt buộc làm **sau** bước 4 và tuần tự theo mã, vì `inventory_stock` có ràng buộc DUY NHẤT
    `(item_code, location)` (xem `sql/fix_inventory_stock_unique.sql`).
-6. **Ghi log** `inventory_picking_logs`, `product_code = 'CHUYEN_SX'`:
+6. **Ghi log** `inventory_picking_logs` (dựng bằng `buildStagingLogs` trong `stagingMove.js`),
+   `product_code = 'CHUYEN_SX'`:
    - mỗi `source`: `location` = vị trí cũ, `quantity_taken = -taken`, `quantity_before = before`,
      `quantity_after = remaining`, `notes = 'Chuyển SX trước → ' + destLocation`,
      `created_at = baseTimeMs`.
@@ -92,8 +100,25 @@ Chạy tuần tự, có `submittingRef` chặn bấm kép đồng bộ + `claimD
      `quantity_before` = tồn đích trước, `quantity_after` = sau,
      `notes = 'Nhận hàng chuyển SX trước'`, `created_at = baseTimeMs + 1000`
      (để bản in xếp xuất trước, nhập sau).
-7. Lỗi giữa chừng → `releaseDocToken` + báo lỗi (cùng cách xử lý hiện có).
+
+   **Ghi NGAY sau khi chuyển xong từng mã, không gom cuối vòng lặp.** Log chính là phiếu PCV
+   và là thứ DUY NHẤT khiến lần chuyển này đảo ngược được — gom cuối vòng lặp thì một lỗi
+   giữa chừng sẽ xoá sạch log của những mã đã chuyển xong, để lại hàng đã dịch chuyển mà
+   không có chứng từ nào để hủy. Ghi từng mã thì lỗi giữa chừng vẫn để lại 1 phiếu PCV đúng
+   với phần đã chuyển.
+
+   **Lỗi ghi log là lỗi CHẶN, không được `console.warn` rồi đi tiếp** — nếu bỏ qua, hệ thống
+   sẽ báo thành công và mời người dùng đi in một phiếu không tồn tại.
+7. Lỗi giữa chừng → **KHÔNG** `releaseDocToken` (khác luồng lưu phiếu): bước cộng vào vị trí
+   đích không idempotent nên bấm lại có thể cộng đúp. Báo lỗi kèm mã `PCV-...` để vào Quản lý
+   chứng từ hủy nếu cần, rồi `handleResetToCards()` — buộc tính lại từ tồn kho thật, đồng thời
+   chặn việc bấm LƯU PHIẾU trên bảng phân bổ đã lỗi thời.
 8. Thành công → `alert` mã `PCV-...` + nhắc in ở Quản lý chứng từ → `handleResetToCards()`.
+
+**Đánh đổi đã chấp nhận:** gom nhiều lô về 1 dòng ở SX4 làm mất ngày nhập gốc của từng lô
+(`import_date` dòng đích = ngày chuyển). Tuổi FIFO của phần hàng đã kê ra chuyền bị đặt lại;
+chấp nhận được vì hàng ở SX4 luôn được ưu tiên lấy trước nên không nằm chờ theo FIFO nữa.
+Đường hủy phiếu không bị ảnh hưởng: các dòng nguồn giữ nguyên `import_date` của chúng.
 
 ## Ưu tiên lấy SX4 — `src/lib/productionAlloc.js`
 
@@ -144,7 +169,9 @@ Phần in, lọc, chọn, Hủy Phiếu dùng lại nguyên cơ chế hiện có
 **Unit (`vitest`)**
 - `src/lib/stagingMove.test.js`: định dạng vị trí; gộp nhiều vị trí nguồn của cùng một mã;
   bỏ `taken <= 0`, bỏ `stock_id` rỗng, bỏ dòng trùng vị trí đích; mã hết sạch vào `skippedCodes`;
-  `totalQty`/`totalCodes` đúng.
+  `totalQty`/`totalCodes` đúng. `buildStagingLogs`: bất biến `before + taken === after`; đảo
+  theo công thức `huy_phieu` trả tồn về đúng trước khi chuyển; dòng nhập đích đóng dấu sau
+  các dòng xuất; mọi dòng mang đúng `order_code` và `product_code = 'CHUYEN_SX'`.
 - `src/lib/productionAlloc.test.js`: các ca ưu tiên SX4 nêu trên.
 
 **Thủ công trên app**

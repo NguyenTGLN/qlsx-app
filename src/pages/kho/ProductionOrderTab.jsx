@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import { EXPORT_REASONS, reasonType, reasonNeedsOrderRef } from '../../lib/exportReasons';
 import { aggregateComponentDemand, allocateFIFO, allocateExport, buildFinishedItems, round1, compareLocations, sortStockForFIFO, sortResultByLocation } from '../../lib/productionAlloc';
-import { buildStagingLocation, buildStagingMoves } from '../../lib/stagingMove';
+import { buildStagingLocation, buildStagingMoves, buildStagingLogs } from '../../lib/stagingMove';
 import { getCatalogItems, getBomProducts } from '../../lib/catalogCache';
 import { missingCapacities, capacityMap } from '../../lib/capacityGuard';
 import { parseManualOrders } from '../../lib/manualOrderParse';
@@ -903,21 +903,26 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     }
 
     const warn = plan.skippedCodes.length > 0
-      ? `\n\nBỏ qua ${plan.skippedCodes.length} mã không có hàng để chuyển: ${plan.skippedCodes.join(', ')}`
+      ? `\n\nBỏ qua ${plan.skippedCodes.length} mã không có gì cần chuyển: ${plan.skippedCodes.join(', ')}`
       : '';
+
+    // Chặn bấm-kép tức thì (đồng bộ), không chờ re-render như disabled=. Kiểm tra
+    // TRƯỚC confirm để nếu 1 lượt chuyển đang chạy thì dừng ngay, không hỏi lại vô ích.
+    if (submittingRef.current) return;
     const ok = window.confirm(
       `Chuyển ${plan.totalCodes} mã / tổng ${fmtQty(plan.totalQty)} sang vị trí ${destLocation}?\n\n`
       + 'KHÔNG tạo phiếu sản xuất, KHÔNG tạo lệnh SX, KHÔNG trừ nhu cầu DKSX.\n'
-      + 'Hàng vẫn nằm trong kho, chỉ đổi vị trí.' + warn
+      + 'Hàng vẫn nằm trong kho, chỉ đổi vị trí.\n'
+      + 'Sẽ tạo 1 phiếu chuyển PCV-... (in / hủy ở tab Quản Lý Chứng Từ).\n'
+      + 'Phiếu sản xuất đang lập sẽ bị BỎ, màn hình quay về lưới chọn phiếu.' + warn
     );
     if (!ok) return;
 
-    // Chặn bấm-kép tức thì (đồng bộ), không chờ re-render như disabled=
-    if (submittingRef.current) return;
     submittingRef.current = true;
     setIsMoving(true);
     if (!moveTokenRef.current) moveTokenRef.current = newDocToken();
 
+    let pcvCode = '';
     try {
       const userStr = localStorage.getItem('user_id') || localStorage.getItem('username') || localStorage.getItem('staffName') || 'Nhân viên';
 
@@ -931,7 +936,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
         const l = parseInt(latestPcv[0].order_code.split('-').pop(), 10);
         if (!isNaN(l)) seq = l + 1;
       }
-      const pcvCode = `PCV-${todayStr}-${seq.toString().padStart(2, '0')}`;
+      pcvCode = `PCV-${todayStr}-${seq.toString().padStart(2, '0')}`;
 
       // 2) Chiếm token TRƯỚC khi động vào kho (bấm lại / nhiều tab → dừng)
       const claim = await claimDocToken(moveTokenRef.current, { orderCode: pcvCode, kind: 'staging_move', createdBy: userStr });
@@ -943,7 +948,6 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       }
 
       const baseTimeMs = Date.now();
-      const pickingLogs = [];
 
       for (const mv of plan.moves) {
         // 2.1 Trừ từng vị trí nguồn. Giữ nguyên dòng có SL 0 (không xoá) để
@@ -952,14 +956,6 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
           const { error: upErr } = await db.from('inventory_stock')
             .update({ quantity: src.remaining }).eq('id', src.stock_id);
           if (upErr) throw upErr;
-          pickingLogs.push({
-            order_code: pcvCode, product_code: 'CHUYEN_SX',
-            component_code: mv.code, component_name: mv.name,
-            location: src.location,
-            quantity_before: src.before, quantity_taken: -src.taken, quantity_after: src.remaining,
-            created_by: userStr, notes: `Chuyển SX trước → ${destLocation}`,
-            created_at: new Date(baseTimeMs).toISOString(),
-          });
         }
 
         // 2.2 Cộng vào vị trí đích. inventory_stock DUY NHẤT theo (item_code, location)
@@ -979,18 +975,13 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
           });
           if (e2) throw e2;
         }
-        pickingLogs.push({
-          order_code: pcvCode, product_code: 'CHUYEN_SX',
-          component_code: mv.code, component_name: mv.name,
-          location: destLocation,
-          quantity_before: destBefore, quantity_taken: mv.total, quantity_after: destBefore + mv.total,
-          created_by: userStr, notes: 'Nhận hàng chuyển SX trước',
-          created_at: new Date(baseTimeMs + 1000).toISOString(), // in sau dòng xuất
-        });
-      }
 
-      const { error: logErr } = await db.from('inventory_picking_logs').insert(pickingLogs);
-      if (logErr) console.warn('Không thể lưu log chuyển SX:', logErr);
+        // Ghi chứng từ NGAY sau khi chuyển xong từng mã: nếu lỗi giữa chừng thì
+        // phiếu PCV vẫn đúng với phần ĐÃ chuyển → Hủy Phiếu đảo lại được.
+        const { error: logErr } = await db.from('inventory_picking_logs')
+          .insert(buildStagingLogs(mv, { orderCode: pcvCode, destLocation, destBefore, createdBy: userStr, baseTimeMs }));
+        if (logErr) throw new Error(`Đã chuyển kho mã ${mv.code} nhưng KHÔNG ghi được chứng từ ${pcvCode}: ${logErr.message}`);
+      }
 
       alert(`Đã chuyển ${plan.totalCodes} mã sang vị trí ${destLocation}.\n`
         + `Phiếu chuyển: ${pcvCode} — in ở tab Quản Lý Chứng Từ.\n`
@@ -998,11 +989,14 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       handleResetToCards();
     } catch (e) {
       console.error(e);
-      // CỐ Ý KHÔNG nhả token: cộng vào vị trí đích không idempotent, bấm lại có
-      // thể cộng đúp. Đường phục hồi an toàn là tính lại từ tồn kho thật.
+      // CỐ Ý KHÔNG nhả token: cộng vào vị trí đích không idempotent, bấm lại có thể
+      // cộng đúp. Phần đã chuyển đã có chứng từ PCV nên hủy phiếu đảo lại được.
+      // Reset màn hình để không ai bấm LƯU PHIẾU trên bảng phân bổ đã lỗi thời.
       alert('Lỗi khi chuyển SX trước: ' + e.message
-        + '\n\nCó thể MỘT PHẦN đã được chuyển. Bấm "← Quay lại", tính lại phiếu'
-        + ' và kiểm tra tab Tồn vị trí trước khi thử lần nữa.');
+        + `\n\nCó thể MỘT PHẦN đã được chuyển. Phần đã chuyển nằm ở phiếu ${pcvCode || 'PCV'}`
+        + ' — vào Quản Lý Chứng Từ để hủy nếu cần.\n'
+        + 'Màn hình sẽ về lưới chọn phiếu; hãy tính lại từ tồn kho thật trước khi thử lần nữa.');
+      handleResetToCards();
     } finally {
       setIsMoving(false);
       submittingRef.current = false;

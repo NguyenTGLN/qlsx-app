@@ -61,3 +61,30 @@ export function buildStagingMoves(allocations, destLocation) {
 
   return { moves, totalQty, totalCodes: moves.length, skippedCodes };
 }
+
+// Sinh các dòng chứng từ (inventory_picking_logs) cho MỘT mã trong 1 lần chuyển.
+// Mỗi vị trí nguồn 1 dòng XUẤT (quantity_taken ÂM), rồi 1 dòng NHẬP tại vị trí đích
+// (quantity_taken DƯƠNG, đóng dấu sau 1 giây để bản in xếp xuất trước - nhập sau).
+// Bất biến bắt buộc: before + taken === after ở MỌI dòng, và khi Hủy Phiếu áp công
+// thức đảo của huy_phieu (stock -= quantity_taken) thì tồn trở lại đúng như trước.
+// move: 1 phần tử của buildStagingMoves().moves
+// ctx: { orderCode, destLocation, destBefore, createdBy, baseTimeMs }
+export function buildStagingLogs(move, { orderCode, destLocation, destBefore, createdBy, baseTimeMs }) {
+  const rows = move.sources.map(src => ({
+    order_code: orderCode, product_code: 'CHUYEN_SX',
+    component_code: move.code, component_name: move.name,
+    location: src.location,
+    quantity_before: src.before, quantity_taken: -src.taken, quantity_after: src.remaining,
+    created_by: createdBy, notes: `Chuyển SX trước → ${destLocation}`,
+    created_at: new Date(baseTimeMs).toISOString(),
+  }));
+  rows.push({
+    order_code: orderCode, product_code: 'CHUYEN_SX',
+    component_code: move.code, component_name: move.name,
+    location: destLocation,
+    quantity_before: destBefore, quantity_taken: move.total, quantity_after: destBefore + move.total,
+    created_by: createdBy, notes: 'Nhận hàng chuyển SX trước',
+    created_at: new Date(baseTimeMs + 1000).toISOString(),
+  });
+  return rows;
+}
