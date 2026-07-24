@@ -52,6 +52,8 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   const [logs, setLogs] = useState([]);
   const [viec, setViec] = useState([]);        // công việc tạo trong tháng của kỳ
   const [sanXuat, setSanXuat] = useState([]);  // bản ghi production_logs của tháng
+  // null (khác []) = chưa nối được tab Cải tiến — luật tự động sẽ "không chấm" thay vì đè 0.
+  const [caiTien, setCaiTien] = useState(null);
   const [danhMuc, setDanhMuc] = useState([]);  // chỉ tiêu của MỌI kỳ, cho ô chọn khi thêm
   const [chamCong, setChamCong] = useState([]);  // bảng chấm công của kỳ
   const [ngoaiLe, setNgoaiLe] = useState([]);    // miễn trừ chuyên cần của kỳ
@@ -175,6 +177,24 @@ export default function KpiTab({ me, users = [], perm = {} }) {
         loiTaiViec = loiTaiViec || err?.message || String(err);
       }
 
+      // Bài cải tiến liên quan tới kỳ, để chấm tự động chỉ tiêu ĐÓNG GÓP CẢI TIẾN.
+      // Lấy bài TẠO hoặc DUYỆT từ đầu tháng trở đi (bài gửi tháng trước duyệt tháng này
+      // phải lọt vào) — luatDongGopCaiTien tự khớp đúng tháng theo mốc duyệt.
+      // Hỏng/bảng chưa tạo → null: luật trả "không chấm", KHÔNG đè 0 lên điểm cũ.
+      let dsCaiTien = null;
+      try {
+        const tuThang = new Date(nam, thang - 1, 1).toISOString();
+        const { data, error } = await fetchAllRows(() => supabase
+          .from('cai_tien')
+          .select('id, nhan_vien_id, title, status, xep_loai, created_at, reviewed_at')
+          .or(`created_at.gte.${tuThang},reviewed_at.gte.${tuThang}`)
+          .order('id'));
+        if (error) throw error;
+        dsCaiTien = data || [];
+      } catch {
+        dsCaiTien = null;
+      }
+
       setRows(ct || []);
       setLogs(nk);
       setDanhMuc(dsDanhMuc);
@@ -182,6 +202,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
       setNgoaiLe(dsNgoaiLe);
       setViec(dsViec);
       setSanXuat(dsSanXuat);
+      setCaiTien(dsCaiTien);
       setLoiViec(loiTaiViec);
     } catch (err) {
       setLoi(err?.message || String(err));
@@ -191,6 +212,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
       setSanXuat([]);
       setChamCong([]);
       setNgoaiLe([]);
+      setCaiTien(null);
     } finally {
       setLoading(false);
     }
@@ -201,8 +223,8 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   // Chấm tự động chèn vào TRƯỚC mọi thứ khác: từ đây trở xuống dùng rowsTD/logsTD, không dùng
   // rows/logs thô nữa. Bỏ sót một chỗ là chỗ đó hiện điểm cũ trong khi chỗ khác hiện điểm mới.
   const { rows: rowsTD, logs: logsTD } = useMemo(
-    () => apDungChamTuDong(rows, logs, viec, ky, undefined, sanXuat, chamCong, ngoaiLe),
-    [rows, logs, viec, ky, sanXuat, chamCong, ngoaiLe]);
+    () => apDungChamTuDong(rows, logs, viec, ky, undefined, sanXuat, chamCong, ngoaiLe, caiTien),
+    [rows, logs, viec, ky, sanXuat, chamCong, ngoaiLe, caiTien]);
 
   // Dòng BO_PHAN dùng chung cho mọi người → luôn kèm vào bảng của từng cá nhân.
   const dongBoPhan = useMemo(() => rowsTD.filter(r => r.cap_do === 'BO_PHAN'), [rowsTD]);

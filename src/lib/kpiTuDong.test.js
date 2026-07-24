@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { viecTrongThang, sanXuatTrongThang, LUAT_TU_DONG, apDungChamTuDong, NGUON_TU_DONG } from './kpiTuDong';
+import { viecTrongThang, sanXuatTrongThang, caiTienTrongThang, LUAT_TU_DONG, apDungChamTuDong, NGUON_TU_DONG } from './kpiTuDong';
 
 // Việc mẫu: mặc định tạo tháng 7/2026, giao cho 'a', đã xong đúng hạn.
 const viec = (o = {}) => ({
@@ -589,5 +589,100 @@ describe('apDungChamTuDong với miễn trừ (ngoaiLe)', () => {
     ];
     const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY, [], ds, ngoaiLe);
     expect(kq.rows[0].diem_chot).toBe(4);   // không miễn được ngày nào → vẫn 4
+  });
+});
+
+// ─── ĐÓNG GÓP CẢI TIẾN ───────────────────────────────────────────────────────
+// Bài mẫu: của 'a', đã duyệt trong tháng 7/2026 (mốc duyệt 20/07).
+const baiCT = (o = {}) => ({
+  id: 1, nhan_vien_id: 'a', title: 'Đồ gá bắn vít', status: 'DA_DUYET', xep_loai: 'A',
+  created_at: '2026-07-10T03:00:00Z', reviewed_at: '2026-07-20T03:00:00Z', ...o,
+});
+
+describe('caiTienTrongThang', () => {
+  it('bài ĐÃ DUYỆT tính theo THÁNG CỦA MỐC DUYỆT, không theo tháng gửi', () => {
+    const ds = [
+      baiCT(),                                                                                  // gửi 7, duyệt 7
+      baiCT({ id: 2, created_at: '2026-06-28T03:00:00Z', reviewed_at: '2026-07-02T03:00:00Z' }), // gửi 6, duyệt 7 → vẫn kỳ 7
+      baiCT({ id: 3, reviewed_at: '2026-08-01T03:00:00Z' }),                                    // duyệt 8 → không thuộc kỳ 7
+    ];
+    expect(caiTienTrongThang(ds, 'a', '2026-07').map(b => b.id)).toEqual([1, 2]);
+  });
+
+  it('bài chờ duyệt / cần bổ sung GỬI trong tháng cũng trả về (cho ghi chú); nháp và từ chối thì không', () => {
+    const ds = [
+      baiCT({ id: 1, status: 'CHO_DUYET', reviewed_at: null }),
+      baiCT({ id: 2, status: 'CAN_BO_SUNG', reviewed_at: null }),
+      baiCT({ id: 3, status: 'NHAP', reviewed_at: null }),
+      baiCT({ id: 4, status: 'TU_CHOI' }),
+    ];
+    expect(caiTienTrongThang(ds, 'a', '2026-07').map(b => b.id)).toEqual([1, 2]);
+  });
+
+  it('chỉ lấy bài của đúng người; kỳ hỏng trả rỗng không nổ', () => {
+    expect(caiTienTrongThang([baiCT({ nhan_vien_id: 'b' })], 'a', '2026-07')).toHaveLength(0);
+    expect(caiTienTrongThang([baiCT()], 'a', '')).toEqual([]);
+    expect(caiTienTrongThang()).toEqual([]);
+  });
+});
+
+describe('LUAT_TU_DONG.DONG_GOP_CAI_TIEN', () => {
+  const luat = LUAT_TU_DONG.DONG_GOP_CAI_TIEN;
+  const ct = { ma: 'DONG_GOP_CAI_TIEN', chi_tieu: 2, nhan_vien_id: 'a' };
+  const goi = (caiTien, ky = '2026-07') => luat(ct, [], [], [], ['a'], '2026-07-24', caiTien, ky);
+
+  it('đủ 2 bài duyệt → trọn điểm, ghi chú nêu tên bài kèm xếp loại', () => {
+    const kq = goi([baiCT(), baiCT({ id: 2, title: 'Kẻ vạch kho', xep_loai: 'B' })]);
+    expect(kq.tiLe).toBe(1);
+    expect(kq.ghiChu).toContain('2 cải tiến được duyệt');
+    expect(kq.ghiChu).toContain('Đồ gá bắn vít');
+    expect(kq.ghiChu).toContain('loại B');
+  });
+
+  it('vượt chỉ tiêu (3 bài) vẫn kẹp trần 1', () => {
+    expect(goi([baiCT(), baiCT({ id: 2 }), baiCT({ id: 3 })]).tiLe).toBe(1);
+  });
+
+  it('1 bài duyệt → nửa điểm', () => {
+    expect(goi([baiCT()]).tiLe).toBe(0.5);
+  });
+
+  it('bài chờ duyệt KHÔNG cộng điểm nhưng được nhắc trong ghi chú', () => {
+    const kq = goi([baiCT(), baiCT({ id: 2, status: 'CHO_DUYET', reviewed_at: null })]);
+    expect(kq.tiLe).toBe(0.5);
+    expect(kq.ghiChu).toContain('chờ duyệt');
+  });
+
+  it('không có bài nào → 0 điểm, ghi chú nói rõ chỉ tiêu tối thiểu', () => {
+    const kq = goi([]);
+    expect(kq.tiLe).toBe(0);
+    expect(kq.ghiChu).toContain('tối thiểu 2');
+  });
+
+  it('chưa nối được dữ liệu tab Cải tiến (null) → KHÔNG chấm, không phải 0 điểm', () => {
+    expect(goi(null).tiLe).toBeNull();
+  });
+
+  it('kỳ trước khi tab Cải tiến hoạt động (trước 2026-07) → KHÔNG chấm, giữ điểm tay cũ', () => {
+    expect(goi([baiCT()], '2026-06').tiLe).toBeNull();
+  });
+});
+
+describe('apDungChamTuDong — nguồn cai_tien', () => {
+  const r = { id: 9, ma: 'DONG_GOP_CAI_TIEN', cap_do: 'CA_NHAN', nhan_vien_id: 'a', chi_tieu: 2, diem_chot: null };
+
+  it('2 bài duyệt trong tháng → diem_chot = 2, kèm dòng ảo giải thích', () => {
+    const caiTien = [baiCT(), baiCT({ id: 2 })];
+    const kq = apDungChamTuDong([r], [], [], '2026-07', '2026-07-24', [], [], [], caiTien);
+    expect(kq.rows[0].diem_chot).toBe(2);
+    const ao = kq.logs.find(l => l.chi_tieu_id === 9);
+    expect(ao.nguon).toBe(NGUON_TU_DONG);
+    expect(ao.ly_do).toContain('cải tiến được duyệt');
+  });
+
+  it('không truyền nguồn cai_tien (mặc định) → giữ nguyên điểm cũ, không đè 0', () => {
+    const daChot = { ...r, diem_chot: 1.5 };
+    const kq = apDungChamTuDong([daChot], [], [], '2026-07', '2026-07-24', [], [], []);
+    expect(kq.rows[0].diem_chot).toBe(1.5);
   });
 });

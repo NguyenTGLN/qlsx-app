@@ -366,6 +366,74 @@ function luatChuyenCanCaNhan(ct, viec, sanXuat, chamCong = []) {
   return { ...tuDiemTru(ct, tru, ghiChu), nhuongChamTay: true };
 }
 
+// ── Đóng góp cải tiến ───────────────────────────────────────────────────────
+// Bài cải tiến tính cho một người trong một kỳ (bảng cai_tien, tab Cải tiến):
+//   - ĐÃ DUYỆT với mốc DUYỆT (reviewed_at) rơi trong tháng — bài được tính điểm.
+//     Mốc duyệt chứ không phải mốc gửi (chủ app chốt 24/07/2026): gửi 30/07 mà
+//     02/08 mới duyệt thì là điểm của tháng 8, không ai bị mất bài vì duyệt chậm.
+//   - CHỜ DUYỆT / CẦN BỔ SUNG gửi trong tháng — không tính điểm, chỉ để ghi chú
+//     nói "còn N bài chờ duyệt" thay vì im lặng chấm 0.
+//   - NHÁP / TỪ CHỐI không bao giờ tính.
+// Cắt tháng theo giờ máy, cùng lý do với viecTrongThang ở đầu file.
+export function caiTienTrongThang(caiTien = [], nvId, ky) {
+  const [nam, thang] = String(ky || '').split('-').map(Number);
+  if (!nam || !thang) return [];
+  const trongThang = iso => {
+    if (!iso) return false;
+    const d = new Date(iso);
+    return d.getFullYear() === nam && d.getMonth() + 1 === thang;
+  };
+  return (caiTien || []).filter(b => {
+    if (!b || b.nhan_vien_id !== nvId) return false;
+    if (b.status === 'DA_DUYET') return trongThang(b.reviewed_at);
+    if (b.status === 'CHO_DUYET' || b.status === 'CAN_BO_SUNG') return trongThang(b.created_at);
+    return false;
+  });
+}
+
+// Chép từ mô tả chỉ tiêu gốc: "mỗi nhân viên cần tối thiểu 2 đóng góp cải tiến/tháng".
+// KHÔNG lấy từ ct.chi_tieu — cột đó là ĐIỂM tối đa (tình cờ cũng bằng 2), trùng số
+// chứ không trùng nghĩa; mai chủ app nâng điểm tối đa lên 5 mà số bài yêu cầu vẫn là 2.
+const SO_CAI_TIEN_TOI_THIEU = 2;
+
+// Tab Cải tiến chạy từ kỳ này. Kỳ TRƯỚC đó phải trả tiLe null (không chấm) chứ không
+// phải 0: mở lại tháng 6 mà chấm 0 là đè mất điểm đã chấm tay của cả công ty.
+const KY_CAI_TIEN_BAT_DAU = '2026-07';
+
+function luatDongGopCaiTien(ct, viec, sanXuat, chamCong, thanhVien, ngay, caiTien, ky) {
+  if (ky && ky < KY_CAI_TIEN_BAT_DAU) {
+    return { tiLe: null, ghiChu: 'Tab Cải tiến hoạt động từ 07/2026 — kỳ này giữ điểm chấm tay.' };
+  }
+  // null = KHÔNG nối được nguồn dữ liệu (bảng chưa tạo / lỗi tải) — khác hẳn mảng rỗng
+  // (nối được nhưng người này chưa có bài nào, cái đó chấm 0 thật).
+  if (caiTien == null) {
+    return { tiLe: null, ghiChu: 'Chưa đọc được dữ liệu tab Cải tiến — chưa có căn cứ chấm.' };
+  }
+
+  const duyet = caiTien.filter(b => b.status === 'DA_DUYET');
+  const dangCho = caiTien.length - duyet.length;
+  const tiLe = Math.min(1, duyet.length / SO_CAI_TIEN_TOI_THIEU);
+
+  const tenBai = b => `"${b.title}" (loại ${b.xep_loai === 'GHI_NHAN' ? 'Ghi nhận' : b.xep_loai || '—'})`;
+  const ds = duyet.slice(0, MAX_TEN_TRE).map(tenBai).join(', ');
+  const them = duyet.length > MAX_TEN_TRE ? ` …và ${duyet.length - MAX_TEN_TRE} bài nữa` : '';
+  const phanCho = dangCho
+    ? ` Còn ${dangCho} bài đang chờ duyệt/bổ sung — duyệt xong điểm tự cộng.` : '';
+
+  if (!duyet.length) {
+    return {
+      tiLe,
+      ghiChu: `Tự động: chưa có cải tiến nào được duyệt trong tháng`
+        + ` (chỉ tiêu tối thiểu ${SO_CAI_TIEN_TOI_THIEU} bài, tính theo mốc duyệt) — 0 điểm.${phanCho}`,
+    };
+  }
+  return {
+    tiLe,
+    ghiChu: `Tự động: ${duyet.length} cải tiến được duyệt trong tháng (tính theo mốc duyệt),`
+      + ` chỉ tiêu tối thiểu ${SO_CAI_TIEN_TOI_THIEU} bài — đạt ${Math.round(tiLe * 100)}%: ${ds}${them}.${phanCho}`,
+  };
+}
+
 // Bảng đăng ký luật, khoá theo `ma` của chỉ tiêu.
 export const LUAT_TU_DONG = {
   HT_CONG_VIEC_DUNG_HAN: luatHoanThanhDungHan,
@@ -374,6 +442,7 @@ export const LUAT_TU_DONG = {
   SAN_XUAT: luatHieuSuatSanXuat,
   CHUYEN_CAN_BO_PHAN: luatChuyenCanBoPhan,
   CHUYEN_CAN_CA_NHAN: luatChuyenCanCaNhan,
+  DONG_GOP_CAI_TIEN: luatDongGopCaiTien,
 };
 
 const homNay = () => new Date().toISOString().slice(0, 10);
@@ -391,8 +460,12 @@ const homNay = () => new Date().toISOString().slice(0, 10);
 //
 // ⚠ Dòng ảo có id 'ao-…' và KHÔNG BAO GIỜ được ghi xuống DB. Mọi chỗ ghi nhật ký đều đi qua
 // form riêng, không lấy từ mảng này.
+// `caiTien` để MẶC ĐỊNH null chứ không phải []: null nghĩa là nơi gọi không nối/không
+// tải được nguồn Cải tiến → luật trả "không chấm" thay vì đè 0 lên điểm cũ. Mảng rỗng
+// mới có nghĩa "nối được nhưng chưa ai có bài".
 export function apDungChamTuDong(
-  rows = [], logs = [], tasks = [], ky, ngay = homNay(), sanXuat = [], chamCong = [], ngoaiLe = []) {
+  rows = [], logs = [], tasks = [], ky, ngay = homNay(), sanXuat = [], chamCong = [], ngoaiLe = [],
+  caiTien = null) {
   const rowsMoi = [];
   const logsAo = [];
   const ds = rows || [];
@@ -438,7 +511,9 @@ export function apDungChamTuDong(
       laBoPhan ? [] : sanXuatTrongThang(sanXuat, r.nhan_vien_id, ky),
       cc,
       thanhVien,
-      ngay);
+      ngay,
+      laBoPhan || caiTien == null ? null : caiTienTrongThang(caiTien, r.nhan_vien_id, ky),
+      ky);
 
     // Luật nhường chấm tay: có người thật đã chốt điểm thì giữ nguyên số của họ, chỉ kèm lời
     // giải thích. Dùng cho chỉ tiêu mà dữ liệu chỉ đo được một phần (chuyên cần cá nhân).
