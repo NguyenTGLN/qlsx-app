@@ -292,4 +292,31 @@ describe('ưu tiên vị trí tập kết SX4 (chuyển SX trước)', () => {
     const { result } = allocateExport([{ code: 'A', name: 'a', unit: '', requiredQty: 5 }], stock, {});
     expect(result[0].allocations[0]).toMatchObject({ stock_id: 1, location: 'HH1' });
   });
+
+  it('nhiều dòng SX4 của cùng 1 mã giữ đúng thứ tự FIFO nền với nhau', () => {
+    const s = [
+      { id: 1, item_code: 'A', location: 'SX4-01', quantity: 5 },
+      { id: 2, item_code: 'A', location: 'SX4-02', quantity: 5 },
+      { id: 3, item_code: 'A', location: 'SX4-03', quantity: 5 },
+    ];
+    const { result } = allocateFIFO([{ code: 'A', name: 'a', unit: '', requiredQty: 12 }], s, {});
+    // phải lấy từ SX4-01, SX4-02, SX4-03 theo thứ tự (không đảo lộn)
+    expect(result[0].allocations.map(a => a.stock_id)).toEqual([1, 2, 3]);
+  });
+
+  it('prioritySX4 khi SX4 chỉ đủ một phần nhu cầu: lấy hết SX4 trước rồi mới sang tồn thường', () => {
+    const s = [
+      { id: 1, item_code: 'A', location: 'HH1', quantity: 10 },
+      { id: 2, item_code: 'A', location: 'SX4-24/07', quantity: 3 },
+    ];
+    const { result, isShortage } = allocateFIFO([{ code: 'A', name: 'a', unit: '', requiredQty: 8 }], s, {});
+    // lấy 3 từ SX4 trước, rồi 5 từ HH1 → còn thiếu 0
+    // allocations được sắp xếp theo vị trí nên HH1 trước SX4 trong kết quả, nhưng tồn bị trừ từ SX4 trước
+    const sx4Alloc = result[0].allocations.find(a => a.stock_id === 2);
+    const hh1Alloc = result[0].allocations.find(a => a.stock_id === 1);
+    expect(sx4Alloc).toMatchObject({ location: 'SX4-24/07', taken: 3 });
+    expect(hh1Alloc).toMatchObject({ location: 'HH1', taken: 5 });
+    expect(result[0].missing).toBe(0);
+    expect(isShortage).toBe(false);
+  });
 });

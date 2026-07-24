@@ -89,6 +89,8 @@ export function applyPriorityOrder(stockRows, { priorityVTSX = false, priorityLo
 // componentsRequired: [{ code, name, unit, requiredQty }]
 // stockData: [{ id, item_code, location, quantity }]
 // opts: { priorityVTSX?: bool, priorityLocations?: string[], phieuCode?: string }
+// LƯU Ý: prioritySX4 LUÔN BẬT cho sản xuất (không thể tắt qua opts) — hàng đã "chuyển SX trước"
+// phải dùng nốt trước tồn kho thường, để tránh hàng nằm ở SX4-* mà không được dùng.
 // → { result: [{ ...comp, allocations, missing, isShortage }], isShortage }
 export function allocateFIFO(componentsRequired, stockData, opts = {}) {
   const { priorityVTSX = false, priorityLocations = [], phieuCode = '' } = opts;
@@ -139,6 +141,7 @@ export function allocateFIFO(componentsRequired, stockData, opts = {}) {
 
 // Phân bổ cho XUẤT (đơn hàng / xuất bán): KHÔNG lấy từ kho SX dở dang (SX9-*).
 // Dùng chung 1 bản tồn "working" trừ dần → nhiều dòng cùng mã trừ dồn đúng.
+// LƯU Ý: KHÔNG ưu tiên vị trí tập kết SX4-* (đơn hàng không được cướp hàng đã kê ra chuyền SX).
 // demandRows: [{ code, name, unit, requiredQty, ...passthrough }]
 // stockData nên đã sort FIFO. opts: { priorityLocations? }
 // → { result: [{ ...demandRow, requiredQty, allocations, missing, isShortage }], isShortage }
