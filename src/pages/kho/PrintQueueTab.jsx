@@ -70,7 +70,7 @@ export default function PrintQueueTab({ cancelPerm = false }) {
             is_printed: log.is_printed || false,
             is_cancelled: !!log.is_cancelled,
             itemsCount: 1,
-            type: log.order_code.startsWith('PNK') ? 'NHẬP KHO' : (log.order_code.startsWith('PXK') ? 'XUẤT KHO' : (log.order_code.startsWith('PDH') ? 'XUẤT LẮP RÁP' : (log.order_code.startsWith('PSX') ? 'XUẤT SẢN XUẤT' : 'KHÁC')))
+            type: log.order_code.startsWith('PNK') ? 'NHẬP KHO' : (log.order_code.startsWith('PXK') ? 'XUẤT KHO' : (log.order_code.startsWith('PDH') ? 'XUẤT LẮP RÁP' : (log.order_code.startsWith('PSX') ? 'XUẤT SẢN XUẤT' : (log.order_code.startsWith('PCV') ? 'CHUYỂN VỊ TRÍ SX' : 'KHÁC'))))
           });
         } else {
           const existing = orderMap.get(log.order_code);
