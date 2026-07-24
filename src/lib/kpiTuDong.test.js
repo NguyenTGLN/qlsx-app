@@ -74,6 +74,16 @@ describe('luật HT_CONG_VIEC_DUNG_HAN', () => {
     expect(kq.ghiChu).toContain('3 việc nữa');
     expect(kq.ghiChu).not.toContain('Việc trễ 5');
   });
+
+  it('việc xong muộn ghi (trễ N ngày), việc chưa xong ghi (chưa xong)', () => {
+    const ds = [
+      viec({ id: 'A', title: 'Sửa máy', completed_date: '2026-07-13T10:00:00Z' }), // due 07-10 → trễ 3 ngày
+      viec({ id: 'B', title: 'Kiểm kê', status: 'IN_PROGRESS', completed_date: null }),
+    ];
+    const g = luat({ chi_tieu: 10 }, ds).ghiChu;
+    expect(g).toContain('Sửa máy (trễ 3 ngày)');
+    expect(g).toContain('Kiểm kê (chưa xong)');
+  });
 });
 
 describe('luật VIDEO_KY_THUAT', () => {

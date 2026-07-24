@@ -66,6 +66,19 @@ const laBaoCaoCuoiNgay = t => {
 // để việc treo mãi lại thành có lợi hơn làm xong muộn.
 const dungHan = t => t.status === 'COMPLETED' && !laTre(t);
 
+const MOT_NGAY = 86400000;
+
+// Vì sao một việc KHÔNG đúng hạn: xong nhưng trễ (kèm trễ bao lâu) hay là chưa xong.
+// 'chưa xong' khác hẳn 'xong nhưng trễ' — người đọc cần biết để quyết định làm gì tiếp.
+function moTaViecChuaDat(t) {
+  if (t.status === 'COMPLETED' && t.due_date && t.completed_date) {
+    const treMs = new Date(t.completed_date).getTime() - new Date(t.due_date).getTime();
+    if (treMs >= MOT_NGAY) return `trễ ${Math.floor(treMs / MOT_NGAY)} ngày`;
+    return `trễ ${Math.max(1, Math.ceil(treMs / 3600000))} giờ`;
+  }
+  return 'chưa xong';
+}
+
 function luatHoanThanhDungHan(ct, viec) {
   // BỎ việc báo cáo cuối ngày: chúng đã có chỉ tiêu BÁO CÁO KẾT QUẢ CÔNG VIỆC chấm riêng, để
   // lại là một việc bị tính điểm hai lần. Nặng hơn thế: báo cáo lặp HẰNG NGÀY nên áp đảo về
@@ -83,7 +96,8 @@ function luatHoanThanhDungHan(ct, viec) {
   const tiLe = dat.length / dem.length;
 
   // Cắt danh sách tên việc trễ: ô ghi chú nằm trong một ô bảng, liệt kê 30 việc là vỡ bảng.
-  const ten = tre.slice(0, MAX_TEN_TRE).map(t => t.title || t.id).join(', ');
+  const ten = tre.slice(0, MAX_TEN_TRE)
+    .map(t => `${t.title || t.id} (${moTaViecChuaDat(t)})`).join('; ');
   const them = tre.length > MAX_TEN_TRE ? ` …và ${tre.length - MAX_TEN_TRE} việc nữa` : '';
   const phanTre = tre.length ? ` Chưa đúng hạn: ${ten}${them}.` : '';
   // Nói rõ đã bỏ bao nhiêu việc, nếu không người đọc đối chiếu với tab Công việc sẽ thấy hụt
