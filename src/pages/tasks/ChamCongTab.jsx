@@ -49,9 +49,11 @@ const oInput = {
   fontSize: '0.8rem', width: '100%', boxSizing: 'border-box', background: '#fff',
 };
 
-export default function ChamCongTab({ users = [] }) {
+export default function ChamCongTab({ users = [], me, perm = {} }) {
+  const canEdit = !!perm.edit;
   const [ky, setKy] = useState(kyHienTai());
   const [rows, setRows] = useState([]);
+  const [ngoaiLe, setNgoaiLe] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
   const [chon, setChon] = useState(null); // nhan_vien_id đang xem chi tiết, null = bảng tổng quan
@@ -67,9 +69,14 @@ export default function ChamCongTab({ users = [] }) {
         supabase.from('cham_cong').select('*').eq('ky', ky).order('id'));
       if (error) throw error;
       setRows(data || []);
+      const { data: nl, error: loiNl } = await fetchAllRows(() =>
+        supabase.from('chuyen_can_ngoai_le').select('*').eq('ky', ky).order('id'));
+      if (loiNl) throw loiNl;
+      setNgoaiLe(nl || []);
     } catch (err) {
       setLoi(err?.message || String(err));
       setRows([]);
+      setNgoaiLe([]);
     } finally {
       setLoading(false);
     }
@@ -105,6 +112,33 @@ export default function ChamCongTab({ users = [] }) {
     return m;
   }, [rows]);
 
+  const ngoaiLeTra = useMemo(() => {
+    const m = new Map();
+    for (const x of ngoaiLe) m.set(`${x.nhan_vien_id}|${x.ngay}`, x);
+    return m;
+  }, [ngoaiLe]);
+
+  // Bật (lyDo là chuỗi) hoặc tắt (lyDo = null) miễn trừ cho một (người, ngày).
+  // RLS ở DB chỉ cho ADMIN ghi — nút chỉ hiện khi canEdit, còn đây là hàng rào mềm.
+  const doiNgoaiLe = useCallback(async (nvId, ngay, lyDo) => {
+    setLoi('');
+    try {
+      if (lyDo == null) {
+        const { error } = await supabase.from('chuyen_can_ngoai_le')
+          .delete().eq('nhan_vien_id', nvId).eq('ngay', ngay);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('chuyen_can_ngoai_le').upsert(
+          { ky: ngay.slice(0, 7), nhan_vien_id: nvId, ngay, ly_do: lyDo, nguoi_ghi: me?.name || me?.id || null },
+          { onConflict: 'nhan_vien_id,ngay' });
+        if (error) throw error;
+      }
+      await taiDuLieu();
+    } catch (err) {
+      setLoi(err?.message || String(err));
+    }
+  }, [me, taiDuLieu]);
+
   const tongTheoNguoi = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
@@ -130,8 +164,9 @@ export default function ChamCongTab({ users = [] }) {
     const nv = dsNhanVien.find(x => x.id === chon) || { id: chon, ten: chon };
     return (
       <BangChiTietMotNguoi
-        ten={nv.ten} ky={ky}
+        ten={nv.ten} ky={ky} nvId={chon}
         rows={rows.filter(r => r.nhan_vien_id === chon)}
+        ngoaiLeTra={ngoaiLeTra} canEdit={canEdit} onDoiNgoaiLe={doiNgoaiLe}
         onBack={() => setChon(null)}
       />
     );
@@ -206,7 +241,8 @@ export default function ChamCongTab({ users = [] }) {
                       <button onClick={() => setChon(nv.id)} style={nutTen}>{nv.ten}</button>
                     </td>
                     {dsNgay.map(ngay => (
-                      <OChamCong key={ngay} row={oTraCuu.get(`${nv.id}|${ngay}`)} />
+                      <OChamCong key={ngay} row={oTraCuu.get(`${nv.id}|${ngay}`)}
+                        mien={ngoaiLeTra.get(`${nv.id}|${ngay}`)} />
                     ))}
                     <td style={{ ...tdBase, fontWeight: 700, color: tong.muon > 0 ? '#b91c1c' : '#94a3b8' }}>
                       {tong.muon}
@@ -234,7 +270,7 @@ export default function ChamCongTab({ users = [] }) {
 //  - di_muon_phut > 0 → số phút, nền hồng nhạt, chữ đỏ.
 //  - còn lại → dấu '·' xám nhạt.
 //  - nghi_van khác null → thêm viền dưới đỏ, bất kể rơi vào trường hợp nào ở trên.
-function OChamCong({ row }) {
+function OChamCong({ row, mien }) {
   if (!row) {
     return (
       <td style={{ ...tdBase, color: '#e2e8f0' }} title="Không có dữ liệu chấm công ngày này">—</td>
@@ -243,8 +279,10 @@ function OChamCong({ row }) {
   const style = {
     ...tdBase,
     borderBottom: row.nghi_van ? '2px solid #dc2626' : tdBase.borderBottom,
+    // Viền trong xanh dương = ngày được miễn trừ (giải trình) — không lẫn với viền đỏ nghi vấn.
+    ...(mien ? { boxShadow: 'inset 0 0 0 2px #60a5fa' } : null),
   };
-  const title = tieuDeO(row);
+  const title = tieuDeO(row) + (mien ? ` — ĐẶC BIỆT (không trừ KPI): ${mien.ly_do}` : '');
   if (row.nghi) {
     return <td style={{ ...style, background: '#fef9c3', fontWeight: 700 }} title={title}>N</td>;
   }
@@ -262,10 +300,21 @@ function OChamCong({ row }) {
 // Bảng chi tiết từng ngày của một người
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BangChiTietMotNguoi({ ten, ky, rows, onBack }) {
+function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, canEdit, onDoiNgoaiLe, onBack }) {
   const dong = useMemo(
     () => [...rows].sort((a, b) => (a.ngay < b.ngay ? -1 : a.ngay > b.ngay ? 1 : 0)),
     [rows]);
+  const [modalNgay, setModalNgay] = useState(null);   // ngày đang nhập lý do
+  const [lyDoInput, setLyDoInput] = useState('');
+  const mienCua = ngay => ngoaiLeTra?.get(`${nvId}|${ngay}`);
+
+  const moModal = (ngay, lyDoCu) => { setLyDoInput(lyDoCu || ''); setModalNgay(ngay); };
+  const luuModal = () => {
+    const t = lyDoInput.trim();
+    if (!t) return;
+    onDoiNgoaiLe(nvId, modalNgay, t);
+    setModalNgay(null);
+  };
 
   return (
     <div style={{ width: '100%', maxWidth: 900, margin: '0 auto' }}>
@@ -292,6 +341,7 @@ function BangChiTietMotNguoi({ ten, ky, rows, onBack }) {
               <th style={thChiTiet.num}>Về sớm</th>
               <th style={thChiTiet.left}>Nghỉ</th>
               <th style={thChiTiet.left}>Ghi chú</th>
+              {canEdit && <th style={thChiTiet.left}>Đặc biệt</th>}
             </tr>
           </thead>
           <tbody>
@@ -313,15 +363,60 @@ function BangChiTietMotNguoi({ ten, ky, rows, onBack }) {
                 </td>
                 <td style={tdChiTiet.body}>{r.nghi ? 'Có' : '—'}</td>
                 <td style={{ ...tdChiTiet.body, color: r.nghi_van ? '#b91c1c' : '#94a3b8' }}>
+                  {mienCua(r.ngay) && (
+                    <div style={{ color: '#2563eb', fontWeight: 600 }}>
+                      Đặc biệt — {mienCua(r.ngay).ly_do}
+                    </div>
+                  )}
                   {r.nghi_van
                     ? 'Máy chấm công ghi giờ ra sớm hơn lượt quét buổi chiều — phần về sớm đã bị bỏ khi tính KPI.'
                     : ''}
                 </td>
+                {canEdit && (
+                  <td style={tdChiTiet.body}>
+                    {mienCua(r.ngay) ? (
+                      <button onClick={() => onDoiNgoaiLe(nvId, r.ngay, null)} style={nutBoDacBiet}>
+                        Bỏ đặc biệt
+                      </button>
+                    ) : (
+                      <button onClick={() => moModal(r.ngay, '')} style={nutDacBiet}>
+                        Đánh dấu đặc biệt
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {modalNgay && (
+        <div onClick={() => setModalNgay(null)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', zIndex: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#fff', borderRadius: 14, padding: '1rem', maxWidth: 420, width: '100%',
+          }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: 4 }}>
+              Đánh dấu đặc biệt — {ngayGon(modalNgay)}
+            </div>
+            <div style={{ fontSize: '0.74rem', color: '#64748b', marginBottom: 10 }}>
+              Ngày này sẽ KHÔNG bị trừ điểm chuyên cần (cá nhân + bộ phận), nhưng vẫn hiển thị. Bắt buộc nhập lý do giải trình.
+            </div>
+            <textarea
+              value={lyDoInput} onChange={e => setLyDoInput(e.target.value)} rows={3}
+              placeholder="VD: nghỉ ốm có đơn, đi khám bệnh…"
+              style={{ ...oInput, resize: 'vertical' }} autoFocus
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <button onClick={() => setModalNgay(null)} style={nutHuy}>Huỷ</button>
+              <button onClick={luuModal} disabled={!lyDoInput.trim()} style={nutLuu}>Lưu</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -379,4 +474,21 @@ const thChiTiet = {
 };
 const tdChiTiet = {
   body: { padding: '8px 10px', borderBottom: '1px solid #eef2f7', color: '#0f172a', whiteSpace: 'nowrap' },
+};
+
+const nutDacBiet = {
+  border: '1px solid #bfdbfe', background: '#eff6ff', color: '#2563eb',
+  fontSize: '0.72rem', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', whiteSpace: 'nowrap',
+};
+const nutBoDacBiet = {
+  border: '1px solid #e2e8f0', background: '#fff', color: '#64748b',
+  fontSize: '0.72rem', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', whiteSpace: 'nowrap',
+};
+const nutHuy = {
+  border: '1px solid #e2e8f0', background: '#fff', color: '#475569',
+  fontSize: '0.78rem', borderRadius: 8, padding: '6px 12px', cursor: 'pointer',
+};
+const nutLuu = {
+  border: 'none', background: '#2563eb', color: '#fff',
+  fontSize: '0.78rem', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontWeight: 600,
 };
