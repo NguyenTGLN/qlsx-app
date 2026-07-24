@@ -160,27 +160,42 @@ const ngayNgan = t => {
   return `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}`;
 };
 
-function luatBaoCaoCuoiNgay(ct, viec) {
+function luatBaoCaoCuoiNgay(ct, viec, sanXuat, chamCong, thanhVien, ngay) {
   const bc = viec.filter(laBaoCaoCuoiNgay);
 
-  // Chưa tạo việc → KHÔNG chấm (tiLe null), không chấm 0. Cùng lý do như việc quay video.
+  // Chưa tạo việc báo cáo nào → KHÔNG chấm (tiLe null), không chấm 0. Cùng lý do như quay video.
   if (!bc.length) {
     return { tiLe: null, ghiChu: 'Chưa có việc báo cáo cuối ngày nào trong tháng — chưa có căn cứ chấm.' };
   }
 
-  // Tính theo TỈ LỆ HOÀN THÀNH (chủ app chốt), không theo đúng hạn: báo cáo nộp muộn vẫn là
-  // đã báo cáo. Muốn siết theo đúng hạn thì đổi `xong` sang dùng laTre() như luật bên trên.
-  const xong = bc.filter(t => t.status === 'COMPLETED');
-  const thieu = bc.filter(t => t.status !== 'COMPLETED');
-  const tiLe = xong.length / bc.length;
+  // Chỉ chấm báo cáo ĐÃ ĐẾN HẠN: đã nộp, hoặc quá hạn mà chưa nộp. Báo cáo của ngày CHƯA tới
+  // hạn (vd báo cáo hôm nay — cuối ngày mới phải nộp) thì chưa chấm, không kéo điểm oan.
+  const tinh = bc.filter(t => t.status === 'COMPLETED' || quaHanChuaXong(t, ngay));
+  if (!tinh.length) {
+    return { tiLe: null, ghiChu: 'Chưa có báo cáo cuối ngày nào đến hạn chấm — chưa có căn cứ chấm.' };
+  }
 
-  const ngay = thieu.slice(0, MAX_TEN_TRE).map(ngayNgan).filter(Boolean).join(', ');
-  const them = thieu.length > MAX_TEN_TRE ? ` …và ${thieu.length - MAX_TEN_TRE} ngày nữa` : '';
-  const phanThieu = thieu.length ? ` Chưa làm: ${ngay}${them}.` : '';
+  // Hệ số mỗi báo cáo (chủ app chốt 24/07/2026): nộp đúng hạn 1, nộp trễ 0.5, quá hạn chưa nộp 0.
+  const tong = tinh.reduce((s, t) => s + heSoHoanThanh(t), 0);
+  const tiLe = tong / tinh.length;
+
+  // Ghi chú liệt kê theo NGÀY (tên báo cáo trùng nhau nên liệt kê tên là vô nghĩa), kèm lý do + hệ số.
+  const mat = tinh.filter(t => heSoHoanThanh(t) < 1).slice().sort((a, b) => {
+    const da = a.due_date || a.created_date || '', db = b.due_date || b.created_date || '';
+    return da < db ? -1 : da > db ? 1 : 0;
+  });
+  const moTa = t => t.status === 'COMPLETED'
+    ? `${ngayNgan(t)} (nộp trễ, hệ số 0.5)`
+    : `${ngayNgan(t)} (chưa làm, hệ số 0)`;
+  const ds = mat.slice(0, MAX_TEN_TRE).map(moTa).join(', ');
+  const them = mat.length > MAX_TEN_TRE ? ` …và ${mat.length - MAX_TEN_TRE} ngày nữa` : '';
+  const phanMat = mat.length ? ` Chưa đạt: ${ds}${them}.` : '';
+  const chuaToiHan = bc.length - tinh.length;
+  const phanPhu = chuaToiHan ? `, bỏ ${chuaToiHan} báo cáo chưa tới hạn` : '';
 
   return {
     tiLe,
-    ghiChu: `Tự động: ${xong.length}/${bc.length} báo cáo cuối ngày đã hoàn thành (${Math.round(tiLe * 100)}%).${phanThieu}`,
+    ghiChu: `Tự động: đạt ${Math.round(tiLe * 100)}% trên ${tinh.length} báo cáo đến hạn${phanPhu}.${phanMat}`,
   };
 }
 

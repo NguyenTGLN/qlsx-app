@@ -202,54 +202,62 @@ describe('apDungChamTuDong', () => {
 describe('luật BC_KET_QUA_CONG_VIEC (báo cáo cuối ngày)', () => {
   const luat = LUAT_TU_DONG.BC_KET_QUA_CONG_VIEC;
   const bc = (o = {}) => viec({ title: 'Báo cáo công việc cuối ngày', ...o });
+  const SAU = '2026-08-01';
 
-  it('tính theo tỉ lệ HOÀN THÀNH, không theo đúng hạn', () => {
-    // 3 việc: 1 xong đúng hạn, 1 xong nhưng trễ, 1 chưa xong → 2/3 chứ không phải 1/3.
+  it('hệ số: nộp đúng hạn 1, nộp trễ 0.5, quá hạn chưa nộp 0', () => {
     const kq = luat({ chi_tieu: 10 }, [
-      bc(),
-      bc({ id: 'CV-2', due_date: '2026-07-10T10:00:00Z', completed_date: '2026-07-15T10:00:00Z' }),
-      bc({ id: 'CV-3', status: 'IN_PROGRESS', completed_date: null }),
-    ]);
-    expect(kq.tiLe).toBeCloseTo(2 / 3);
+      bc(),                                                                                            // đúng hạn → 1
+      bc({ id: 'CV-2', due_date: '2026-07-10T10:00:00Z', completed_date: '2026-07-15T10:00:00Z' }),   // trễ → 0.5
+      bc({ id: 'CV-3', status: 'IN_PROGRESS', completed_date: null }),                                 // quá hạn chưa nộp → 0
+    ], [], [], [], SAU);
+    expect(kq.tiLe).toBeCloseTo(1.5 / 3);
   });
 
-  it('ghi chú liệt kê NGÀY chưa báo cáo, không liệt kê tên việc trùng nhau', () => {
+  it('ghi chú liệt kê NGÀY mất điểm, không liệt kê tên việc trùng nhau', () => {
     const kq = luat({ chi_tieu: 10 }, [
       bc(),
       bc({ id: 'CV-2', status: 'IN_PROGRESS', completed_date: null, due_date: '2026-07-05T10:00:00Z' }),
-    ]);
-    expect(kq.ghiChu).toContain('1/2');
+    ], [], [], [], SAU);
+    expect(kq.ghiChu).toContain('2 báo cáo đến hạn');
     expect(kq.ghiChu).toContain('05/07');
     expect(kq.ghiChu).not.toContain('Báo cáo công việc cuối ngày');
   });
 
   it('khớp cả tên có thêm chữ "kết quả"', () => {
-    const kq = luat({ chi_tieu: 10 }, [bc({ title: 'Báo cáo kết quả công việc cuối ngày 05/07' })]);
+    const kq = luat({ chi_tieu: 10 }, [bc({ title: 'Báo cáo kết quả công việc cuối ngày 05/07' })], [], [], [], SAU);
     expect(kq.tiLe).toBe(1);
   });
 
   it('việc khác trong tháng không bị nhận nhầm', () => {
-    expect(luat({ chi_tieu: 10 }, [viec({ title: 'Dọn kho cuối ngày' })]).tiLe).toBeNull();
+    expect(luat({ chi_tieu: 10 }, [viec({ title: 'Dọn kho cuối ngày' })], [], [], [], SAU).tiLe).toBeNull();
   });
 
   it('chưa có việc báo cáo nào thì KHÔNG chấm, chỉ ghi chú', () => {
-    const kq = luat({ chi_tieu: 10 }, []);
+    const kq = luat({ chi_tieu: 10 }, [], [], [], [], SAU);
     expect(kq.tiLe).toBeNull();
     expect(kq.ghiChu).toContain('Chưa có việc báo cáo cuối ngày');
   });
 
-  it('thiếu quá 5 ngày thì cắt bớt, ghi số ngày còn lại', () => {
+  it('báo cáo hôm nay chưa tới hạn thì bỏ, chưa chấm', () => {
+    // Chấm ngày 20/07, báo cáo ngày 20/07 chưa nộp (cuối ngày mới phải nộp) → chưa đến hạn.
+    const ds = [bc({ status: 'IN_PROGRESS', completed_date: null, due_date: '2026-07-20T10:00:00Z' })];
+    const kq = luat({ chi_tieu: 10 }, ds, [], [], [], '2026-07-20');
+    expect(kq.tiLe).toBeNull();
+    expect(kq.ghiChu).toContain('đến hạn');
+  });
+
+  it('quá 5 ngày chưa đạt thì cắt bớt, ghi số ngày còn lại', () => {
     const ds = Array.from({ length: 8 }, (_, i) => bc({
       id: `CV-${i}`, status: 'IN_PROGRESS', completed_date: null,
       due_date: `2026-07-1${i}T10:00:00Z`,
     }));
-    expect(luat({ chi_tieu: 10 }, ds).ghiChu).toContain('3 ngày nữa');
+    expect(luat({ chi_tieu: 10 }, ds, [], [], [], SAU).ghiChu).toContain('3 ngày nữa');
   });
 
-  it('làm đủ mọi ngày thì không có phần "Chưa làm"', () => {
-    const kq = luat({ chi_tieu: 10 }, [bc(), bc({ id: 'CV-2' })]);
+  it('nộp đủ đúng hạn thì không có phần "Chưa đạt"', () => {
+    const kq = luat({ chi_tieu: 10 }, [bc(), bc({ id: 'CV-2' })], [], [], [], SAU);
     expect(kq.tiLe).toBe(1);
-    expect(kq.ghiChu).not.toContain('Chưa làm');
+    expect(kq.ghiChu).not.toContain('Chưa đạt');
   });
 });
 
