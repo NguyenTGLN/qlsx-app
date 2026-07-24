@@ -680,7 +680,7 @@ import { useNavigate } from 'react-router-dom';
         )
       }
 
-      return h('div', {className: 'space-y-3 sm:space-y-4 fade-in pb-24 max-w-[1400px] mx-auto w-full'},
+      return h('div', {className: 'space-y-3 sm:space-y-4 fade-in pb-24 w-full'},
         h('div', {className: 'flex items-center justify-between gap-2'},
           h('h1', {className: 'text-sm sm:text-lg font-bold text-gray-900 tracking-tight'}, 'Tổng quan công việc'),
           h('button', {className: btn.primary + ' shrink-0 !px-2.5 sm:!px-3 !py-1.5 text-[10px] sm:text-xs flex items-center gap-1.5', onClick: async () => {
@@ -896,7 +896,7 @@ import { useNavigate } from 'react-router-dom';
       })
       const thClass = "text-left text-[9px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-2 bg-gray-50 text-gray-500 tracking-wide uppercase"; const tdClass = "px-1.5 sm:px-2 py-1.5 sm:py-2 truncate text-[10px] sm:text-[12px]"
 
-      return h('div',{className:'max-w-[1400px] mx-auto w-full'},
+      return h('div',{className:'w-full'},
         h('div',{className:'flex gap-1.5 mb-3 flex-wrap items-center w-full justify-between'},
           h('div', {className:'flex gap-1.5 items-center flex-1 flex-wrap'},
              h('div',{className:'relative w-[180px] sm:w-[220px] shrink-0'},
@@ -1016,7 +1016,7 @@ import { useNavigate } from 'react-router-dom';
         onUpdate(t.id, upd)
       }
 
-      return h('div', {className: 'max-w-7xl mx-auto fade-in pb-24'},
+      return h('div', {className: 'w-full fade-in pb-24'},
         h('div', {className: 'flex items-center gap-1.5 sm:gap-4 mb-3 sm:mb-6 w-full'},
            onBack && h('button', {onClick: onBack, className: 'w-7 h-7 sm:w-10 sm:h-10 flex items-center justify-center rounded-full hover:bg-gray-200 text-gray-600 transition-colors text-lg sm:text-xl shrink-0'}, '←'),
            h(Avatar, {user, size: 'lg'}),
@@ -1567,7 +1567,7 @@ import { useNavigate } from 'react-router-dom';
                : view==='kpi' && canSeeTab(me,'tasks','kpi') ? h(KpiTab, { me, users, perm: getTabPerm(me, 'tasks', 'kpi') })
                : view==='cham_cong' && canSeeTab(me,'tasks','cham_cong') ? h(ChamCongTab, { users, me, perm: getTabPerm(me, 'tasks', 'cham_cong') })
                : view==='tasks' && assFilter !== 'ALL' ? h(UserTaskBoard, { user: users.find(u=>u.id===assFilter) || me, tasks, currentUser: me, onBack: canSeeTab(me,'tasks','dashboard') ? () => { setView('dashboard'); setAssFilter('ALL'); } : null, onDetail: t=>setDetailTask(t), onEdit: t=>setTaskModal({task:t}), onUpdate: handleUpdateTask, onRemind: handleRemind, onDelete: handleDeleteTask })
-               : view==='tasks' && assFilter === 'ALL' ? h('div',null, h('div',{className:'flex items-center justify-between mb-4 max-w-[1400px] mx-auto w-full'}, h('h1',{className:'text-sm sm:text-xl font-bold text-gray-900'}, 'Tất cả công việc'), h('button',{onClick:()=>{dataCache.invalidate(TASK_CACHE_KEY);bootstrap(me,true);},className:btn.secondary+' px-2 py-1 text-[10px] sm:text-xs'},'↻ Làm mới')), h(TaskTable,{ tasks, users, currentUser:me, assFilter, setAssFilter, onEdit: t=>setTaskModal({task:t}), onDetail:t=>setDetailTask(t), onDelete:handleDeleteTask, onBulkDelete:handleBulkDelete, onUpdate:handleUpdateTask, onRemind:handleRemind, onAddUpdate:handleAddUpdate }))
+               : view==='tasks' && assFilter === 'ALL' ? h('div',null, h('div',{className:'flex items-center justify-between mb-4 w-full'}, h('h1',{className:'text-sm sm:text-xl font-bold text-gray-900'}, 'Tất cả công việc'), h('button',{onClick:()=>{dataCache.invalidate(TASK_CACHE_KEY);bootstrap(me,true);},className:btn.secondary+' px-2 py-1 text-[10px] sm:text-xs'},'↻ Làm mới')), h(TaskTable,{ tasks, users, currentUser:me, assFilter, setAssFilter, onEdit: t=>setTaskModal({task:t}), onDetail:t=>setDetailTask(t), onDelete:handleDeleteTask, onBulkDelete:handleBulkDelete, onUpdate:handleUpdateTask, onRemind:handleRemind, onAddUpdate:handleAddUpdate }))
                : null
         ),
 

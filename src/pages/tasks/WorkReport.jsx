@@ -543,7 +543,7 @@ if (loading) return (
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', background: 'var(--bg-primary)', minHeight: '100vh', padding: '1rem', maxWidth: 1400, margin: '0 auto', width: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', background: 'var(--bg-primary)', minHeight: '100vh', padding: '1rem', width: '100%' }}>
 
       {/* HEADER: Tabs & Tools */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', background: '#fff', padding: '0.85rem 1rem', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>

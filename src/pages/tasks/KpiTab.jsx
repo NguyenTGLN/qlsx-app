@@ -256,7 +256,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   );
 
   return (
-    <div style={{ width: '100%', maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <input
           type="month" value={ky} onChange={e => setKy(e.target.value || kyHienTai())}
@@ -512,7 +512,7 @@ function BangKpiMotNguoi({ nvId, ky, users, me, perm, rows, logs, onBack, onRelo
     : null;
 
   return (
-    <div style={{ width: '100%', maxWidth: 720, margin: '0 auto' }}>
+    <div style={{ width: '100%' }}>
       <button
         onClick={onBack}
         style={{
