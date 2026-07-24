@@ -4,6 +4,7 @@
 -- Spec: docs/superpowers/specs/2026-07-24-chuyen-sx-truoc-design.md
 -- Cách chạy: Supabase Dashboard → SQL Editor → Paste & Run (idempotent).
 -- YÊU CẦU: đã chạy sql/create_huy_phieu.sql trước (tạo cột is_cancelled...).
+-- LIÊN QUAN: thân hàm sao từ sql/create_huy_phieu.sql — hai file phải khớp nhau.
 --
 -- Thay đổi DUY NHẤT so với bản gốc: thêm nhánh prefix 'PCV' được MIỄN kiểm tra
 -- bảng phụ (luu_xuat / du_lieu_nhap). Phiếu chuyển vị trí không sinh bản ghi phụ
@@ -12,6 +13,16 @@
 
 -- ── 3) RPC huy_phieu ────────────────────────────────────────
 -- Đảo ngược nguyên tử 1 chứng từ. Mọi lỗi chặn = EXCEPTION (rollback toàn bộ).
+
+-- Chặn chạy nhầm thứ tự: hàm này chỉ đúng khi create_huy_phieu.sql đã chạy trước.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='inventory_picking_logs'
+                   AND column_name='is_cancelled') THEN
+    RAISE EXCEPTION 'Chưa chạy sql/create_huy_phieu.sql — thiếu cột is_cancelled trên inventory_picking_logs.';
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.huy_phieu(
   p_order_code TEXT,
   p_user       TEXT DEFAULT NULL,
@@ -202,7 +213,61 @@ BEGIN
   END IF;
 
   DELETE FROM inventory_picking_logs WHERE order_code = 'PCV-00000000-99';
-  DELETE FROM inventory_stock        WHERE item_code  = 'TEST-PCV-ITEM';
-  DELETE FROM inventory_items        WHERE item_code  = 'TEST-PCV-ITEM';
+  DELETE FROM inventory_stock        WHERE item_code  = 'TEST-PCV-ITEM' AND item_name = 'Test chuyen SX truoc';
+  DELETE FROM inventory_items        WHERE item_code  = 'TEST-PCV-ITEM' AND item_name = 'Test chuyen SX truoc';
   RAISE NOTICE '✅ huy_phieu PCV: TEST PASS';
+END $$;
+
+-- ── TEST TỰ CHẠY #2: 2 nguồn gộp vào đích đã có tồn (toàn UPDATE, không
+-- DELETE/INSERT) + xác nhận hủy lần 2 bị chặn ──
+DO $$
+DECLARE
+  v_res jsonb;
+  v_qty NUMERIC;
+BEGIN
+  INSERT INTO inventory_items (item_code, item_name, unit)
+  VALUES ('TEST-PCV-ITEM2', 'Test chuyen SX truoc 2', 'Cái')
+  ON CONFLICT (item_code) DO NOTHING;
+
+  -- Dựng trạng thái SAU khi đã chuyển: 2 nguồn còn dư (0 và 4), đích đã có sẵn tồn (23)
+  INSERT INTO inventory_stock (item_code, item_name, unit, location, quantity, import_date)
+  VALUES ('TEST-PCV-ITEM2', 'Test chuyen SX truoc 2', 'Cái', 'TEST-PCV-A',      0, CURRENT_DATE),
+         ('TEST-PCV-ITEM2', 'Test chuyen SX truoc 2', 'Cái', 'TEST-PCV-B',      4, CURRENT_DATE),
+         ('TEST-PCV-ITEM2', 'Test chuyen SX truoc 2', 'Cái', 'SX4-01/01/2000', 23, CURRENT_DATE);
+
+  INSERT INTO inventory_picking_logs (order_code, product_code, component_code, component_name, location, quantity_before, quantity_taken, quantity_after, created_by, notes)
+  VALUES ('PCV-00000000-98', 'CHUYEN_SX', 'TEST-PCV-ITEM2', 'Test chuyen SX truoc 2', 'TEST-PCV-A',      10, -10,  0, 'test', 'Chuyển SX trước'),
+         ('PCV-00000000-98', 'CHUYEN_SX', 'TEST-PCV-ITEM2', 'Test chuyen SX truoc 2', 'TEST-PCV-B',      12,  -8,  4, 'test', 'Chuyển SX trước'),
+         ('PCV-00000000-98', 'CHUYEN_SX', 'TEST-PCV-ITEM2', 'Test chuyen SX truoc 2', 'SX4-01/01/2000',   5,  18, 23, 'test', 'Nhận hàng chuyển SX trước');
+
+  v_res := huy_phieu('PCV-00000000-98', 'tester', 'test tự động 2 nguồn');
+  IF (v_res->>'ok')::boolean IS NOT TRUE THEN RAISE EXCEPTION 'TEST FAIL: RPC không trả ok (kịch bản 2 nguồn)'; END IF;
+
+  SELECT quantity INTO v_qty FROM inventory_stock WHERE item_code = 'TEST-PCV-ITEM2' AND location = 'TEST-PCV-A';
+  IF v_qty IS DISTINCT FROM 10 THEN
+    RAISE EXCEPTION 'TEST FAIL: nguồn A chưa nhận lại 10 (đang %)', COALESCE(v_qty, -1);
+  END IF;
+
+  SELECT quantity INTO v_qty FROM inventory_stock WHERE item_code = 'TEST-PCV-ITEM2' AND location = 'TEST-PCV-B';
+  IF v_qty IS DISTINCT FROM 12 THEN
+    RAISE EXCEPTION 'TEST FAIL: nguồn B chưa nhận lại 12 (đang %)', COALESCE(v_qty, -1);
+  END IF;
+
+  SELECT quantity INTO v_qty FROM inventory_stock WHERE item_code = 'TEST-PCV-ITEM2' AND location = 'SX4-01/01/2000';
+  IF v_qty IS DISTINCT FROM 5 THEN
+    RAISE EXCEPTION 'TEST FAIL: đích chưa trừ về 5 (đang %)', COALESCE(v_qty, -1);
+  END IF;
+
+  -- Hủy lần 2 → phải bị chặn
+  BEGIN
+    PERFORM huy_phieu('PCV-00000000-98', 'tester', 'test lần 2');
+    RAISE EXCEPTION 'TEST FAIL: hủy lần 2 không bị chặn';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE 'TEST FAIL%' THEN RAISE; END IF; -- lỗi mong đợi thì nuốt
+  END;
+
+  DELETE FROM inventory_picking_logs WHERE order_code = 'PCV-00000000-98';
+  DELETE FROM inventory_stock        WHERE item_code  = 'TEST-PCV-ITEM2' AND item_name = 'Test chuyen SX truoc 2';
+  DELETE FROM inventory_items        WHERE item_code  = 'TEST-PCV-ITEM2' AND item_name = 'Test chuyen SX truoc 2';
+  RAISE NOTICE '✅ huy_phieu PCV (2 nguồn + double-cancel): TEST PASS';
 END $$;

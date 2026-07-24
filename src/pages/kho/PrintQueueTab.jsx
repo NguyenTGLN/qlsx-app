@@ -426,6 +426,12 @@ export default function PrintQueueTab({ cancelPerm = false }) {
               <p style={{margin:'0 0 0.75rem 0', fontSize:'0.85rem', color:'#334155'}}>
                 Hệ thống sẽ <b>đảo ngược toàn bộ</b>: hoàn tồn kho về đúng vị trí, gỡ dữ liệu nhập/xuất và thống kê liên quan. Phiếu chuyển thành <b>"Đã Hủy"</b> (không in, không khôi phục được).
               </p>
+              {String(cancelTarget.order_code || '').startsWith('PCV') && (
+                <p style={{margin:'0 0 0.75rem 0', fontSize:'0.8rem', color:'#b45309', fontWeight:700, background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'8px 10px'}}>
+                  ⚠️ Phiếu chuyển vị trí: hủy chỉ sửa SỔ SÁCH — phải mang hàng từ vị trí tập kết SX4 trả về vị trí cũ.
+                  Chỉ hủy khi hàng ở SX4 CHƯA được dùng để sản xuất; nếu đã dùng thì tồn sẽ sai vị trí.
+                </p>
+              )}
               {cancelTarget.is_printed && (
                 <p style={{margin:'0 0 0.75rem 0', fontSize:'0.8rem', color:'#dc2626', fontWeight:700}}>⚠️ Phiếu này ĐÃ IN — hãy thu hồi bản in giấy sau khi hủy.</p>
               )}

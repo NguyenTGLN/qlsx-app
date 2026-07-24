@@ -20,6 +20,10 @@ export async function cancelPhieu(orderCode, user, reason) {
     if (error.code === 'PGRST202' || /could not find the function/i.test(msg)) {
       throw new Error('Chức năng Hủy Phiếu chưa được kích hoạt trên máy chủ — cần chạy sql/create_huy_phieu.sql trong Supabase SQL Editor.');
     }
+    // Hàm có rồi nhưng CHƯA có nhánh PCV (chưa chạy file SQL bổ sung)
+    if (/Loại phiếu .* không hỗ trợ hủy/i.test(msg) && String(orderCode || '').startsWith('PCV')) {
+      throw new Error('Hủy phiếu chuyển vị trí chưa được kích hoạt trên máy chủ — cần chạy sql/them_phieu_chuyen_sx.sql trong Supabase SQL Editor.');
+    }
     throw new Error(msg);
   }
   return data; // { ok, order_code, reversed_lines }

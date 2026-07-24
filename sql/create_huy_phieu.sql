@@ -4,6 +4,7 @@
 -- Spec: docs/superpowers/specs/2026-07-16-huy-phieu-chung-tu-design.md
 -- Cách chạy: Supabase Dashboard → SQL Editor → Paste & Run (idempotent).
 -- YÊU CẦU: đã chạy redesign_sales_thongke.sql (trigger INSERT thống kê).
+-- LIÊN QUAN: sql/them_phieu_chuyen_sx.sql cũng CREATE OR REPLACE hàm này (thêm nhánh PCV) — sửa hàm ở đây thì phải sửa cả bên đó.
 -- ============================================================
 
 -- ── 1) Cột mới ──────────────────────────────────────────────
@@ -85,6 +86,12 @@ BEGIN
     IF v_side_count = 0 THEN
       RAISE EXCEPTION 'Phiếu % tạo trước khi nâng cấp tính năng Hủy (thiếu truy vết phieu_code) — cần xử lý tay.', p_order_code;
     END IF;
+  ELSIF v_prefix = 'PCV' THEN
+    -- Phiếu CHUYỂN VỊ TRÍ SX: hàng không rời kho nên không sinh luu_xuat /
+    -- du_lieu_nhap → không có bảng phụ để kiểm tra. Vòng lặp đảo tồn bên dưới
+    -- (stock -= quantity_taken) tự xử lý đúng: dòng xuất (âm) cộng trả về vị trí
+    -- cũ, dòng nhập (dương) trừ khỏi vị trí tập kết SX4.
+    NULL;
   ELSE
     RAISE EXCEPTION 'Loại phiếu % không hỗ trợ hủy.', v_prefix;
   END IF;
