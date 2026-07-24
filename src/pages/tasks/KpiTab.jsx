@@ -54,6 +54,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   const [sanXuat, setSanXuat] = useState([]);  // bản ghi production_logs của tháng
   const [danhMuc, setDanhMuc] = useState([]);  // chỉ tiêu của MỌI kỳ, cho ô chọn khi thêm
   const [chamCong, setChamCong] = useState([]);  // bảng chấm công của kỳ
+  const [ngoaiLe, setNgoaiLe] = useState([]);    // miễn trừ chuyên cần của kỳ
   const [loiViec, setLoiViec] = useState('');
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
@@ -160,10 +161,25 @@ export default function KpiTab({ me, users = [], perm = {} }) {
         loiTaiViec = loiTaiViec || err?.message || String(err);
       }
 
+      // Miễn trừ chuyên cần của kỳ (bảng phủ trên chấm công). Cùng lưới an toàn: hỏng chỗ
+      // này không được kéo sập cả màn hình KPI.
+      let dsNgoaiLe = [];
+      try {
+        const { data, error } = await fetchAllRows(() => supabase
+          .from('chuyen_can_ngoai_le')
+          .select('nhan_vien_id, ngay, ly_do')
+          .eq('ky', ky).order('id'));
+        if (error) throw error;
+        dsNgoaiLe = data || [];
+      } catch (err) {
+        loiTaiViec = loiTaiViec || err?.message || String(err);
+      }
+
       setRows(ct || []);
       setLogs(nk);
       setDanhMuc(dsDanhMuc);
       setChamCong(dsChamCong);
+      setNgoaiLe(dsNgoaiLe);
       setViec(dsViec);
       setSanXuat(dsSanXuat);
       setLoiViec(loiTaiViec);
@@ -174,6 +190,7 @@ export default function KpiTab({ me, users = [], perm = {} }) {
       setViec([]);
       setSanXuat([]);
       setChamCong([]);
+      setNgoaiLe([]);
     } finally {
       setLoading(false);
     }
@@ -184,8 +201,8 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   // Chấm tự động chèn vào TRƯỚC mọi thứ khác: từ đây trở xuống dùng rowsTD/logsTD, không dùng
   // rows/logs thô nữa. Bỏ sót một chỗ là chỗ đó hiện điểm cũ trong khi chỗ khác hiện điểm mới.
   const { rows: rowsTD, logs: logsTD } = useMemo(
-    () => apDungChamTuDong(rows, logs, viec, ky, undefined, sanXuat, chamCong),
-    [rows, logs, viec, ky, sanXuat, chamCong]);
+    () => apDungChamTuDong(rows, logs, viec, ky, undefined, sanXuat, chamCong, ngoaiLe),
+    [rows, logs, viec, ky, sanXuat, chamCong, ngoaiLe]);
 
   // Dòng BO_PHAN dùng chung cho mọi người → luôn kèm vào bảng của từng cá nhân.
   const dongBoPhan = useMemo(() => rowsTD.filter(r => r.cap_do === 'BO_PHAN'), [rowsTD]);
