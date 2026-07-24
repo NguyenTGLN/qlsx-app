@@ -178,6 +178,21 @@ function luatHieuSuatSanXuat(ct, viec, sanXuat = []) {
 }
 
 // ── Chuyên cần ──────────────────────────────────────────────────────────────
+// 'YYYY-MM-DD' → 'd/M' (bỏ số 0 đầu). Ghi chú chuyên cần cần NGÀY cụ thể chứ không chỉ
+// số đếm — người bị trừ điểm phải tra được là ngày nào, không phải "nghỉ 2 ngày" chung chung.
+const ngayDM = ngay => {
+  const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(ngay || ''));
+  return m ? `${Number(m[2])}/${Number(m[1])}` : String(ngay || '');
+};
+
+// Số ngày tối đa liệt kê trong một mảnh ghi chú. Ô ghi chú nằm trong ô bảng và bản in A4,
+// liệt kê 25 ngày là vỡ ô — cắt bớt, ghi "…+N" để người đọc biết còn nữa.
+const MAX_NGAY = 8;
+const noiNgay = ds => {
+  const ten = ds.slice(0, MAX_NGAY).join(', ');
+  return ds.length > MAX_NGAY ? `${ten} …+${ds.length - MAX_NGAY}` : ten;
+};
+
 // Ngưỡng chép nguyên từ mô tả chỉ tiêu trong file KPI gốc. Đọc từ nặng xuống nhẹ, lấy mức
 // đầu tiên khớp.
 const NGUONG_PHUT = [[91, 10], [61, 3], [30, 1]];   // phút đi muộn + về sớm cộng dồn
@@ -254,18 +269,44 @@ function luatChuyenCanCaNhan(ct, viec, sanXuat, chamCong = []) {
     return { tiLe: null, nhuongChamTay: true, ghiChu: 'Chưa có dữ liệu chấm công trong tháng — chưa có căn cứ chấm.' };
   }
 
-  const muon = chamCong.map(c => Number(c.di_muon_phut) || 0);
-  // Hai bậc TÁCH RỜI, không cộng chồng: quá 15 phút trừ 5, còn 6–15 phút trừ 1. Một lần muộn
-  // 20 phút bị trừ 5, không phải 6.
-  const nang = muon.filter(p => p > 15).length;
-  const nhe = muon.filter(p => p > 5 && p <= 15).length;
-  const nghi = chamCong.filter(c => c.nghi).length;
-  const vuotPhep = Math.max(0, nghi - NGAY_PHEP_THANG);
-  const tru = nang * 5 + nhe * 1 + vuotPhep * 3;
+  // Ngày được miễn (giải trình) KHÔNG tính điểm trừ — nhưng vẫn nêu ở ghi chú.
+  const ccTru = chamCong.filter(c => !c.mien);
+  const theoNgay = (a, b) => (a.ngay < b.ngay ? -1 : a.ngay > b.ngay ? 1 : 0);
 
-  const ghiChu = `Tự động: ${nang} lần muộn quá 15 phút (−${nang * 5}), ${nhe} lần muộn 6–15 phút`
-    + ` (−${nhe}), nghỉ ${nghi} ngày vượt ${vuotPhep} ngày phép (−${vuotPhep * 3}).`
-    + ' Chưa tính phần có phép/không phép, quên chấm công, chấm công sai — chốt tay để đè lên.';
+  const muonNgay = ccTru.filter(c => (Number(c.di_muon_phut) || 0) > 5).slice().sort(theoNgay);
+  // Hai bậc TÁCH RỜI, không cộng chồng: quá 15 phút trừ 5, còn 6–15 phút trừ 1.
+  const nang = ccTru.filter(c => (Number(c.di_muon_phut) || 0) > 15).length;
+  const nhe = ccTru.filter(c => { const p = Number(c.di_muon_phut) || 0; return p > 5 && p <= 15; }).length;
+
+  const nghiNgay = ccTru.filter(c => c.nghi).slice().sort(theoNgay);
+  const nghi = nghiNgay.length;
+  const vuotPhep = Math.max(0, nghi - NGAY_PHEP_THANG);
+  const truMuon = nang * 5 + nhe * 1;
+  const truNghi = vuotPhep * 3;
+  const tru = truMuon + truNghi;
+
+  const mienNgay = chamCong.filter(c => c.mien).slice().sort(theoNgay);
+
+  const phan = [];
+  if (muonNgay.length) {
+    const ds = muonNgay.map(c => `${ngayDM(c.ngay)} (${Number(c.di_muon_phut)}′)`);
+    phan.push(`Đi muộn ${muonNgay.length} ngày (−${truMuon}): ${noiNgay(ds)}.`);
+  }
+  if (nghi) {
+    const ds = nghiNgay.map(c => ngayDM(c.ngay));
+    phan.push(vuotPhep > 0
+      ? `Nghỉ ${nghi} ngày, quá ${vuotPhep} phép (−${truNghi}): ${noiNgay(ds)}.`
+      : `Nghỉ ${nghi} ngày (trong phép): ${noiNgay(ds)}.`);
+  }
+  if (mienNgay.length) {
+    phan.push(`Miễn ${mienNgay.length} ngày có giải trình (không trừ): ${noiNgay(mienNgay.map(c => ngayDM(c.ngay)))}.`);
+  }
+  if (!tru && !mienNgay.length) {
+    phan.push('Không muộn, không nghỉ quá phép — đủ điểm.');
+  }
+
+  const ghiChu = `Tự động: ${phan.join(' ')}`
+    + ' Chưa tính có phép/không phép, quên/sai chấm công — chốt tay đè lên.';
 
   return { ...tuDiemTru(ct, tru, ghiChu), nhuongChamTay: true };
 }

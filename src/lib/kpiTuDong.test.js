@@ -410,9 +410,36 @@ describe('luật CHUYEN_CAN_CA_NHAN', () => {
   });
 
   it('hai bậc KHÔNG cộng chồng — muộn 20 phút trừ 5, không phải 6', () => {
-    const kq = luat({ chi_tieu: 10 }, [], [], [cc({ di_muon_phut: 20 })]);
+    const kq = luat({ chi_tieu: 10 }, [], [], [cc({ di_muon_phut: 20, ngay: '2026-07-06' })]);
     expect(kq.tiLe).toBe(0.5);
-    expect(kq.ghiChu).toContain('0 lần muộn 6–15 phút');
+    expect(kq.ghiChu).toContain('Đi muộn 1 ngày (−5): 6/7 (20′)');
+    expect(kq.ghiChu).not.toContain('6–15 phút');
+  });
+
+  it('ngày được miễn không tính vào điểm trừ', () => {
+    const ds = [
+      cc({ nghi: true, ngay: '2026-07-01' }),
+      cc({ nghi: true, ngay: '2026-07-02', mien: true }),
+      cc({ nghi: true, ngay: '2026-07-03', mien: true }),
+    ];
+    // ccTru còn 1 ngày nghỉ (07-01) → trong 1 ngày phép → không trừ.
+    expect(luat({ chi_tieu: 10 }, [], [], ds).tiLe).toBe(1);
+  });
+
+  it('ghi chú nêu ngày muộn/nghỉ cụ thể + ngày miễn, bỏ mục 0', () => {
+    const ds = [
+      cc({ di_muon_phut: 15, ngay: '2026-07-06' }),
+      cc({ nghi: true, ngay: '2026-07-07' }),
+      cc({ nghi: true, ngay: '2026-07-08' }),
+      cc({ nghi: true, ngay: '2026-07-01', mien: true }),
+    ];
+    const g = luat({ chi_tieu: 10 }, [], [], ds).ghiChu;
+    expect(g).toContain('6/7 (15′)');
+    expect(g).toContain('Nghỉ 2 ngày, quá 1 phép');
+    expect(g).toContain('7/7');
+    expect(g).toContain('Miễn 1 ngày có giải trình');
+    expect(g).toContain('1/7');
+    expect(g).not.toContain('lần muộn quá 15 phút');
   });
 
   it('nghỉ vượt phép trừ 3 mỗi ngày', () => {
