@@ -63,22 +63,25 @@ export function sortResultByLocation(result) {
   });
 }
 
-// Xếp tồn theo 3 nhóm ưu tiên, GIỮ ổn định thứ tự nền (FIFO) trong mỗi nhóm:
+// Xếp tồn theo 4 nhóm ưu tiên, GIỮ ổn định thứ tự nền (FIFO) trong mỗi nhóm:
+//   Nhóm 0: kho tập kết SX4- (chỉ khi prioritySX4 — hàng đã kê ra chuyền, dùng nốt trước)
 //   Nhóm 1: kho VTSX SX11- (chỉ khi priorityVTSX)
 //   Nhóm 2: vị trí người dùng tự chọn (khớp CHÍNH XÁC theo Set)
 //   Nhóm 3: phần còn lại
 // Không bật ưu tiên nào → trả bản sao nguyên thứ tự.
-export function applyPriorityOrder(stockRows, { priorityVTSX = false, priorityLocations = [] } = {}) {
+export function applyPriorityOrder(stockRows, { priorityVTSX = false, priorityLocations = [], prioritySX4 = false } = {}) {
   const priSet = new Set(priorityLocations || []);
   const isSX11 = (s) => s.location && s.location.startsWith('SX11-');
-  if (!priorityVTSX && priSet.size === 0) return [...(stockRows || [])];
-  const t0 = [], t1 = [], t2 = [];
+  const isSX4 = (s) => s.location && s.location.startsWith('SX4-');
+  if (!priorityVTSX && !prioritySX4 && priSet.size === 0) return [...(stockRows || [])];
+  const tSX4 = [], t0 = [], t1 = [], t2 = [];
   for (const s of (stockRows || [])) {
-    if (priorityVTSX && isSX11(s)) t0.push(s);
+    if (prioritySX4 && isSX4(s)) tSX4.push(s);
+    else if (priorityVTSX && isSX11(s)) t0.push(s);
     else if (priSet.has(s.location)) t1.push(s);
     else t2.push(s);
   }
-  return [...t0, ...t1, ...t2];
+  return [...tSX4, ...t0, ...t1, ...t2];
 }
 
 // Phân bổ FIFO. stockData nên đã sort sẵn bằng sortStockForFIFO
@@ -90,7 +93,10 @@ export function applyPriorityOrder(stockRows, { priorityVTSX = false, priorityLo
 export function allocateFIFO(componentsRequired, stockData, opts = {}) {
   const { priorityVTSX = false, priorityLocations = [], phieuCode = '' } = opts;
   // copy để trừ dần (không mutate gốc) rồi xếp theo nhóm ưu tiên
-  let available = applyPriorityOrder(JSON.parse(JSON.stringify(stockData || [])), { priorityVTSX, priorityLocations });
+  // prioritySX4 luôn bật cho SẢN XUẤT: hàng đã "chuyển SX trước" ra vị trí tập kết
+  // SX4- phải được dùng nốt trước khi đụng tới tồn kho thường.
+  // KHÔNG bật ở allocateExport — đơn bán hàng không được lấy hàng đã kê ra chuyền.
+  let available = applyPriorityOrder(JSON.parse(JSON.stringify(stockData || [])), { priorityVTSX, priorityLocations, prioritySX4: true });
 
   let isShortage = false;
   const result = [];

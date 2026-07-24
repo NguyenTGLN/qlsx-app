@@ -263,3 +263,33 @@ describe('allocateExport', () => {
     expect(result[0]).toMatchObject({ code: 'A', name: 'Vat tu A', unit: 'cai' });
   });
 });
+
+describe('ưu tiên vị trí tập kết SX4 (chuyển SX trước)', () => {
+  const stock = [
+    { id: 1, item_code: 'A', location: 'HH1', quantity: 10 },
+    { id: 2, item_code: 'A', location: 'SX4-24/07/2026', quantity: 10 },
+    { id: 3, item_code: 'A', location: 'SX11-VTSX', quantity: 10 },
+  ];
+
+  it('allocateFIFO lấy ở SX4 trước tiên dù không tick ưu tiên gì', () => {
+    const { result } = allocateFIFO([{ code: 'A', name: 'a', unit: '', requiredQty: 5 }], stock, {});
+    expect(result[0].allocations[0]).toMatchObject({ stock_id: 2, location: 'SX4-24/07/2026' });
+  });
+
+  it('SX4 đứng trên cả SX11 lẫn vị trí tự tick', () => {
+    const out = applyPriorityOrder(stock, {
+      prioritySX4: true, priorityVTSX: true, priorityLocations: ['HH1'],
+    });
+    expect(out.map(s => s.id)).toEqual([2, 3, 1]);
+  });
+
+  it('không bật prioritySX4 → giữ nguyên thứ tự nền', () => {
+    const out = applyPriorityOrder(stock, {});
+    expect(out.map(s => s.id)).toEqual([1, 2, 3]);
+  });
+
+  it('allocateExport KHÔNG ưu tiên SX4 (đơn hàng không cướp hàng đã kê ra chuyền)', () => {
+    const { result } = allocateExport([{ code: 'A', name: 'a', unit: '', requiredQty: 5 }], stock, {});
+    expect(result[0].allocations[0]).toMatchObject({ stock_id: 1, location: 'HH1' });
+  });
+});
