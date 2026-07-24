@@ -62,9 +62,15 @@ const laBaoCaoCuoiNgay = t => {
   return MANH_BAO_CAO.every(m => k.includes(m));
 };
 
-// Đúng hạn = đã xong VÀ không xong muộn. Việc chưa xong tính là không đúng hạn — nếu không,
-// để việc treo mãi lại thành có lợi hơn làm xong muộn.
-const dungHan = t => t.status === 'COMPLETED' && !laTre(t);
+// Hệ số hoàn thành của MỘT việc đã đến lúc chấm (chủ app chốt 24/07/2026):
+//   xong đúng hạn = 1 · xong nhưng trễ = 0.5 · quá hạn mà chưa xong = 0.
+// Việc chưa xong nhưng CHƯA tới hạn KHÔNG đi qua đây — nó bị loại khỏi cả tử lẫn mẫu (xem dưới).
+const heSoHoanThanh = t => (t.status !== 'COMPLETED' ? 0 : laTre(t) ? 0.5 : 1);
+
+// Việc chưa xong mà đã QUÁ HẠN tính tới ngày chấm `ngay` ('YYYY-MM-DD'): so phần ngày của
+// due_date với ngay. due 20/07 chấm 23/07 → quá hạn; due 25/07 → chưa tới hạn (chưa chấm).
+const quaHanChuaXong = (t, ngay) =>
+  t.status !== 'COMPLETED' && !!t.due_date && !!ngay && String(t.due_date).slice(0, 10) < ngay;
 
 const MOT_NGAY = 86400000;
 
@@ -79,7 +85,7 @@ function moTaViecChuaDat(t) {
   return 'chưa xong';
 }
 
-function luatHoanThanhDungHan(ct, viec) {
+function luatHoanThanhDungHan(ct, viec, sanXuat, chamCong, thanhVien, ngay) {
   // BỎ việc báo cáo cuối ngày: chúng đã có chỉ tiêu BÁO CÁO KẾT QUẢ CÔNG VIỆC chấm riêng, để
   // lại là một việc bị tính điểm hai lần. Nặng hơn thế: báo cáo lặp HẰNG NGÀY nên áp đảo về
   // số lượng (có người 14/17 việc trong tháng là báo cáo), giữ lại thì chỉ tiêu này thực chất
@@ -87,26 +93,39 @@ function luatHoanThanhDungHan(ct, viec) {
   const dem = viec.filter(t => !laBaoCaoCuoiNgay(t));
   const boBaoCao = viec.length - dem.length;
 
-  if (!dem.length) {
-    const vi = boBaoCao ? ' (không tính báo cáo cuối ngày — có chỉ tiêu riêng)' : '';
-    return { tiLe: 1, ghiChu: `Tự động: không có việc nào được giao trong tháng${vi} — tính đủ điểm.` };
-  }
-  const dat = dem.filter(dungHan);
-  const tre = dem.filter(t => !dungHan(t));
-  const tiLe = dat.length / dem.length;
+  // CHỈ chấm việc ĐÃ ĐẾN LÚC phán xét được: đã xong, HOẶC chưa xong nhưng đã quá hạn. Việc
+  // chưa xong mà deadline CHƯA qua thì không thể coi là trượt — bỏ khỏi cả tử lẫn mẫu, nếu
+  // không người vừa được giao việc dài hạn đã bị kéo tụt điểm oan (chủ app chốt 24/07/2026).
+  const tinh = dem.filter(t => t.status === 'COMPLETED' || quaHanChuaXong(t, ngay));
+  const chuaToiHan = dem.length - tinh.length;
 
-  // Cắt danh sách tên việc trễ: ô ghi chú nằm trong một ô bảng, liệt kê 30 việc là vỡ bảng.
-  const ten = tre.slice(0, MAX_TEN_TRE)
-    .map(t => `${t.title || t.id} (${moTaViecChuaDat(t)})`).join('; ');
-  const them = tre.length > MAX_TEN_TRE ? ` …và ${tre.length - MAX_TEN_TRE} việc nữa` : '';
-  const phanTre = tre.length ? ` Chưa đúng hạn: ${ten}${them}.` : '';
-  // Nói rõ đã bỏ bao nhiêu việc, nếu không người đọc đối chiếu với tab Công việc sẽ thấy hụt
-  // số và tưởng máy đếm sai.
-  const phanBo = boBaoCao ? `, không tính ${boBaoCao} báo cáo cuối ngày` : '';
+  const phuChu = [];
+  if (boBaoCao) phuChu.push(`không tính ${boBaoCao} báo cáo cuối ngày`);
+  if (chuaToiHan) phuChu.push(`bỏ ${chuaToiHan} việc chưa tới hạn`);
+
+  if (!tinh.length) {
+    const vi = phuChu.length ? ` (${phuChu.join(', ')})` : '';
+    return { tiLe: 1, ghiChu: `Tự động: chưa có việc nào đến hạn chấm trong tháng${vi} — tính đủ điểm.` };
+  }
+
+  // Tỉ lệ = trung bình HỆ SỐ (1 / 0.5 / 0), không phải đếm nhị phân đạt/không.
+  const tong = tinh.reduce((s, t) => s + heSoHoanThanh(t), 0);
+  const tiLe = tong / tinh.length;
+
+  // Việc chưa đạt trọn (hệ số < 1): xong trễ (0.5) hoặc quá hạn chưa xong (0). Ghi rõ lý do + hệ số.
+  const moTa = t => t.status === 'COMPLETED'
+    ? `${t.title || t.id} (${moTaViecChuaDat(t)}, hệ số 0.5)`
+    : `${t.title || t.id} (quá hạn chưa xong, hệ số 0)`;
+  const mat = tinh.filter(t => heSoHoanThanh(t) < 1);
+  // Cắt danh sách: ô ghi chú nằm trong một ô bảng, liệt kê 30 việc là vỡ bảng.
+  const ten = mat.slice(0, MAX_TEN_TRE).map(moTa).join('; ');
+  const them = mat.length > MAX_TEN_TRE ? ` …và ${mat.length - MAX_TEN_TRE} việc nữa` : '';
+  const phanMat = mat.length ? ` Chưa đạt: ${ten}${them}.` : '';
+  const phanPhu = phuChu.length ? `, ${phuChu.join(', ')}` : '';
 
   return {
     tiLe,
-    ghiChu: `Tự động: ${dat.length}/${dem.length} việc đúng hạn (${Math.round(tiLe * 100)}%)${phanBo}.${phanTre}`,
+    ghiChu: `Tự động: đạt ${Math.round(tiLe * 100)}% trên ${tinh.length} việc đến hạn${phanPhu}.${phanMat}`,
   };
 }
 
@@ -403,7 +422,8 @@ export function apDungChamTuDong(
       laBoPhan ? [] : viecTrongThang(tasks, r.nhan_vien_id, ky),
       laBoPhan ? [] : sanXuatTrongThang(sanXuat, r.nhan_vien_id, ky),
       cc,
-      thanhVien);
+      thanhVien,
+      ngay);
 
     // Luật nhường chấm tay: có người thật đã chốt điểm thì giữ nguyên số của họ, chỉ kèm lời
     // giải thích. Dùng cho chỉ tiêu mà dữ liệu chỉ đo được một phần (chuyên cần cá nhân).

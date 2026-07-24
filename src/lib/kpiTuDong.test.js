@@ -42,47 +42,59 @@ describe('viecTrongThang', () => {
 
 describe('luật HT_CONG_VIEC_DUNG_HAN', () => {
   const luat = LUAT_TU_DONG.HT_CONG_VIEC_DUNG_HAN;
+  const SAU = '2026-08-01';   // ngày chấm SAU mọi hạn tháng 7 → việc chưa xong tính là quá hạn
 
-  it('7/9 đúng hạn ra tỉ lệ 7/9', () => {
+  it('hệ số: xong đúng hạn 1, xong trễ 0.5, quá hạn chưa xong 0', () => {
     const ds = [
-      ...Array.from({ length: 7 }, (_, i) => viec({ id: `O-${i}` })),
-      viec({ id: 'T-1', title: 'Gửi báo cáo tuần 3', completed_date: '2026-07-11T10:00:00Z' }),
-      viec({ id: 'T-2', title: 'Kiểm kê kho', status: 'IN_PROGRESS', completed_date: null }),
+      ...Array.from({ length: 6 }, (_, i) => viec({ id: `O-${i}` })),                              // 6 × 1
+      viec({ id: 'T-1', title: 'Gửi báo cáo tuần 3', completed_date: '2026-07-11T10:00:00Z' }),   // trễ → 0.5
+      viec({ id: 'T-2', title: 'Kiểm kê kho', status: 'IN_PROGRESS', completed_date: null }),      // quá hạn → 0
     ];
-    const kq = luat({ chi_tieu: 10 }, ds);
-    expect(kq.tiLe).toBeCloseTo(7 / 9);
-    expect(kq.ghiChu).toContain('7/9');
+    const kq = luat({ chi_tieu: 10 }, ds, [], [], [], SAU);
+    expect(kq.tiLe).toBeCloseTo(6.5 / 8);
+    expect(kq.ghiChu).toContain('8 việc đến hạn');
     expect(kq.ghiChu).toContain('Gửi báo cáo tuần 3');
     expect(kq.ghiChu).toContain('Kiểm kê kho');
   });
 
-  it('việc chưa hoàn thành nằm ở mẫu số, không ở tử số', () => {
-    const kq = luat({ chi_tieu: 10 }, [viec({ status: 'IN_PROGRESS', completed_date: null })]);
-    expect(kq.tiLe).toBe(0);
+  it('việc xong nhưng trễ hạn tính hệ số 0.5', () => {
+    const ds = [viec({ completed_date: '2026-07-20T10:00:00Z' })];   // due 10 → trễ
+    expect(luat({ chi_tieu: 10 }, ds, [], [], [], SAU).tiLe).toBe(0.5);
   });
 
-  it('không có việc nào thì đủ điểm, ghi chú nói rõ', () => {
-    const kq = luat({ chi_tieu: 10 }, []);
+  it('việc quá hạn mà chưa xong tính hệ số 0', () => {
+    const ds = [viec({ status: 'IN_PROGRESS', completed_date: null, due_date: '2026-07-10T10:00:00Z' })];
+    expect(luat({ chi_tieu: 10 }, ds, [], [], [], SAU).tiLe).toBe(0);
+  });
+
+  it('việc chưa xong nhưng CHƯA tới hạn thì bỏ khỏi phép tính, không kéo điểm', () => {
+    // Chấm ngày 20/07, việc hạn 25/07 chưa xong → chưa tới hạn → không chấm → đủ điểm.
+    const ds = [viec({ status: 'IN_PROGRESS', completed_date: null, due_date: '2026-07-25T10:00:00Z' })];
+    const kq = luat({ chi_tieu: 10 }, ds, [], [], [], '2026-07-20');
     expect(kq.tiLe).toBe(1);
-    expect(kq.ghiChu).toContain('không có việc nào');
+    expect(kq.ghiChu).toContain('chưa có việc nào đến hạn');
   });
 
-  it('trễ nhiều hơn 5 việc thì cắt tên, ghi số việc còn lại', () => {
+  it('không có việc nào thì đủ điểm', () => {
+    expect(luat({ chi_tieu: 10 }, [], [], [], [], SAU).tiLe).toBe(1);
+  });
+
+  it('quá 5 việc chưa đạt thì cắt tên, ghi số việc còn lại', () => {
     const tre = Array.from({ length: 8 }, (_, i) =>
       viec({ id: `T-${i}`, title: `Việc trễ ${i}`, completed_date: '2026-07-20T10:00:00Z' }));
-    const kq = luat({ chi_tieu: 10 }, tre);
+    const kq = luat({ chi_tieu: 10 }, tre, [], [], [], SAU);
     expect(kq.ghiChu).toContain('3 việc nữa');
     expect(kq.ghiChu).not.toContain('Việc trễ 5');
   });
 
-  it('việc xong muộn ghi (trễ N ngày), việc chưa xong ghi (chưa xong)', () => {
+  it('ghi chú nêu lý do + hệ số cho việc chưa đạt', () => {
     const ds = [
       viec({ id: 'A', title: 'Sửa máy', completed_date: '2026-07-13T10:00:00Z' }), // due 07-10 → trễ 3 ngày
-      viec({ id: 'B', title: 'Kiểm kê', status: 'IN_PROGRESS', completed_date: null }),
+      viec({ id: 'B', title: 'Kiểm kê', status: 'IN_PROGRESS', completed_date: null, due_date: '2026-07-10T10:00:00Z' }),
     ];
-    const g = luat({ chi_tieu: 10 }, ds).ghiChu;
-    expect(g).toContain('Sửa máy (trễ 3 ngày)');
-    expect(g).toContain('Kiểm kê (chưa xong)');
+    const g = luat({ chi_tieu: 10 }, ds, [], [], [], SAU).ghiChu;
+    expect(g).toContain('Sửa máy (trễ 3 ngày, hệ số 0.5)');
+    expect(g).toContain('Kiểm kê (quá hạn chưa xong, hệ số 0)');
   });
 });
 
@@ -136,7 +148,7 @@ describe('apDungChamTuDong', () => {
   it('gán diem_chot theo tỉ lệ luật tính ra', () => {
     const ds = [viec(), viec({ id: 'CV-2', completed_date: '2026-07-20T10:00:00Z' })];
     const kq = apDungChamTuDong([dong()], [], ds, '2026-07', NGAY);
-    expect(kq.rows[0].diem_chot).toBe(5);   // 1/2 đúng hạn × chỉ tiêu 10
+    expect(kq.rows[0].diem_chot).toBe(7.5);   // (1 đúng hạn + 0.5 trễ) / 2 × chỉ tiêu 10
   });
 
   it('kèm một dòng nhật ký ảo chở lời giải thích', () => {
@@ -244,37 +256,39 @@ describe('luật BC_KET_QUA_CONG_VIEC (báo cáo cuối ngày)', () => {
 describe('HT_CONG_VIEC_DUNG_HAN loại việc báo cáo cuối ngày', () => {
   const luat = LUAT_TU_DONG.HT_CONG_VIEC_DUNG_HAN;
   const bc = (o = {}) => viec({ title: 'Báo cáo công việc cuối ngày', ...o });
+  const SAU = '2026-08-01';
 
   it('báo cáo cuối ngày không lọt vào mẫu số — nếu không là tính điểm hai lần', () => {
-    // 1 việc thường trễ + 3 báo cáo đúng hạn. Không loại thì ra 3/4 (75%), loại thì 0/1 (0%).
+    // 1 việc thường xong-trễ + 3 báo cáo. Loại báo cáo → chỉ chấm 1 việc thường (hệ số 0.5).
     const kq = luat({ chi_tieu: 10 }, [
       viec({ id: 'X', title: 'Sửa máy', completed_date: '2026-07-20T10:00:00Z' }),
       bc({ id: 'B1' }), bc({ id: 'B2' }), bc({ id: 'B3' }),
-    ]);
-    expect(kq.tiLe).toBe(0);
-    expect(kq.ghiChu).toContain('0/1');
+    ], [], [], [], SAU);
+    expect(kq.tiLe).toBe(0.5);
+    expect(kq.ghiChu).toContain('1 việc đến hạn');
+    expect(kq.ghiChu).toContain('không tính 3 báo cáo cuối ngày');
   });
 
   it('ghi chú nói rõ đã bỏ bao nhiêu báo cáo, để đối chiếu với tab Công việc không thấy hụt số', () => {
-    const kq = luat({ chi_tieu: 10 }, [viec({ id: 'X' }), bc({ id: 'B1' }), bc({ id: 'B2' })]);
+    const kq = luat({ chi_tieu: 10 }, [viec({ id: 'X' }), bc({ id: 'B1' }), bc({ id: 'B2' })], [], [], [], SAU);
     expect(kq.ghiChu).toContain('không tính 2 báo cáo cuối ngày');
   });
 
   it('không có báo cáo nào thì ghi chú không nhắc tới chuyện loại trừ', () => {
-    expect(luat({ chi_tieu: 10 }, [viec()]).ghiChu).not.toContain('không tính');
+    expect(luat({ chi_tieu: 10 }, [viec()], [], [], [], SAU).ghiChu).not.toContain('không tính');
   });
 
   it('cả tháng chỉ có báo cáo cuối ngày → đủ điểm, ghi chú nói rõ vì sao trống', () => {
-    const kq = luat({ chi_tieu: 10 }, [bc({ id: 'B1' }), bc({ id: 'B2' })]);
+    const kq = luat({ chi_tieu: 10 }, [bc({ id: 'B1' }), bc({ id: 'B2' })], [], [], [], SAU);
     expect(kq.tiLe).toBe(1);
-    expect(kq.ghiChu).toContain('không tính báo cáo cuối ngày');
+    expect(kq.ghiChu).toContain('không tính 2 báo cáo cuối ngày');
   });
 
-  it('tên việc trễ liệt kê ra không còn lẫn báo cáo cuối ngày', () => {
+  it('tên việc chưa đạt liệt kê ra không còn lẫn báo cáo cuối ngày', () => {
     const kq = luat({ chi_tieu: 10 }, [
       viec({ id: 'X', title: 'Sửa máy', completed_date: '2026-07-20T10:00:00Z' }),
       bc({ id: 'B1', status: 'IN_PROGRESS', completed_date: null }),
-    ]);
+    ], [], [], [], SAU);
     expect(kq.ghiChu).toContain('Sửa máy');
     expect(kq.ghiChu).not.toContain('Báo cáo công việc cuối ngày');
   });
