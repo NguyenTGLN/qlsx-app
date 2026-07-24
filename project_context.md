@@ -299,13 +299,23 @@ graph LR
 | Sổ kiểm kho | [BookInventoryTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/BookInventoryTab.jsx) | Kiểm kê và đối chiếu |
 | Nhập kho | [ImportStockTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/ImportStockTab.jsx) | Ghi nhận nhập kho |
 | Lịch sử nhập | [ImportLogsTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/ImportLogsTab.jsx) | Log lịch sử nhập kho |
-| Lệnh sản xuất | [ProductionOrderTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/ProductionOrderTab.jsx) | Quản lý lệnh SX từ góc kho (~76KB, tab lớn nhất) |
+| Lệnh sản xuất | [ProductionOrderTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/ProductionOrderTab.jsx) | Quản lý lệnh SX từ góc kho (~76KB, tab lớn nhất). Có nút **Chuyển SX trước** (xem 5.6.1) |
 | Lưu xuất | [SaveExportTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/SaveExportTab.jsx) | Lưu phiếu xuất kho |
 | Đề xuất mua hàng | [OrderProposalTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/OrderProposalTab.jsx) | Đề xuất mua nguyên vật liệu |
 | Tổng hợp tồn | [StockSummaryTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/StockSummaryTab.jsx) | Tổng hợp số liệu tồn kho |
 | WIP Stock | [WipStockTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/WipStockTab.jsx) | Hàng tồn Work-in-Progress |
 | Hàng đợi in | [PrintQueueTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/PrintQueueTab.jsx) | Quản lý hàng đợi in phiếu |
 | Log soạn hàng | [PickingLogsTab.jsx](file:///d:/Báo cáo sản xuất/qlsx-app/src/pages/kho/PickingLogsTab.jsx) | Lịch sử picking/soạn hàng |
+
+#### 5.6.1 Chuyển SX trước (kê nguyên liệu ra vị trí SX4 khi thiếu hàng)
+
+Khi lập phiếu sản xuất mà **thiếu linh kiện**, nút LƯU PHIẾU bị khoá (không tạo được lệnh SX vì thiếu định mức). Nút cam **CHUYỂN SX TRƯỚC** (chỉ hiện ở màn kết quả, mode sản xuất) **vẫn bấm được khi thiếu** — dồn toàn bộ nguyên liệu đang có của phiếu về **một vị trí tập kết `SX4-DD/MM/YYYY`** để chuyền sản xuất trước một phần.
+
+- **Không tạo phiếu/lệnh sản xuất nào** — không đụng `production_orders`, `production_demand` (DKSX), `luu_xuat`, WIP `SX9-`. Hàng không rời kho, chỉ đổi vị trí (đúng nguyên tắc kế toán).
+- Ghi chứng từ **`PCV-YYYYMMDD-NN`** vào `inventory_picking_logs` (product_code `CHUYEN_SX`) → hiện ở Quản Lý Chứng Từ nhãn "CHUYỂN VỊ TRÍ SX", in ra là **"PHIẾU CHUYỂN VỊ TRÍ"**, và **Hủy Phiếu đảo ngược được**.
+- Phiếu SX sau này **tự ưu tiên lấy hàng ở `SX4-*` trước** (`allocateFIFO`); không áp cho xuất đơn hàng.
+- **Cần chạy 1 lần** `sql/them_phieu_chuyen_sx.sql` trên Supabase để Hủy Phiếu PCV hoạt động. Chưa chạy: chuyển + in vẫn được, chỉ Hủy PCV báo lỗi kèm hướng dẫn.
+- Logic thuần: [stagingMove.js](file:///d:/Báo cáo sản xuất/qlsx-app/src/lib/stagingMove.js). Spec: `docs/superpowers/specs/2026-07-24-chuyen-sx-truoc-design.md`.
 
 ---
 
