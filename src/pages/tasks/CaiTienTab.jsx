@@ -17,6 +17,7 @@ import { CATEGORIES, DEFAULT_CONFIG, tinhGiaTri, chamDiem, fmtTien } from '../..
 const CAT_MAP = Object.fromEntries(CATEGORIES.map(c => [c.key, c]));
 
 const STATUS_CFG = {
+  NHAP:        { label: '📝 Nháp',         bg: '#f1f5f9', mau: '#475569' },
   CHO_DUYET:   { label: '⏳ Chờ duyệt',    bg: '#fef3c7', mau: '#b45309' },
   DA_DUYET:    { label: '✓ Đã duyệt',      bg: '#d1fae5', mau: '#047857' },
   CAN_BO_SUNG: { label: '✎ Cần bổ sung',   bg: '#ffedd5', mau: '#c2410c' },
@@ -209,7 +210,8 @@ function WizardGui({ me, config, row, onClose, onSaved }) {
     onClose();
   };
 
-  const gui = async () => {
+  // trangThai: 'NHAP' (chỉ lưu lại cho riêng mình) hoặc 'CHO_DUYET' (gửi duyệt).
+  const gui = async (trangThai) => {
     if (!f.title.trim()) { setLoi('Nhập tên cải tiến đã nhé'); setBuoc(2); return; }
     setDangLuu(true);
     setLoi('');
@@ -219,7 +221,7 @@ function WizardGui({ me, config, row, onClose, onSaved }) {
         title: f.title.trim(), category: f.category,
         before_text: f.before_text.trim(), after_text: f.after_text.trim(),
         attachments_before: f.attachments_before, attachments_after: f.attachments_after,
-        metrics: f.metrics, computed, status: 'CHO_DUYET',
+        metrics: f.metrics, computed, status: trangThai,
       };
       if (suaBai) {
         const { error } = await supabase.from('cai_tien').update(payload).eq('id', row.id);
@@ -342,9 +344,16 @@ function WizardGui({ me, config, row, onClose, onSaved }) {
             <OKetQua category={f.category} metrics={f.metrics} config={config} />
             {loi && <div style={{ color: '#b91c1c', fontSize: '0.78rem', fontWeight: 600 }}><AlertTriangle size={13} style={{ verticalAlign: -2 }} /> {loi}</div>}
             <div style={{ display: 'flex', gap: 8 }}>
-              <button style={{ ...nutPhu, flex: 1 }} onClick={() => setBuoc(2)}>← Quay lại</button>
-              <button style={{ ...nutChinh, flex: 1, opacity: dangLuu ? 0.6 : 1 }} disabled={dangLuu} onClick={gui}>
-                {dangLuu ? <Loader2 size={15} className="animate-spin" style={{ verticalAlign: -3 }} /> : '📤'} {suaBai ? 'Gửi lại' : 'Gửi cải tiến'}
+              <button style={{ ...nutPhu }} onClick={() => setBuoc(2)}>←</button>
+              {/* Lưu nháp chỉ cho bài mới hoặc đang là nháp — bài CAN_BO_SUNG mà lui về
+                  nháp thì lời nhắn "cần bổ sung" của quản lý biến mất khỏi luồng duyệt. */}
+              {(!suaBai || row.status === 'NHAP') && (
+                <button style={{ ...nutPhu, flex: 1, color: '#334155' }} disabled={dangLuu} onClick={() => gui('NHAP')}>
+                  💾 Lưu nháp
+                </button>
+              )}
+              <button style={{ ...nutChinh, flex: 1.2, opacity: dangLuu ? 0.6 : 1 }} disabled={dangLuu} onClick={() => gui('CHO_DUYET')}>
+                {dangLuu ? <Loader2 size={15} className="animate-spin" style={{ verticalAlign: -3 }} /> : '📤'} {suaBai && row.status !== 'NHAP' ? 'Gửi lại' : 'Gửi duyệt'}
               </button>
             </div>
           </div>
@@ -365,7 +374,9 @@ function ChiTietModal({ row, me, users, perm, config, onClose, onChanged, onEdit
 
   const tacGia = users.find(u => u.id === row.nhan_vien_id);
   const laCuaToi = row.nhan_vien_id === me.id;
+  const laNhap = row.status === 'NHAP';
   const choDuyet = row.status === 'CHO_DUYET' || row.status === 'CAN_BO_SUNG';
+  const chuaChot = choDuyet || laNhap;   // tác giả còn sửa/xóa được
   const kqCham = chamDiem(score, config);
   const computed = row.computed || {};
 
@@ -552,7 +563,11 @@ function ChiTietModal({ row, me, users, perm, config, onClose, onChanged, onEdit
               </button>
             </>
           )}
-          {laCuaToi && choDuyet && (
+          {laCuaToi && laNhap && (
+            <button style={{ ...nutChinh, flex: 1.2 }} disabled={dangLuu}
+              onClick={() => capNhat({ status: 'CHO_DUYET' })}>📤 Gửi duyệt</button>
+          )}
+          {laCuaToi && chuaChot && (
             <button style={{ ...nutPhu, flex: 1 }} disabled={dangLuu} onClick={() => onEdit(row)}>
               <Pencil size={13} style={{ verticalAlign: -2 }} /> Sửa bài
             </button>
@@ -690,17 +705,23 @@ export default function CaiTienTab({ me, users = [], perm = {} }) {
     })();
   }, []);
 
+  // Nháp là của riêng tác giả — RLS đã giấu phía server, lọc lại ở đây cho chắc
+  // (vd admin: RLS server cho admin thấy hết thì client vẫn phải giấu nháp người khác).
+  const rowsHien = useMemo(
+    () => rows.filter(r => r.status !== 'NHAP' || r.nhan_vien_id === me.id),
+    [rows, me.id]);
+
   const rowsLoc = useMemo(() => {
-    if (filter === 'MINE') return rows.filter(r => r.nhan_vien_id === me.id);
-    if (filter === 'ALL') return rows;
-    return rows.filter(r => r.status === filter);
-  }, [rows, filter, me.id]);
+    if (filter === 'MINE') return rowsHien.filter(r => r.nhan_vien_id === me.id);
+    if (filter === 'ALL') return rowsHien;
+    return rowsHien.filter(r => r.status === filter);
+  }, [rowsHien, filter, me.id]);
 
   const thongKe = useMemo(() => ({
-    tong: rows.length,
-    tienNam: rows.filter(r => r.status === 'DA_DUYET').reduce((s, r) => s + (Number(r.computed?.tien_nam) || 0), 0),
-    cuaToi: rows.filter(r => r.nhan_vien_id === me.id).length,
-  }), [rows, me.id]);
+    tong: rowsHien.filter(r => r.status !== 'NHAP').length,  // nháp chưa gửi, không đếm vào phong trào
+    tienNam: rowsHien.filter(r => r.status === 'DA_DUYET').reduce((s, r) => s + (Number(r.computed?.tien_nam) || 0), 0),
+    cuaToi: rowsHien.filter(r => r.nhan_vien_id === me.id).length,
+  }), [rowsHien, me.id]);
 
   const like = async (row) => {
     const daLike = (row.likes || []).includes(me.id);
@@ -789,7 +810,7 @@ export default function CaiTienTab({ me, users = [], perm = {} }) {
 
           {/* chip lọc */}
           <div style={{ display: 'flex', gap: 6, marginBottom: 10, overflowX: 'auto', paddingBottom: 2 }}>
-            {[['ALL', 'Tất cả'], ['CHO_DUYET', '⏳ Chờ duyệt'], ['DA_DUYET', '✅ Đã duyệt'], ['MINE', '👤 Của tôi']].map(([k, nhan]) => (
+            {[['ALL', 'Tất cả'], ['CHO_DUYET', '⏳ Chờ duyệt'], ['DA_DUYET', '✅ Đã duyệt'], ['NHAP', '📝 Nháp'], ['MINE', '👤 Của tôi']].map(([k, nhan]) => (
               <button key={k} onClick={() => setFilter(k)}
                 style={{
                   ...nutPhu, padding: '0.35rem 0.8rem', fontSize: '0.75rem', whiteSpace: 'nowrap',

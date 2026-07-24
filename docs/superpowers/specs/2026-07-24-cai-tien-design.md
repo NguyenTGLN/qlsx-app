@@ -50,10 +50,10 @@ Hàm `chamDiem(scores, weights)` nằm trong engine, có test.
 
 ## Vòng đời trạng thái
 
-`CHO_DUYET` (gửi) → `DA_DUYET` (kèm điểm + loại) | `CAN_BO_SUNG` (trả lại kèm ghi chú,
-nhân viên sửa gửi lại → `CHO_DUYET`) | `TU_CHOI`. Sau duyệt admin có thể bật cờ
-`nhan_rong` (nhân rộng toàn nhà máy — hiện badge 🚀).
-Không làm trạng thái Nháp (YAGNI — form ngắn, gửi thẳng).
+`NHAP` (lưu nháp, chỉ tác giả thấy) → `CHO_DUYET` (gửi) → `DA_DUYET` (kèm điểm + loại)
+| `CAN_BO_SUNG` (trả lại kèm ghi chú, nhân viên sửa gửi lại → `CHO_DUYET`) | `TU_CHOI`.
+Sau duyệt admin có thể bật cờ `nhan_rong` (nhân rộng toàn nhà máy — hiện badge 🚀).
+(Trạng thái NHAP thêm theo yêu cầu chủ app 24/07 đợt 2 — ban đầu bỏ vì YAGNI.)
 
 ## Dữ liệu (sql/create_cai_tien.sql — idempotent)
 
@@ -127,6 +127,18 @@ Quyền (PERM_REGISTRY, module tasks, tab `cai_tien`):
   chua_do), chấm điểm + ngưỡng xếp loại, format tiền diễn giải.
 - UI kiểm tra tay qua dev server (login admin Nguyên): gửi 1 cải tiến năng suất, thấy
   tiền realtime, duyệt + chấm điểm, thấy xếp hạng. Build `npm run build` sạch.
+
+## Cập nhật đợt 2 (24/07/2026, chủ app yêu cầu)
+
+1. **Lưu nháp**: wizard có 2 nút — "💾 Lưu nháp" (status `NHAP`, chỉ tác giả thấy kể cả
+   với admin, không đếm vào thống kê phong trào) và "📤 Gửi duyệt". Nháp mở lại sửa tiếp
+   hoặc gửi duyệt từ màn chi tiết. Bài `CAN_BO_SUNG` không lùi về nháp được (giữ lời nhắn
+   của quản lý trong luồng duyệt). SQL: `sql/them_nhap_va_kpi_cai_tien.sql`.
+2. **KPI tự động — chỉ tiêu `DONG_GOP_CAI_TIEN`** (`kpiTuDong.js/luatDongGopCaiTien`):
+   đếm bài `DA_DUYET` theo **tháng của mốc duyệt** (`reviewed_at`), tối thiểu **2 bài/tháng**
+   (chép từ mô tả chỉ tiêu gốc) → tiLe = min(1, đã duyệt/2). Bài chờ duyệt chỉ nêu trong
+   ghi chú, không cộng điểm. Kỳ < 2026-07 hoặc không nối được nguồn dữ liệu → KHÔNG chấm
+   (giữ điểm tay cũ). Chỉ tiêu đánh dấu `cach_cham='TU_DONG'` để khóa chấm tay.
 
 ## Ngoài phạm vi (đợt sau nếu cần)
 
