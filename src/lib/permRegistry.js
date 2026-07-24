@@ -44,6 +44,8 @@ export const PERM_REGISTRY = [
       { id: 'kpi',         label: 'KPI',       caps: ['view', 'create', 'edit', 'io'] },
       // view = xem bảng chấm công + miễn trừ | edit = đánh dấu/bỏ ngày đặc biệt (miễn trừ)
       { id: 'cham_cong',   label: 'Chấm công', caps: ['view', 'edit'] },
+      // view = xem feed + xếp hạng | create = gửi cải tiến | edit = duyệt & chấm điểm
+      { id: 'cai_tien',    label: 'Cải tiến',  caps: ['view', 'create', 'edit'] },
     ],
   },
   {
