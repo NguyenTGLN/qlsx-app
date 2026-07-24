@@ -69,10 +69,16 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
         supabase.from('cham_cong').select('*').eq('ky', ky).order('id'));
       if (error) throw error;
       setRows(data || []);
-      const { data: nl, error: loiNl } = await fetchAllRows(() =>
-        supabase.from('chuyen_can_ngoai_le').select('*').eq('ky', ky).order('id'));
-      if (loiNl) throw loiNl;
-      setNgoaiLe(nl || []);
+      // Miễn trừ tải RIÊNG và mềm: hỏng chỗ này (vd bảng chuyen_can_ngoai_le chưa tạo trên
+      // Supabase) KHÔNG được xoá bảng chấm công đang hiển thị — chỉ là không có badge miễn trừ.
+      try {
+        const { data: nl, error: loiNl } = await fetchAllRows(() =>
+          supabase.from('chuyen_can_ngoai_le').select('*').eq('ky', ky).order('id'));
+        if (loiNl) throw loiNl;
+        setNgoaiLe(nl || []);
+      } catch {
+        setNgoaiLe([]);
+      }
     } catch (err) {
       setLoi(err?.message || String(err));
       setRows([]);
