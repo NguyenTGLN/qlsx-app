@@ -358,10 +358,19 @@ const homNay = () => new Date().toISOString().slice(0, 10);
 // ⚠ Dòng ảo có id 'ao-…' và KHÔNG BAO GIỜ được ghi xuống DB. Mọi chỗ ghi nhật ký đều đi qua
 // form riêng, không lấy từ mảng này.
 export function apDungChamTuDong(
-  rows = [], logs = [], tasks = [], ky, ngay = homNay(), sanXuat = [], chamCong = []) {
+  rows = [], logs = [], tasks = [], ky, ngay = homNay(), sanXuat = [], chamCong = [], ngoaiLe = []) {
   const rowsMoi = [];
   const logsAo = [];
   const ds = rows || [];
+
+  // Miễn trừ đặc biệt (giải trình): khoá theo người+ngày, giữ cả lý do để ghi chú nói được.
+  const mienSet = new Set();
+  const mienMap = new Map();
+  for (const x of (ngoaiLe || [])) {
+    const k = `${x.nhan_vien_id}|${x.ngay}`;
+    mienSet.add(k);
+    mienMap.set(k, x.ly_do || null);
+  }
 
   for (const r of ds) {
     const luat = LUAT_TU_DONG[r?.ma];
@@ -382,8 +391,12 @@ export function apDungChamTuDong(
         .map(x => x.nhan_vien_id))]
       : [r.nhan_vien_id];
 
-    const cc = (chamCong || []).filter(
-      c => thanhVien.includes(c.nhan_vien_id) && String(c.ky || '') === ky);
+    const cc = (chamCong || [])
+      .filter(c => thanhVien.includes(c.nhan_vien_id) && String(c.ky || '') === ky)
+      .map(c => {
+        const k = `${c.nhan_vien_id}|${c.ngay}`;
+        return mienSet.has(k) ? { ...c, mien: true, mien_ly_do: mienMap.get(k) || null } : c;
+      });
 
     const kq = luat(
       r,

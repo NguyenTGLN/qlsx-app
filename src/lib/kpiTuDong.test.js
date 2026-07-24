@@ -537,3 +537,35 @@ describe('apDungChamTuDong với chỉ tiêu bộ phận', () => {
     expect(kq.rows[0].diem_chot).toBe(5);
   });
 });
+
+describe('apDungChamTuDong với miễn trừ (ngoaiLe)', () => {
+  const NGAY = '2026-07-23';
+  const r = { id: 'ct-cn', cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'CHUYEN_CAN_CA_NHAN', chi_tieu: 10 };
+  const cc = ngay => ({ nhan_vien_id: 'a', ky: '2026-07', di_muon_phut: 0, ve_som_phut: 0, nghi: true, ngay });
+  const ds = [cc('2026-07-01'), cc('2026-07-02'), cc('2026-07-03')]; // 3 ngày nghỉ
+
+  it('không miễn: nghỉ 3 ngày vượt 2 phép → điểm 4/10', () => {
+    const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY, [], ds);
+    expect(kq.rows[0].diem_chot).toBe(4);
+  });
+
+  it('miễn 2 ngày → còn 1 nghỉ trong phép → điểm đủ 10', () => {
+    const ngoaiLe = [
+      { nhan_vien_id: 'a', ngay: '2026-07-02', ly_do: 'ốm' },
+      { nhan_vien_id: 'a', ngay: '2026-07-03', ly_do: 'ốm' },
+    ];
+    const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY, [], ds, ngoaiLe);
+    expect(kq.rows[0].diem_chot).toBe(10);
+    const ao = kq.logs.find(l => l.chi_tieu_id === 'ct-cn');
+    expect(ao.ly_do).toContain('Miễn 2 ngày có giải trình');
+  });
+
+  it('miễn của người khác/ngày khác không lọt vào', () => {
+    const ngoaiLe = [
+      { nhan_vien_id: 'b', ngay: '2026-07-02', ly_do: 'ốm' },   // khác người
+      { nhan_vien_id: 'a', ngay: '2026-07-30', ly_do: 'ốm' },   // ngày không có trong chấm công
+    ];
+    const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY, [], ds, ngoaiLe);
+    expect(kq.rows[0].diem_chot).toBe(4);   // không miễn được ngày nào → vẫn 4
+  });
+});
