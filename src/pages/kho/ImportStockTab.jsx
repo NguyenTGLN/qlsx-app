@@ -6,6 +6,8 @@ import { getCatalogItems, invalidateCatalog } from '../../lib/catalogCache';
 import { dlkImportCap } from '../../lib/proposalQty';
 import { findZeroQtyItems, zeroQtyWarning } from '../../lib/importQtyGuard';
 import { splitAggIntoLogRows } from '../../lib/importLogRows';
+import { staffIdOf } from '../../lib/receiptSigner';
+import { getSessionUser } from '../../lib/authToken';
 import { newDocToken, claimDocToken, setDocTokenOrderCode, releaseDocToken } from '../../lib/docGuard';
 import AddCatalogItemModal from '../../components/AddCatalogItemModal';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
@@ -19,6 +21,9 @@ const IMPORT_TYPES = [
   { id: 'Khác', label: 'Khác', icon: MoreHorizontal, color: '#64748b' }
 ];
 import * as XLSX from 'xlsx';
+
+// Mã người đang đăng nhập để ghi created_by của phiếu (phiếu in tra ngược ra Người nhận).
+const currentStaffId = () => staffIdOf(getSessionUser()) || 'Nhân viên';
 import { todayLocal } from '../../lib/dateUtils';
 
 // Component Autocomplete Component
@@ -549,7 +554,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
 
     setLoading(true);
     try {
-      const userStr = localStorage.getItem('qlsx_user') || 'Nhân viên';
+      const userStr = currentStaffId();
 
       // CHỐT CHỐNG TRÙNG: chiếm token TRƯỚC khi sinh mã / trừ-cộng kho.
       // Nếu token đã dùng (bấm lại / tải lại / nhiều tab) → dừng, không tạo chứng từ lần 2.
@@ -709,7 +714,7 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
   const handleCloseAndReorder = async (row) => {
     setShortfallBusy(true);
     try {
-      const user = localStorage.getItem('qlsx_user') || 'Nhân viên';
+      const user = currentStaffId();
       const res = await closeProposalWithShortfall({ orig: row, received: row.received, archivedBy: user });
       setShortfallRows(prev => prev.map(r => r.id === row.id ? { ...r, _resolved: 'close', _newDlk: res.shortfallDlkCode, _shortfall: res.shortfall } : r));
     } catch (e) {

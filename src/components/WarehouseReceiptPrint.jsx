@@ -12,7 +12,9 @@ import React from 'react';
 //  - source: Nguồn nhập (NK) — thường là loại nhập + NCC/nguồn
 //  - reason: Lý do nhập (NK) / Nội dung (XK)
 //  - diaChi, sdt: địa chỉ & SĐT (lấy từ NCC nếu có, không thì bỏ trống)
-//  - rows: [{ ma, ten, dvt, sl, kho, ghiChu, maDonHang }]
+//  - rows: [{ ma, ten, dvt, sl, slConLai, kho, ghiChu, maDonHang }]
+//    slConLai: tồn còn lại tại đúng vị trí đó SAU khi lấy hàng (chỉ in cho XK/CV)
+//  - nguoiNhan: họ tên người nhận (xem src/lib/receiptSigner.js); rỗng thì để trống ký tay
 //
 // Tên người ký in sẵn theo mẫu.
 const SIGNER_LAP = 'Nguyễn Thị Thu Hà';   // Người lập phiếu
@@ -35,7 +37,7 @@ function Field({ label, value }) {
   );
 }
 
-export default function WarehouseReceiptPrint({ kind, code, date, source, reason, diaChi, sdt, rows = [] }) {
+export default function WarehouseReceiptPrint({ kind, code, date, source, reason, diaChi, sdt, rows = [], thanhPham = [], nguoiNhan = '' }) {
   const isNK = kind === 'NK';
   const isCV = kind === 'CV'; // phiếu chuyển vị trí: dùng khung XK nhưng không có khách hàng
   const { dd, mm, yyyy } = fmtDate(date);
@@ -59,6 +61,9 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
       {/* Khối thông tin đầu phiếu */}
       <div style={{ marginBottom: 8 }}>
         {code && <Field label="Mã phiếu:" value={code} />}
+        {thanhPham.length > 0 && (
+          <Field label="Thành phẩm:" value={thanhPham.map(tp => tp.ten ? `${tp.ma} — ${tp.ten}` : tp.ma).join('; ')} />
+        )}
         {isNK ? (
           <>
             <Field label="Nguồn nhập:" value={source} />
@@ -98,13 +103,14 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
           ) : (
             <tr>
               <th style={{ ...th, width: '5%' }}>Số TT</th>
-              <th style={{ ...th, width: '15%' }}>Mã hàng</th>
-              <th style={{ ...th, width: '26%' }}>Tên hàng hóa</th>
-              <th style={{ ...th, width: '7%' }}>Đơn vị</th>
+              <th style={{ ...th, width: '14%' }}>Mã hàng</th>
+              <th style={{ ...th, width: '22%' }}>Tên hàng hóa</th>
+              <th style={{ ...th, width: '6%' }}>Đơn vị</th>
               <th style={{ ...th, width: '9%' }}>Số lượng LT</th>
               <th style={{ ...th, width: '9%' }}>Số lượng thực</th>
-              <th style={{ ...th, width: '12%' }}>Vị trí</th>
-              <th style={{ ...th, width: '17%' }}>Ghi chú</th>
+              <th style={{ ...th, width: '11%' }}>Vị trí</th>
+              <th style={{ ...th, width: '10%' }}>SL còn lại</th>
+              <th style={{ ...th, width: '14%' }}>Ghi chú</th>
             </tr>
           )}
         </thead>
@@ -131,6 +137,7 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
                 <td style={{ ...cell, textAlign: 'right' }}>{r.sl}</td>
                 <td style={cell}></td>
                 <td style={cell}>{r.kho}</td>
+                <td style={{ ...cell, textAlign: 'right' }}>{r.slConLai == null ? '' : r.slConLai}</td>
                 <td style={cell}>{r.ghiChu || ''}</td>
               </tr>
             )
@@ -162,7 +169,7 @@ export default function WarehouseReceiptPrint({ kind, code, date, source, reason
           <div style={{ width: '32%' }}>
             <div style={{ fontWeight: 700 }}>Người nhận</div>
             <div style={{ fontStyle: 'italic', fontSize: '0.72rem' }}>(kí & ghi rõ họ tên)</div>
-            <div style={{ marginTop: 44, fontWeight: 700 }}>&nbsp;</div>
+            <div style={{ marginTop: 44, fontWeight: 700 }}>{nguoiNhan || ' '}</div>
           </div>
           <div style={{ width: '32%' }}>
             <div style={{ fontWeight: 700 }}>Người duyệt</div>

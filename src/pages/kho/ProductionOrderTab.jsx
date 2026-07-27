@@ -10,6 +10,11 @@ import { getCatalogItems, getBomProducts } from '../../lib/catalogCache';
 import { missingCapacities, capacityMap } from '../../lib/capacityGuard';
 import { parseManualOrders } from '../../lib/manualOrderParse';
 import { newDocToken, claimDocToken, releaseDocToken } from '../../lib/docGuard';
+import { staffIdOf } from '../../lib/receiptSigner';
+import { getSessionUser } from '../../lib/authToken';
+
+// Mã người đang đăng nhập để ghi created_by của phiếu (phiếu in tra ngược ra Người nhận).
+const currentStaffId = () => staffIdOf(getSessionUser()) || 'Nhân viên';
 
 // Làm tròn số lượng hiển thị tới 1 chữ số thập phân (khử nhiễu dấu phẩy động của mã dây, vd 284.30000000000007 → 284.3)
 const fmtQty = round1;
@@ -925,7 +930,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     let pcvCode = '';
     let movedAny = false; // đã có ghi kho thật chưa — quyết định cách xử lý khi lỗi (đọc được ở catch nên phải khai báo NGOÀI try)
     try {
-      const userStr = localStorage.getItem('user_id') || localStorage.getItem('username') || localStorage.getItem('staffName') || 'Nhân viên';
+      const userStr = currentStaffId();
 
       // 1) Mã phiếu chuyển PCV-YYYYMMDD-NN
       const todayStr = new Date(prodDate).toISOString().split('T')[0].replace(/-/g, '');
@@ -1058,7 +1063,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     // Bấm lại / tải lại / nhiều tab → token đã dùng → dừng, không trừ kho / không tạo phiếu lần 2.
     if (!batchTokenRef.current) batchTokenRef.current = newDocToken();
     try {
-      const claim = await claimDocToken(batchTokenRef.current, { orderCode, kind: mode, createdBy: (localStorage.getItem('user_id') || localStorage.getItem('username') || localStorage.getItem('staffName') || 'Nhân viên') });
+      const claim = await claimDocToken(batchTokenRef.current, { orderCode, kind: mode, createdBy: currentStaffId() });
       if (!claim.ok) {
         alert('Phiếu này đã được lưu rồi' + (claim.orderCode ? ` (mã ${claim.orderCode})` : '') + '. Không tạo chứng từ trùng.');
         setIsProcessing(false);
@@ -1077,7 +1082,7 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
       const updates = [];
       const inserts = [];
       const pickingLogs = [];
-      const userStr = localStorage.getItem('user_id') || localStorage.getItem('username') || localStorage.getItem('staffName') || 'Nhân viên';
+      const userStr = currentStaffId();
       let extraSlbData = [];
       let pnkCode = '';
       let pxkCode = '';

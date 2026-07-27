@@ -1,20 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase as db } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
-import { Printer, Search, Loader2, CheckCircle, Clock, RefreshCw, Check, X, CheckSquare, Square, AlertCircle, Ban } from 'lucide-react';
+import { Printer, Search, Loader2, CheckCircle, Clock, RefreshCw, Check, X, CheckSquare, Square, AlertCircle, Ban, Eye } from 'lucide-react';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
+import ReceiptPickList from '../../components/ReceiptPickList';
 import { PageSizeSelect } from '../../components/WarehouseSharedUI';
 import DateRangeDropdown from '../../components/DateRangeDropdown';
 import { cancelPhieu } from '../../lib/cancelDoc';
-
-// notes phiếu nhập được lưu dạng "{lý do} - {nguồn}" (hoặc chỉ "{lý do}"); phiếu xuất chỉ có lý do.
-const splitNote = (n) => {
-  const s = String(n || '').trim();
-  const idx = s.indexOf(' - ');
-  return idx < 0 ? { reason: s, source: '' } : { reason: s.slice(0, idx).trim(), source: s.slice(idx + 3).trim() };
-};
-const uniqJoin = (arr) => [...new Set(arr.filter(Boolean))].join(', ');
+import { buildReceiptProps } from '../../lib/receiptView';
 // created_at (timestamp) -> YYYY-MM-DD theo giờ địa phương, để so với khoảng ngày (from/to) của DateRangeDropdown.
 const toLocalDate = (ts) => {
   const d = new Date(ts);
@@ -39,8 +33,34 @@ export default function PrintQueueTab({ cancelPerm = false }) {
   const [printingOrders, setPrintingOrders] = useState([]);
   const [receiptData, setReceiptData] = useState({}); // order_code -> items
   const [unitMap, setUnitMap] = useState({}); // item_code -> ĐVT (tra từ danh mục HH)
+  const [nameMap, setNameMap] = useState({}); // item_code -> tên hàng (dùng cho mã thành phẩm phiếu SX)
   const [nccMap, setNccMap] = useState({});   // tên/mã NCC (lowercase) -> { dia_chi, so_dien_thoai }
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // States for view-receipt modal (xem phiếu trên màn hình — KHÔNG đánh dấu đã in)
+  const [viewOrder, setViewOrder] = useState(null);   // phiếu đang mở xem
+  const [viewRows, setViewRows] = useState([]);       // các dòng picking-log của phiếu đó
+  const [viewLoading, setViewLoading] = useState(false);
+  // Tick "đã lấy" theo từng phiếu: { [order_code]: [key,...] }. Lưu localStorage nên đóng
+  // phiếu / tải lại trang vẫn còn — riêng từng máy, không đẩy lên máy chủ.
+  const [pickedMap, setPickedMap] = usePersistedState('printQueue_picked', {});
+  const pickedOfView = React.useMemo(
+    () => new Set(viewOrder ? (pickedMap[viewOrder.order_code] || []) : []),
+    [pickedMap, viewOrder]
+  );
+  const togglePick = (key) => {
+    if (!viewOrder) return;
+    const code = viewOrder.order_code;
+    setPickedMap(prev => {
+      const cur = new Set(prev[code] || []);
+      if (cur.has(key)) cur.delete(key); else cur.add(key);
+      return { ...prev, [code]: [...cur] };
+    });
+  };
+  const clearPicks = () => {
+    if (!viewOrder) return;
+    setPickedMap(prev => ({ ...prev, [viewOrder.order_code]: [] }));
+  };
 
   // States for cancel-document modal
   const [cancelTarget, setCancelTarget] = useState(null); // order đang hủy
@@ -159,12 +179,16 @@ export default function PrintQueueTab({ cancelPerm = false }) {
         dataMap[item.order_code].push(item);
       });
 
-      // Tra ĐVT theo mã hàng từ danh mục HH (1 truy vấn cho cả lô)
-      const codes = [...new Set(data.map(d => d.component_code).filter(Boolean))];
-      const uMap = {};
+      // Tra ĐVT + tên hàng từ danh mục HH (1 truy vấn cho cả lô).
+      // Gộp luôn product_code để lấy TÊN thành phẩm của phiếu sản xuất.
+      const codes = [...new Set([
+        ...data.map(d => d.component_code),
+        ...data.map(d => d.product_code),
+      ].filter(Boolean))];
+      const uMap = {}, nameM = {};
       if (codes.length > 0) {
-        const { data: items } = await db.from('inventory_items').select('item_code, unit').in('item_code', codes);
-        (items || []).forEach(it => { uMap[it.item_code] = it.unit || ''; });
+        const { data: items } = await db.from('inventory_items').select('item_code, unit, item_name').in('item_code', codes);
+        (items || []).forEach(it => { uMap[it.item_code] = it.unit || ''; nameM[it.item_code] = it.item_name || ''; });
       }
 
       // Tra địa chỉ + SĐT theo NCC (khớp theo tên hoặc mã NCC, lowercase)
@@ -177,6 +201,7 @@ export default function PrintQueueTab({ cancelPerm = false }) {
       });
 
       setUnitMap(uMap);
+      setNameMap(nameM);
       setNccMap(nMap);
       setReceiptData(dataMap);
       setPrintingOrders(ordersArray);
@@ -217,7 +242,39 @@ export default function PrintQueueTab({ cancelPerm = false }) {
     setPrintingOrders([]);
     setReceiptData({});
     setUnitMap({});
+    setNameMap({});
     setNccMap({});
+  };
+
+  // Xem phiếu trên màn hình — để nhân viên biết đi lấy linh kiện ở vị trí nào.
+  // Chỉ ĐỌC: không đụng vào is_printed, phiếu vẫn nằm nguyên ở danh sách chờ in.
+  const handleViewDoc = async (order) => {
+    setViewOrder(order);
+    setViewRows([]);
+    setViewLoading(true);
+    try {
+      const { data, error } = await db.from('inventory_picking_logs')
+        .select('*')
+        .eq('order_code', order.order_code);
+      if (error) throw error;
+
+      const codes = [...new Set([
+        ...(data || []).map(d => d.component_code),
+        ...(data || []).map(d => d.product_code),
+      ].filter(Boolean))];
+      const uMap = {}, nameM = {};
+      if (codes.length > 0) {
+        const { data: items } = await db.from('inventory_items').select('item_code, unit, item_name').in('item_code', codes);
+        (items || []).forEach(it => { uMap[it.item_code] = it.unit || ''; nameM[it.item_code] = it.item_name || ''; });
+      }
+      setUnitMap(prev => ({ ...prev, ...uMap }));
+      setNameMap(prev => ({ ...prev, ...nameM }));
+      setViewRows(data || []);
+    } catch (err) {
+      alert('Lỗi tải chi tiết phiếu: ' + err.message);
+      setViewOrder(null);
+    }
+    setViewLoading(false);
   };
 
   // Cancel Document Handler
@@ -252,6 +309,23 @@ export default function PrintQueueTab({ cancelPerm = false }) {
         }
         .spin { animation: spin 1s linear infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* Điện thoại: bảng 8 cột tràn ngang làm cột Thao Tác (nút Xem/In) lọt ra ngoài màn hình
+           → đổi sang danh sách thẻ, mỗi phiếu 1 thẻ có sẵn nút bấm. */
+        .pq-cards { display: none; }
+        .pq-modal-desktop { display: block; }
+        .pq-modal-mobile { display: none; }
+        @media (max-width: 860px) {
+          .pq-table-wrap { display: none; }
+          .pq-cards { display: block; }
+          .pq-toolbar { width: 100%; }
+          .pq-toolbar > * { flex: 1 1 auto; min-width: 0; }
+          /* Xem phiếu: chiếm gần trọn màn hình để nhìn rõ nhất */
+          .pq-modal-backdrop { padding: 0 !important; }
+          .pq-modal { width: 100% !important; max-width: 100% !important; height: 100%; max-height: 100% !important; border-radius: 0 !important; }
+          .pq-modal-desktop { display: none; }
+          .pq-modal-mobile { display: block; }
+        }
       `}</style>
       
       <div className="no-print" style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.5rem', flexWrap:'wrap', gap:'1rem'}}>
@@ -259,7 +333,7 @@ export default function PrintQueueTab({ cancelPerm = false }) {
           <Printer color="#0284c7" size={18}/> Quản Lý Chứng Từ (Chờ In)
         </h2>
         
-        <div style={{display:'flex', gap:10, alignItems:'center'}}>
+        <div className="pq-toolbar" style={{display:'flex', gap:10, alignItems:'center', flexWrap:'wrap'}}>
           {selected.size > 0 && (
             <div style={{display:'flex', alignItems:'center', gap:10, background:'#e0f2fe', padding:'0.35rem 0.75rem', borderRadius:8, border:'1px solid #bae6fd'}}>
               <span style={{fontSize:'0.85rem', fontWeight:600, color:'#0369a1'}}>Đã chọn {selected.size} phiếu</span>
@@ -306,6 +380,8 @@ export default function PrintQueueTab({ cancelPerm = false }) {
         {loading && orders.length === 0 ? (
           <div style={{textAlign:'center', padding:'3rem', color:'#64748b'}}><Loader2 size={32} className="spin" style={{margin:'0 auto'}}/></div>
         ) : (
+          <>
+          <div className="pq-table-wrap">
           <table style={{width:'100%', borderCollapse:'collapse', fontSize:'0.75rem'}}>
             <thead>
               <tr style={{background:'#f1f5f9', borderBottom:'2px solid #e2e8f0', textAlign:'left'}}>
@@ -369,6 +445,14 @@ export default function PrintQueueTab({ cancelPerm = false }) {
                       ) : (
                         <>
                           <button
+                            onClick={() => handleViewDoc(o)}
+                            disabled={loading}
+                            title="Mở phiếu xem trên màn hình (không tính là đã in)"
+                            style={{background:'#fff', color:'#0369a1', border:'1px solid #bae6fd', padding:'6px 12px', borderRadius:6, fontWeight:600, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:5, marginRight:6}}
+                          >
+                            <Eye size={16}/> Xem Phiếu
+                          </button>
+                          <button
                             onClick={() => handlePrintBatch([o])}
                             disabled={loading}
                             style={{background: o.is_printed ? '#f1f5f9' : '#0ea5e9', color: o.is_printed ? '#475569' : '#fff', border:'none', padding:'6px 12px', borderRadius:6, fontWeight:600, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:5}}
@@ -390,6 +474,79 @@ export default function PrintQueueTab({ cancelPerm = false }) {
               )}
             </tbody>
           </table>
+          </div>
+
+          {/* Bản cho điện thoại: mỗi phiếu 1 thẻ, nút Xem/In luôn nằm trong màn hình */}
+          <div className="pq-cards">
+            {filteredOrders.length === 0 ? (
+              <div style={{textAlign:'center', padding:'3rem', color:'#64748b'}}>Không có chứng từ nào phù hợp.</div>
+            ) : pagedOrders.map(o => {
+              const isSel = selected.has(o.order_code);
+              return (
+                <div key={o.order_code} style={{borderBottom:'1px solid #e2e8f0', padding:'0.75rem', background: isSel ? '#f0f9ff' : '#fff'}}>
+                  <div style={{display:'flex', alignItems:'flex-start', gap:10}}>
+                    <input
+                      type="checkbox"
+                      checked={isSel}
+                      disabled={o.is_cancelled}
+                      onChange={() => toggleSelect(o.order_code)}
+                      style={{width:18, height:18, marginTop:2, cursor: o.is_cancelled ? 'not-allowed' : 'pointer', accentColor:'#0ea5e9', flexShrink:0}}
+                    />
+                    <div style={{flex:1, minWidth:0}}>
+                      <div style={{fontWeight:800, fontSize:'0.95rem', color:'#0f172a', wordBreak:'break-word'}}>{o.order_code}</div>
+                      <div style={{fontSize:'0.78rem', color:'#475569', marginTop:2}}>
+                        {o.type} · <b>{o.itemsCount}</b> mặt hàng
+                      </div>
+                      <div style={{fontSize:'0.72rem', color:'#64748b', marginTop:2}}>
+                        {o.created_by || 'Auto'} · {new Date(o.created_at).toLocaleString('vi-VN')}
+                      </div>
+                    </div>
+                    <div style={{flexShrink:0}}>
+                      {o.is_cancelled ? (
+                        <span style={{display:'inline-flex', alignItems:'center', gap:4, background:'#f1f5f9', color:'#64748b', padding:'4px 8px', borderRadius:20, fontSize:'0.7rem', fontWeight:700, textDecoration:'line-through'}}>
+                          <Ban size={13}/> Đã Hủy
+                        </span>
+                      ) : o.is_printed ? (
+                        <span style={{display:'inline-flex', alignItems:'center', gap:4, background:'#dcfce7', color:'#16a34a', padding:'4px 8px', borderRadius:20, fontSize:'0.7rem', fontWeight:700}}>
+                          <CheckCircle size={13}/> Đã In
+                        </span>
+                      ) : (
+                        <span style={{display:'inline-flex', alignItems:'center', gap:4, background:'#fff7ed', color:'#ea580c', padding:'4px 8px', borderRadius:20, fontSize:'0.7rem', fontWeight:700}}>
+                          <Clock size={13}/> Chưa In
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {!o.is_cancelled && (
+                    <div style={{display:'flex', gap:8, marginTop:10}}>
+                      <button
+                        onClick={() => handleViewDoc(o)}
+                        disabled={loading}
+                        style={{flex:2, justifyContent:'center', background:'#0369a1', color:'#fff', border:'none', padding:'10px', borderRadius:8, fontWeight:700, fontSize:'0.85rem', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6}}
+                      >
+                        <Eye size={17}/> Xem Phiếu
+                      </button>
+                      <button
+                        onClick={() => handlePrintBatch([o])}
+                        disabled={loading}
+                        style={{flex:1, justifyContent:'center', background: o.is_printed ? '#f1f5f9' : '#0ea5e9', color: o.is_printed ? '#475569' : '#fff', border:'none', padding:'10px', borderRadius:8, fontWeight:700, fontSize:'0.85rem', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6}}
+                      >
+                        <Printer size={17}/> {o.is_printed ? 'In Lại' : 'In'}
+                      </button>
+                      {cancelPerm && (
+                        <button onClick={() => { setCancelTarget(o); setCancelReason(''); }} disabled={loading}
+                          style={{background:'#fef2f2', color:'#dc2626', border:'1px solid #fecaca', padding:'10px 12px', borderRadius:8, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4}}>
+                          <Ban size={15}/>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          </>
         )}
         {!loading && filteredOrders.length > 0 && (
           <div style={{padding:'0.5rem', borderTop:'1px solid #e2e8f0', display:'flex', justifyContent:'space-between', alignItems:'center', background:'#f8fafc', fontSize:'0.75rem', color:'#64748b', flexWrap:'wrap', gap:'0.5rem'}}>
@@ -486,48 +643,78 @@ export default function PrintQueueTab({ cancelPerm = false }) {
         </div>
       )}
 
+      {/* Modal XEM PHIẾU — chỉ đọc, không đổi trạng thái in. Cuộn được để xem trên điện thoại. */}
+      {viewOrder && (
+        <div className="no-print pq-modal-backdrop" onClick={() => setViewOrder(null)}
+          style={{position:'fixed', inset:0, background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:'1rem'}}>
+          <div className="pq-modal" onClick={e => e.stopPropagation()}
+            style={{background:'#fff', width:900, maxWidth:'100%', height:'92vh', maxHeight:'92vh', borderRadius:16, overflow:'hidden', boxShadow:'0 20px 25px -5px rgba(0,0,0,0.2)', display:'flex', flexDirection:'column'}}>
+
+            {/* Thanh đầu: mã phiếu + nút Đóng luôn nhìn thấy, không bị cuộn mất */}
+            <div style={{padding:'0.5rem 0.75rem', background:'#f0f9ff', borderBottom:'1px solid #bae6fd', display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, flexShrink:0}}>
+              <div style={{minWidth:0, display:'flex', alignItems:'center', gap:7}}>
+                <Eye size={17} color="#0369a1" style={{flexShrink:0}}/>
+                <span style={{fontSize:'0.95rem', color:'#0c4a6e', fontWeight:800, wordBreak:'break-word'}}>{viewOrder.order_code}</span>
+                <span title="Chỉ xem — không tính là đã in"
+                  style={{fontSize:'0.62rem', color:'#0369a1', background:'#e0f2fe', border:'1px solid #bae6fd', padding:'1px 6px', borderRadius:20, fontWeight:700, whiteSpace:'nowrap', flexShrink:0}}>
+                  CHỈ XEM
+                </span>
+              </div>
+              <button onClick={() => setViewOrder(null)} aria-label="Đóng"
+                style={{...s_btn, background:'#0f172a', color:'#fff', padding:'0.45rem 0.85rem', flexShrink:0, fontSize:'0.85rem'}}>
+                <X size={17}/> Đóng
+              </button>
+            </div>
+
+            <div style={{overflow:'auto', padding:'1rem', background:'#f8fafc', flex:1, WebkitOverflowScrolling:'touch'}}>
+              {viewLoading ? (
+                <div style={{textAlign:'center', padding:'3rem', color:'#64748b'}}><Loader2 size={32} className="spin" style={{margin:'0 auto'}}/></div>
+              ) : (
+                <>
+                  {/* Máy tính: đúng bản phiếu như khi in. Điện thoại: danh sách thẻ to, dễ đọc khi đi lấy hàng. */}
+                  <div className="pq-modal-desktop" style={{background:'#fff', padding:'1.25rem', borderRadius:8, border:'1px solid #e2e8f0'}}>
+                    <WarehouseReceiptPrint {...buildReceiptProps(viewOrder, viewRows, { unitMap, nccMap, nameMap })} />
+                  </div>
+                  <div className="pq-modal-mobile">
+                    <ReceiptPickList
+                      {...buildReceiptProps(viewOrder, viewRows, { unitMap, nccMap, nameMap })}
+                      picked={pickedOfView}
+                      onTogglePick={togglePick}
+                    />
+                    {pickedOfView.size > 0 && (
+                      <button onClick={clearPicks}
+                        style={{width:'100%', padding:'0.7rem', marginBottom:8, borderRadius:8, border:'1px solid #cbd5e1', background:'#fff', color:'#475569', fontWeight:700, fontSize:'0.85rem', cursor:'pointer'}}>
+                        Bỏ hết đánh dấu đã lấy
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Thanh cuối: In phiếu + Đóng, ngón tay với tới dễ khi cầm điện thoại */}
+            <div style={{padding:'0.75rem 1rem', background:'#fff', borderTop:'1px solid #e2e8f0', display:'flex', gap:10, flexShrink:0}}>
+              <button onClick={() => { const o = viewOrder; setViewOrder(null); handlePrintBatch([o]); }} disabled={viewLoading}
+                style={{...s_btn, flex:1, justifyContent:'center', background:'#0ea5e9', color:'#fff', padding:'0.7rem', fontSize:'0.9rem'}}>
+                <Printer size={18}/> In Phiếu
+              </button>
+              <button onClick={() => setViewOrder(null)}
+                style={{...s_btn, flex:1, justifyContent:'center', background:'#fff', color:'#475569', border:'1px solid #cbd5e1', padding:'0.7rem', fontSize:'0.9rem'}}>
+                <X size={18}/> Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hidden Print Area - Renders multiple orders with page breaks */}
       {printingOrders.length > 0 && Object.keys(receiptData).length > 0 && (
         <div id="print-area" style={{width:'100%', background:'#fff'}}>
-          {printingOrders.map((order, index) => {
-            const data = receiptData[order.order_code] || [];
-            const isNK = order.type === 'NHẬP KHO';
-            // Phiếu nhập: notes lưu "{lý do} - {nguồn}" → tách. Phiếu xuất: notes tự do → giữ nguyên làm Nội dung.
-            let reason, source;
-            if (isNK) {
-              const parts = data.map(it => splitNote(it.notes));
-              reason = uniqJoin(parts.map(p => p.reason)) || order.type;
-              source = uniqJoin(parts.map(p => p.source));
-            } else {
-              reason = uniqJoin(data.map(it => String(it.notes || '').trim())) || order.type;
-              source = '';
-            }
-            const rows = data.map(it => ({
-              ma: it.component_code,
-              ten: it.component_name,
-              dvt: unitMap[it.component_code] || '',
-              sl: Math.abs(Number(it.quantity_taken) || 0),
-              kho: it.location,
-              ghiChu: it.notes || '',
-              maDonHang: it.ma_don_hang || '', // mã đơn hàng nhập tay (Khác/Nhập mới) đã lưu ở picking-log
-            }));
-            // Địa chỉ + SĐT lấy từ NCC theo tên nguồn (nếu khớp), không có thì bỏ trống
-            const ncc = source ? nccMap[source.trim().toLowerCase()] : null;
-            return (
+          {printingOrders.map((order, index) => (
             <div key={order.order_code} style={{padding:'24px 20px', pageBreakAfter: index < printingOrders.length - 1 ? 'always' : 'auto'}}>
-              <WarehouseReceiptPrint
-                kind={isNK ? 'NK' : (order.type === 'CHUYỂN VỊ TRÍ SX' ? 'CV' : 'XK')}
-                code={order.order_code}
-                date={order.created_at}
-                source={source || reason}
-                reason={reason}
-                diaChi={ncc ? ncc.dia_chi : ''}
-                sdt={ncc ? ncc.so_dien_thoai : ''}
-                rows={rows}
-              />
+              <WarehouseReceiptPrint {...buildReceiptProps(order, receiptData[order.order_code] || [], { unitMap, nccMap, nameMap })} />
             </div>
-            );
-          })}
+          ))}
         </div>
       )}
     </div>
