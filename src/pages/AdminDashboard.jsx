@@ -114,8 +114,8 @@ const AdminDashboard = () => {
         // thợ, không phải lệnh sản xuất — lọt vào đây sẽ làm sai con số tổng lệnh SX.
         supabase.from('production_orders').select('*', { count: 'exact', head: true }).eq('loai_viec', 'SAN_XUAT'),
         fetchAllRows(() => supabase.from('production_logs').select(`
-          id, actual_quantity, performance_rate, execution_date, start_time, end_time, worker_id,
-          production_orders ( order_code, product_code )
+          id, actual_quantity, performance_rate, execution_date, start_time, end_time, worker_id, ghi_chu,
+          production_orders ( order_code, product_code, loai_viec )
         `).order('created_at', { ascending: false })),
         supabase.from('nhan_vien').select('id, name'),
         supabase.from('product_capacities').select('*').order('product_code'),
@@ -424,7 +424,7 @@ const AdminDashboard = () => {
           <table className="admin-table" style={styles.table}>
             <thead>
               <tr>
-                <th>Mã Phiếu</th><th>Mã SP</th><th>Người Làm</th><th>Ngày</th><th>Số Lượng</th><th>Hiệu Suất</th><th>Thao Tác</th>
+                <th>Mã Phiếu</th><th>Mã SP</th><th>Người Làm</th><th>Ngày</th><th>Số Lượng</th><th>Hiệu Suất</th><th>Thao Tác</th><th>Ghi chú</th>
               </tr>
             </thead>
             <tbody>
@@ -441,9 +441,19 @@ const AdminDashboard = () => {
                       <Trash2 size={16} />
                     </button>}
                   </td>
+                  <td style={{ maxWidth: 220, fontSize: '0.8rem', color: '#64748b' }}>
+                    {log.production_orders?.loai_viec === 'HO_TRO' && (
+                      <span style={{
+                        display: 'inline-block', marginRight: 6, padding: '1px 6px',
+                        borderRadius: 999, background: '#f1f5f9', color: '#475569',
+                        fontSize: '0.7rem', fontWeight: 700, whiteSpace: 'nowrap',
+                      }}>Việc hỗ trợ</span>
+                    )}
+                    {log.ghi_chu || ''}
+                  </td>
                 </tr>
               ))}
-              {logs.length === 0 && <tr><td colSpan="7" style={{textAlign: 'center', padding: '2rem'}}>Trống.</td></tr>}
+              {logs.length === 0 && <tr><td colSpan="8" style={{textAlign: 'center', padding: '2rem'}}>Trống.</td></tr>}
             </tbody>
           </table>
         </div>

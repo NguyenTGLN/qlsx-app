@@ -73,8 +73,8 @@ export default function WorkReport() {
 
       // --- Execute queries in PARALLEL mode to fix slow loading ---
       let pQuery = supabase.from('production_logs').select(`
-        id, actual_quantity, worker_id, execution_date, performance_rate,
-        production_orders ( product_code )
+        id, actual_quantity, worker_id, execution_date, performance_rate, ghi_chu,
+        production_orders ( product_code, loai_viec )
       `);
       if (workReportFilter !== 'all') {
          if (workReportFilter === 'custom' && !workReportDates.start && !workReportDates.end) { } 
