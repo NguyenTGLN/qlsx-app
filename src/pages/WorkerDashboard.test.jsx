@@ -67,3 +67,16 @@ describe('WorkerDashboard — thanh lọc phiếu', () => {
     }
   });
 });
+
+describe('WorkerDashboard — gắn khu Công việc khác', () => {
+  it('có dùng component KhuViecHoTro', async () => {
+    // Render tĩnh không chạy useEffect ⇒ danh sách rỗng ⇒ component trả null.
+    // Nên kiểm ở mức "màn hình có nhập và gọi component", không kiểm markup ở đây;
+    // phần hiển thị đã được KhuViecHoTro.test.jsx phủ.
+    const nguon = await import('fs').then(fs =>
+      fs.readFileSync('src/pages/WorkerDashboard.jsx', 'utf8'));
+    expect(nguon).toContain("import KhuViecHoTro from '../components/KhuViecHoTro'");
+    expect(nguon).toContain('<KhuViecHoTro');
+    expect(nguon).toContain('locViecHoTro');
+  });
+});

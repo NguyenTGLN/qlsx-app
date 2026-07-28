@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ClipboardList, ArrowRight, Package } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import ModuleShell from '../components/ModuleShell';
-import { BO_LOC, NHAN_BO_LOC, locPhieuSanXuat, demTheoBoLoc } from '../lib/locPhieuSanXuat';
+import { BO_LOC, NHAN_BO_LOC, locPhieuSanXuat, demTheoBoLoc, locViecHoTro } from '../lib/locPhieuSanXuat';
+import KhuViecHoTro from '../components/KhuViecHoTro';
 
 const WorkerDashboard = () => {
   const navigate = useNavigate();
@@ -39,6 +40,7 @@ const WorkerDashboard = () => {
 
   const activeOrders = useMemo(() => locPhieuSanXuat(allOrders, boLoc), [allOrders, boLoc]);
   const soLuong = useMemo(() => demTheoBoLoc(allOrders), [allOrders]);
+  const viecHoTro = useMemo(() => locViecHoTro(allOrders), [allOrders]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
@@ -167,6 +169,11 @@ const WorkerDashboard = () => {
             </>
           )}
         </div>
+
+        <KhuViecHoTro
+          danhSach={viecHoTro}
+          onChon={(order) => navigate(`/worker/input/${order.id}`, { state: { order } })}
+        />
       </div>
     </ModuleShell>
   );
