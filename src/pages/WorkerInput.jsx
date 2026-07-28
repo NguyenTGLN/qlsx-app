@@ -270,6 +270,13 @@ const WorkerInput = () => {
         alert(`Tổng số lượng nhập (${actualQuantity}) vượt quá chỉ tiêu còn lại (${remainingQty})! Hãy nhập số nhỏ hơn hoặc bằng.`);
         return;
     }
+    // GH vẫn chấm theo định mức ⇒ gửi khi bỏ trống số lượng sẽ ghi 0% vào
+    // production_logs, mà KPI "Hiệu suất sản xuất" lấy trung bình cộng mọi lần
+    // chấm trong tháng (kpiTuDong.js) ⇒ một dòng 0% kéo tụt điểm của thợ.
+    if (hoTro && !chamCoDinh && !(parseFloat(actualQuantity) > 0)) {
+        alert('Vui lòng nhập số lượng đã làm trước khi gửi!');
+        return;
+    }
     if (!ghiChuHopLe(order, ghiChu)) {
         alert('Vui lòng ghi chú rõ nội dung công việc trước khi gửi!');
         return;
@@ -322,9 +329,12 @@ const WorkerInput = () => {
     }
 
     try {
-      // `|| 0` để việc chấm cố định (không nhập số lượng) không đẩy NaN vào cột
-      // actual_quantity NOT NULL. Phiếu sản xuất luôn có tổng > 0 nên không đổi.
-      const qtyPerPerson = (parseFloat(actualQuantity) || 0) / selectedWorkers.length;
+      // `|| 0` CHỈ áp cho việc hỗ trợ: 4 mã chấm cố định không nhập số lượng nên
+      // cần ghi được actual_quantity = 0 (cột NOT NULL, NaN sẽ làm insert hỏng).
+      // Phiếu sản xuất giữ NGUYÊN hành vi cũ — để NaN làm insert thất bại to,
+      // vì đó là lưới an toàn: không ghi gì, token được nhả, thợ gửi lại.
+      const qtyPerPerson = (hoTro ? (parseFloat(actualQuantity) || 0) : parseFloat(actualQuantity))
+                           / selectedWorkers.length;
 
       // Chuẩn bị mảng để Insert hàng loạt cho từng thợ
       const logsToInsert = selectedWorkers.map(wId => ({
@@ -508,7 +518,7 @@ const WorkerInput = () => {
           {!chamCoDinh && (
           <div style={styles.inputGroup}>
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'0.5rem', flexWrap:'wrap', gap:'4px'}}>
-               <label className="form-label" style={{...styles.label, marginBottom:0}}>Tổng Sản lượng TỔ đã làm</label>
+               <label className="form-label" style={{...styles.label, marginBottom:0}}>{hoTro ? 'Số lượng đã làm' : 'Tổng Sản lượng TỔ đã làm'}</label>
                {!hoTro && remainingQty !== null && (
                   <span style={{fontSize:'0.75rem', fontWeight:600, color: remainingQty > 0 ? 'var(--primary-color)' : 'var(--danger-color)'}}>
                      {remainingQty > 0 ? `(Cần làm: ${remainingQty})` : `(Đã Hoàn Thành)`}
@@ -525,6 +535,7 @@ const WorkerInput = () => {
                 value={actualQuantity}
                 onChange={(e) => setActualQuantity(e.target.value)}
                 readOnly={!hoTro}
+                min={hoTro ? '1' : undefined}
               />
             </div>
             {isOverLimit && <span style={{color:'var(--danger-color)', fontSize:'0.75rem', marginTop:'0.5rem', fontWeight:600}}>⚠️ Vượt quá số lượng còn lại!</span>}
@@ -681,7 +692,7 @@ const WorkerInput = () => {
               <h1 style={{ fontSize: '2.5rem', margin: 0, fontWeight: '800' }}>
                 {performance}%
               </h1>
-              {selectedWorkers.length > 0 && <p style={{ fontSize: '0.75rem', fontWeight: 600, marginTop:'0.25rem', opacity: 0.9 }}>Khoán: ~{((parseFloat(actualQuantity)||0)/selectedWorkers.length).toFixed(1)} cái/người</p>}
+              {!chamCoDinh && selectedWorkers.length > 0 && <p style={{ fontSize: '0.75rem', fontWeight: 600, marginTop:'0.25rem', opacity: 0.9 }}>Khoán: ~{((parseFloat(actualQuantity)||0)/selectedWorkers.length).toFixed(1)} cái/người</p>}
             </div>
           </div>
 
