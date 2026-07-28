@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BO_LOC, tinhDaLam, gomTienDo, locPhieuSanXuat, demTheoBoLoc } from './locPhieuSanXuat';
+import { BO_LOC, NHAN_BO_LOC, tinhDaLam, gomTienDo, locPhieuSanXuat, demTheoBoLoc, locViecHoTro } from './locPhieuSanXuat';
 
 // Dựng theo đúng hình dạng dữ liệu supabase trả về:
 //   .select('*, production_logs(actual_quantity)')
@@ -118,5 +118,64 @@ describe('demTheoBoLoc', () => {
       [BO_LOC.DANG_LAM]: 2,
       [BO_LOC.HOAN_THANH]: 1,
     });
+  });
+});
+
+describe('phiếu công việc hỗ trợ', () => {
+  const hoTro = (ma, daLam = []) => ({
+    id: `VIEC-${ma}`, order_code: `VIEC-${ma}`, product_code: ma,
+    target_quantity: 0, status: 'pending', created_at: '2026-07-01T00:00:00Z',
+    loai_viec: 'HO_TRO', cach_tinh_hieu_suat: ma === 'GH' ? 'DINH_MUC' : 'CO_DINH_100',
+    production_logs: daLam.map(q => ({ actual_quantity: q })),
+  });
+
+  const ds = [
+    phieu('PSX-20260723-12', 26, [16], '2026-07-27T09:42:00Z'),
+    phieu('PSX-20260728-01', 100, [100], '2026-07-28T03:24:00Z'),
+    hoTro('GH', [5]),   // target 0, đã làm 5 → "còn lại" âm
+    hoTro('NH'),
+  ];
+
+  it('không lọt vào bất kỳ tab nào trong 3 tab', () => {
+    for (const bo of [BO_LOC.TAT_CA, BO_LOC.DANG_LAM, BO_LOC.HOAN_THANH]) {
+      const ma = locPhieuSanXuat(ds, bo).map(o => o.order_code);
+      expect(ma.some(x => x.startsWith('VIEC-'))).toBe(false);
+    }
+  });
+
+  it('GH đã có báo cáo vẫn KHÔNG bị xếp vào tab Hoàn thành', () => {
+    expect(locPhieuSanXuat(ds, BO_LOC.HOAN_THANH).map(o => o.order_code))
+      .toEqual(['PSX-20260728-01']);
+  });
+
+  it('không được đếm vào số của 3 nút lọc', () => {
+    expect(demTheoBoLoc(ds)).toEqual({
+      [BO_LOC.TAT_CA]: 2,
+      [BO_LOC.DANG_LAM]: 1,
+      [BO_LOC.HOAN_THANH]: 1,
+    });
+  });
+});
+
+describe('locViecHoTro', () => {
+  const hoTro = (ma) => ({
+    id: `VIEC-${ma}`, order_code: `VIEC-${ma}`, product_code: ma,
+    target_quantity: 0, status: 'pending', created_at: '2026-07-01T00:00:00Z',
+    loai_viec: 'HO_TRO', cach_tinh_hieu_suat: 'CO_DINH_100', production_logs: [],
+  });
+
+  it('trả đúng các phiếu hỗ trợ, xếp theo thứ tự danh mục chứ không theo ngày tạo', () => {
+    const ds = [hoTro('PS'), phieu('PSX-1', 5, [], '2026-07-28T00:00:00Z'), hoTro('GH'), hoTro('DK')];
+    expect(locViecHoTro(ds).map(o => o.product_code)).toEqual(['GH', 'DK', 'PS']);
+  });
+
+  it('mã hỗ trợ lạ (không có trong danh mục) vẫn hiện, xếp cuối', () => {
+    const la = { ...hoTro('XX'), product_code: 'XX' };
+    expect(locViecHoTro([la, hoTro('GH')]).map(o => o.product_code)).toEqual(['GH', 'XX']);
+  });
+
+  it('danh sách rỗng / thiếu tham số không ném lỗi', () => {
+    expect(locViecHoTro()).toEqual([]);
+    expect(locViecHoTro([])).toEqual([]);
   });
 });

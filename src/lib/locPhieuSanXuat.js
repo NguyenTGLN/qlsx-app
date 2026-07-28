@@ -5,6 +5,8 @@
 // 'pending', cái quyết định là đã báo cáo đủ sản lượng hay chưa (produced >= target).
 // Chỉ dựa vào `status` thì tab "Đã hoàn thành" sẽ luôn rỗng.
 
+import { DANH_MUC_HO_TRO, laViecHoTro } from './congViecHoTro';
+
 export const BO_LOC = {
   TAT_CA: 'tat_ca',
   DANG_LAM: 'dang_lam',
@@ -41,8 +43,10 @@ export function gomTienDo(orders = []) {
   });
 }
 
-// Lệnh đã bị huỷ không thuộc tab nào — không phải việc để làm, cũng không phải việc đã xong.
-const conHieuLuc = o => o?.status !== 'cancelled';
+// Ba tab CHỈ dành cho phiếu sản xuất thật. Phiếu hỗ trợ là phiếu thường trực,
+// `target = 0` nên "còn lại" luôn ra số âm ⇒ sẽ bị xếp nhầm vào tab "Hoàn thành"
+// ngay từ báo cáo đầu tiên. Chúng có khu riêng, xem `locViecHoTro`.
+const conHieuLuc = o => o?.status !== 'cancelled' && !laViecHoTro(o);
 
 export function locPhieuSanXuat(orders = [], boLoc = BO_LOC.TAT_CA) {
   const ds = gomTienDo(orders).filter(conHieuLuc);
@@ -70,4 +74,18 @@ export function demTheoBoLoc(orders = []) {
     [BO_LOC.HOAN_THANH]: hoanThanh,
     [BO_LOC.DANG_LAM]: ds.length - hoanThanh,
   };
+}
+
+// Phiếu công việc hỗ trợ — luôn hiện đủ, KHÔNG chịu 3 nút lọc.
+// Xếp theo thứ tự trong danh mục (Giao hàng → Nhập hàng → Dọn kho → Đào tạo →
+// Phát sinh) chứ không theo ngày tạo: đây là danh sách cố định, thợ nhớ theo vị trí
+// trên màn hình, đảo thứ tự mỗi lần tải là bắt người ta phải đọc lại.
+export function locViecHoTro(orders = []) {
+  const thuTu = ma => {
+    const i = DANH_MUC_HO_TRO.findIndex(v => v.ma === ma);
+    return i === -1 ? DANH_MUC_HO_TRO.length : i;   // mã lạ xuống cuối
+  };
+  return gomTienDo(orders)
+    .filter(o => laViecHoTro(o) && o?.status !== 'cancelled')
+    .sort((a, b) => thuTu(a.product_code) - thuTu(b.product_code));
 }
