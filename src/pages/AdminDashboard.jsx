@@ -110,14 +110,18 @@ const AdminDashboard = () => {
         { data: tLogs }
       ] = await Promise.all([
         supabase.from('nhan_vien').select('*', { count: 'exact', head: true }),
-        supabase.from('production_orders').select('*', { count: 'exact', head: true }),
+        // Lọc SAN_XUAT: 5 phiếu công việc hỗ trợ (VIEC-*) là phiếu thường trực của màn hình
+        // thợ, không phải lệnh sản xuất — lọt vào đây sẽ làm sai con số tổng lệnh SX.
+        supabase.from('production_orders').select('*', { count: 'exact', head: true }).eq('loai_viec', 'SAN_XUAT'),
         fetchAllRows(() => supabase.from('production_logs').select(`
           id, actual_quantity, performance_rate, execution_date, start_time, end_time, worker_id,
           production_orders ( order_code, product_code )
         `).order('created_at', { ascending: false })),
         supabase.from('nhan_vien').select('id, name'),
         supabase.from('product_capacities').select('*').order('product_code'),
-        supabase.from('production_orders').select('*, production_logs(actual_quantity)').order('created_at', { ascending: false }).limit(50),
+        // Lọc SAN_XUAT: 5 phiếu công việc hỗ trợ (VIEC-*) là phiếu thường trực của màn hình
+        // thợ, không phải lệnh sản xuất — lọt vào bảng Lệnh sản xuất sẽ làm rác danh sách.
+        supabase.from('production_orders').select('*, production_logs(actual_quantity)').eq('loai_viec', 'SAN_XUAT').order('created_at', { ascending: false }).limit(50),
         // assignee_ids = việc nhóm; assignee_id giữ lại làm fallback của memberIds() cho dòng chưa migrate
         fetchAllRows(() => supabase.from('cong_viec_duoc_giao').select('id, title, assignee_id, assignee_ids, status, completed_date, due_date')),
       ]);

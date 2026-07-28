@@ -276,7 +276,9 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
       const allItems = await getCatalogItems().catch(e => { console.error("Error fetching catalog:", e); return []; });
       setCatalog(allItems);
 
-      const { data: ordersData } = await db.from('production_orders').select('id, order_code, product_code, target_quantity, status, created_at').order('created_at', { ascending: false });
+      // Lọc SAN_XUAT: 5 phiếu công việc hỗ trợ (VIEC-*) là phiếu thường trực của màn hình
+      // thợ, không phải lệnh sản xuất — lọt vào đây sẽ làm rác ô chọn phiếu SX.
+      const { data: ordersData } = await db.from('production_orders').select('id, order_code, product_code, target_quantity, status, created_at').eq('loai_viec', 'SAN_XUAT').order('created_at', { ascending: false });
       if (ordersData) setAllOrders(ordersData);
 
       // Danh mục NCC cho ô chọn nhà cung cấp (nhỏ ~vài trăm dòng). Lỗi (bảng chưa tạo) → để trống, không chặn nhập.
