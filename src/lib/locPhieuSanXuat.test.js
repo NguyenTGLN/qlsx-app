@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BO_LOC, NHAN_BO_LOC, tinhDaLam, gomTienDo, locPhieuSanXuat, demTheoBoLoc, locViecHoTro } from './locPhieuSanXuat';
+import { BO_LOC, tinhDaLam, gomTienDo, locPhieuSanXuat, demTheoBoLoc, locViecHoTro } from './locPhieuSanXuat';
 
 // Dựng theo đúng hình dạng dữ liệu supabase trả về:
 //   .select('*, production_logs(actual_quantity)')
