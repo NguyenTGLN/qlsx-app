@@ -285,7 +285,11 @@ describe('buildProposalLines — dòng đề xuất kèm snapshot', () => {
     expect(l.snapshot_ton).toBe(150);
     expect(l.snapshot_dang_ve).toBe(50);
     expect(l.calculated_qty).toBe(200);
-    expect(l.snapshot_gross - l.snapshot_ton - l.snapshot_dang_ve).toBe(l.calculated_qty);
+    // Trừ thẳng bằng float có thể lệch ở chữ số cuối (838.8 − 374 = 464.79999999999995),
+    // nên bảo đảm thật là "khớp sau khi làm tròn 3 số lẻ", không phải khớp tuyệt đối.
+    // Màn hình ở giai đoạn 3 phải làm tròn khi hiển thị hiệu số.
+    expect(Math.round((l.snapshot_gross - l.snapshot_ton - l.snapshot_dang_ve) * 1000) / 1000)
+      .toBe(l.calculated_qty);
   });
 
   it('tách bom_qty và retail_qty: phần do cha kéo xuống vs phần tự bán', () => {

@@ -139,8 +139,9 @@ export function explodeNetted({ demand = {}, bomMap = {}, stockMap = {}, onOrder
 
 // Dựng các dòng sẽ ghi vào purchase_proposals cho một đợt đề xuất.
 //   items = mảng từ RPC get_stock_summary, mỗi phần tử có:
-//     item_code, item_name, unit, total_sales_90d,
-//     lead_time_days, backup_stock_days, total_quantity
+//     item_code, item_name, unit, total_sales_90d, lead_time_days, backup_stock_days
+//   (total_quantity của RPC KHÔNG dùng ở đây — tồn lấy từ stockMap để trừ đúng
+//    một lần ở mọi cấp trong explodeNetted.)
 //
 // Trả { lines, missingParams }:
 //   lines         = dòng đề xuất, đã sắp theo mã
@@ -150,10 +151,11 @@ export function buildProposalLines({ items = [], bomMap = {}, stockMap = {}, onO
   const dict = {};
   items.forEach((it) => { dict[it.item_code] = it; });
 
-  // Làm tròn tồn và hàng đang về NGAY TỪ ĐẦU, trước khi đưa vào nổ BOM. Tồn thật có
-  // dòng bị trôi số thực: T-0402 tại HM5 đang là 2782.7000000000003 (13 chữ số lẻ, do
-  // cộng dồn nhiều lần). Không làm tròn trước thì số ghi vào snapshot_ton khác số thực
-  // sự dùng để tính, và phép trừ hiện trên màn hình không khớp calculated_qty.
+  // Làm tròn tồn và hàng đang về 3 số lẻ để SỐ LƯU VÀO snapshot sạch: tồn thật có
+  // dòng bị trôi số thực (T-0402 tại HM5 = 2782.7000000000003, 13 chữ số lẻ, do cộng
+  // dồn nhiều lần), không làm tròn thì con số đó nằm nguyên trong snapshot_ton.
+  // Riêng phần đưa vào explodeNetted thì làm tròn ở đây là thừa — hàm đó đã round3
+  // sau mỗi phép trừ. Giữ chung một bản đã làm tròn cho cả hai để khỏi lệch nguồn.
   const ton = {};
   Object.keys(stockMap).forEach((k) => { ton[k] = round3(num(stockMap[k])); });
   const dangVe = {};
