@@ -117,13 +117,14 @@ const num = (v) => Number(v) || 0;
 // Tồn an toàn = TB bán/ngày × (lead_time × 2 + thời gian an toàn).
 // Hệ số lead nhân 2 để phòng nhà cung cấp giao chậm gấp đôi cam kết.
 //
-// Kẹp số ngày không âm: lead_time hoặc thời gian an toàn bị gõ nhầm dấu âm sẽ cho
-// tồn an toàn âm, cần bổ sung bị kẹp về 0, và mã đó BIẾN MẤT khỏi đề xuất mà không
-// ai thấy lỗi gì. Ô nhập ở AddCatalogItemModal.jsx:71 không chặn số âm nên đường này
-// có thật. Phần báo động do buildProposalLines lo (mã có days <= 0 vào missingParams).
+// Ô nhập ở AddCatalogItemModal.jsx:71 không chặn số âm, nên lead_time hay thời gian
+// an toàn bị gõ nhầm dấu là chuyện có thật. Kẹp TỪNG Ô một, KHÔNG kẹp trên tổng:
+// kẹp tổng thì một ô âm sẽ ăn mất ô kia — lead −5 cạnh an toàn 30 cho ra 20 ngày
+// thay vì 30, sai một nửa mà không âm, không kẹp, không ai thấy.
+// Phần réo lên do buildProposalLines lo (Task 4): ô nào âm là vào missingParams.
 export function computeSafetyStock({ totalSales90d, leadTimeDays, backupStockDays } = {}) {
-  const avgDaily = num(totalSales90d) / SALES_WINDOW_DAYS;
-  const days = Math.max(0, num(leadTimeDays) * 2 + num(backupStockDays));
+  const avgDaily = Math.max(0, num(totalSales90d)) / SALES_WINDOW_DAYS;
+  const days = Math.max(0, num(leadTimeDays)) * 2 + Math.max(0, num(backupStockDays));
   return Math.round(avgDaily * days);
 }
 
@@ -613,9 +614,12 @@ export function buildProposalLines({ items = [], bomMap = {}, stockMap = {}, onO
 
   items.forEach((it) => {
     if (num(it.total_sales_90d) <= 0) return;   // không bán trong 90 ngày → không đề xuất
-    // Dùng <= 0 chứ không phải === 0: số âm (gõ nhầm dấu) cũng phải bị réo lên,
-    // nếu không mã đó âm thầm biến mất khỏi đề xuất.
-    if (num(it.lead_time_days) <= 0 && num(it.backup_stock_days) <= 0) {
+    // Réo lên khi BẤT KỲ ô nào âm, hoặc khi cả hai ô đều bỏ trống.
+    // Không dùng `lt <= 0 && bs <= 0`: lỗi hay gặp nhất là MỘT ô gõ nhầm dấu nằm
+    // cạnh một ô đúng — điều kiện "và" bỏ lọt đúng ca đó, mã bị tính hụt trong im lặng.
+    const lt = num(it.lead_time_days);
+    const bs = num(it.backup_stock_days);
+    if (lt < 0 || bs < 0 || (lt === 0 && bs === 0)) {
       missingParams.push(it.item_code);
     }
     const qty = computeReplenishQty({
