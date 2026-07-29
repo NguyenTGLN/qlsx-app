@@ -45,8 +45,7 @@ function App() {
             phải mở cho vai trò công khai — ai lấy khoá trong mã nguồn cũng đọc và
             sửa được. Hai bảng nay đã siết về {authenticated}.
             Cần màn hình hiển thị không đăng nhập thì viết RPC SECURITY DEFINER chỉ
-            trả đúng phần cần hiện, TUYỆT ĐỐI không mở lại quyền cho vai trò công khai.
-            File src/pages/TvDashboard.jsx còn nằm lại nhưng không được nạp nữa. */}
+            trả đúng phần cần hiện, TUYỆT ĐỐI không mở lại quyền cho vai trò công khai. */}
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/login" element={<Login />} />
 
