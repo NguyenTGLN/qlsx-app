@@ -28,7 +28,7 @@ phồng lên 2.327.906. Đã xoá 3 dòng (xem `sql/fix_bom_dao_chieu_20260729.s
 ### 1.2. Ba điểm yếu của luồng hiện tại
 
 **(a) Nổ BOM bỏ qua tồn kho cấp giữa.** `explodeBom` đi một mạch từ thành phẩm xuống linh kiện lá.
-Kho đang có 6.713 lõi `F-OCB10` và 5.208 lõi `F-CTO10` đã thành phẩm, app vẫn đòi mua đủ tem và
+Kho đang có 959 lõi `F-OCB10` và 868 lõi `F-CTO10` đã thành phẩm, app vẫn đòi mua đủ tem và
 lõi thô để làm lại từ đầu.
 
 **(b) Nhu cầu SX không bao giờ tự hạ.** `production_demand` chỉ nâng (quy tắc MAX ở
@@ -128,10 +128,10 @@ Kết quả cần mua = { mã : net[mã] } với mã KHÔNG có BOM
 **Ví dụ thật** — F-CB-BNC cần bổ sung 458 bộ:
 
 ```
-F-OCB10   gross 458 · tồn 6.713  →  net = 0   ⛔ DỪNG, không nổ xuống
+F-OCB10   gross 458 · tồn 959    →  net = 0   ⛔ DỪNG, không nổ xuống
              ├─ L-F-OCB10   → 0     (cách cũ đòi 458 tem)
              └─ OF-OCB10    → 0     (cách cũ đòi 458 lõi)
-F-CTO10   gross 458 · tồn 5.208  →  net = 0   ⛔ DỪNG
+F-CTO10   gross 458 · tồn 868    →  net = 0   ⛔ DỪNG
 F-PP10    gross 458 · tồn 0      →  net = 458  ✅ nổ tiếp
 ```
 
@@ -393,6 +393,40 @@ Giai đoạn 4 là bước duy nhất chạm dữ liệu đang dùng. Trước k
 - Không đụng luồng bảo hành, KPI, chấm công
 - Không đổi công thức "Ngày cần về kho" (`computeNeededDates`)
 - Không xử lý mã có BOM nhưng thực tế mua ngoài (hiện không còn trường hợp nào)
+
+---
+
+## 13b. Bốn điểm phải chốt TRƯỚC khi giai đoạn 2 sửa bảng
+
+Phát hiện trong lúc làm giai đoạn 1. Cả bốn đều đổi thứ được lưu xuống cơ sở dữ liệu,
+nên phải quyết trước khi dựng bảng, không phải sau.
+
+**1. `get_stock_summary` bỏ sót mã không có dòng tồn kho.** RPC dựng
+`FROM inventory_stock`. Đo thật: 19 mã **có bán 90 ngày** nhưng không có dòng tồn kho
+nào ⇒ engine không hề biết tới, không bao giờ đề xuất. Nặng nhất `FK-RO50` bán 165
+cái/90 ngày. Thêm 91 linh kiện trong BOM cũng không có dòng tồn ⇒ nếu vào danh sách
+mua sẽ mang tên và đơn vị tính **rỗng**. Sửa RPC thì đụng cột "Cần Bổ Sung" của tab
+Tồn HH đang chạy, nên phải hỏi trước.
+
+**2. `retail_qty` / `bom_qty` đụng ý nghĩa cũ.** Bảng `purchase_proposals` hiện dùng hai
+cột này với nghĩa "số lượng mua". Engine mới dùng chúng với nghĩa "phần nhu cầu gộp
+trước khi trừ tồn", và `retail_qty + bom_qty = snapshot_gross ≠ calculated_qty` — nên
+trên màn hình hai phần sẽ **không cộng lại thành số đang đặt**. Hoặc đổi tên cột mới,
+hoặc đổi cách tách.
+
+**3. `missingParams` chưa đủ để người mua hàng xử lý.** Hiện chỉ là mảng mã. Ba thiếu sót:
+mã bị réo **vẫn sinh ra dòng đề xuất trông bình thường** nhưng tính theo tham số đã bị
+kẹp (lead −5 cạnh an toàn 30 cho ra 30 ngày thay vì 40, dòng thấp ~25% mà nhìn không
+ra); mảng chứa mã **thành phẩm** trong khi `lines` chứa mã **linh kiện** nên khó nối
+cảnh báo với dòng nào; và mã lặp trong `items` bị đẩy hai lần. Nên trả
+`{item_code, lead_time_days, backup_stock_days, lý_do}` và cân nhắc đánh dấu luôn các
+dòng dẫn xuất từ tham số hỏng.
+
+**4. Phép trừ hiển thị phải làm tròn.** `snapshot_gross − snapshot_ton − snapshot_dang_ve`
+bằng float có thể lệch chữ số cuối (838,8 − 374 = 464,79999999999995 trong khi
+`calculated_qty` = 464,8). Đo trên lô 154 dòng dạng thật: **3,2% số dòng lệch**. Màn
+hình giai đoạn 3 phải làm tròn 3 số lẻ khi hiện hiệu số, nếu không người dùng sẽ thấy
+số lẻ vô nghĩa và nghi ngờ toàn bộ.
 
 ---
 

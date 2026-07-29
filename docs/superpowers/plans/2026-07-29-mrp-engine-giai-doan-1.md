@@ -855,7 +855,8 @@ Nếu RPC `get_stock_summary` trả 0 dòng do RLS chặn khoá công khai, thì
 
 | Kiểm tra | Kỳ vọng |
 |---|---|
-| `L-F-OCB10` và `OF-OCB10` | **Không** xuất hiện — vì tồn `F-OCB10` là 6.713, thừa nhu cầu |
+| `L-F-OCB10` | **Không** xuất hiện — tự nó tồn 2.846, thừa nhu cầu |
+| `OF-OCB10` | **Có** xuất hiện — không có dòng tồn kho nào (1 trong 91 mã ở mục lỗ hổng dưới) |
 | Mọi dòng | `snapshot_gross − snapshot_ton − snapshot_dang_ve = calculated_qty` |
 | Tổng SL | Nhỏ hơn hẳn 170.320 của luồng cũ (công thức mới đệm 60 ngày thay vì 75, lại thêm netting) |
 
