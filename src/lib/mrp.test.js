@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSafetyStock, computeReplenishQty } from './mrp';
+import { computeSafetyStock, computeReplenishQty, topoSort, BomCycleError } from './mrp';
 
 describe('computeSafetyStock — TB bán/ngày × (lead × 2 + an toàn)', () => {
   it('ví dụ thật F-CB-BNC: bán 1473/90 ngày, lead 15, an toàn 30', () => {
@@ -72,5 +72,48 @@ describe('computeReplenishQty — tồn an toàn − tồn hiện tại, không 
     expect(computeReplenishQty({
       totalSales90d: 900, leadTimeDays: 5, backupStockDays: 10, totalQuantity: '50',
     })).toBe(150);
+  });
+});
+
+describe('topoSort — cha luôn đứng trước con', () => {
+  it('chuỗi thẳng A → B → C', () => {
+    const bomMap = {
+      A: [{ component: 'B', qty: 1 }],
+      B: [{ component: 'C', qty: 1 }],
+    };
+    expect(topoSort(bomMap)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('một mã là con của 2 cha thì đứng sau cả hai', () => {
+    const bomMap = {
+      A: [{ component: 'X', qty: 2 }],
+      B: [{ component: 'X', qty: 3 }],
+    };
+    const order = topoSort(bomMap);
+    expect(order.indexOf('X')).toBeGreaterThan(order.indexOf('A'));
+    expect(order.indexOf('X')).toBeGreaterThan(order.indexOf('B'));
+    expect(order).toHaveLength(3);
+  });
+
+  it('BOM rỗng trả mảng rỗng', () => {
+    expect(topoSort({})).toEqual([]);
+  });
+
+  it('vòng lặp trực tiếp A → B → A thì ném BomCycleError kèm đúng vòng', () => {
+    const bomMap = {
+      A: [{ component: 'B', qty: 1 }],
+      B: [{ component: 'A', qty: 1 }],
+    };
+    expect(() => topoSort(bomMap)).toThrow(BomCycleError);
+    try {
+      topoSort(bomMap);
+    } catch (e) {
+      expect(e.cycle).toEqual(['A', 'B', 'A']);
+      expect(e.message).toContain('A → B → A');
+    }
+  });
+
+  it('mã tự trỏ vào chính nó cũng bị bắt', () => {
+    expect(() => topoSort({ A: [{ component: 'A', qty: 1 }] })).toThrow(BomCycleError);
   });
 });

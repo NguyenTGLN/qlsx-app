@@ -29,3 +29,47 @@ export function computeReplenishQty({ totalSales90d, leadTimeDays, backupStockDa
   const safety = computeSafetyStock({ totalSales90d, leadTimeDays, backupStockDays });
   return Math.max(0, safety - num(totalQuantity));
 }
+
+// Lỗi dữ liệu BOM có vòng lặp. Giữ nguyên mảng `cycle` để giao diện chỉ đúng chỗ hỏng.
+// Hàm explodeBom cũ ÂM THẦM bỏ qua vòng lặp — chính kiểu che giấu đó khiến 3 dòng BOM
+// khai ngược chiều sống được 2 tháng mà không ai biết. Ở đây phải nổ ra.
+export class BomCycleError extends Error {
+  constructor(cycle) {
+    super(`BOM có vòng lặp: ${cycle.join(' → ')}`);
+    this.name = 'BomCycleError';
+    this.cycle = cycle;
+  }
+}
+
+// Xếp mọi mã trong bomMap theo thứ tự cha trước con.
+// bomMap dạng { [product_code]: [{ component, qty }] } — giống loadBomMap().
+export function topoSort(bomMap = {}) {
+  const nodes = new Set();
+  Object.keys(bomMap).forEach((p) => {
+    nodes.add(p);
+    (bomMap[p] || []).forEach((c) => nodes.add(c.component));
+  });
+
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color = {};
+  nodes.forEach((n) => { color[n] = WHITE; });
+
+  const order = [];   // gom theo hậu thứ tự: con trước, cha sau
+  const path = [];    // nhánh đang duyệt, để dựng lại vòng lặp khi gặp
+
+  function visit(n) {
+    if (color[n] === BLACK) return;
+    if (color[n] === GRAY) {
+      throw new BomCycleError(path.slice(path.indexOf(n)).concat(n));
+    }
+    color[n] = GRAY;
+    path.push(n);
+    (bomMap[n] || []).forEach((c) => visit(c.component));
+    path.pop();
+    color[n] = BLACK;
+    order.push(n);
+  }
+
+  nodes.forEach((n) => visit(n));
+  return order.reverse();   // đảo lại thành cha trước con
+}
