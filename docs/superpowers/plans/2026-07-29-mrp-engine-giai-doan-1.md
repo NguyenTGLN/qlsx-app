@@ -208,6 +208,27 @@ describe('topoSort — cha luôn đứng trước con', () => {
   it('mã tự trỏ vào chính nó cũng bị bắt', () => {
     expect(() => topoSort({ A: [{ component: 'A', qty: 1 }] })).toThrow(BomCycleError);
   });
+
+  // Giữ phép cắt path.slice(path.indexOf(n)). Hai ca trên đều đặt vòng lặp ngay
+  // điểm vào DFS nên indexOf luôn bằng 0 — đổi thành path.slice(0) vẫn xanh hết.
+  // Ca này đặt vòng lặp SÂU dưới hai mã lành, nên bắt buộc phải cắt đúng chỗ.
+  it('vòng lặp nằm sâu dưới cha lành → chỉ báo đúng mắt xích, không réo tên cha', () => {
+    const bomMap = {
+      'F-CB-BNC':  [{ component: 'F-OCB10', qty: 1 }],
+      'F-OCB10':   [{ component: 'L-F-OCB10', qty: 1 }],
+      'L-F-OCB10': [{ component: 'OF-OCB10', qty: 1 }],
+      'OF-OCB10':  [{ component: 'L-F-OCB10', qty: 1 }],
+    };
+    try {
+      topoSort(bomMap);
+      throw new Error('phải ném BomCycleError');
+    } catch (e) {
+      expect(e).toBeInstanceOf(BomCycleError);
+      expect(e.cycle).toEqual(['L-F-OCB10', 'OF-OCB10', 'L-F-OCB10']);
+      expect(e.cycle).not.toContain('F-CB-BNC');   // cha lành không được réo tên
+      expect(e.cycle).not.toContain('F-OCB10');
+    }
+  });
 });
 ```
 
@@ -245,7 +266,11 @@ export function topoSort(bomMap = {}) {
   });
 
   const WHITE = 0, GRAY = 1, BLACK = 2;
-  const color = {};
+  // Object.create(null) chứ không phải {}: mã hàng tên '__proto__' gán vào object
+  // thường sẽ không tạo thuộc tính riêng, màu không bám, node bị duyệt nhiều lần
+  // và thứ tự cha-con vỡ. Không xảy ra với danh mục hiện tại, nhưng đây là nền
+  // của cả engine nên không đáng để hở.
+  const color = Object.create(null);
   nodes.forEach((n) => { color[n] = WHITE; });
 
   const order = [];   // gom theo hậu thứ tự: con trước, cha sau
