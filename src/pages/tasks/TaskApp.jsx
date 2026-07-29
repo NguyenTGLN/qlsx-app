@@ -172,7 +172,10 @@ import { useNavigate } from 'react-router-dom';
         fetchAllRows(() => db.from('cong_viec_duoc_giao').select('*').order('created_date',{ascending:false})),
         db.from('nhan_vien').select('*'),
         fetchAllRows(() => db.from('tien_do').select('*').order('time',{ascending:true})),
-        db.from('production_orders').select('*, production_logs(actual_quantity)').not('status', 'eq', 'cancelled').order('created_at', { ascending: false }),
+        // Lọc SAN_XUAT: 5 phiếu công việc hỗ trợ (VIEC-GH/NH/DK/DTNB/PS) là phiếu thường
+        // trực của màn hình thợ, không phải lệnh sản xuất đang chờ — lọt vào đây thì danh
+        // sách lệnh chờ lúc nào cũng có 5 dòng không liên quan.
+        db.from('production_orders').select('*, production_logs(actual_quantity)').eq('loai_viec', 'SAN_XUAT').not('status', 'eq', 'cancelled').order('created_at', { ascending: false }),
       ])
       if (tRes.error) throw tRes.error; if (uRes.error) throw uRes.error
 
