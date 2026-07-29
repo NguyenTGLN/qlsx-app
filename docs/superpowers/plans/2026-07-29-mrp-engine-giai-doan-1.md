@@ -575,6 +575,39 @@ describe('buildProposalLines — dòng đề xuất kèm snapshot', () => {
     expect(l.bom_qty + l.retail_qty).toBe(l.snapshot_gross);
   });
 
+  it('tồn thành phẩm chỉ bị trừ MỘT lần, không trừ cả lúc gieo lẫn lúc nổ BOM', () => {
+    // MAY-A: tồn an toàn 200, kho đang có 120 → còn phải làm 80 máy → 160 linh kiện.
+    // Nếu gieo bằng "cần bổ sung" thì thành 200−120=80 rồi lại trừ 120 nữa → mất sạch.
+    const { lines } = buildProposalLines({
+      items: [{ item_code: 'MAY-A', total_sales_90d: 900, lead_time_days: 5,
+                backup_stock_days: 10, total_quantity: 120 }],
+      bomMap: { 'MAY-A': [{ component: 'LK-X', qty: 2 }] },
+      stockMap: { 'MAY-A': 120 },
+      onOrderMap: {},
+    });
+    const l = lines.find(x => x.item_code === 'LK-X');
+    expect(l).toBeDefined();
+    expect(l.calculated_qty).toBe(160);
+  });
+
+  it('tồn kho bị trôi số thực vẫn cho phép trừ khớp trên màn hình', () => {
+    // T-0402 tại HM5 thật sự đang là 2782.7000000000003 do cộng dồn nhiều lần.
+    const { lines } = buildProposalLines({
+      items: [
+        { item_code: 'MAY-A', total_sales_90d: 900, lead_time_days: 5,
+          backup_stock_days: 10, total_quantity: 0 },
+        { item_code: 'T-0402', item_name: 'Dây 6', unit: 'Mét', total_sales_90d: 0 },
+      ],
+      bomMap: { 'MAY-A': [{ component: 'T-0402', qty: 20 }] },
+      stockMap: { 'T-0402': 2782.7000000000003 },
+      onOrderMap: {},
+    });
+    const l = lines.find(x => x.item_code === 'T-0402');
+    expect(l.snapshot_ton).toBe(2782.7);        // đã làm tròn, hết 13 chữ số lẻ
+    expect(l.snapshot_gross).toBe(4000);        // 200 máy × 20 mét
+    expect(l.calculated_qty).toBe(1217.3);      // 4000 − 2782.7
+  });
+
   it('actual_qty khởi tạo bằng calculated_qty để người duyệt sửa tiếp', () => {
     const { lines } = buildProposalLines({ items, bomMap, stockMap: {}, onOrderMap: {} });
     expect(lines[0].actual_qty).toBe(lines[0].calculated_qty);
@@ -634,6 +667,19 @@ export function buildProposalLines({ items = [], bomMap = {}, stockMap = {}, onO
   const dict = {};
   items.forEach((it) => { dict[it.item_code] = it; });
 
+  // Làm tròn tồn và hàng đang về NGAY TỪ ĐẦU, trước khi đưa vào nổ BOM. Tồn thật có
+  // dòng bị trôi số thực: T-0402 tại HM5 đang là 2782.7000000000003 (13 chữ số lẻ, do
+  // cộng dồn nhiều lần). Không làm tròn trước thì số ghi vào snapshot_ton khác số thực
+  // sự dùng để tính, và phép trừ hiện trên màn hình không khớp calculated_qty.
+  const ton = {};
+  Object.keys(stockMap).forEach((k) => { ton[k] = round3(num(stockMap[k])); });
+  const dangVe = {};
+  Object.keys(onOrderMap).forEach((k) => { dangVe[k] = round3(num(onOrderMap[k])); });
+
+  // Nhu cầu gốc = TỒN AN TOÀN (mức cần có trong kho), KHÔNG phải "cần bổ sung".
+  // Phép trừ tồn để explodeNetted lo, và nó trừ đúng MỘT lần cho mọi cấp.
+  // Nếu gieo bằng "cần bổ sung" (đã trừ tồn rồi) thì tồn bị trừ HAI lần và nhu cầu
+  // bốc hơi: F-CB-BNC an toàn 982, tồn 524 → gieo 458 → net = 458 − 524 = 0.
   const rootDemand = {};
   const missingParams = [];
 
@@ -647,16 +693,17 @@ export function buildProposalLines({ items = [], bomMap = {}, stockMap = {}, onO
     if (lt < 0 || bs < 0 || (lt === 0 && bs === 0)) {
       missingParams.push(it.item_code);
     }
-    const qty = computeReplenishQty({
+    const safety = computeSafetyStock({
       totalSales90d: it.total_sales_90d,
       leadTimeDays: it.lead_time_days,
       backupStockDays: it.backup_stock_days,
-      totalQuantity: it.total_quantity,
     });
-    if (qty > 0) rootDemand[it.item_code] = qty;
+    if (safety > 0) rootDemand[it.item_code] = safety;
   });
 
-  const { gross, buy } = explodeNetted({ demand: rootDemand, bomMap, stockMap, onOrderMap });
+  const { gross, buy } = explodeNetted({
+    demand: rootDemand, bomMap, stockMap: ton, onOrderMap: dangVe,
+  });
 
   const lines = Object.keys(buy).sort().map((code) => {
     const retail = num(rootDemand[code]);          // phần do chính mã này bán ra
@@ -666,8 +713,8 @@ export function buildProposalLines({ items = [], bomMap = {}, stockMap = {}, onO
       item_name: dict[code]?.item_name || '',
       unit: dict[code]?.unit || '',
       snapshot_gross: g,
-      snapshot_ton: num(stockMap[code]),
-      snapshot_dang_ve: num(onOrderMap[code]),
+      snapshot_ton: num(ton[code]),
+      snapshot_dang_ve: num(dangVe[code]),
       retail_qty: retail,
       bom_qty: round3(g - retail),                 // phần do cha kéo xuống
       calculated_qty: buy[code],
