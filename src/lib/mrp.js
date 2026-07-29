@@ -136,3 +136,74 @@ export function explodeNetted({ demand = {}, bomMap = {}, stockMap = {}, onOrder
 
   return { gross, net, buy };
 }
+
+// Dựng các dòng sẽ ghi vào purchase_proposals cho một đợt đề xuất.
+//   items = mảng từ RPC get_stock_summary, mỗi phần tử có:
+//     item_code, item_name, unit, total_sales_90d,
+//     lead_time_days, backup_stock_days, total_quantity
+//
+// Trả { lines, missingParams }:
+//   lines         = dòng đề xuất, đã sắp theo mã
+//   missingParams = mã có bán nhưng khai thiếu/sai tham số → hiện lên đầu màn hình,
+//                   KHÔNG âm thầm bỏ qua
+export function buildProposalLines({ items = [], bomMap = {}, stockMap = {}, onOrderMap = {} } = {}) {
+  const dict = {};
+  items.forEach((it) => { dict[it.item_code] = it; });
+
+  // Làm tròn tồn và hàng đang về NGAY TỪ ĐẦU, trước khi đưa vào nổ BOM. Tồn thật có
+  // dòng bị trôi số thực: T-0402 tại HM5 đang là 2782.7000000000003 (13 chữ số lẻ, do
+  // cộng dồn nhiều lần). Không làm tròn trước thì số ghi vào snapshot_ton khác số thực
+  // sự dùng để tính, và phép trừ hiện trên màn hình không khớp calculated_qty.
+  const ton = {};
+  Object.keys(stockMap).forEach((k) => { ton[k] = round3(num(stockMap[k])); });
+  const dangVe = {};
+  Object.keys(onOrderMap).forEach((k) => { dangVe[k] = round3(num(onOrderMap[k])); });
+
+  // Nhu cầu gốc = TỒN AN TOÀN (mức cần có trong kho), KHÔNG phải "cần bổ sung".
+  // Phép trừ tồn để explodeNetted lo, và nó trừ đúng MỘT lần cho mọi cấp.
+  // Nếu gieo bằng "cần bổ sung" (đã trừ tồn rồi) thì tồn bị trừ HAI lần và nhu cầu
+  // bốc hơi: F-CB-BNC an toàn 982, tồn 524 → gieo 458 → net = 458 − 524 = 0.
+  const rootDemand = {};
+  const missingParams = [];
+
+  items.forEach((it) => {
+    if (num(it.total_sales_90d) <= 0) return;   // không bán trong 90 ngày → không đề xuất
+    // Réo lên khi BẤT KỲ ô nào âm, hoặc khi cả hai ô đều bỏ trống.
+    // Không dùng `lt <= 0 && bs <= 0`: lỗi hay gặp nhất là MỘT ô gõ nhầm dấu nằm
+    // cạnh một ô đúng — điều kiện "và" bỏ lọt đúng ca đó, mã bị tính hụt trong im lặng.
+    const lt = num(it.lead_time_days);
+    const bs = num(it.backup_stock_days);
+    if (lt < 0 || bs < 0 || (lt === 0 && bs === 0)) {
+      missingParams.push(it.item_code);
+    }
+    const safety = computeSafetyStock({
+      totalSales90d: it.total_sales_90d,
+      leadTimeDays: it.lead_time_days,
+      backupStockDays: it.backup_stock_days,
+    });
+    if (safety > 0) rootDemand[it.item_code] = safety;
+  });
+
+  const { gross, buy } = explodeNetted({
+    demand: rootDemand, bomMap, stockMap: ton, onOrderMap: dangVe,
+  });
+
+  const lines = Object.keys(buy).sort().map((code) => {
+    const retail = num(rootDemand[code]);          // phần do chính mã này bán ra
+    const g = num(gross[code]);
+    return {
+      item_code: code,
+      item_name: dict[code]?.item_name || '',
+      unit: dict[code]?.unit || '',
+      snapshot_gross: g,
+      snapshot_ton: num(ton[code]),
+      snapshot_dang_ve: num(dangVe[code]),
+      retail_qty: retail,
+      bom_qty: round3(g - retail),                 // phần do cha kéo xuống
+      calculated_qty: buy[code],
+      actual_qty: buy[code],
+    };
+  });
+
+  return { lines, missingParams };
+}

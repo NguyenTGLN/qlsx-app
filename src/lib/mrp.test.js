@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSafetyStock, computeReplenishQty, topoSort, BomCycleError, explodeNetted } from './mrp';
+import { computeSafetyStock, computeReplenishQty, topoSort, BomCycleError, explodeNetted, buildProposalLines } from './mrp';
 
 describe('computeSafetyStock — TB bán/ngày × (lead × 2 + an toàn)', () => {
   it('ví dụ thật F-CB-BNC: bán 1473/90 ngày, lead 15, an toàn 30', () => {
@@ -257,5 +257,118 @@ describe('explodeNetted — nổ BOM có trừ tồn từng cấp', () => {
     expect(net.B).toBe(150);   // gross 100×2 = 200, trừ tồn 50
     expect(net.C).toBe(410);   // gross 150×3 = 450, trừ tồn 40
     expect(buy).toEqual({ C: 410 });
+  });
+});
+
+describe('buildProposalLines — dòng đề xuất kèm snapshot', () => {
+  const items = [
+    { item_code: 'MAY-A', item_name: 'Máy A', unit: 'Cái',
+      total_sales_90d: 900, lead_time_days: 5, backup_stock_days: 10, total_quantity: 0 },
+    { item_code: 'LK-X', item_name: 'Linh kiện X', unit: 'Cái',
+      total_sales_90d: 0, lead_time_days: 5, backup_stock_days: 10, total_quantity: 0 },
+  ];
+  const bomMap = { 'MAY-A': [{ component: 'LK-X', qty: 2 }] };
+
+  it('chỉ lấy mã CÓ bán trong 90 ngày làm nhu cầu gốc', () => {
+    const { lines } = buildProposalLines({ items, bomMap, stockMap: {}, onOrderMap: {} });
+    expect(lines).toHaveLength(1);
+    expect(lines[0].item_code).toBe('LK-X');
+    expect(lines[0].calculated_qty).toBe(400);   // MAY-A cần 200, mỗi máy 2 LK-X
+  });
+
+  it('ghi đủ vết tính toán để tra ngược', () => {
+    const { lines } = buildProposalLines({
+      items, bomMap, stockMap: { 'LK-X': 150 }, onOrderMap: { 'LK-X': 50 },
+    });
+    const l = lines[0];
+    expect(l.snapshot_gross).toBe(400);
+    expect(l.snapshot_ton).toBe(150);
+    expect(l.snapshot_dang_ve).toBe(50);
+    expect(l.calculated_qty).toBe(200);
+    expect(l.snapshot_gross - l.snapshot_ton - l.snapshot_dang_ve).toBe(l.calculated_qty);
+  });
+
+  it('tách bom_qty và retail_qty: phần do cha kéo xuống vs phần tự bán', () => {
+    const itemsCoBanLe = [
+      { item_code: 'MAY-A', item_name: 'Máy A', unit: 'Cái',
+        total_sales_90d: 900, lead_time_days: 5, backup_stock_days: 10, total_quantity: 0 },
+      { item_code: 'LK-X', item_name: 'Linh kiện X', unit: 'Cái',
+        total_sales_90d: 900, lead_time_days: 5, backup_stock_days: 10, total_quantity: 0 },
+    ];
+    const { lines } = buildProposalLines({
+      items: itemsCoBanLe, bomMap, stockMap: {}, onOrderMap: {},
+    });
+    const l = lines.find(x => x.item_code === 'LK-X');
+    expect(l.retail_qty).toBe(200);        // LK-X tự bán, tồn an toàn 200
+    expect(l.bom_qty).toBe(400);           // MAY-A cần 200 máy × 2 = 400
+    expect(l.snapshot_gross).toBe(600);
+    expect(l.calculated_qty).toBe(600);
+    expect(l.bom_qty + l.retail_qty).toBe(l.snapshot_gross);
+  });
+
+  it('tồn thành phẩm chỉ bị trừ MỘT lần, không trừ cả lúc gieo lẫn lúc nổ BOM', () => {
+    // MAY-A: tồn an toàn 200, kho đang có 120 → còn phải làm 80 máy → 160 linh kiện.
+    // Nếu gieo bằng "cần bổ sung" thì thành 200−120=80 rồi lại trừ 120 nữa → mất sạch.
+    const { lines } = buildProposalLines({
+      items: [{ item_code: 'MAY-A', total_sales_90d: 900, lead_time_days: 5,
+                backup_stock_days: 10, total_quantity: 120 }],
+      bomMap: { 'MAY-A': [{ component: 'LK-X', qty: 2 }] },
+      stockMap: { 'MAY-A': 120 },
+      onOrderMap: {},
+    });
+    const l = lines.find(x => x.item_code === 'LK-X');
+    expect(l).toBeDefined();
+    expect(l.calculated_qty).toBe(160);
+  });
+
+  it('tồn kho bị trôi số thực vẫn cho phép trừ khớp trên màn hình', () => {
+    // T-0402 tại HM5 thật sự đang là 2782.7000000000003 do cộng dồn nhiều lần.
+    const { lines } = buildProposalLines({
+      items: [
+        { item_code: 'MAY-A', total_sales_90d: 900, lead_time_days: 5,
+          backup_stock_days: 10, total_quantity: 0 },
+        { item_code: 'T-0402', item_name: 'Dây 6', unit: 'Mét', total_sales_90d: 0 },
+      ],
+      bomMap: { 'MAY-A': [{ component: 'T-0402', qty: 20 }] },
+      stockMap: { 'T-0402': 2782.7000000000003 },
+      onOrderMap: {},
+    });
+    const l = lines.find(x => x.item_code === 'T-0402');
+    expect(l.snapshot_ton).toBe(2782.7);        // đã làm tròn, hết 13 chữ số lẻ
+    expect(l.snapshot_gross).toBe(4000);        // 200 máy × 20 mét
+    expect(l.calculated_qty).toBe(1217.3);      // 4000 − 2782.7
+  });
+
+  it('actual_qty khởi tạo bằng calculated_qty để người duyệt sửa tiếp', () => {
+    const { lines } = buildProposalLines({ items, bomMap, stockMap: {}, onOrderMap: {} });
+    expect(lines[0].actual_qty).toBe(lines[0].calculated_qty);
+  });
+
+  it('mang theo tên và đơn vị tính từ danh mục', () => {
+    const { lines } = buildProposalLines({ items, bomMap, stockMap: {}, onOrderMap: {} });
+    expect(lines[0].item_name).toBe('Linh kiện X');
+    expect(lines[0].unit).toBe('Cái');
+  });
+
+  it('réo lên khi ô nào âm hoặc cả hai ô đều bỏ trống', () => {
+    const goi = (lt, bs) => buildProposalLines({
+      items: [{ item_code: 'MAY-B', total_sales_90d: 900, lead_time_days: lt, backup_stock_days: bs }],
+      bomMap: {}, stockMap: {}, onOrderMap: {},
+    }).missingParams;
+    expect(goi(0, 0)).toEqual(['MAY-B']);      // bỏ trống cả hai
+    expect(goi(-5, 30)).toEqual(['MAY-B']);    // một ô âm cạnh một ô đúng
+    expect(goi(5, -50)).toEqual(['MAY-B']);
+    expect(goi(5, 30)).toEqual([]);            // hợp lệ thì im lặng
+  });
+
+  it('sắp xếp theo mã để kết quả ổn định giữa các lần chạy', () => {
+    const { lines } = buildProposalLines({
+      items: [
+        { item_code: 'Z', total_sales_90d: 900, lead_time_days: 5, backup_stock_days: 10, total_quantity: 0 },
+        { item_code: 'A', total_sales_90d: 900, lead_time_days: 5, backup_stock_days: 10, total_quantity: 0 },
+      ],
+      bomMap: {}, stockMap: {}, onOrderMap: {},
+    });
+    expect(lines.map(l => l.item_code)).toEqual(['A', 'Z']);
   });
 });
