@@ -25,7 +25,7 @@ import { useNavigate } from 'react-router-dom';
     // ⚙️  CẤU HÌNH
     // ============================================================
     const SUPABASE_URL    = 'https://ngwkzicrnspeggunsblr.supabase.co'
-    const SUPABASE_ANON   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nd2t6aWNybnNwZWdndW5zYmxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMTU4MTgsImV4cCI6MjA4NzY5MTgxOH0.XgxezghOyUYgr370Ge13VN_V2r-PfR4BEq7JDDF4Pts'
+    const SUPABASE_ANON   = 'sb_publishable_I_2VImB-EKu5Vork7t--QQ_4Qi8nXwX'
     const N8N_WEBHOOK     = 'https://YOUR_N8N_HOST/webhook/YOUR_WEBHOOK_ID'
 
     
@@ -1294,11 +1294,20 @@ import { useNavigate } from 'react-router-dom';
       useEffect(() => { if (me && !canSeeTab(me,'tasks','dashboard') && view === 'dashboard') { setView('tasks'); setAssFilter(me.id) } }, [me, view])
 
       const lastCheckDayRef = useRef(new Date().toISOString().split('T')[0])
+      // ── TĐ-12 ──────────────────────────────────────────────────────────────
+      // TRƯỚC ĐÂY: cứ 5 phút gọi loadAll() một lần — kéo trọn `cong_viec_duoc_giao`,
+      //   `tien_do`, `nhan_vien` và `production_orders` (đều select('*')), tức 12 lượt/giờ.
+      //   Nhưng kết quả CHỈ được dùng khi `newClones.length > 0 || isNewDay` — thực tế
+      //   chỉ cần đúng 1 lần/ngày. 11/12 lượt gọi là bỏ đi hoàn toàn.
+      // NAY: thoát sớm nếu chưa sang ngày mới ⇒ giảm ~92% số lần gọi.
+      // Việc "thấy ngay khi đồng nghiệp tạo/sửa việc" được BÙ bằng realtime ở useEffect
+      //   ngay bên dưới — nhanh hơn hẳn mức 5 phút cũ mà gần như không tốn gì.
       useEffect(() => {
         if (!me) return
         const interval = setInterval(async () => {
           const today = new Date().toISOString().split('T')[0]
           const isNewDay = today !== lastCheckDayRef.current
+          if (!isNewDay) return          // ← chưa sang ngày mới thì không đụng tới DB
           lastCheckDayRef.current = today
           try {
             const {tasks:t, users:u, pendingOrders:po} = await loadAll()
@@ -1312,9 +1321,38 @@ import { useNavigate } from 'react-router-dom';
               if (newClones.length > 0) toast(`Tự động tạo ${newClones.length} việc lặp lại`)
             }
           } catch(_) {}
-        }, 5 * 60 * 1000) 
+        }, 5 * 60 * 1000)
         return () => clearInterval(interval)
       }, [me])
+
+      // TĐ-12 (phần bù): thay polling bằng realtime cập nhật CỤC BỘ trên `cong_viec_duoc_giao`.
+      // Không gọi lại loadAll() — chỉ vá đúng dòng thay đổi vào mảng tasks đang có, nên
+      // gần như không tốn băng thông. Đã kiểm chứng relreplident='d': INSERT/UPDATE có đủ
+      // dòng mới trong payload.new; DELETE chỉ có khoá chính — mã dưới chỉ dùng payload.old.id.
+      useEffect(() => {
+        if (!me) return
+        const ch = db.channel(`tasks_rt_${Math.random().toString(36).slice(2)}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'cong_viec_duoc_giao' }, (payload) => {
+            setTasks(prev => {
+              const um = new Map((users || []).map(x => [x.id, x]))
+              if (payload.eventType === 'INSERT') {
+                if (prev.some(t => t.id === payload.new.id)) return prev
+                return [withMembers({ ...payload.new, progressUpdates: [] }, um), ...prev]
+              }
+              if (payload.eventType === 'UPDATE') {
+                return prev.map(t => t.id === payload.new.id
+                  ? withMembers({ ...t, ...payload.new, progressUpdates: t.progressUpdates || [] }, um)
+                  : t)
+              }
+              if (payload.eventType === 'DELETE') {
+                return prev.filter(t => t.id !== payload.old.id)
+              }
+              return prev
+            })
+          })
+          .subscribe()
+        return () => { db.removeChannel(ch) }
+      }, [me, users])
 
       const TASK_CACHE_KEY = 'task_app_data';
 
@@ -1655,4 +1693,4 @@ import { useNavigate } from 'react-router-dom';
         userModal && h(UserModal,{ user: userModal.user||null, onSave: handleSaveUser, onClose: ()=>setUserModal(null) })
       )
     }
-export default App;
+export default App;

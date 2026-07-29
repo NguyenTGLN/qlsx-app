@@ -9,7 +9,10 @@
 import XLSX from 'xlsx';
 import { writeFileSync } from 'node:fs';
 
-const FILE = 'C:/Users/PC/Desktop/3. Cải tiến/12. Wepapp/Xử lý bảng chấm công/Thống kê chấm công T7.2026.xlsx';
+// Mặc định là file canonical trên Desktop; truyền đường dẫn khác qua tham số dòng lệnh
+// khi cần nạp một bản xuất mới, vd:
+//   node scripts/import-cham-cong.mjs "C:/Users/PC/Downloads/Thống kê chấm công T7.2026_2.xlsx"
+const FILE = process.argv[2] || 'C:/Users/PC/Desktop/3. Cải tiến/12. Wepapp/Xử lý bảng chấm công/Thống kê chấm công T7.2026.xlsx';
 const SHEET = 'CHI TIẾT THEO NGÀY';
 const KY = '2026-07';
 const OUT = 'sql/seed_cham_cong_2026_07.sql';
@@ -117,9 +120,16 @@ sql.push(`-- CHẤM CÔNG KỲ ${KY} — sinh tự động bởi scripts/import-
 sql.push(`-- Nguồn: ${FILE.split('/').pop()}`);
 sql.push(`-- Cắt tới hết ngày ${DEN_NGAY} (ngày chưa tới thì chưa ai đi làm, để nguyên sẽ`);
 sql.push('-- thành "cả công ty nghỉ" và kéo tụt điểm chuyên cần của mọi người).');
-sql.push('-- Chạy lại nhiều lần đều an toàn: on conflict ghi đè theo (nhan_vien_id, ngay).');
+sql.push(`-- Chạy lại nhiều lần đều an toàn: xoá sạch kỳ ${KY} rồi nạp lại đúng theo file nguồn.`);
 sql.push('-- ════════════════════════════════════════════════════════════════════════════');
 sql.push('begin;');
+sql.push('');
+sql.push(`-- Xoá sạch chấm công kỳ ${KY} trước khi nạp lại: đây là bước "bỏ dữ liệu tháng cũ".`);
+sql.push('-- Không chỉ dựa vào on-conflict, vì upsert chỉ ghi đè những dòng CÓ trong file mới —');
+sql.push('-- người/ngày đã bị gỡ khỏi file (vd nghỉ việc) sẽ còn sót lại nếu không xoá trước.');
+sql.push('-- Xoá theo ky là an toàn: cham_cong là bảng lá, KPI tính bằng truy vấn nên không có');
+sql.push('-- FK nào tham chiếu vào đây; xoá xong nạp lại trong cùng transaction, hỏng thì rollback.');
+sql.push(`delete from cham_cong where ky = '${KY}';`);
 sql.push('');
 
 for (const d of dong) {

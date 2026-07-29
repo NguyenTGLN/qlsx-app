@@ -14,7 +14,6 @@ const TaskApp         = lazy(() => import('./pages/tasks/TaskApp'));
 const WarrantyApp     = lazy(() => import('./pages/warranty/WarrantyApp'));
 const CskhApp         = lazy(() => import('./pages/cskh/CskhApp'));
 const KhoHangApp      = lazy(() => import('./pages/kho/KhoHangApp'));
-const TvDashboard     = lazy(() => import('./pages/TvDashboard'));
 const QualityApp      = lazy(() => import('./pages/quality/QualityApp'));
 
 // Màn hình chờ trong lúc tải gói của phân hệ
@@ -40,9 +39,16 @@ function App() {
     <Suspense fallback={<ModuleLoader />}>
       <Routes>
         {/* ── Public ── */}
+        {/* CHỈ được để ở đây những route KHÔNG đọc dữ liệu.
+            Route /tv (TvDashboard) đã gỡ ngày 28/07/2026: nó chạy không đăng nhập
+            nhưng đọc thẳng nhan_vien + cong_viec_duoc_giao, nên buộc hai bảng đó
+            phải mở cho vai trò công khai — ai lấy khoá trong mã nguồn cũng đọc và
+            sửa được. Hai bảng nay đã siết về {authenticated}.
+            Cần màn hình hiển thị không đăng nhập thì viết RPC SECURITY DEFINER chỉ
+            trả đúng phần cần hiện, TUYỆT ĐỐI không mở lại quyền cho vai trò công khai.
+            File src/pages/TvDashboard.jsx còn nằm lại nhưng không được nạp nữa. */}
         <Route path="/" element={<Navigate to="/home" replace />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/tv" element={<TvDashboard />} />
 
         {/* ── Protected ── */}
         <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
