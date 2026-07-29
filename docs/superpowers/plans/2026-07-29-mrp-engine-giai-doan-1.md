@@ -106,13 +106,24 @@ Tạo `src/lib/mrp.js`:
 // Phần gọi DB nằm ở giai đoạn 2. Xem spec:
 //   docs/superpowers/specs/2026-07-29-de-xuat-linh-kien-theo-dot-design.md
 
+// LƯU Ý: StockSummaryTab.jsx:94 hiện vẫn dùng công thức CŨ (lead + an toàn × 2)
+// cho cột "Tồn An Toàn" ở tab Tồn HH. Hai công thức cùng tồn tại tới giai đoạn 3.
+// Ai sửa chỗ này nhớ ngó cả bên đó, kẻo "chữa" nhầm bên đúng.
+
+const SALES_WINDOW_DAYS = 90;
+
 const num = (v) => Number(v) || 0;
 
 // Tồn an toàn = TB bán/ngày × (lead_time × 2 + thời gian an toàn).
 // Hệ số lead nhân 2 để phòng nhà cung cấp giao chậm gấp đôi cam kết.
+//
+// Kẹp số ngày không âm: lead_time hoặc thời gian an toàn bị gõ nhầm dấu âm sẽ cho
+// tồn an toàn âm, cần bổ sung bị kẹp về 0, và mã đó BIẾN MẤT khỏi đề xuất mà không
+// ai thấy lỗi gì. Ô nhập ở AddCatalogItemModal.jsx:71 không chặn số âm nên đường này
+// có thật. Phần báo động do buildProposalLines lo (mã có days <= 0 vào missingParams).
 export function computeSafetyStock({ totalSales90d, leadTimeDays, backupStockDays } = {}) {
-  const avgDaily = num(totalSales90d) / 90;
-  const days = num(leadTimeDays) * 2 + num(backupStockDays);
+  const avgDaily = num(totalSales90d) / SALES_WINDOW_DAYS;
+  const days = Math.max(0, num(leadTimeDays) * 2 + num(backupStockDays));
   return Math.round(avgDaily * days);
 }
 
@@ -602,7 +613,9 @@ export function buildProposalLines({ items = [], bomMap = {}, stockMap = {}, onO
 
   items.forEach((it) => {
     if (num(it.total_sales_90d) <= 0) return;   // không bán trong 90 ngày → không đề xuất
-    if (num(it.lead_time_days) === 0 && num(it.backup_stock_days) === 0) {
+    // Dùng <= 0 chứ không phải === 0: số âm (gõ nhầm dấu) cũng phải bị réo lên,
+    // nếu không mã đó âm thầm biến mất khỏi đề xuất.
+    if (num(it.lead_time_days) <= 0 && num(it.backup_stock_days) <= 0) {
       missingParams.push(it.item_code);
     }
     const qty = computeReplenishQty({
