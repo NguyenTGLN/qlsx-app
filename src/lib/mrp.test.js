@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeSafetyStock, computeReplenishQty, topoSort, BomCycleError } from './mrp';
+import { computeSafetyStock, computeReplenishQty, topoSort, BomCycleError, explodeNetted } from './mrp';
 
 describe('computeSafetyStock — TB bán/ngày × (lead × 2 + an toàn)', () => {
   it('ví dụ thật F-CB-BNC: bán 1473/90 ngày, lead 15, an toàn 30', () => {
@@ -136,5 +136,102 @@ describe('topoSort — cha luôn đứng trước con', () => {
       expect(e.cycle).not.toContain('F-CB-BNC');   // cha lành không được réo tên
       expect(e.cycle).not.toContain('F-OCB10');
     }
+  });
+});
+
+describe('explodeNetted — nổ BOM có trừ tồn từng cấp', () => {
+  // Dựng theo BOM thật của F-CB-BNC (đã rút gọn còn 3 con).
+  const bomMap = {
+    'F-CB-BNC': [
+      { component: 'F-OCB10', qty: 1 },
+      { component: 'F-CTO10', qty: 1 },
+      { component: 'F-PP10', qty: 1 },
+    ],
+    'F-OCB10': [
+      { component: 'L-F-OCB10', qty: 1 },
+      { component: 'OF-OCB10', qty: 1 },
+    ],
+  };
+
+  it('tồn cấp giữa đủ → DỪNG, không nổ xuống cấp dưới', () => {
+    const { buy, net } = explodeNetted({
+      demand: { 'F-CB-BNC': 458 },
+      bomMap,
+      stockMap: { 'F-OCB10': 6713, 'F-CTO10': 5208 },
+    });
+    expect(net['F-OCB10']).toBe(0);
+    expect(buy['L-F-OCB10']).toBeUndefined();
+    expect(buy['OF-OCB10']).toBeUndefined();
+    expect(buy).toEqual({ 'F-PP10': 458 });
+  });
+
+  it('tồn cấp giữa thiếu một phần → chỉ nổ đúng phần thiếu', () => {
+    const { buy } = explodeNetted({
+      demand: { 'F-CB-BNC': 458 },
+      bomMap,
+      stockMap: { 'F-OCB10': 200, 'F-CTO10': 5208 },
+    });
+    expect(buy['L-F-OCB10']).toBe(258);
+    expect(buy['OF-OCB10']).toBe(258);
+    expect(buy['F-PP10']).toBe(458);
+  });
+
+  it('một mã là con của 2 cha → tồn chỉ bị trừ MỘT lần', () => {
+    const { net, buy } = explodeNetted({
+      demand: { A: 10, B: 10 },
+      bomMap: { A: [{ component: 'X', qty: 2 }], B: [{ component: 'X', qty: 3 }] },
+      stockMap: { X: 30 },
+    });
+    expect(net.X).toBe(20);        // gross 10×2 + 10×3 = 50, trừ 30 một lần
+    expect(buy).toEqual({ X: 20 });
+  });
+
+  it('hàng đang về từ đợt trước cũng được trừ', () => {
+    const { buy } = explodeNetted({
+      demand: { A: 10 },
+      bomMap: { A: [{ component: 'X', qty: 5 }] },
+      stockMap: { X: 20 },
+      onOrderMap: { X: 10 },
+    });
+    expect(buy).toEqual({ X: 20 });  // 50 − 20 − 10
+  });
+
+  it('mã có bán nhưng không có BOM → vào thẳng danh sách mua', () => {
+    const { buy } = explodeNetted({ demand: { 'FK-RO80': 100 }, bomMap: {} });
+    expect(buy).toEqual({ 'FK-RO80': 100 });
+  });
+
+  it('mã CÓ BOM không bao giờ vào danh sách mua, dù còn thiếu', () => {
+    const { net, buy } = explodeNetted({
+      demand: { A: 10 },
+      bomMap: { A: [{ component: 'X', qty: 1 }] },
+    });
+    expect(net.A).toBe(10);
+    expect(buy.A).toBeUndefined();
+    expect(buy).toEqual({ X: 10 });
+  });
+
+  it('tồn thừa toàn bộ → không mua gì', () => {
+    const { buy } = explodeNetted({
+      demand: { A: 10 },
+      bomMap: { A: [{ component: 'X', qty: 1 }] },
+      stockMap: { A: 999 },
+    });
+    expect(buy).toEqual({});
+  });
+
+  it('định mức lẻ vẫn tính đúng, không lỗi dấu phẩy động', () => {
+    const { buy } = explodeNetted({
+      demand: { A: 3 },
+      bomMap: { A: [{ component: 'DAY', qty: 0.6 }] },
+    });
+    expect(buy.DAY).toBe(1.8);
+  });
+
+  it('BOM có vòng lặp → ném BomCycleError, không trả kết quả nửa vời', () => {
+    expect(() => explodeNetted({
+      demand: { A: 1 },
+      bomMap: { A: [{ component: 'B', qty: 1 }], B: [{ component: 'A', qty: 1 }] },
+    })).toThrow(BomCycleError);
   });
 });

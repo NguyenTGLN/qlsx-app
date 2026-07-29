@@ -77,3 +77,61 @@ export function topoSort(bomMap = {}) {
   nodes.forEach((n) => visit(n));
   return order.reverse();   // đảo lại thành cha trước con
 }
+
+// Làm tròn 3 số lẻ — khớp cách dksxEngine đang làm, tránh sai số dấu phẩy động
+// khi định mức BOM là số lẻ (ví dụ 0.6 mét dây/máy).
+const round3 = (v) => Math.round(v * 1000) / 1000;
+
+// Nổ BOM có trừ tồn ở TỪNG CẤP.
+//   demand     { [mã thành phẩm]: cần bổ sung }
+//   bomMap     { [mã cha]: [{ component, qty }] }
+//   stockMap   { [mã]: tồn kho }            — gồm cả vị trí WIP SX9-
+//   onOrderMap { [mã]: đang về }            — Σ(SL đặt − đã nhập) của dòng CHO_HANG đợt trước
+//
+// Trả { gross, net, buy }:
+//   gross = tổng nhu cầu trước khi trừ   → lưu vào snapshot_gross
+//   net   = sau khi trừ tồn và hàng đang về
+//   buy   = phần net > 0 của những mã KHÔNG có BOM (mã có BOM thì tự sản xuất)
+//
+// Duyệt theo thứ tự tô-pô nên khi tới lượt một mã thì nhu cầu từ MỌI cha đã cộng đủ
+// vào gross — nhờ vậy tồn kho chỉ bị tiêu đúng một lần.
+export function explodeNetted({ demand = {}, bomMap = {}, stockMap = {}, onOrderMap = {} } = {}) {
+  const order = topoSort(bomMap);
+
+  const gross = {};
+  Object.keys(demand).forEach((c) => {
+    gross[c] = round3((gross[c] || 0) + num(demand[c]));
+  });
+
+  const net = {};
+  const visited = new Set();
+
+  order.forEach((code) => {
+    visited.add(code);
+    const avail = num(stockMap[code]) + num(onOrderMap[code]);
+    const n = Math.max(0, round3((gross[code] || 0) - avail));
+    net[code] = n;
+
+    const bom = bomMap[code];
+    if (bom && bom.length > 0 && n > 0) {
+      bom.forEach((c) => {
+        gross[c.component] = round3((gross[c.component] || 0) + n * num(c.qty));
+      });
+    }
+  });
+
+  // Mã có nhu cầu nhưng không xuất hiện ở đâu trong bomMap (không BOM, không là con của ai)
+  Object.keys(gross).forEach((code) => {
+    if (visited.has(code)) return;
+    const avail = num(stockMap[code]) + num(onOrderMap[code]);
+    net[code] = Math.max(0, round3(gross[code] - avail));
+  });
+
+  const buy = {};
+  Object.keys(net).forEach((code) => {
+    const isParent = bomMap[code] && bomMap[code].length > 0;
+    if (!isParent && net[code] > 0.0001) buy[code] = net[code];
+  });
+
+  return { gross, net, buy };
+}
