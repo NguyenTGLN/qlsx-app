@@ -110,14 +110,18 @@ const AdminDashboard = () => {
         { data: tLogs }
       ] = await Promise.all([
         supabase.from('nhan_vien').select('*', { count: 'exact', head: true }),
-        supabase.from('production_orders').select('*', { count: 'exact', head: true }),
+        // Lọc SAN_XUAT: 5 phiếu công việc hỗ trợ (VIEC-*) là phiếu thường trực của màn hình
+        // thợ, không phải lệnh sản xuất — lọt vào đây sẽ làm sai con số tổng lệnh SX.
+        supabase.from('production_orders').select('*', { count: 'exact', head: true }).eq('loai_viec', 'SAN_XUAT'),
         fetchAllRows(() => supabase.from('production_logs').select(`
-          id, actual_quantity, performance_rate, execution_date, start_time, end_time, worker_id,
-          production_orders ( order_code, product_code )
+          id, actual_quantity, performance_rate, execution_date, start_time, end_time, worker_id, ghi_chu,
+          production_orders ( order_code, product_code, loai_viec )
         `).order('created_at', { ascending: false })),
         supabase.from('nhan_vien').select('id, name'),
         supabase.from('product_capacities').select('*').order('product_code'),
-        supabase.from('production_orders').select('*, production_logs(actual_quantity)').order('created_at', { ascending: false }).limit(50),
+        // Lọc SAN_XUAT: 5 phiếu công việc hỗ trợ (VIEC-*) là phiếu thường trực của màn hình
+        // thợ, không phải lệnh sản xuất — lọt vào bảng Lệnh sản xuất sẽ làm rác danh sách.
+        supabase.from('production_orders').select('*, production_logs(actual_quantity)').eq('loai_viec', 'SAN_XUAT').order('created_at', { ascending: false }).limit(50),
         // assignee_ids = việc nhóm; assignee_id giữ lại làm fallback của memberIds() cho dòng chưa migrate
         fetchAllRows(() => supabase.from('cong_viec_duoc_giao').select('id, title, assignee_id, assignee_ids, status, completed_date, due_date')),
       ]);
@@ -420,7 +424,7 @@ const AdminDashboard = () => {
           <table className="admin-table" style={styles.table}>
             <thead>
               <tr>
-                <th>Mã Phiếu</th><th>Mã SP</th><th>Người Làm</th><th>Ngày</th><th>Số Lượng</th><th>Hiệu Suất</th><th>Thao Tác</th>
+                <th>Mã Phiếu</th><th>Mã SP</th><th>Người Làm</th><th>Ngày</th><th>Số Lượng</th><th>Hiệu Suất</th><th>Thao Tác</th><th>Ghi chú</th>
               </tr>
             </thead>
             <tbody>
@@ -437,9 +441,19 @@ const AdminDashboard = () => {
                       <Trash2 size={16} />
                     </button>}
                   </td>
+                  <td style={{ maxWidth: 220, fontSize: '0.8rem', color: '#64748b' }}>
+                    {log.production_orders?.loai_viec === 'HO_TRO' && (
+                      <span style={{
+                        display: 'inline-block', marginRight: 6, padding: '1px 6px',
+                        borderRadius: 999, background: '#f1f5f9', color: '#475569',
+                        fontSize: '0.7rem', fontWeight: 700, whiteSpace: 'nowrap',
+                      }}>Việc hỗ trợ</span>
+                    )}
+                    {log.ghi_chu || ''}
+                  </td>
                 </tr>
               ))}
-              {logs.length === 0 && <tr><td colSpan="7" style={{textAlign: 'center', padding: '2rem'}}>Trống.</td></tr>}
+              {logs.length === 0 && <tr><td colSpan="8" style={{textAlign: 'center', padding: '2rem'}}>Trống.</td></tr>}
             </tbody>
           </table>
         </div>

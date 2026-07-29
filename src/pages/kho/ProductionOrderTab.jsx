@@ -745,6 +745,9 @@ export default function ProductionOrderTab({ sxPrefill, onSxConsumed, perms = { 
     (items || []).forEach(it => { nameByCode[it.item_code] = it.item_name; });
     const { data: orderData } = await db.from('production_orders')
       .select('order_code, product_code')
+      // Lọc SAN_XUAT: 5 phiếu công việc hỗ trợ (VIEC-*) là phiếu thường trực của màn hình
+      // thợ, không phải lệnh sản xuất — lọt vào đây sẽ làm rác ô chọn phiếu.
+      .eq('loai_viec', 'SAN_XUAT')
       .in('status', ['pending', 'in_progress'])
       .order('created_at', { ascending: false })
       .limit(50);

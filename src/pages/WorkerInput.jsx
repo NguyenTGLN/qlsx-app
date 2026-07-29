@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useTabPerm } from '../lib/AuthContext';
 import { missingCapacities } from '../lib/capacityGuard';
 import { newDocToken, claimDocToken, releaseDocToken } from '../lib/docGuard';
+import { laViecHoTro, hieuSuatCoDinh, thongTinViec, tinhHieuSuat, ghiChuHopLe } from '../lib/congViecHoTro';
 
 const WorkerInput = () => {
   const navigate = useNavigate();
@@ -14,6 +15,12 @@ const WorkerInput = () => {
   const p = useTabPerm('production', 'main');
   // Màn hình này là 1 form nhập liệu tạo báo cáo sản xuất → gate nút gửi bằng create|edit.
   const canSubmit = p.create || p.edit;
+
+  // Việc hỗ trợ (GH/NH/DK/DTNB/PS): không có tồn kho nên bỏ hẳn phần vị trí và
+  // nhập kho tự động; bù lại bắt buộc ghi chú.
+  const hoTro = laViecHoTro(order);
+  const chamCoDinh = hieuSuatCoDinh(order);
+  const goiYGhiChu = thongTinViec(order?.product_code)?.goiY || 'Ghi rõ nội dung công việc';
 
   const [actualQuantity, setActualQuantity] = useState('');
   const [executionDate, setExecutionDate] = useState(() => {
@@ -33,6 +40,7 @@ const WorkerInput = () => {
   const [capacityOk, setCapacityOk] = useState(null); // null=đang tải | true | false
   const [capacityErr, setCapacityErr] = useState(false); // true khi KHÔNG kiểm tra được định mức (lỗi mạng/DB)
   const [dailyLogs, setDailyLogs] = useState([]);
+  const [ghiChu, setGhiChu] = useState('');
   
   const [locationsData, setLocationsData] = useState([]);
   const [allLocations, setAllLocations] = useState([]);
@@ -43,6 +51,7 @@ const WorkerInput = () => {
 
   // Lấy data số lượng thực tế MỚI NHẤT
   useEffect(() => {
+    if (hoTro) return;
     if (order && order.id) {
        supabase.from('production_orders')
          .select('target_quantity, production_logs(actual_quantity)')
@@ -54,11 +63,13 @@ const WorkerInput = () => {
              }
          });
     }
-  }, [order]);
+  }, [order, hoTro]);
 
   // Guard 100% định mức thật: chặn nhập tiến độ nếu mã SP chưa có định mức (tra LIVE product_capacities)
   useEffect(() => {
     if (!order) return;
+    // 4 mã CO_DINH_100 không dùng định mức ⇒ không được để guard chặn.
+    if (chamCoDinh) { setCapacityOk(true); setCapacityErr(false); return; }
     let cancelled = false;
     (async () => {
       let productCode = order.product_code;
@@ -76,7 +87,7 @@ const WorkerInput = () => {
       setCapacityOk(missingCapacities([productCode], data ? [data] : []).length === 0);
     })();
     return () => { cancelled = true; };
-  }, [order]);
+  }, [order, chamCoDinh]);
 
   // Lấy danh sách thợ
   useEffect(() => {
@@ -100,6 +111,7 @@ const WorkerInput = () => {
   useEffect(() => {
     const fetchLocations = async () => {
       if (!order) return;
+      if (hoTro) return;
       // 1. Lấy toàn bộ vị trí cho dropdown
       const { data: allStock } = await supabase.from('inventory_stock').select('location');
       const uniqueLocs = [...new Set((allStock || []).map(d => d.location).filter(Boolean))].sort();
@@ -130,13 +142,14 @@ const WorkerInput = () => {
       setLocationsData([{ id: null, location: 'Kho Chính', currentQty: 0, addQty: '', isNew: true }]);
     };
     fetchLocations();
-  }, [order]);
+  }, [order, hoTro]);
 
   // Cập nhật actualQuantity khi có thay đổi ở các vị trí
   useEffect(() => {
+    if (hoTro) return;
     const total = locationsData.reduce((sum, loc) => sum + (parseFloat(loc.addQty) || 0), 0);
     setActualQuantity(total > 0 ? total.toString() : '');
-  }, [locationsData]);
+  }, [locationsData, hoTro]);
 
   // Tính số giờ thực tế, TỰ ĐỘNG TRỪ giờ ăn trưa 12:00 -> 13:00
   const calculateHours = (sTime, eTime) => {
@@ -179,19 +192,12 @@ const WorkerInput = () => {
     if (!order) return;
     const timeHrs = calculateHours(startTime, endTime);
     setTotalTime(timeHrs);
-
-    const qty = parseFloat(actualQuantity) || 0;
-    const wCount = selectedWorkers.length;
-    
-    if (qty > 0 && timeHrs > 0 && wCount > 0 && order.standard_time_per_unit > 0) {
-      // Mỗi người làm 1 phần 
-      const qtyPerPerson = qty / wCount; 
-      // (Số lượng/người / Thời gian/người) * Thời gian chuẩn 1 SP * 100
-      const perf = (qtyPerPerson / timeHrs) * parseFloat(order.standard_time_per_unit) * 100;
-      setPerformance(Math.round(perf));
-    } else {
-      setPerformance(0);
-    }
+    setPerformance(tinhHieuSuat(order, {
+      soLuong: actualQuantity,
+      soGio: timeHrs,
+      soNguoi: selectedWorkers.length,
+      dinhMucGioMotSP: order.standard_time_per_unit,
+    }));
   }, [actualQuantity, startTime, endTime, selectedWorkers, order]);
 
   const toggleWorker = (id) => {
@@ -202,8 +208,9 @@ const WorkerInput = () => {
     }
   };
 
-  const isLoadingData = remainingQty === null;
-  const isOverLimit = !isLoadingData && parseFloat(actualQuantity) > remainingQty;
+  // Phiếu thường trực không có "chỉ tiêu còn lại" ⇒ không chờ tải, không có trần.
+  const isLoadingData = hoTro ? false : remainingQty === null;
+  const isOverLimit = !hoTro && !isLoadingData && parseFloat(actualQuantity) > remainingQty;
 
   const timeToMins = (t) => {
     if (!t) return 0;
@@ -263,18 +270,29 @@ const WorkerInput = () => {
         alert(`Tổng số lượng nhập (${actualQuantity}) vượt quá chỉ tiêu còn lại (${remainingQty})! Hãy nhập số nhỏ hơn hoặc bằng.`);
         return;
     }
-    const validLocations = locationsData.filter(loc => parseFloat(loc.addQty) > 0);
-    if (validLocations.length === 0) {
+    // GH vẫn chấm theo định mức ⇒ gửi khi bỏ trống số lượng sẽ ghi 0% vào
+    // production_logs, mà KPI "Hiệu suất sản xuất" lấy trung bình cộng mọi lần
+    // chấm trong tháng (kpiTuDong.js) ⇒ một dòng 0% kéo tụt điểm của thợ.
+    if (hoTro && !chamCoDinh && !(parseFloat(actualQuantity) > 0)) {
+        alert('Vui lòng nhập số lượng đã làm trước khi gửi!');
+        return;
+    }
+    if (!ghiChuHopLe(order, ghiChu)) {
+        alert('Vui lòng ghi chú rõ nội dung công việc trước khi gửi!');
+        return;
+    }
+    const validLocations = hoTro ? [] : locationsData.filter(loc => parseFloat(loc.addQty) > 0);
+    if (!hoTro && validLocations.length === 0) {
         alert('Vui lòng nhập số lượng vào ít nhất 1 vị trí kho!');
         return;
     }
     // Cho gõ vị trí tự do → bắt buộc không để trống & không trùng nhau
-    if (validLocations.some(loc => !String(loc.location || '').trim())) {
+    if (!hoTro && validLocations.some(loc => !String(loc.location || '').trim())) {
         alert('Có dòng đã nhập số lượng nhưng chưa nhập VỊ TRÍ. Vui lòng nhập vị trí kho!');
         return;
     }
     const locKeys = validLocations.map(loc => String(loc.location).trim().toLowerCase());
-    if (new Set(locKeys).size !== locKeys.length) {
+    if (!hoTro && new Set(locKeys).size !== locKeys.length) {
         alert('Có vị trí bị trùng nhau. Mỗi vị trí chỉ nhập 1 dòng!');
         return;
     }
@@ -311,7 +329,12 @@ const WorkerInput = () => {
     }
 
     try {
-      const qtyPerPerson = parseFloat(actualQuantity) / selectedWorkers.length;
+      // `|| 0` CHỈ áp cho việc hỗ trợ: 4 mã chấm cố định không nhập số lượng nên
+      // cần ghi được actual_quantity = 0 (cột NOT NULL, NaN sẽ làm insert hỏng).
+      // Phiếu sản xuất giữ NGUYÊN hành vi cũ — để NaN làm insert thất bại to,
+      // vì đó là lưới an toàn: không ghi gì, token được nhả, thợ gửi lại.
+      const qtyPerPerson = (hoTro ? (parseFloat(actualQuantity) || 0) : parseFloat(actualQuantity))
+                           / selectedWorkers.length;
 
       // Chuẩn bị mảng để Insert hàng loạt cho từng thợ
       const logsToInsert = selectedWorkers.map(wId => ({
@@ -323,13 +346,22 @@ const WorkerInput = () => {
           actual_time_spent: totalTime,
           workers_count: 1, 
           performance_rate: performance,
-          execution_date: executionDate
+          execution_date: executionDate,
+          ghi_chu: String(ghiChu || '').trim() || null,
       }));
 
       const { error } = await supabase.from('production_logs').insert(logsToInsert);
 
       if (error) throw error;
-      
+
+      // Việc hỗ trợ KHÔNG có tồn kho: không tạo phiếu nhập kho, không ghi
+      // du_lieu_nhap, không đụng inventory_stock, không trừ WIP.
+      if (hoTro) {
+        alert(`Đã lưu báo cáo công việc thành công (Hiệu suất ${performance}%)!`);
+        navigate('/worker');
+        return;
+      }
+
       // ==========================================
       // AUTOMATED IMPORT (NHẬP KHO THÀNH PHẨM TỰ ĐỘNG)
       // ==========================================
@@ -462,9 +494,11 @@ const WorkerInput = () => {
       <div style={styles.infoBanner}>
         <div style={styles.badge}>
           Mã SP: <strong style={{ color: 'var(--primary-color)', fontSize: '1rem' }}>{order.product_code}</strong>
-          <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px'}}>
-            Định Mức: <strong>{parseFloat(order.standard_time_per_unit).toFixed(4)} Giờ/1 SP</strong>
-          </div>
+          {!chamCoDinh && (
+            <div style={{fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px'}}>
+              Định Mức: <strong>{parseFloat(order.standard_time_per_unit).toFixed(4)} Giờ/1 SP</strong>
+            </div>
+          )}
         </div>
       </div>
 
@@ -481,10 +515,11 @@ const WorkerInput = () => {
       <main style={styles.main}>
         <form onSubmit={handleSubmit} style={styles.formCard} className="glass-panel">
           
+          {!chamCoDinh && (
           <div style={styles.inputGroup}>
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'0.5rem', flexWrap:'wrap', gap:'4px'}}>
-               <label className="form-label" style={{...styles.label, marginBottom:0}}>Tổng Sản lượng TỔ đã làm</label>
-               {remainingQty !== null && (
+               <label className="form-label" style={{...styles.label, marginBottom:0}}>{hoTro ? 'Số lượng đã làm' : 'Tổng Sản lượng TỔ đã làm'}</label>
+               {!hoTro && remainingQty !== null && (
                   <span style={{fontSize:'0.75rem', fontWeight:600, color: remainingQty > 0 ? 'var(--primary-color)' : 'var(--danger-color)'}}>
                      {remainingQty > 0 ? `(Cần làm: ${remainingQty})` : `(Đã Hoàn Thành)`}
                   </span>
@@ -492,18 +527,22 @@ const WorkerInput = () => {
             </div>
             <div style={styles.inputWrapper}>
               <PackageCheck size={18} style={{...styles.inputIcon, color: isOverLimit ? 'var(--danger-color)' : 'var(--primary-color)'}} />
-              <input 
-                type="number" 
-                className="form-control" 
-                style={{...styles.bigInput, borderColor: isOverLimit ? 'var(--danger-color)' : '#e2e8f0', color: isOverLimit ? 'var(--danger-color)' : 'var(--primary-color)', background: '#f8fafc', cursor: 'not-allowed'}}
+              <input
+                type="number"
+                className="form-control"
+                style={{...styles.bigInput, borderColor: isOverLimit ? 'var(--danger-color)' : '#e2e8f0', color: isOverLimit ? 'var(--danger-color)' : 'var(--primary-color)', background: '#f8fafc', cursor: hoTro ? 'text' : 'not-allowed'}}
                 placeholder="0"
                 value={actualQuantity}
-                readOnly
+                onChange={(e) => setActualQuantity(e.target.value)}
+                readOnly={!hoTro}
+                min={hoTro ? '1' : undefined}
               />
             </div>
             {isOverLimit && <span style={{color:'var(--danger-color)', fontSize:'0.75rem', marginTop:'0.5rem', fontWeight:600}}>⚠️ Vượt quá số lượng còn lại!</span>}
           </div>
+          )}
 
+          {!hoTro && (
           <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
              <label className="form-label" style={{...styles.label, color: 'var(--primary-color)'}}>📍 Khai báo Vị trí & Số lượng nhập kho</label>
              {/* Gợi ý vị trí đã có — vẫn cho phép gõ vị trí MỚI */}
@@ -568,6 +607,26 @@ const WorkerInput = () => {
                * Điền số lượng vào các ô "Nhập (+)". Tổng Sản lượng sẽ tự động cộng dồn.
              </div>
           </div>
+          )}
+
+          {hoTro && (
+            <div style={styles.inputGroup}>
+              <label className="form-label" style={styles.label}>
+                Ghi chú <span style={{ color: 'var(--danger-color)' }}>*</span>
+              </label>
+              <textarea
+                className="form-control"
+                style={{ ...styles.input, minHeight: 80, resize: 'vertical', lineHeight: 1.4 }}
+                placeholder={goiYGhiChu}
+                value={ghiChu}
+                onChange={(e) => setGhiChu(e.target.value)}
+                required
+              />
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.35rem' }}>
+                * Bắt buộc — ghi rõ để sau này tra lại được.
+              </div>
+            </div>
+          )}
 
           <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <label className="form-label" style={styles.label}>Ngày & Khung Giờ Thực Hiện</label>
@@ -633,15 +692,15 @@ const WorkerInput = () => {
               <h1 style={{ fontSize: '2.5rem', margin: 0, fontWeight: '800' }}>
                 {performance}%
               </h1>
-              {selectedWorkers.length > 0 && <p style={{ fontSize: '0.75rem', fontWeight: 600, marginTop:'0.25rem', opacity: 0.9 }}>Khoán: ~{((parseFloat(actualQuantity)||0)/selectedWorkers.length).toFixed(1)} cái/người</p>}
+              {!chamCoDinh && selectedWorkers.length > 0 && <p style={{ fontSize: '0.75rem', fontWeight: 600, marginTop:'0.25rem', opacity: 0.9 }}>Khoán: ~{((parseFloat(actualQuantity)||0)/selectedWorkers.length).toFixed(1)} cái/người</p>}
             </div>
           </div>
 
           <button
             type="submit"
             className="btn-primary"
-            style={{ width: '100%', padding: '1rem', fontSize: '1rem', marginTop: '0.5rem', background: (!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? '#cbd5e1' : 'var(--accent-gradient)', border: 'none', cursor: (!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)) ? 'not-allowed' : 'pointer' }}
-            disabled={!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (remainingQty !== null && remainingQty <= 0)}
+            style={{ width: '100%', padding: '1rem', fontSize: '1rem', marginTop: '0.5rem', background: (!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (!hoTro && remainingQty !== null && remainingQty <= 0)) ? '#cbd5e1' : 'var(--accent-gradient)', border: 'none', cursor: (!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (!hoTro && remainingQty !== null && remainingQty <= 0)) ? 'not-allowed' : 'pointer' }}
+            disabled={!canSubmit || capacityOk !== true || submitting || isOverLimit || isLoadingData || (!hoTro && remainingQty !== null && remainingQty <= 0)}
           >
             {!canSubmit ? 'Bạn không có quyền gửi báo cáo' : (
               capacityErr ? 'Không kiểm tra được định mức' : (
@@ -649,7 +708,7 @@ const WorkerInput = () => {
               capacityOk === false ? 'Chưa có định mức — không thể gửi' : (
               submitting ? 'Đang gửi...' : (
                 isLoadingData ? 'Đang tải...' : (
-                   remainingQty !== null && remainingQty <= 0 ? 'Lệnh hoàn thành' : `Phân Bổ & Gửi`
+                   !hoTro && remainingQty !== null && remainingQty <= 0 ? 'Lệnh hoàn thành' : `Phân Bổ & Gửi`
                 )
               )))))
             }
