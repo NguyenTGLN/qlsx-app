@@ -874,6 +874,34 @@ Trình bảng so sánh: số dòng và tổng SL của luồng cũ (138 dòng / 
 
 ---
 
+## ⚠️ Lỗ hổng nguồn dữ liệu — phát hiện 29/07, để lại cho giai đoạn 2
+
+RPC `get_stock_summary` dựng `FROM public.inventory_stock`, nên **mã nào không có
+dòng tồn kho nào thì không xuất hiện trong kết quả**. Đo trên dữ liệu thật:
+
+| Hệ quả | Số mã |
+|---|---:|
+| Linh kiện dùng trong BOM nhưng không có dòng tồn kho → nếu vào `buy` sẽ mang `item_name`/`unit` rỗng | 91 |
+| Mã **có bán 90 ngày** nhưng không có dòng tồn kho → **không bao giờ được gieo nhu cầu, không bao giờ được đề xuất** | 19 |
+
+Nhóm 19 mã là lỗi thật sự, không phải mỹ quan. Ví dụ nặng nhất: `FK-RO50`
+(Màng RO50 liền) bán 165 cái/90 ngày mà không có dòng tồn kho nào, nên engine
+không hề biết tới nó.
+
+**Không sửa trong giai đoạn 1.** Sửa RPC sẽ đổi luôn cột "Cần Bổ Sung" của tab Tồn HH
+đang chạy — đụng luồng khác, phải hỏi trước. Cách xử lý sẽ bàn ở giai đoạn 2, hai hướng:
+
+1. Đổi RPC sang `FROM inventory_items` (hoặc hợp với danh sách mã có bán và mã trong BOM),
+   rồi rà lại mọi nơi đang dùng `get_stock_summary`.
+2. Giữ RPC nguyên, dựng `items` cho engine bằng truy vấn riêng.
+
+Ghi chú: RPC đã `round(sum(quantity), 3)` nên `total_quantity` từ RPC là sạch. Nhưng
+`stockMap` mà engine dùng để trừ tồn lại dựng thẳng từ `inventory_stock`, nơi vẫn còn
+`T-0402` = 2782.7000000000003 — nên phần làm tròn đầu vào trong `buildProposalLines`
+vẫn cần thiết.
+
+---
+
 ## Hết giai đoạn 1
 
 Sau Task 5, `src/lib/mrp.js` là engine hoàn chỉnh có test, đã đối chiếu dữ liệu thật, và **chưa ảnh hưởng gì tới app đang chạy** — không tệp nào trong `src/pages/` bị sửa, `dksxEngine.js` còn nguyên.
