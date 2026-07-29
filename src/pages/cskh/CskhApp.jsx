@@ -110,10 +110,23 @@ const CskhApp = () => {
   // - .gte('created_at', dateFrom) → giới hạn dữ liệu, giảm số trang fetch
   const MAX_DATA_MONTHS = 24; // Lấy dữ liệu 2 năm gần nhất — điều chỉnh nếu cần
 
+  // TĐ-10: màn hình Tổng Quan chỉ ĐẾM / NHÓM / LỌC THEO NGÀY (xem các useMemo bên dưới),
+  // không render nội dung biên bản. Riêng `data_links` nặng 4.359 byte/dòng × 3.727 dòng = 15 MB,
+  // chiếm ~75% tải của cả màn hình. Bỏ 3 cột blob (html_content 2.637 B, hinh_anh 579 B,
+  // thong_so_kiem_tra 572 B) → còn ~1.150 byte/dòng ⇒ 15 MB xuống ~1,1 MB (giảm 93%).
+  // Số dòng nạp về KHÔNG ĐỔI: vẫn đủ 3.727 biên bản trong 24 tháng.
+  // 4 bảng còn lại giữ nguyên '*' vì đều nhỏ (tổng < 6 MB) và chưa rà hết cột đang dùng.
+  const COT_THEO_BANG = {
+    data_links: 'record_id,order_id,contract_id,customer_name,customer_phone,ktv_name,ktv_code,'
+              + 'ktv_phone,product_code,address,distance,installation_date,status,'
+              + 'confirmation_status,created_at',
+  };
+
   const fetchAll = useCallback(async (tableName) => {
     const boundary = new Date();
     boundary.setMonth(boundary.getMonth() - MAX_DATA_MONTHS);
     const dateFrom = boundary.toISOString();
+    const cot = COT_THEO_BANG[tableName] || '*';
 
     const { count, error: countErr } = await db
       .from(tableName)
@@ -126,7 +139,7 @@ const CskhApp = () => {
     const pages = Math.ceil(count / step);
     const promises = Array.from({ length: pages }, (_, i) =>
       db.from(tableName)
-        .select('*')
+        .select(cot)
         .gte('created_at', dateFrom)
         .order('created_at', { ascending: false })
         .range(i * step, (i + 1) * step - 1)

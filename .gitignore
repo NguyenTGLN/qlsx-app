@@ -18,7 +18,12 @@ dist-ssr
 !.env.example
 
 # Build artifacts & archives (không commit)
+# Các thư mục build cũ từng nhúng khoá JWT đã bị vô hiệu hoá 28/07/2026 và cả mã
+# route /tv đã gỡ. Kéo-thả nhầm một trong số này lên Netlify là app hỏng ngay
+# (không ai đăng nhập được) và lỗ hổng /tv quay lại. Chỉ giữ đúng `dist/`.
 deploy-moi
+deploy-netlify/
+dist-SAO-LUU-*/
 deploy.zip
 qlsx-deploy-moi.zip
 *.zip

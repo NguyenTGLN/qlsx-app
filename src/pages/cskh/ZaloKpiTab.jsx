@@ -384,20 +384,64 @@ const ZaloKpiTab = ({ dateRange }) => {
     }
   };
 
-  useEffect(() => { 
-    fetchRecords(); 
-    
-    // Đăng ký nhận luồng Realtime từ Supabase
-    const channel = db.channel('zalo_realtime_kpi')
+  useEffect(() => {
+    fetchRecords();
+
+    // ── TĐ-08 ────────────────────────────────────────────────────────────────
+    // TRƯỚC ĐÂY: callback gọi thẳng fetchRecords() → mỗi sự kiện realtime kéo về
+    //   1 lệnh count:'exact' quét toàn bảng + 11 request select('*') = 9,9 MB.
+    //   Thao tác "đánh dấu 50 hội thoại" sinh 50 sự kiện → ~600 request / 495 MB
+    //   trong vài giây, đủ chiếm hết pool 60 kết nối của Supabase.
+    // NAY: cập nhật CỤC BỘ từ payload — mọi KPI ở dưới đều tính bằng records.filter(...)
+    //   nên chỉ cần mảng `records` đúng là số liệu đúng.
+    // Đã kiểm chứng 27/07/2026: relreplident của bảng = 'd' (default) ⇒ INSERT/UPDATE
+    //   vẫn nhận đủ dòng mới trong payload.new; DELETE chỉ có khoá chính trong
+    //   payload.old — mã dưới chỉ dùng payload.old.id (chính là khoá chính) nên an toàn.
+    // Tên channel gắn hậu tố ngẫu nhiên để 2 tab trình duyệt không tranh cùng một tên.
+
+    // Cùng khoảng ngày mà fetchRecords đang áp dụng — để một bản ghi NGOÀI khoảng lọc
+    // không bị chèn nhầm vào danh sách. useEffect này chạy lại mỗi khi dateRange đổi.
+    let rtStart = null, rtEnd = null;
+    if (dateRange && dateRange.preset && dateRange.preset !== 'Tất cả') {
+      if (dateRange.from) rtStart = new Date(`${dateRange.from}T00:00:00`).getTime();
+      if (dateRange.to)   rtEnd   = new Date(`${dateRange.to}T23:59:59.999`).getTime();
+    }
+    const trongKhoang = (r) => {
+      const ts = r && r.first_message_ts;
+      if (ts == null) return true;
+      if (rtStart != null && ts < rtStart) return false;
+      if (rtEnd   != null && ts > rtEnd)   return false;
+      return true;
+    };
+
+    const channel = db.channel(`zalo_realtime_kpi_${Math.random().toString(36).slice(2)}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'zalo_conversations' }, (payload) => {
-        fetchRecords(); // Tự động load lại danh sách khi có tin nhắn/trạng thái mới
+        setRecords(prev => {
+          let next;
+          if (payload.eventType === 'INSERT') {
+            if (!trongKhoang(payload.new)) return prev;              // ngoài bộ lọc ngày
+            if (prev.some(r => r.id === payload.new.id)) return prev; // tránh trùng
+            next = [payload.new, ...prev];
+          } else if (payload.eventType === 'UPDATE') {
+            next = prev.map(r => (r.id === payload.new.id ? { ...r, ...payload.new } : r));
+          } else if (payload.eventType === 'DELETE') {
+            return prev.filter(r => r.id !== payload.old.id);
+          } else {
+            return prev;
+          }
+          // Giữ đúng thứ tự như truy vấn gốc (.order('first_message_ts', desc))
+          return next.sort((a, b) => (b.first_message_ts || 0) - (a.first_message_ts || 0));
+        });
+        setLastUpdated(new Date());
       })
       .subscribe();
 
     return () => {
       db.removeChannel(channel);
     };
-  }, [fetchRecords]);
+    // dateRange có mặt vì `trongKhoang` dùng tới. (fetchRecords vốn cũng đổi theo dateRange
+    // nên hành vi không đổi — liệt kê ra cho đúng quy tắc exhaustive-deps.)
+  }, [fetchRecords, dateRange]);
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const isIgnored = (r) => r.is_responded && r.response_content && typeof r.response_content === 'string' && r.response_content.includes('Không cần trả lời');
