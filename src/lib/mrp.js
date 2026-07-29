@@ -4,9 +4,6 @@
 
 const num = (v) => Number(v) || 0;
 
-// Làm tròn 3 số lẻ — khớp cách dksxEngine đang làm, tránh sai số dấu phẩy động.
-const round3 = (v) => Math.round(v * 1000) / 1000;
-
 // Tồn an toàn = TB bán/ngày × (lead_time × 2 + thời gian an toàn).
 // Hệ số lead nhân 2 để phòng nhà cung cấp giao chậm gấp đôi cam kết.
 export function computeSafetyStock({ totalSales90d, leadTimeDays, backupStockDays } = {}) {
