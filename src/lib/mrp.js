@@ -51,7 +51,11 @@ export function topoSort(bomMap = {}) {
   });
 
   const WHITE = 0, GRAY = 1, BLACK = 2;
-  const color = {};
+  // Object.create(null) chứ không phải {}: mã hàng tên '__proto__' gán vào object
+  // thường sẽ không tạo thuộc tính riêng, màu không bám, node bị duyệt nhiều lần
+  // và thứ tự cha-con vỡ. Không xảy ra với danh mục hiện tại, nhưng đây là nền
+  // của cả engine nên không đáng để hở.
+  const color = Object.create(null);
   nodes.forEach((n) => { color[n] = WHITE; });
 
   const order = [];   // gom theo hậu thứ tự: con trước, cha sau

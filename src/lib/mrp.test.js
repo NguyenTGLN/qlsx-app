@@ -116,4 +116,25 @@ describe('topoSort — cha luôn đứng trước con', () => {
   it('mã tự trỏ vào chính nó cũng bị bắt', () => {
     expect(() => topoSort({ A: [{ component: 'A', qty: 1 }] })).toThrow(BomCycleError);
   });
+
+  // Giữ phép cắt path.slice(path.indexOf(n)). Hai ca trên đều đặt vòng lặp ngay
+  // điểm vào DFS nên indexOf luôn bằng 0 — đổi thành path.slice(0) vẫn xanh hết.
+  // Ca này đặt vòng lặp SÂU dưới hai mã lành, nên bắt buộc phải cắt đúng chỗ.
+  it('vòng lặp nằm sâu dưới cha lành → chỉ báo đúng mắt xích, không réo tên cha', () => {
+    const bomMap = {
+      'F-CB-BNC':  [{ component: 'F-OCB10', qty: 1 }],
+      'F-OCB10':   [{ component: 'L-F-OCB10', qty: 1 }],
+      'L-F-OCB10': [{ component: 'OF-OCB10', qty: 1 }],
+      'OF-OCB10':  [{ component: 'L-F-OCB10', qty: 1 }],
+    };
+    try {
+      topoSort(bomMap);
+      throw new Error('phải ném BomCycleError');
+    } catch (e) {
+      expect(e).toBeInstanceOf(BomCycleError);
+      expect(e.cycle).toEqual(['L-F-OCB10', 'OF-OCB10', 'L-F-OCB10']);
+      expect(e.cycle).not.toContain('F-CB-BNC');   // cha lành không được réo tên
+      expect(e.cycle).not.toContain('F-OCB10');
+    }
+  });
 });
