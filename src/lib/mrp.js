@@ -104,10 +104,8 @@ export function explodeNetted({ demand = {}, bomMap = {}, stockMap = {}, onOrder
   });
 
   const net = {};
-  const visited = new Set();
 
   order.forEach((code) => {
-    visited.add(code);
     const avail = num(stockMap[code]) + num(onOrderMap[code]);
     const n = Math.max(0, round3((gross[code] || 0) - avail));
     net[code] = n;
@@ -122,7 +120,8 @@ export function explodeNetted({ demand = {}, bomMap = {}, stockMap = {}, onOrder
 
   // Mã có nhu cầu nhưng không xuất hiện ở đâu trong bomMap (không BOM, không là con của ai)
   Object.keys(gross).forEach((code) => {
-    if (visited.has(code)) return;
+    // Dùng `in` chứ không phải giá trị: net[code] = 0 là hợp lệ, không được bỏ qua nhầm.
+    if (code in net) return;   // vòng trên đã tính rồi
     const avail = num(stockMap[code]) + num(onOrderMap[code]);
     net[code] = Math.max(0, round3(gross[code] - avail));
   });
@@ -130,6 +129,8 @@ export function explodeNetted({ demand = {}, bomMap = {}, stockMap = {}, onOrder
   const buy = {};
   Object.keys(net).forEach((code) => {
     const isParent = bomMap[code] && bomMap[code].length > 0;
+    // round3 đã quy về bội của 0.001 nên không giá trị nào rơi vào khe 0..0.0001.
+    // Giữ ngưỡng cho khớp dksxEngine.js:138, coi như đai an toàn thứ hai.
     if (!isParent && net[code] > 0.0001) buy[code] = net[code];
   });
 

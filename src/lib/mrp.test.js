@@ -234,4 +234,28 @@ describe('explodeNetted — nổ BOM có trừ tồn từng cấp', () => {
       bomMap: { A: [{ component: 'B', qty: 1 }], B: [{ component: 'A', qty: 1 }] },
     })).toThrow(BomCycleError);
   });
+
+  it('mã vừa bán lẻ vừa bị cha dùng → gộp cả hai nguồn vào gross', () => {
+    const { gross, buy } = explodeNetted({
+      demand: { A: 10, X: 5 },                          // X vừa tự bán 5
+      bomMap: { A: [{ component: 'X', qty: 2 }] },      // vừa bị A kéo 10×2
+    });
+    expect(gross.X).toBe(25);
+    expect(buy).toEqual({ X: 25 });
+    expect(buy.A).toBeUndefined();                      // A có BOM → tự sản xuất
+  });
+
+  it('nhiều tầng, định mức khác 1, tồn nằm ở tầng giữa', () => {
+    const { net, buy } = explodeNetted({
+      demand: { A: 100 },
+      bomMap: {
+        A: [{ component: 'B', qty: 2 }],
+        B: [{ component: 'C', qty: 3 }],
+      },
+      stockMap: { B: 50, C: 40 },
+    });
+    expect(net.B).toBe(150);   // gross 100×2 = 200, trừ tồn 50
+    expect(net.C).toBe(410);   // gross 150×3 = 450, trừ tồn 40
+    expect(buy).toEqual({ C: 410 });
+  });
 });
