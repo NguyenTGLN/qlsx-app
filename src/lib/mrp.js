@@ -13,13 +13,14 @@ const num = (v) => Number(v) || 0;
 // Tồn an toàn = TB bán/ngày × (lead_time × 2 + thời gian an toàn).
 // Hệ số lead nhân 2 để phòng nhà cung cấp giao chậm gấp đôi cam kết.
 //
-// Kẹp số ngày không âm: lead_time hoặc thời gian an toàn bị gõ nhầm dấu âm sẽ cho
-// tồn an toàn âm, cần bổ sung bị kẹp về 0, và mã đó BIẾN MẤT khỏi đề xuất mà không
-// ai thấy lỗi gì. Ô nhập ở AddCatalogItemModal.jsx:71 không chặn số âm nên đường này
-// có thật. Phần báo động do buildProposalLines lo (Task 4).
+// Ô nhập ở AddCatalogItemModal.jsx:71 không chặn số âm, nên lead_time hay thời gian
+// an toàn bị gõ nhầm dấu là chuyện có thật. Kẹp TỪNG Ô một, KHÔNG kẹp trên tổng:
+// kẹp tổng thì một ô âm sẽ ăn mất ô kia — lead −5 cạnh an toàn 30 cho ra 20 ngày
+// thay vì 30, sai một nửa mà không âm, không kẹp, không ai thấy.
+// Phần réo lên do buildProposalLines lo (Task 4): ô nào âm là vào missingParams.
 export function computeSafetyStock({ totalSales90d, leadTimeDays, backupStockDays } = {}) {
-  const avgDaily = num(totalSales90d) / SALES_WINDOW_DAYS;
-  const days = Math.max(0, num(leadTimeDays) * 2 + num(backupStockDays));
+  const avgDaily = Math.max(0, num(totalSales90d)) / SALES_WINDOW_DAYS;
+  const days = Math.max(0, num(leadTimeDays)) * 2 + Math.max(0, num(backupStockDays));
   return Math.round(avgDaily * days);
 }
 

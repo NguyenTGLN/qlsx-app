@@ -33,9 +33,19 @@ describe('computeSafetyStock — TB bán/ngày × (lead × 2 + an toàn)', () =>
     expect(computeSafetyStock({ totalSales90d: 1000, leadTimeDays: 1, backupStockDays: 1 })).toBe(33);
   });
 
-  it('số ngày âm do gõ nhầm dấu → 0, không trả số âm', () => {
-    expect(computeSafetyStock({ totalSales90d: 900, leadTimeDays: -5, backupStockDays: 0 })).toBe(0);
-    expect(computeSafetyStock({ totalSales90d: 900, leadTimeDays: 5, backupStockDays: -50 })).toBe(0);
+  it('một ô gõ nhầm dấu âm KHÔNG được ăn mất ô còn lại', () => {
+    // lead âm → coi như 0, nhưng an toàn 30 ngày vẫn giữ nguyên → 10 × 30
+    expect(computeSafetyStock({ totalSales90d: 900, leadTimeDays: -5, backupStockDays: 30 })).toBe(300);
+    // an toàn âm → coi như 0, nhưng lead 5 ngày vẫn giữ nguyên → 10 × (5×2)
+    expect(computeSafetyStock({ totalSales90d: 900, leadTimeDays: 5, backupStockDays: -50 })).toBe(100);
+  });
+
+  it('cả hai ô đều âm → 0, không trả số âm', () => {
+    expect(computeSafetyStock({ totalSales90d: 900, leadTimeDays: -5, backupStockDays: -30 })).toBe(0);
+  });
+
+  it('doanh số âm (dữ liệu hỏng) → 0, không trả số âm', () => {
+    expect(computeSafetyStock({ totalSales90d: -900, leadTimeDays: 5, backupStockDays: 10 })).toBe(0);
   });
 });
 
