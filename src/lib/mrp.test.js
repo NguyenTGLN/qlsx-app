@@ -22,6 +22,21 @@ describe('computeSafetyStock — TB bán/ngày × (lead × 2 + an toàn)', () =>
     expect(computeSafetyStock({})).toBe(0);
     expect(computeSafetyStock({ totalSales90d: '900', leadTimeDays: '5', backupStockDays: '10' })).toBe(200);
   });
+
+  it('làm tròn LÊN khi phần lẻ ≥ 0,5 — chốt Math.round, loại Math.floor', () => {
+    // 1000/90 = 11,111 ; × (1×2+3) = 55,555 → 56
+    expect(computeSafetyStock({ totalSales90d: 1000, leadTimeDays: 1, backupStockDays: 3 })).toBe(56);
+  });
+
+  it('làm tròn XUỐNG khi phần lẻ < 0,5 — chốt Math.round, loại Math.ceil', () => {
+    // 1000/90 = 11,111 ; × (1×2+1) = 33,333 → 33
+    expect(computeSafetyStock({ totalSales90d: 1000, leadTimeDays: 1, backupStockDays: 1 })).toBe(33);
+  });
+
+  it('số ngày âm do gõ nhầm dấu → 0, không trả số âm', () => {
+    expect(computeSafetyStock({ totalSales90d: 900, leadTimeDays: -5, backupStockDays: 0 })).toBe(0);
+    expect(computeSafetyStock({ totalSales90d: 900, leadTimeDays: 5, backupStockDays: -50 })).toBe(0);
+  });
 });
 
 describe('computeReplenishQty — tồn an toàn − tồn hiện tại, không âm', () => {
@@ -41,5 +56,11 @@ describe('computeReplenishQty — tồn an toàn − tồn hiện tại, không 
     expect(computeReplenishQty({
       totalSales90d: 900, leadTimeDays: 5, backupStockDays: 10, totalQuantity: 0,
     })).toBe(200);
+  });
+
+  it('tồn hiện tại dạng chuỗi vẫn tính đúng', () => {
+    expect(computeReplenishQty({
+      totalSales90d: 900, leadTimeDays: 5, backupStockDays: 10, totalQuantity: '50',
+    })).toBe(150);
   });
 });
