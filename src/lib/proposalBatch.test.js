@@ -14,8 +14,10 @@ describe('nextBatchCode — mã đợt DX-DDMMYY-NN', () => {
     expect(nextBatchCode(['DX-280726-07', 'DX-300726-09'], '2026-07-29')).toBe('DX-290726-01');
   });
 
-  it('không lấp lỗ hổng — luôn lớn hơn số lớn nhất', () => {
-    expect(nextBatchCode(['DX-290726-01', 'DX-290726-05'], '2026-07-29')).toBe('DX-290726-06');
+  // Cố tình xếp NGƯỢC: số lớn nhất không phải phần tử cuối. Nếu xếp tăng dần thì
+  // "lấy max" và "lấy phần tử cuối" cho cùng kết quả, test mất tác dụng phân biệt.
+  it('không lấp lỗ hổng — lấy số LỚN NHẤT, không phải số cuối danh sách', () => {
+    expect(nextBatchCode(['DX-290726-05', 'DX-290726-01'], '2026-07-29')).toBe('DX-290726-06');
   });
 
   it('mã hỏng trong danh sách thì bỏ qua, không làm sập', () => {
