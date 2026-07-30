@@ -285,6 +285,19 @@ Chỉ `SL Đặt` sửa được; xoá được dòng không cần mua.
 
 Cột "Ngày cần về" và mức khẩn cấp giữ nguyên logic `computeNeededDates` hiện có.
 
+### 7.2b. ⚠️ RÀNG BUỘC SỐNG CÒN cho giai đoạn 3 (rà soát 29/07 xác nhận)
+
+`OrderProposalTab.jsx:67` đọc `purchase_proposals` bằng `select('*')`, **không lọc theo
+`batch_id` hay trạng thái đợt** — chỉ lọc client theo `auto_trang_thai`. Dòng đợt NHÁP mang
+`trang_thai='CHO_HANG'`, không nằm trong danh sách loại trừ, nên **hiện ngay** trên màn hình
+phòng mua đang dùng, lẫn vào 139 dòng thật, và còn nổi lên đầu vì `DX-...` > `DLK-...`.
+
+⇒ **Trước khi gắn nút "Chạy đề xuất" vào màn thật, BẮT BUỘC sửa `OrderProposalTab` lọc theo
+đợt** — chỉ hiện dòng của đợt `DA_GUI`/`DONG`, ẩn hẳn dòng `CHO_HANG` thuộc đợt `NHAP`. Nếu
+không, chạy một đợt nháp là làm loạn danh sách phòng mua đang dùng hằng ngày.
+
+Đây là lý do màn duyệt nháp (7.2) phải là **màn riêng**, không phải chính `OrderProposalTab`.
+
 ### 7.3. Màn đợt đã gửi
 
 Giữ bảng hiện tại, thêm cột **Trạng thái dòng**. `SL ĐX` chuyển thành chữ thường không sửa được.
