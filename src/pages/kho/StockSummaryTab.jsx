@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase as db, sqlPackHint } from '../../lib/supabase';
 import { usePersistedState } from '../../lib/usePersistedState';
-import { Search, Loader2, RefreshCw, Download, Send, Factory, ExternalLink, ArrowUpDown, PackageCheck } from 'lucide-react';
+import { Search, Loader2, RefreshCw, Download, Factory, ExternalLink, ArrowUpDown, PackageCheck } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
 import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
-import { todayLocal } from '../../lib/dateUtils';
-import { recomputeProposals, loadBomMap, loadComponentStockExclWip, buildableNow, sendRetailProposals } from '../../lib/dksxEngine';
+import { loadBomMap, loadComponentStockExclWip, buildableNow } from '../../lib/dksxEngine';
 
-const TABLE_COLS = ['urgency','san_pham','dvt','total_quantity','avg_monthly_sales','avg_daily','days_remaining','runout_date','safe_inventory','replenish_qty','de_xuat_sl','dlk_status','actions'];
-const COL_LABELS_MAP = { urgency:'Cảnh báo', san_pham:'Sản phẩm', dvt:'ĐVT', total_quantity:'Tổng Tồn', avg_monthly_sales:'TB Bán/Tháng', avg_daily:'TB Bán/Ngày', days_remaining:'Ngày Bán KD', runout_date:'Ngày cạn kho', safe_inventory:'Tồn An Toàn', replenish_qty:'Cần Bổ Sung', de_xuat_sl:'SL Đề xuất', dlk_status:'Đã đề xuất (SX/Mua)', actions:'Thao tác' };
+const TABLE_COLS = ['urgency','san_pham','dvt','total_quantity','avg_monthly_sales','avg_daily','days_remaining','runout_date','safe_inventory','replenish_qty','dlk_status','actions'];
+const COL_LABELS_MAP = { urgency:'Cảnh báo', san_pham:'Sản phẩm', dvt:'ĐVT', total_quantity:'Tổng Tồn', avg_monthly_sales:'TB Bán/Tháng', avg_daily:'TB Bán/Ngày', days_remaining:'Ngày Bán KD', runout_date:'Ngày cạn kho', safe_inventory:'Tồn An Toàn', replenish_qty:'Cần Bổ Sung', dlk_status:'Đã đề xuất (SX/Mua)', actions:'Thao tác' };
 
 // Màu badge tiến độ mua — đồng bộ với tab Đề xuất (OrderProposalTab)
 const TIEN_DO_CFG = {
@@ -47,16 +46,13 @@ const s = {
 export default function StockSummaryTab({ navigateTo, perms = { view: true, create: true, edit: true, delete: true, io: true } }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
   const [searchText, setSearchText] = usePersistedState('stockSummary_search', '');
   const [sortCol, setSortCol] = usePersistedState('stockSummary_sortCol', 'replenish_qty'); // mặc định: sắp theo SL cần Bổ Sung
   const [sortAsc, setSortAsc] = usePersistedState('stockSummary_sortAsc', false);           // giảm dần — mã cần bổ sung nhiều nhất lên đầu
-  const [proposalQty, setProposalQty] = useState({}); // { item_code: qty }
   const [proposedMap, setProposedMap] = useState({}); // { item_code: qty_demand } — SL đã đề xuất sang DKSX
   const [purchaseProposedMap, setPurchaseProposedMap] = useState({}); // { item_code: { qty, tien_do } } — đề xuất đặt mua (DLK) đang mở
   const [bomMap, setBomMap] = useState({}); // { product_code: [{component, qty}] } — để tính "làm được ngay"
   const [compStock, setCompStock] = useState({}); // { item_code: tồn } — tồn linh kiện (né SX9, khớp lệnh SX)
-  const [sortByProposal, setSortByProposal] = usePersistedState('stockSummary_sortByProposal', false); // true = SL đề xuất > 0 lên đầu
   const [groupByType, setGroupByType] = usePersistedState('stockSummary_groupByType', true);           // mặc định: nhóm Sản xuất (SX) trước → Đặt mua → còn lại
   const [groupOrder, setGroupOrder] = useState('sx');          // 'sx' = SX lên đầu | 'mua' = Đặt mua lên đầu
 
@@ -142,12 +138,6 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
 
       setRows(formatted);
       setSelectedKeys(new Set());
-      // Khởi tạo proposalQty mặc định = replenish_qty
-      setProposalQty(prev => {
-        const next = { ...prev };
-        formatted.forEach(r => { if (!(r.item_code in next)) next[r.item_code] = r.replenish_qty; });
-        return next;
-      });
     } catch (e) {
       console.error(e);
       alert('Lỗi tải tổng hợp tồn kho: ' + e.message);
@@ -255,8 +245,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
   };
 
   const handleSort = (col) => {
-    setSortByProposal(false); // sort cột thường → tắt ưu tiên SL đề xuất
-    setGroupByType(false);    // và tắt nhóm SX/Mua
+    setGroupByType(false);    // sort cột thường → tắt nhóm SX/Mua
     if (sortCol === col) setSortAsc(!sortAsc);
     else { setSortCol(col); setSortAsc(true); }
   };
@@ -283,75 +272,6 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
     else setSelectedKeys(new Set(rows.map(r => r.item_code)));
   };
 
-  const handleSendProposal = async () => {
-    const selected = rows.filter(r => selectedKeys.has(r.item_code));
-    if (selected.length === 0) return alert('Chọn ít nhất 1 mã hàng để gửi đề xuất.');
-    if (!window.confirm(`Gửi đề xuất ${selected.length} mã? Thành phẩm có BOM sang DKSX (tự tính linh kiện); mã bán lẻ (không BOM, có xuất bán) đi thẳng vào Đề xuất (DLK).`)) return;
-    setSending(true);
-    try {
-      // Chỉ thành phẩm (có BOM) mới đưa vào DKSX. Dùng loadBomMap (đã phân trang đủ 1868 dòng).
-      const bomMap = await loadBomMap();
-      const parents = new Set(Object.keys(bomMap));
-
-      const today = todayLocal();
-      let upserts = 0;          // thành phẩm BOM → DKSX
-      const retailList = [];    // mã bán lẻ (không BOM + có xuất bán) → DLK mua thẳng
-      const skipped = [];       // không BOM + không xuất bán → bỏ qua
-      for (const row of selected) {
-        const N = Number(proposalQty[row.item_code] ?? row.replenish_qty) || 0;
-        if (N <= 0) continue;
-
-        if (parents.has(row.item_code)) {
-          // Upsert DKSX theo quy tắc MAX: chỉ nâng lên nếu số mới lớn hơn
-          const { data: ex } = await db.from('production_demand').select('id, qty_demand').eq('item_code', row.item_code).maybeSingle();
-          if (ex) {
-            if (N > Number(ex.qty_demand)) {
-              await db.from('production_demand').update({ qty_demand: N, trang_thai: 'Mới', updated_at: new Date().toISOString() }).eq('id', ex.id);
-            }
-          } else {
-            await db.from('production_demand').insert({ item_code: row.item_code, item_name: row.item_name, unit: row.unit, qty_demand: N, ngay_de_xuat: today, trang_thai: 'Mới' });
-          }
-          upserts++;
-        } else if (row.avg_daily > 0) {
-          // Mã bán lẻ: không có BOM nhưng có xuất bán → mua thẳng
-          retailList.push({ item_code: row.item_code, item_name: row.item_name, unit: row.unit, qty: N });
-        } else {
-          // Không BOM, không xuất bán → không phải hàng bán, bỏ qua
-          skipped.push(row.item_code);
-        }
-      }
-
-      if (upserts === 0 && retailList.length === 0) {
-        return alert(skipped.length
-          ? `Các mã đã chọn không có BOM và cũng không có xuất bán, không thể đề xuất:\n${skipped.slice(0, 8).join(', ')}`
-          : 'Không có mã nào hợp lệ (SL đề xuất = 0).');
-      }
-
-      // Thành phẩm BOM → tính lại bảng Đề xuất DLK (net) từ toàn bộ DKSX
-      if (upserts > 0) await recomputeProposals();
-      // Mã bán lẻ → đẩy thẳng vào DLK (quy tắc MAX)
-      let retail = { created: 0, updated: 0, skippedSmaller: 0 };
-      if (retailList.length > 0) retail = await sendRetailProposals(retailList);
-
-      const parts = [];
-      if (upserts > 0) parts.push(`Đã đưa ${upserts} thành phẩm sang DKSX (linh kiện DLK đã cập nhật).`);
-      if (retailList.length > 0) parts.push(`Mã bán lẻ vào Đề xuất: tạo ${retail.created}, cập nhật ${retail.updated}${retail.skippedSmaller ? `, bỏ qua ${retail.skippedSmaller} mã (SL ≤ đề xuất cũ)` : ''}.`);
-      if (skipped.length) parts.push(`⚠️ Bỏ qua ${skipped.length} mã không BOM & không xuất bán: ${skipped.slice(0, 5).join(', ')}`);
-      alert(parts.join('\n'));
-
-      setSelectedKeys(new Set());
-      await fetchProposed();
-      await fetchPurchaseProposed();
-      // Điều hướng: ưu tiên DKSX nếu có thành phẩm, ngược lại sang tab Đề xuất
-      if (navigateTo) navigateTo(upserts > 0 ? 'dksx' : 'de-xuat-dat-hang');
-    } catch (e) {
-      console.error(e);
-      alert('Lỗi gửi đề xuất: ' + e.message);
-    } finally {
-      setSending(false);
-    }
-  };
-
   const handleExport = () => {
     const dataToExport = rows.filter(r => selectedKeys.has(r.item_code)).map(r => {
       const out = {};
@@ -367,9 +287,8 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
   const vis = (col) => !hiddenCols.has(col);
   const visCount = TABLE_COLS.filter(c => vis(c)).length + 2; // +checkbox+#
 
-  // Sắp xếp hiển thị (ưu tiên): nhóm theo loại đề xuất (SX/Mua tuỳ groupOrder), hoặc đưa SL đề xuất > 0 lên đầu.
+  // Sắp xếp hiển thị (ưu tiên): nhóm theo loại đề xuất (SX/Mua tuỳ groupOrder).
   // Trong nhóm SX: đủ 100% (làm được ngay) lên trước. Trong nhóm Mua: "Đã về kho" lên trước. Sort ổn định → còn lại giữ Bổ Sung giảm dần.
-  const qOf = (r) => proposalQty[r.item_code] ?? r.replenish_qty ?? 0;
   const isSX = (r) => proposedMap[r.item_code] > 0;
   const isMua = (r) => (purchaseProposedMap[r.item_code]?.qty || 0) > 0;
   const feasOf = (r) => buildableMap[r.item_code]?.feasibility ?? -1;
@@ -387,35 +306,36 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
         else if (isMua(a) && isMua(b)) { const d = arrivedOf(b) - arrivedOf(a); if (d) return d; }
         return 0;
       })
-    : sortByProposal
-      ? [...rows].sort((a, b) => {
-          const qa = qOf(a), qb = qOf(b);
-          if ((qa > 0) !== (qb > 0)) return qa > 0 ? -1 : 1;
-          return qb - qa;
-        })
-      : rows;
+    : rows;
 
   return (
     <div style={{display:'flex',flexDirection:'column',flex:1,height:'100%',position:'relative'}}>
       {/* Sticky Toolbar */}
-      <div style={{background:'#fff',borderBottom:'1px solid #e2e8f0',padding:'0.5rem',display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'nowrap',position:'sticky',top:0,zIndex:50,overflowX:'auto'}}>
-        <div style={{flex:1, minWidth:120}}>
-          <SearchAutoSuggest
-            tableName="inventory_items"
-            searchColumns={['item_code','item_name']}
-            displayColumn="item_code"
-            placeholder="Tìm mã, tên HH..."
-            value={searchText}
-            onChange={v => setSearchText(v)}
-          />
+      <div style={{background:'#fff',borderBottom:'1px solid #e2e8f0',position:'sticky',top:0,zIndex:50}}>
+        <div style={{padding:'0.5rem',display:'flex',alignItems:'center',gap:'0.5rem',flexWrap:'nowrap',overflowX:'auto'}}>
+          <div style={{flex:1, minWidth:120}}>
+            <SearchAutoSuggest
+              tableName="inventory_items"
+              searchColumns={['item_code','item_name']}
+              displayColumn="item_code"
+              placeholder="Tìm mã, tên HH..."
+              value={searchText}
+              onChange={v => setSearchText(v)}
+            />
+          </div>
+          <button onClick={fetchStockSummary} disabled={loading} style={{...s.btn,padding:'0.4rem',flexShrink:0}} title="Làm mới">
+            <RefreshCw size={16} style={{animation:loading?'spin 1s linear infinite':'none',color:'#0891b2'}}/>
+          </button>
+          <ColumnToggleModal columns={TABLE_COLS} labels={COL_LABELS_MAP} hiddenCols={hiddenCols} setHiddenCols={setHiddenCols} />
+          <button onClick={()=>{ setGroupByType(true); setGroupOrder(o => o === 'sx' ? 'mua' : 'sx'); }} title="Đổi nhóm ưu tiên lên đầu: Sản xuất ↔ Đặt mua" style={{...s.btn,flexShrink:0,whiteSpace:'nowrap',borderColor:'#c7d2fe',color:'#4f46e5'}}>
+            <ArrowUpDown size={14}/>Ưu tiên: {groupOrder === 'sx' ? 'SX' : 'Mua'}
+          </button>
         </div>
-        <button onClick={fetchStockSummary} disabled={loading} style={{...s.btn,padding:'0.4rem',flexShrink:0}} title="Làm mới">
-          <RefreshCw size={16} style={{animation:loading?'spin 1s linear infinite':'none',color:'#0891b2'}}/>
-        </button>
-        <ColumnToggleModal columns={TABLE_COLS} labels={COL_LABELS_MAP} hiddenCols={hiddenCols} setHiddenCols={setHiddenCols} />
-        <button onClick={()=>{ setSortByProposal(false); setGroupByType(true); setGroupOrder(o => o === 'sx' ? 'mua' : 'sx'); }} title="Đổi nhóm ưu tiên lên đầu: Sản xuất ↔ Đặt mua" style={{...s.btn,flexShrink:0,whiteSpace:'nowrap',borderColor:'#c7d2fe',color:'#4f46e5'}}>
-          <ArrowUpDown size={14}/>Ưu tiên: {groupOrder === 'sx' ? 'SX' : 'Mua'}
-        </button>
+        <div style={{padding:'0 0.5rem 0.4rem',overflow:'hidden'}}>
+          <span style={{fontSize:'0.72rem',color:'#64748b',fontStyle:'italic',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',display:'block'}}>
+            Đề xuất linh kiện nay chạy ở tab "Đề xuất" — bấm "Chạy đề xuất" ở đó.
+          </span>
+        </div>
       </div>
 
       <main style={{flex:1,padding:'0',display:'flex',flexDirection:'column',overflow:'hidden',background:'#fff'}}>
@@ -444,8 +364,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                     {vis('runout_date') && <th style={{padding:'0.4rem 0.3rem',textAlign:'center',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#64748b',whiteSpace:'nowrap'}}>Ngày cạn kho</th>}
                     {vis('safe_inventory') && <th onClick={()=>handleSort('safe_inventory')} style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortCol==='safe_inventory'?'#0891b2':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:sortCol==='safe_inventory'?'#0891b2':'#64748b',cursor:'pointer',whiteSpace:'nowrap'}}>Tồn AT{sortCol==='safe_inventory'?(sortAsc?' ↑':' ↓'):''}</th>}
                     {vis('replenish_qty') && <th onClick={()=>handleSort('replenish_qty')} style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortCol==='replenish_qty'?'#0891b2':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:sortCol==='replenish_qty'?'#0891b2':'#64748b',cursor:'pointer',whiteSpace:'nowrap'}}>Bổ Sung{sortCol==='replenish_qty'?(sortAsc?' ↑':' ↓'):''}</th>}
-                    {vis('de_xuat_sl') && <th onClick={()=>{ setGroupByType(false); setSortByProposal(v=>!v); }} title="Bấm để đưa dòng có SL đề xuất > 0 lên đầu" style={{padding:'0.4rem 0.3rem',textAlign:'right',borderBottom:`2px solid ${sortByProposal?'#7c3aed':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:'#7c3aed',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none'}}>SL Đề xuất {sortByProposal?'↑':'⇅'}</th>}
-                    {vis('dlk_status') && <th onClick={()=>{ setSortByProposal(false); setGroupByType(v=>!v); }} title="Bấm để nhóm: Sản xuất (ĐX SX) trước → Đặt mua (ĐX mua) → còn lại" style={{padding:'0.4rem 0.5rem',textAlign:'left',borderBottom:`2px solid ${groupByType?'#4f46e5':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:'#4f46e5',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none'}}>Đã ĐX {groupByType?'≡':'⇅'}</th>}
+                    {vis('dlk_status') && <th onClick={()=>setGroupByType(v=>!v)} title="Bấm để nhóm: Sản xuất (ĐX SX) trước → Đặt mua (ĐX mua) → còn lại" style={{padding:'0.4rem 0.5rem',textAlign:'left',borderBottom:`2px solid ${groupByType?'#4f46e5':'#e2e8f0'}`,fontSize:'0.7rem',fontWeight:700,color:'#4f46e5',whiteSpace:'nowrap',cursor:'pointer',userSelect:'none'}}>Đã ĐX {groupByType?'≡':'⇅'}</th>}
                     {vis('actions') && <th style={{padding:'0.4rem 0.3rem',textAlign:'center',borderBottom:'2px solid #e2e8f0',fontSize:'0.7rem',fontWeight:700,color:'#64748b',whiteSpace:'nowrap'}}>Thao tác</th>}
                   </tr>
                 </thead>
@@ -477,14 +396,6 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
                       {vis('runout_date') && <td style={{padding:'0.35rem 0.2rem',textAlign:'center',fontSize:'0.7rem',color:row.urgency==='CRITICAL'?'#dc2626':'#475569',whiteSpace:'nowrap'}}>{row.runout_date}</td>}
                       {vis('safe_inventory') && <td style={{padding:'0.35rem 0.2rem',textAlign:'right',fontWeight:600,color:'#475569',fontVariantNumeric:'tabular-nums'}}>{row.safe_inventory.toLocaleString('vi-VN')}</td>}
                       {vis('replenish_qty') && <td style={{padding:'0.35rem 0.2rem',textAlign:'right',fontWeight:700,color:row.replenish_qty > 0 ? '#ef4444' : '#64748b',fontVariantNumeric:'tabular-nums'}}>{row.replenish_qty.toLocaleString('vi-VN')}</td>}
-                      {vis('de_xuat_sl') && <td style={{padding:'0.2rem 0.2rem',textAlign:'right'}} onClick={e=>e.stopPropagation()}>
-                        <input
-                          type="number" min="0"
-                          value={proposalQty[row.item_code] ?? row.replenish_qty}
-                          onChange={e => setProposalQty(p => ({...p, [row.item_code]: Number(e.target.value)}))}
-                          style={{...s.input, width:68, padding:'0.2rem 0.3rem', textAlign:'right', fontWeight:700, color:'#7c3aed', borderColor:'#c4b5fd'}}
-                        />
-                      </td>}
                       {(() => { const sxQty = proposedMap[row.item_code]; const buyInfo = purchaseProposedMap[row.item_code]; const bd = buildableMap[row.item_code]; const tdc = buyInfo ? (TIEN_DO_CFG[buyInfo.tien_do] || TIEN_DO_CFG['Mới']) : null; const arrived = !!buyInfo && buyInfo.tien_do === 'Đã về kho'; return (<>
                       {vis('dlk_status') && <td style={{padding:'0.4rem 0.5rem',textAlign:'left'}} onClick={e=>e.stopPropagation()}>
                         {sxQty > 0 ? (
@@ -557,11 +468,7 @@ export default function StockSummaryTab({ navigateTo, perms = { view: true, crea
         {selectedKeys.size > 0 ? (
           <>
             <span style={{fontSize:'0.8rem',fontWeight:700,color:'#1e3a8a',whiteSpace:'nowrap'}}>{selectedKeys.size} đã chọn</span>
-            <button onClick={handleExport} style={{...s.btn,background:'#10b981',color:'#fff',border:'none',padding:'0.4rem 0.75rem',flexShrink:0}}><Download size={14}/>Xuất Excel</button>
-            {perms.create && <button onClick={handleSendProposal} disabled={sending} style={{...s.btn,background:'#7c3aed',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}>
-              {sending ? <Loader2 size={14} style={{animation:'spin 1s linear infinite'}}/> : <Send size={14}/>}
-              Gửi đề xuất ({selectedKeys.size})
-            </button>}
+            <button onClick={handleExport} style={{...s.btn,background:'#10b981',color:'#fff',border:'none',padding:'0.4rem 0.75rem',marginLeft:'auto',flexShrink:0}}><Download size={14}/>Xuất Excel</button>
           </>
         ) : (
           <>
