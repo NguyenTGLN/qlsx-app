@@ -130,6 +130,9 @@ export async function runProposalDraft(nguoiTao) {
   const { lines, missingParams } = buildProposalLines(inputs);
 
   let batch = await getCurrentDraft();
+  // Xoá-rồi-chèn không transactional: nếu crash giữa chừng, đợt NHÁP còn lại rỗng dòng
+  // — không mất gì, và lượt chạy kế tiếp tự vá (đi vào nhánh if(batch) này, xoá 0 dòng
+  // rồi chèn lại đủ). Cố ý để vậy, không cần transaction cho luồng một người dùng bình thường.
   if (batch) {
     const { error } = await db.from('purchase_proposals').delete().eq('batch_id', batch.id);
     if (error) throw error;
@@ -139,8 +142,18 @@ export async function runProposalDraft(nguoiTao) {
     const { data, error } = await db.from('proposal_batches')
       .insert({ ma_dot, ngay_chay: todayLocal(), trang_thai: 'NHAP', nguoi_tao: nguoiTao || '' })
       .select().single();
-    if (error) throw error;
-    batch = data;
+    if (error) {
+      // 23505 = có người vừa tạo nháp trước ta (chỉ mục one_draft chặn). Dùng nháp của họ.
+      if (error.code === '23505') {
+        const winner = await getCurrentDraft();
+        if (winner) { batch = winner; await db.from('purchase_proposals').delete().eq('batch_id', winner.id); }
+        else throw error;
+      } else {
+        throw error;
+      }
+    } else {
+      batch = data;
+    }
   }
 
   const today = todayLocal();
@@ -161,22 +174,29 @@ export async function runProposalDraft(nguoiTao) {
   return { batch, soDong: rows.length, missingParams };
 }
 
-// Gửi đợt: NHÁP → ĐÃ GỬI. Từ đây calculated_qty khoá, chỉ actual_qty còn sửa được.
-// Điều kiện .eq('trang_thai','NHAP') để hai người bấm cùng lúc chỉ một lệnh ăn.
+// Gửi đợt: NHÁP → ĐÃ GỬI. Trả số đợt đã chuyển (0 nếu đợt không còn là nháp) để nơi
+// gọi báo cho người dùng "đợt này không còn là bản nháp — hãy làm mới".
 export async function sendBatch(batchId, nguoiGui) {
-  const { error } = await db.from('proposal_batches').update({
+  const { data, error } = await db.from('proposal_batches').update({
     trang_thai: 'DA_GUI', nguoi_gui: nguoiGui || '', ngay_gui: new Date().toISOString(),
-  }).eq('id', batchId).eq('trang_thai', 'NHAP');
+  }).eq('id', batchId).eq('trang_thai', 'NHAP').select();
   if (error) throw error;
+  return { daGui: (data || []).length };
 }
 
-// Huỷ nháp: xoá dòng rồi xoá đợt. Chỉ khi còn là NHÁP.
+// Huỷ nháp: chỉ khi CÒN là NHÁP. Xoá dòng con của đợt SAU khi chắc chắn đợt vẫn là
+// nháp và vừa bị xoá — nếu ai đó đã bấm Gửi ở màn khác, ta không được đụng vào dòng
+// của một đợt đã gửi. Trả số đợt đã huỷ để nơi gọi biết có làm gì không.
 export async function discardDraft(batchId) {
-  const { error: e1 } = await db.from('purchase_proposals').delete().eq('batch_id', batchId);
-  if (e1) throw e1;
-  const { error } = await db.from('proposal_batches')
-    .delete().eq('id', batchId).eq('trang_thai', 'NHAP');
+  const { data, error } = await db.from('proposal_batches')
+    .delete().eq('id', batchId).eq('trang_thai', 'NHAP').select();
   if (error) throw error;
+  const daHuy = (data || []).length;
+  if (daHuy > 0) {
+    const { error: e2 } = await db.from('purchase_proposals').delete().eq('batch_id', batchId);
+    if (e2) throw e2;
+  }
+  return { daHuy };   // 0 = đợt không còn là nháp, không xoá gì
 }
 
 // Danh sách đợt, mới nhất trước.
