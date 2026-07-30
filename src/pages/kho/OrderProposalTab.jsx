@@ -69,6 +69,14 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
         .order('dlk_code', { ascending: false });
       if (error) throw error;
 
+      // Ẩn dòng thuộc đợt còn là NHÁP: bản nháp chưa gửi không được lẫn vào danh sách
+      // phòng mua đang dùng. Dòng cũ (batch_id không trỏ tới đợt nào) và dòng thuộc đợt
+      // ĐÃ GỬI / ĐÓNG vẫn hiện bình thường. Lọc bằng JS sau khi fetch — không dùng filter
+      // .not('batch_id','in',...) của PostgREST vì danh sách rỗng sẽ làm lỗi cú pháp.
+      const { data: draftBatches } = await db.from('proposal_batches')
+        .select('id').eq('trang_thai', 'NHAP');
+      const draftIds = new Set((draftBatches || []).map(b => b.id));
+
       // Tổng nhập về theo dlk_code (từ du_lieu_nhap)
       const { data: nhapData } = await db.from('du_lieu_nhap')
         .select('dlk_code, so_luong_nhap')
@@ -80,22 +88,24 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
 
       // Tính trang_thai tự động từ so_luong_nhap
       const today = todayLocal();
-      let formatted = (proposals || []).map(p => {
-        const received = nhapMap[p.dlk_code] || 0;
-        let auto_trang_thai = p.trang_thai || 'Mới';
-        if (received >= (Number(p.actual_qty) || 0) && received > 0) {
-          auto_trang_thai = 'Đã về kho đủ';
-        } else if (received > 0 && received < (Number(p.actual_qty) || 0)) {
-          auto_trang_thai = 'Đã về kho thiếu';
-        }
-        // Tính days_remaining từ ngay_du_kien nếu có
-        let days_remaining = null;
-        if (p.ngay_du_kien) {
-          const diff = Math.ceil((new Date(p.ngay_du_kien) - new Date(today)) / 86400000);
-          days_remaining = diff;
-        }
-        return { ...p, received, auto_trang_thai, days_remaining };
-      });
+      let formatted = (proposals || [])
+        .filter(p => !p.batch_id || !draftIds.has(p.batch_id))
+        .map(p => {
+          const received = nhapMap[p.dlk_code] || 0;
+          let auto_trang_thai = p.trang_thai || 'Mới';
+          if (received >= (Number(p.actual_qty) || 0) && received > 0) {
+            auto_trang_thai = 'Đã về kho đủ';
+          } else if (received > 0 && received < (Number(p.actual_qty) || 0)) {
+            auto_trang_thai = 'Đã về kho thiếu';
+          }
+          // Tính days_remaining từ ngay_du_kien nếu có
+          let days_remaining = null;
+          if (p.ngay_du_kien) {
+            const diff = Math.ceil((new Date(p.ngay_du_kien) - new Date(today)) / 86400000);
+            days_remaining = diff;
+          }
+          return { ...p, received, auto_trang_thai, days_remaining };
+        });
 
       // Filter
       if (filterStatus === 'active') {
