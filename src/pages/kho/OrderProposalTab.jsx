@@ -30,6 +30,16 @@ const BATCH_STATUS_CFG = {
   DONG:   { label:'Đóng',    bg:'#f1f5f9', color:'#475569', border:'#cbd5e1' },
 };
 
+// Trạng thái DÒNG thuộc LUỒNG MỚI (theo đợt) — trang_thai do luồng NHẬP KHO ghi
+// (CHO_HANG/DU/DONG_SOM) hoặc do Hủy đề xuất ghi (HUY). Khác hẳn nhãn tiếng Việt của
+// luồng cũ ('Mới','Đã về kho đủ','Hủy',...). Dùng để tách nhánh ghi DB / hiển thị.
+const NEW_FLOW_LINE_STATUSES = new Set(['CHO_HANG', 'DU', 'DONG_SOM', 'HUY']);
+
+// Nhãn HIỂN THỊ coi là "đã xong" (đóng) — dùng chung cho bộ lọc trạng thái, đếm active
+// và cờ isDone của từng dòng. DU hiển thị cùng nhãn 'Đã về kho đủ' như luồng cũ nên
+// không cần thêm riêng; DONG_SOM có nhãn mới 'Đóng sớm (thiếu)'.
+const DONE_DISPLAY_LABELS = ['Đã về kho đủ', 'Đóng sớm (thiếu)', 'Hủy'];
+
 // 5 mức khẩn cấp theo số ngày còn lại đến "ngày cần về kho"
 const URGENCY_CFG = [
   { max: 7,        label:'🔴 Cực gấp',  bg:'#fef2f2', color:'#dc2626', border:'#fca5a5' },
@@ -100,17 +110,34 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
         if (r.dlk_code) nhapMap[r.dlk_code] = (nhapMap[r.dlk_code] || 0) + (Number(r.so_luong_nhap) || 0);
       });
 
-      // Tính trang_thai tự động từ so_luong_nhap
+      // Tính trạng thái HIỂN THỊ (auto_trang_thai) từ trang_thai thật + so_luong_nhap.
+      // Dòng LUỒNG MỚI (CHO_HANG/DU/DONG_SOM/HUY): trang_thai là sự thật do luồng NHẬP
+      // KHO ghi (xem ImportStockTab) — ở đây CHỈ suy ra nhãn hiển thị, KHÔNG được ghi
+      // ngược lại DB (xem handleSaveRow) vì engine đợt sau đếm đúng dòng CHO_HANG để
+      // tính "hàng đang về" (shapeEngineInputs trong proposalBatch.js).
       const today = todayLocal();
       let formatted = (proposals || [])
         .filter(p => !p.batch_id || !draftIds.has(p.batch_id))
         .map(p => {
           const received = nhapMap[p.dlk_code] || 0;
-          let auto_trang_thai = p.trang_thai || 'Mới';
-          if (received >= (Number(p.actual_qty) || 0) && received > 0) {
+          const actual = Number(p.actual_qty) || 0;
+          let auto_trang_thai;
+          if (p.trang_thai === 'DU') {
             auto_trang_thai = 'Đã về kho đủ';
-          } else if (received > 0 && received < (Number(p.actual_qty) || 0)) {
-            auto_trang_thai = 'Đã về kho thiếu';
+          } else if (p.trang_thai === 'DONG_SOM') {
+            auto_trang_thai = 'Đóng sớm (thiếu)';
+          } else if (p.trang_thai === 'HUY') {
+            auto_trang_thai = 'Hủy';
+          } else if (p.trang_thai === 'CHO_HANG') {
+            auto_trang_thai = received > 0 ? 'Đã về kho thiếu' : 'Mới';
+          } else {
+            // Luồng cũ: logic hiện có, giữ nguyên.
+            auto_trang_thai = p.trang_thai || 'Mới';
+            if (received >= actual && received > 0) {
+              auto_trang_thai = 'Đã về kho đủ';
+            } else if (received > 0 && received < actual) {
+              auto_trang_thai = 'Đã về kho thiếu';
+            }
           }
           // Tính days_remaining từ ngay_du_kien nếu có
           let days_remaining = null;
@@ -123,9 +150,9 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
 
       // Filter
       if (filterStatus === 'active') {
-        formatted = formatted.filter(r => !['Đã về kho đủ','Hủy'].includes(r.auto_trang_thai));
+        formatted = formatted.filter(r => !DONE_DISPLAY_LABELS.includes(r.auto_trang_thai));
       } else if (filterStatus === 'done') {
-        formatted = formatted.filter(r => ['Đã về kho đủ','Đã về kho thiếu','Hủy'].includes(r.auto_trang_thai));
+        formatted = formatted.filter(r => [...DONE_DISPLAY_LABELS, 'Đã về kho thiếu'].includes(r.auto_trang_thai));
       }
 
       // Tồn kho hiện tại (tồn hàng hóa theo mã, gồm cả WIP SX9 — khớp tab Tồn HH)
@@ -352,13 +379,22 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
   const handleSaveRow = useCallback((row, override = {}) => {
     const merged = { ...row, ...override };
     setSaving(true);
-    const p = db.from('purchase_proposals').update({
+    const payload = {
       actual_qty: Number(merged.actual_qty) || 0,
       ngay_du_kien: merged.ngay_du_kien || null,
       tien_do: merged.tien_do,
-      trang_thai: merged.auto_trang_thai,
       note: merged.note || '',
-    }).eq('id', row.id).then(({ error }) => {
+    };
+    // trang_thai là trường LOAD-BEARING cho đợt tiếp theo: shapeEngineInputs (proposalBatch.js)
+    // đếm "hàng đang về" bằng Σ(actual_qty − received) đúng của dòng trang_thai='CHO_HANG'.
+    // Dòng LUỒNG MỚI có trang_thai do luồng NHẬP KHO ghi (ImportStockTab) — sửa note/ngày/
+    // tiến độ/SL Đặt ở màn này KHÔNG ĐƯỢC ghi đè bằng auto_trang_thai (chỉ là nhãn hiển
+    // thị kiểu 'Đã về kho thiếu'), vì sẽ làm sai số của đợt sau. Chỉ dòng LUỒNG CŨ (chưa
+    // có trang_thai mới) mới ghi trang_thai từ UI như trước.
+    if (!NEW_FLOW_LINE_STATUSES.has(row.trang_thai)) {
+      payload.trang_thai = merged.auto_trang_thai;
+    }
+    const p = db.from('purchase_proposals').update(payload).eq('id', row.id).then(({ error }) => {
       if (error) alert('Lỗi lưu: ' + error.message);
     }).finally(() => {
       pendingRef.current.delete(p);
@@ -399,7 +435,13 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
 
   const handleCancel = async (row) => {
     if (!window.confirm(`Hủy đề xuất ${row.dlk_code}?`)) return;
-    await db.from('purchase_proposals').update({ trang_thai:'Hủy', auto_trang_thai:'Hủy' }).eq('id', row.id);
+    if (NEW_FLOW_LINE_STATUSES.has(row.trang_thai)) {
+      // Luồng mới: chỉ cần đổi trang_thai='HUY' — shapeEngineInputs chỉ đếm dòng
+      // CHO_HANG nên dòng HUY tự động không góp vào "hàng đang về" của đợt sau.
+      await db.from('purchase_proposals').update({ trang_thai: 'HUY' }).eq('id', row.id);
+    } else {
+      await db.from('purchase_proposals').update({ trang_thai:'Hủy', auto_trang_thai:'Hủy' }).eq('id', row.id);
+    }
     fetchProposals();
   };
 
@@ -445,7 +487,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
     XLSX.writeFile(wb, `DLK_de_xuat_${todayLocal()}.xlsx`);
   };
 
-  const countActive = rows.filter(r => !['Đã về kho đủ','Hủy'].includes(r.auto_trang_thai)).length;
+  const countActive = rows.filter(r => !DONE_DISPLAY_LABELS.includes(r.auto_trang_thai)).length;
 
   // Lọc thêm theo tiến độ (client-side, áp lên trên bộ lọc trạng thái)
   const filteredRows = filterTienDo === 'all' ? rows : rows.filter(r => (r.tien_do || 'Mới') === filterTienDo);
@@ -694,7 +736,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                   </td></tr>
                 ) : visibleRows.map((row, i) => {
                   const tdc = TIEN_DO_COLORS[row.tien_do] || TIEN_DO_COLORS['Mới'];
-                  const isDone = ['Đã về kho đủ','Hủy'].includes(row.auto_trang_thai);
+                  const isDone = DONE_DISPLAY_LABELS.includes(row.auto_trang_thai);
                   return (
                     <tr key={row.id} style={{borderBottom:'1px solid #f1f5f9',opacity:isDone?0.65:1}} onMouseEnter={e=>e.currentTarget.style.background='#faf5ff'} onMouseLeave={e=>e.currentTarget.style.background=''}>
                       <td style={{...td,color:'#94a3b8'}}>{i+1}</td>
