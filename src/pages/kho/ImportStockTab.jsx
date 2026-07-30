@@ -727,7 +727,10 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
           for (const p of newFlowRows) {
             const actual = Number(p.actual_qty) || 0;
             if (p.received >= actual) {
-              const { error } = await db.from('purchase_proposals').update({ trang_thai: 'DU' }).eq('id', p.id);
+              // Guard CHO_HANG: nếu người khác vừa Huỷ/Đóng sớm dòng này ở màn khác,
+              // không được ghi đè lịch sử thành 'DU' — cùng mẫu guard với sendBatch/closeBatchIfDone.
+              const { error } = await db.from('purchase_proposals').update({ trang_thai: 'DU' })
+                .eq('id', p.id).eq('trang_thai', 'CHO_HANG');
               if (!error) {
                 autoClosedCount++;
                 if (p.batch_id) batchesToCheck.add(p.batch_id);

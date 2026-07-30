@@ -1,5 +1,11 @@
+-- ⛔ ĐỪNG CHẠY LẠI TỆP NÀY. Bảng đã tồn tại trên production.
+-- Phần GRANT/POLICY cuối tệp thuộc thời kỳ app còn dùng anon key: chạy lại sẽ
+-- cấp lại quyền cho anon và HOÀN TÁC đợt siết bảo mật 29/07/2026 (bảng archive
+-- hiện chỉ còn authenticated, policy chi_nguoi_dang_nhap). Đã đo bằng khoá công
+-- khai: 42501 permission denied — phải giữ nguyên như vậy.
+--
 -- Lưu trữ đề xuất đã đóng (khi về thiếu, chọn "Đóng & tạo mới") — để truy xuất khi cần.
--- Chạy 1 lần trên Supabase SQL editor TRƯỚC khi deploy app.
+-- (Lịch sử: từng chạy 1 lần trên Supabase SQL editor trước khi deploy app.)
 CREATE TABLE IF NOT EXISTS public.purchase_proposals_archive (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   orig_id            UUID,
