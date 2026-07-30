@@ -87,6 +87,22 @@ describe('shapeEngineInputs — nắn dữ liệu thô thành đầu vào cho en
     expect(shapeEngineInputs(r).onOrderMap['LK-X']).toBeUndefined();
   });
 
+  it('chỉ dòng CHO_HANG mới tính là hàng đang về — dòng đã đóng thì bỏ qua', () => {
+    const r = {
+      ...raw,
+      openProposals: [
+        { item_code: 'LK-X', actual_qty: 100, dlk_code: 'DX-01-001', trang_thai: 'CHO_HANG' },
+        { item_code: 'LK-Y', actual_qty: 200, dlk_code: 'DX-01-002', trang_thai: 'DU' },
+        { item_code: 'LK-Z', actual_qty: 300, dlk_code: 'DX-01-003', trang_thai: 'DONG_SOM' },
+      ],
+      nhapRows: [{ dlk_code: 'DX-01-001', so_luong_nhap: 40 }],
+    };
+    const { onOrderMap } = shapeEngineInputs(r);
+    expect(onOrderMap['LK-X']).toBe(60);          // CHO_HANG, còn 100 − 40
+    expect(onOrderMap['LK-Y']).toBeUndefined();   // DU → không tính
+    expect(onOrderMap['LK-Z']).toBeUndefined();   // DONG_SOM → không tính
+  });
+
   it('bomMap gom nhiều dòng cùng cha, giữ cả dòng trùng', () => {
     const r = { ...raw, bomRows: [
       { product_code: 'MAY-A', component_code: 'LK-X', quantity: 2 },
