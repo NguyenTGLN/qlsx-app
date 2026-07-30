@@ -269,7 +269,10 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
     if (reason === 'Nhập mua vào') {
       db.from('purchase_proposals')
         .select('dlk_code, item_code, item_name, actual_qty, unit')
-        .not('trang_thai', 'in', '("Đã về kho đủ","Hủy")')
+        // Loại cả nhãn cũ ('Đã về kho đủ'/'Hủy') lẫn trạng thái LUỒNG MỚI đã xong:
+        // DU (nhận đủ), HUY (đã hủy), DONG_SOM (đóng sớm — phần thiếu tự quay lại ở
+        // đợt sau, KHÔNG còn nhận thêm được nữa nên cũng phải loại khỏi danh sách).
+        .not('trang_thai', 'in', '("Đã về kho đủ","Hủy","DU","DONG_SOM","HUY")')
         .order('dlk_code', { ascending: false })
         .then(({ data }) => setOpenDlkList(data || []));
     }
