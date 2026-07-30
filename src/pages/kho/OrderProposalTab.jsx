@@ -7,7 +7,7 @@ import { computeNeededDates, loadComponentStock } from '../../lib/dksxEngine';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { ColumnToggleModal } from '../../components/WarehouseSharedUI';
 import { useAuth } from '../../lib/AuthContext';
-import { runProposalDraft, sendBatch, discardDraft, getCurrentDraft, listBatches } from '../../lib/proposalBatch';
+import { runProposalDraft, sendBatch, discardDraft, getCurrentDraft, listBatches, closeBatchIfDone } from '../../lib/proposalBatch';
 
 // Các cột data có thể ẩn/hiện (cột "#" và "Thao tác" luôn hiện)
 const TABLE_COLS = ['urgency','dlk_code','san_pham','unit','ngay_de_xuat','ngay_du_kien','needed_ts','stock_now','calculated_qty','actual_qty','received','con_lai','tien_do','note'];
@@ -442,12 +442,22 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
     } else {
       await db.from('purchase_proposals').update({ trang_thai:'Hủy', auto_trang_thai:'Hủy' }).eq('id', row.id);
     }
+    // Dòng vừa rời CHO_HANG (huỷ) có thể là dòng CHO_HANG cuối cùng của đợt — kiểm và
+    // đóng đợt nếu đúng vậy. closeBatchIfDone tự guard DA_GUI nên gọi vô hại kể cả với
+    // batch_id của dòng LUỒNG CŨ (không khớp đợt nào ở trạng thái DA_GUI thì không đổi gì).
+    if (row.batch_id) {
+      try { await closeBatchIfDone(row.batch_id); } catch (e) { console.error('Lỗi đóng đợt:', e); }
+    }
     fetchProposals();
   };
 
   const handleDelete = async (row) => {
     if (!window.confirm(`Xóa vĩnh viễn đề xuất ${row.dlk_code}?`)) return;
     await db.from('purchase_proposals').delete().eq('id', row.id);
+    // Dòng vừa bị xoá có thể là dòng CHO_HANG cuối cùng của đợt — cùng lý do handleCancel.
+    if (row.batch_id) {
+      try { await closeBatchIfDone(row.batch_id); } catch (e) { console.error('Lỗi đóng đợt:', e); }
+    }
     fetchProposals();
   };
 

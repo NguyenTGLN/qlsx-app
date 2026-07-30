@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase as db } from '../../lib/supabase';
 import { todayLocal } from '../../lib/dateUtils';
 import { Loader2, RefreshCw, Factory, Trash2, ChevronDown, ChevronRight, Plus, Pencil, X, Search } from 'lucide-react';
-import { loadBomMap, loadComponentStock, loadComponentStockExclWip, recomputeProposals } from '../../lib/dksxEngine';
+import { loadBomMap, loadComponentStock, loadComponentStockExclWip } from '../../lib/dksxEngine';
 import { computeReplenishQty } from '../../lib/mrp';
 
 const s = {
@@ -285,11 +285,11 @@ export default function DKSXTab({ navigateTo, perms = { view: true, create: true
   };
 
   const handleCancel = async (row) => {
-    if (!window.confirm(`Hủy nhu cầu sản xuất ${row.item_code}?\nCác đề xuất đặt linh kiện (DLK) còn ở trạng thái "Mới" liên quan sẽ được tính lại theo nhu cầu mới.`)) return;
+    // Đã bỏ recomputeProposals() ở đây (engine cũ, chèn dòng không có batch_id — sau khi
+    // cắt sang mô hình theo đợt sẽ vướng ràng buộc khoá ngoại). Đề xuất linh kiện giờ chỉ
+    // tính lại khi bấm "Chạy đề xuất" ở tab Đề xuất — nói rõ điều đó thay vì hứa tự tính lại.
+    if (!window.confirm(`Hủy nhu cầu sản xuất ${row.item_code}?\nNhu cầu linh kiện (DLK) sẽ được tính lại vào lần "Chạy đề xuất" kế tiếp ở tab Đề xuất, không tự tính lại ngay ở đây.`)) return;
     await db.from('production_demand').update({ qty_demand: 0, trang_thai: 'Hủy' }).eq('id', row.id);
-    // Hủy DKSX → tính lại đề xuất linh kiện: dòng DLK 'Mới' của khối lượng vừa hủy sẽ tự biến mất,
-    // các DLK đã đặt mua/đang xử lý vẫn giữ nguyên (cam kết với bên mua hàng).
-    try { await recomputeProposals(); } catch (e) { console.warn('Không tính lại được đề xuất sau khi hủy DKSX:', e.message); }
     fetchData();
   };
 

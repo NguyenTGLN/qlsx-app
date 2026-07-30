@@ -103,6 +103,19 @@ describe('shapeEngineInputs — nắn dữ liệu thô thành đầu vào cho en
     expect(onOrderMap['LK-Z']).toBeUndefined();   // DONG_SOM → không tính
   });
 
+  it('bỏ qua dòng của chính đợt nháp đang chạy lại — không tự trừ mình', () => {
+    const r = {
+      ...raw,
+      openProposals: [
+        { item_code: 'LK-X', actual_qty: 90, dlk_code: 'DX-01-001', trang_thai: 'CHO_HANG', batch_id: 'nhap-1' },
+        { item_code: 'LK-X', actual_qty: 40, dlk_code: 'DLK-9', trang_thai: 'CHO_HANG', batch_id: 'dot-cu' },
+      ],
+      nhapRows: [],
+      excludeBatchId: 'nhap-1',
+    };
+    expect(shapeEngineInputs(r).onOrderMap['LK-X']).toBe(40);   // chỉ đợt cũ được tính
+  });
+
   it('bomMap gom nhiều dòng cùng cha, giữ cả dòng trùng', () => {
     const r = { ...raw, bomRows: [
       { product_code: 'MAY-A', component_code: 'LK-X', quantity: 2 },

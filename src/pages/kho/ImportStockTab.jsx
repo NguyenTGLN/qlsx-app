@@ -9,13 +9,17 @@ import { splitAggIntoLogRows } from '../../lib/importLogRows';
 import { staffIdOf } from '../../lib/receiptSigner';
 import { getSessionUser } from '../../lib/authToken';
 import { newDocToken, claimDocToken, setDocTokenOrderCode, releaseDocToken } from '../../lib/docGuard';
+import { closeBatchIfDone } from '../../lib/proposalBatch';
 import AddCatalogItemModal from '../../components/AddCatalogItemModal';
 import WarehouseReceiptPrint from '../../components/WarehouseReceiptPrint';
 
 // Trạng thái dòng đề xuất thuộc LUỒNG MỚI (theo đợt) — trang_thai do luồng NHẬP KHO này
-// ghi trực tiếp (CHO_HANG/DU/DONG_SOM), khác hẳn nhãn tiếng Việt của luồng cũ ('Mới',
-// 'Đã về kho đủ', 'Hủy',...). Dùng để tách nhánh xử lý sau khi lưu phiếu nhập.
-const NEW_FLOW_STATUSES = new Set(['CHO_HANG', 'DU', 'DONG_SOM']);
+// (hoặc màn Đề xuất) ghi trực tiếp (CHO_HANG/DU/DONG_SOM/HUY), khác hẳn nhãn tiếng Việt
+// của luồng cũ ('Mới', 'Đã về kho đủ', 'Hủy',...). Dùng để tách nhánh xử lý sau khi lưu
+// phiếu nhập. Có HUY: dòng luồng mới bị hủy (từ tab Đề xuất) phải đi đúng nhánh này —
+// thiếu HUY thì rơi vào nhánh luồng cũ và gọi closeProposalWithShortfall, hàm này chết
+// trên ràng buộc khoá ngoại (FK) vì lược đồ đã cắt sang mô hình mới.
+const NEW_FLOW_STATUSES = new Set(['CHO_HANG', 'DU', 'DONG_SOM', 'HUY']);
 
 const IMPORT_TYPES = [
   { id: 'Nhập mới', label: 'Nhập mới', icon: Plus, color: '#3b82f6' },
@@ -267,14 +271,24 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
   // Load danh sách DLK đang mở khi chọn "Nhập mua vào"
   useEffect(() => {
     if (reason === 'Nhập mua vào') {
-      db.from('purchase_proposals')
-        .select('dlk_code, item_code, item_name, actual_qty, unit')
-        // Loại cả nhãn cũ ('Đã về kho đủ'/'Hủy') lẫn trạng thái LUỒNG MỚI đã xong:
-        // DU (nhận đủ), HUY (đã hủy), DONG_SOM (đóng sớm — phần thiếu tự quay lại ở
-        // đợt sau, KHÔNG còn nhận thêm được nữa nên cũng phải loại khỏi danh sách).
-        .not('trang_thai', 'in', '("Đã về kho đủ","Hủy","DU","DONG_SOM","HUY")')
-        .order('dlk_code', { ascending: false })
-        .then(({ data }) => setOpenDlkList(data || []));
+      (async () => {
+        // Đợt còn NHÁP (chưa gửi) — dòng CHO_HANG của đợt này KHÔNG được cho nhận hàng:
+        // "Chạy lại" có thể xoá/thay dòng này bất cứ lúc nào trước khi Gửi, kho nhận hàng
+        // vào một dòng chưa được duyệt là nhận vào một cam kết chưa từng tồn tại chính
+        // thức. Cùng lý do OrderProposalTab.fetchProposals lọc theo draftIds — lọc bằng
+        // JS sau khi fetch (không dùng .not('batch_id','in',...) của PostgREST vì danh
+        // sách rỗng sẽ làm lỗi cú pháp, giống lý do đã ghi ở OrderProposalTab).
+        const { data: draftBatches } = await db.from('proposal_batches').select('id').eq('trang_thai', 'NHAP');
+        const draftIds = new Set((draftBatches || []).map(b => b.id));
+        const { data } = await db.from('purchase_proposals')
+          .select('dlk_code, item_code, item_name, actual_qty, unit, batch_id')
+          // Loại cả nhãn cũ ('Đã về kho đủ'/'Hủy') lẫn trạng thái LUỒNG MỚI đã xong:
+          // DU (nhận đủ), HUY (đã hủy), DONG_SOM (đóng sớm — phần thiếu tự quay lại ở
+          // đợt sau, KHÔNG còn nhận thêm được nữa nên cũng phải loại khỏi danh sách).
+          .not('trang_thai', 'in', '("Đã về kho đủ","Hủy","DU","DONG_SOM","HUY")')
+          .order('dlk_code', { ascending: false });
+        setOpenDlkList((data || []).filter(r => !r.batch_id || !draftIds.has(r.batch_id)));
+      })();
     }
   }, [reason]);
 
@@ -727,16 +741,14 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
           }
 
           // Đợt đã hết dòng CHO_HANG thì tự đóng — chỉ đóng đợt đang ĐÃ GỬI, không đụng NHÁP/đã ĐÓNG.
+          // closeBatchIfDone tự kiểm còn dòng CHO_HANG hay không rồi mới đóng (proposalBatch.js).
           let batchClosedCount = 0;
           for (const batchId of batchesToCheck) {
-            const { data: remaining } = await db.from('purchase_proposals')
-              .select('id').eq('batch_id', batchId).eq('trang_thai', 'CHO_HANG').limit(1);
-            if (!remaining || remaining.length === 0) {
-              const { data: closedBatch, error: closeErr } = await db.from('proposal_batches')
-                .update({ trang_thai: 'DONG', ngay_dong: new Date().toISOString() })
-                .eq('id', batchId).eq('trang_thai', 'DA_GUI').select();
-              if (closeErr) console.error('Lỗi đóng đợt:', closeErr);
-              else if (closedBatch && closedBatch.length > 0) batchClosedCount++;
+            try {
+              const { daDong } = await closeBatchIfDone(batchId);
+              if (daDong > 0) batchClosedCount++;
+            } catch (e) {
+              console.error('Lỗi đóng đợt:', e);
             }
           }
 
@@ -792,15 +804,8 @@ export default function ImportStockTab({ dlkPrefill, onDlkConsumed, onImportComp
       const { error } = await db.from('purchase_proposals').update({ trang_thai: 'DONG_SOM' }).eq('id', row.id);
       if (error) throw error;
       if (row.batch_id) {
-        const { data: remaining } = await db.from('purchase_proposals')
-          .select('id').eq('batch_id', row.batch_id).eq('trang_thai', 'CHO_HANG').limit(1);
-        if (!remaining || remaining.length === 0) {
-          const { data: closedBatch, error: closeErr } = await db.from('proposal_batches')
-            .update({ trang_thai: 'DONG', ngay_dong: new Date().toISOString() })
-            .eq('id', row.batch_id).eq('trang_thai', 'DA_GUI').select();
-          if (closeErr) console.error('Lỗi đóng đợt:', closeErr);
-          else if (closedBatch && closedBatch.length > 0) alert('Mọi dòng của đợt đã xong — đợt được đóng.');
-        }
+        const { daDong } = await closeBatchIfDone(row.batch_id);
+        if (daDong > 0) alert('Mọi dòng của đợt đã xong — đợt được đóng.');
       }
       setShortfallRows(prev => prev.map(r => r.id === row.id ? { ...r, _resolved: 'close' } : r));
     } catch (e) {

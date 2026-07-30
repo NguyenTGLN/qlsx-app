@@ -35,6 +35,7 @@ const num = (v) => Number(v) || 0;
 // có bán 90 ngày không còn dòng tồn nào, nặng nhất FK-RO50 bán 165 cái/90 ngày.
 export function shapeEngineInputs({
   sales = [], catalog = [], bomRows = [], stockRows = [], openProposals = [], nhapRows = [],
+  excludeBatchId,
 } = {}) {
   const dict = {};
   catalog.forEach((c) => { dict[c.item_code] = c; });
@@ -81,6 +82,11 @@ export function shapeEngineInputs({
   const onOrderMap = {};
   openProposals.forEach((p) => {
     if (p.trang_thai !== 'CHO_HANG') return;
+    // "Chạy lại" đọc dữ liệu TRƯỚC khi xoá dòng của chính đợt NHÁP đang chạy lại (xem
+    // runProposalDraft) — nếu không loại trừ ở đây, dòng CHO_HANG của chính đợt đó bị
+    // tính như "hàng đang về", engine trừ luôn số của chính nó ra khỏi nhu cầu, chạy lại
+    // 2 lần liên tiếp ra 0 dòng. excludeBatchId = id đợt NHÁP đang chạy lại (nếu có).
+    if (excludeBatchId && p.batch_id === excludeBatchId) return;
     const conLai = Math.max(0, num(p.actual_qty) - (daNhap[p.dlk_code] || 0));
     if (conLai > 0) onOrderMap[p.item_code] = (onOrderMap[p.item_code] || 0) + conLai;
   });
@@ -102,16 +108,18 @@ async function pagedAll(table, cols) {
 }
 
 // Đọc CSDL rồi giao cho shapeEngineInputs nắn. Lớp mỏng, không có logic.
-export async function loadEngineInputs() {
+// excludeBatchId: truyền id đợt NHÁP đang chạy lại (nếu có) để shapeEngineInputs loại
+// dòng CHO_HANG của chính đợt đó khỏi "hàng đang về" — xem runProposalDraft.
+export async function loadEngineInputs(excludeBatchId) {
   const [sales, catalog, bomRows, stockRows, openProposals, nhapRows] = await Promise.all([
     pagedAll('sales_90d_summary', 'ma_san_pham, total_sales'),
     pagedAll('inventory_items', 'item_code, item_name, unit, lead_time_days, backup_stock_days'),
     pagedAll('bom_items', 'product_code, component_code, quantity'),
     pagedAll('inventory_stock', 'item_code, quantity'),
-    pagedAll('purchase_proposals', 'item_code, actual_qty, dlk_code, trang_thai'),
+    pagedAll('purchase_proposals', 'item_code, actual_qty, dlk_code, trang_thai, batch_id'),
     pagedAll('du_lieu_nhap', 'dlk_code, so_luong_nhap'),
   ]);
-  return shapeEngineInputs({ sales, catalog, bomRows, stockRows, openProposals, nhapRows });
+  return shapeEngineInputs({ sales, catalog, bomRows, stockRows, openProposals, nhapRows, excludeBatchId });
 }
 
 // Đợt NHÁP đang mở (tối đa 1 theo chỉ mục proposal_batches_one_draft). null nếu không có.
@@ -126,10 +134,14 @@ export async function getCurrentDraft() {
 // Ghi đè giữ nguyên id và ma_dot, chỉ thay toàn bộ dòng — chạy thử lại nhiều lần
 // không đốt số thứ tự đợt.
 export async function runProposalDraft(nguoiTao) {
-  const inputs = await loadEngineInputs();
+  // Lấy đợt NHÁP hiện tại TRƯỚC khi đọc dữ liệu engine, rồi loại trừ đúng đợt đó khỏi
+  // "hàng đang về" (excludeBatchId) — nếu đọc trước rồi mới xoá dòng cũ, dòng CHO_HANG
+  // của chính đợt đang chạy lại bị engine đếm nhầm thành hàng đang về của chính nó,
+  // khiến "Chạy lại" lần 2 trừ luôn số của lần 1, có thể ra 0 dòng. Xem shapeEngineInputs.
+  let batch = await getCurrentDraft();
+  const inputs = await loadEngineInputs(batch?.id);
   const { lines, missingParams } = buildProposalLines(inputs);
 
-  let batch = await getCurrentDraft();
   // Xoá-rồi-chèn không transactional: nếu crash giữa chừng, đợt NHÁP còn lại rỗng dòng
   // — không mất gì, và lượt chạy kế tiếp tự vá (đi vào nhánh if(batch) này, xoá 0 dòng
   // rồi chèn lại đủ). Cố ý để vậy, không cần transaction cho luồng một người dùng bình thường.
@@ -205,4 +217,20 @@ export async function listBatches(limit = 50) {
     .select('*').order('created_at', { ascending: false }).limit(limit);
   if (error) throw error;
   return data || [];
+}
+
+// Đóng đợt nếu không còn dòng CHO_HANG nào. Gọi sau MỌI hành động làm một dòng
+// rời trạng thái CHO_HANG (nhập đủ, đóng sớm, huỷ, xoá). Guard DA_GUI: không bao
+// giờ đụng đợt NHAP hay đợt đã DONG. Trả { daDong }.
+export async function closeBatchIfDone(batchId) {
+  if (!batchId) return { daDong: 0 };
+  const { data: conLai, error } = await db.from('purchase_proposals')
+    .select('id').eq('batch_id', batchId).eq('trang_thai', 'CHO_HANG').limit(1);
+  if (error) throw error;
+  if ((conLai || []).length > 0) return { daDong: 0 };
+  const { data, error: e2 } = await db.from('proposal_batches')
+    .update({ trang_thai: 'DONG', ngay_dong: new Date().toISOString() })
+    .eq('id', batchId).eq('trang_thai', 'DA_GUI').select();
+  if (e2) throw e2;
+  return { daDong: (data || []).length };
 }
