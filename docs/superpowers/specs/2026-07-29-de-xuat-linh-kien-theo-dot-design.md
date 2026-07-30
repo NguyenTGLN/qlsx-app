@@ -93,7 +93,30 @@ Cột `batch_id` đã tồn tại trên `purchase_proposals` nhưng **chưa từ
 
 ### 4.1. Nhu cầu gốc
 
-Nguồn: RPC `get_stock_summary` (đã có). Chỉ lấy mã có `total_sales_90d > 0`.
+**Gốc là `sales_90d_summary` — dữ liệu bán 90 ngày gần nhất. KHÔNG phải bảng tồn kho.**
+
+Lý do (user chốt 29/07/2026): theo quy trình, mã nào tồn về 0 thì **bị xoá dòng khỏi tồn
+sổ sách, tồn vị trí và tồn hàng hoá cho gọn bảng**. Dữ liệu bán 90 ngày thì vẫn còn.
+Nên nếu đi từ bảng tồn kho, đúng những mã đã bán sạch — thứ cần đặt gấp nhất — lại là
+thứ biến mất khỏi danh sách.
+
+Đo thật: 19 mã có bán trong 90 ngày không còn dòng tồn kho nào, nặng nhất `FK-RO50`
+(Màng RO50 liền) bán 165 cái/90 ngày, đã từng nhập kho 7 lần, khai lead 70 ngày và an
+toàn 30 ngày — đủ tham số, chỉ là không ai nhìn thấy nó.
+
+```
+Danh sách gốc  = mọi mã trong sales_90d_summary có total_sales > 0
+Tham số        = lead_time_days, backup_stock_days từ inventory_items
+Tồn kho        = LEFT JOIN inventory_stock, không có dòng ⇒ tồn = 0
+```
+
+Tác động đo được: 100 → **112 dòng**, 30.752 → **31.441 đơn vị**.
+
+RPC `get_stock_summary` **giữ nguyên** — nó vẫn phục vụ tab Tồn HH như cũ, không đụng tới.
+Engine tự dựng danh sách bằng truy vấn riêng.
+
+Mã nguồn `src/lib/mrp.js` **không phải sửa**: `buildProposalLines` nhận `items` từ nơi
+gọi truyền vào, nó không tự đi lấy dữ liệu. Chỉ nơi gọi ở giai đoạn 2 đổi nguồn.
 
 ```
 TB bán/ngày  = total_sales_90d ÷ 90
@@ -401,12 +424,23 @@ Giai đoạn 4 là bước duy nhất chạm dữ liệu đang dùng. Trước k
 Phát hiện trong lúc làm giai đoạn 1. Cả bốn đều đổi thứ được lưu xuống cơ sở dữ liệu,
 nên phải quyết trước khi dựng bảng, không phải sau.
 
-**1. `get_stock_summary` bỏ sót mã không có dòng tồn kho.** RPC dựng
-`FROM inventory_stock`. Đo thật: 19 mã **có bán 90 ngày** nhưng không có dòng tồn kho
-nào ⇒ engine không hề biết tới, không bao giờ đề xuất. Nặng nhất `FK-RO50` bán 165
-cái/90 ngày. Thêm 91 linh kiện trong BOM cũng không có dòng tồn ⇒ nếu vào danh sách
-mua sẽ mang tên và đơn vị tính **rỗng**. Sửa RPC thì đụng cột "Cần Bổ Sung" của tab
-Tồn HH đang chạy, nên phải hỏi trước.
+**1. ✅ ĐÃ CHỐT 29/07/2026 — engine lấy gốc từ `sales_90d_summary`, không từ bảng tồn kho.**
+
+Vấn đề: RPC `get_stock_summary` dựng `FROM inventory_stock`, mà theo quy trình thì mã nào
+tồn về 0 sẽ **bị xoá dòng khỏi tồn sổ sách / tồn vị trí / tồn hàng hoá cho gọn bảng**.
+Nên 19 mã có bán trong 90 ngày không còn dòng tồn nào ⇒ engine không hề biết tới.
+
+Quyết định: **giữ nguyên RPC** (tab Tồn HH không đổi gì), engine tự dựng danh sách gốc từ
+`sales_90d_summary`, lấy tham số từ `inventory_items`, lấy tồn bằng LEFT JOIN — không có
+dòng thì tồn = 0. Chi tiết ở mục 4.1. Tác động: 100 → 112 dòng, 30.752 → 31.441 đơn vị.
+
+Còn lại phải xử lý ở giai đoạn 2: 15/19 mã đã khai đủ lead_time và thời gian an toàn, **4 mã
+chưa khai** (`HM-KTM1`, `HM-KTM2`, `HM-KTM5`, `BHM-NAP-DE-BTH101T`) — chúng sẽ tự rơi vào
+`missingParams` và hiện lên đầu màn hình để người dùng khai bổ sung. Đó là hành vi đúng,
+không cần sửa mã.
+
+Riêng 91 linh kiện trong BOM không có dòng tồn: đo trên kết quả thật, **0 dòng** bị tên rỗng,
+vì các mã đó vẫn có trong `inventory_items`. Vẫn nên chốt chặn ở giai đoạn 2 để không lọt.
 
 **2. `retail_qty` / `bom_qty` đụng ý nghĩa cũ.** Bảng `purchase_proposals` hiện dùng hai
 cột này với nghĩa "số lượng mua". Engine mới dùng chúng với nghĩa "phần nhu cầu gộp
