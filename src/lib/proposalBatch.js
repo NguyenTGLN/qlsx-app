@@ -1,6 +1,10 @@
 // Đọc-ghi Supabase cho ĐỢT đề xuất linh kiện. Phần tính toán thuần nằm ở mrp.js.
 // Xem spec: docs/superpowers/specs/2026-07-29-de-xuat-linh-kien-theo-dot-design.md
 
+import { supabase as db } from './supabase';
+import { buildProposalLines } from './mrp';
+import { todayLocal } from './dateUtils';
+
 // Mã đợt: DX-DDMMYY-NN. Đổi '2026-07-29' → '290726'.
 function dateTag(isoDate) {
   const [y, m, d] = String(isoDate).split('-');
@@ -82,4 +86,103 @@ export function shapeEngineInputs({
   });
 
   return { items, bomMap, stockMap, onOrderMap };
+}
+
+// Lấy tất cả dòng, vượt trần 1000 dòng của PostgREST. Giống loadBomMap ở dksxEngine.
+async function pagedAll(table, cols) {
+  let rows = [], p = 0;
+  while (true) {
+    const { data, error } = await db.from(table).select(cols).range(p * 1000, (p + 1) * 1000 - 1);
+    if (error) throw error;
+    rows = rows.concat(data || []);
+    if (!data || data.length < 1000) break;
+    p++;
+  }
+  return rows;
+}
+
+// Đọc CSDL rồi giao cho shapeEngineInputs nắn. Lớp mỏng, không có logic.
+export async function loadEngineInputs() {
+  const [sales, catalog, bomRows, stockRows, openProposals, nhapRows] = await Promise.all([
+    pagedAll('sales_90d_summary', 'ma_san_pham, total_sales'),
+    pagedAll('inventory_items', 'item_code, item_name, unit, lead_time_days, backup_stock_days'),
+    pagedAll('bom_items', 'product_code, component_code, quantity'),
+    pagedAll('inventory_stock', 'item_code, quantity'),
+    pagedAll('purchase_proposals', 'item_code, actual_qty, dlk_code, trang_thai'),
+    pagedAll('du_lieu_nhap', 'dlk_code, so_luong_nhap'),
+  ]);
+  return shapeEngineInputs({ sales, catalog, bomRows, stockRows, openProposals, nhapRows });
+}
+
+// Đợt NHÁP đang mở (tối đa 1 theo chỉ mục proposal_batches_one_draft). null nếu không có.
+export async function getCurrentDraft() {
+  const { data, error } = await db.from('proposal_batches')
+    .select('*').eq('trang_thai', 'NHAP').maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+// Chạy đề xuất → tạo hoặc GHI ĐÈ đợt NHÁP.
+// Ghi đè giữ nguyên id và ma_dot, chỉ thay toàn bộ dòng — chạy thử lại nhiều lần
+// không đốt số thứ tự đợt.
+export async function runProposalDraft(nguoiTao) {
+  const inputs = await loadEngineInputs();
+  const { lines, missingParams } = buildProposalLines(inputs);
+
+  let batch = await getCurrentDraft();
+  if (batch) {
+    const { error } = await db.from('purchase_proposals').delete().eq('batch_id', batch.id);
+    if (error) throw error;
+  } else {
+    const { data: existing } = await db.from('proposal_batches').select('ma_dot');
+    const ma_dot = nextBatchCode((existing || []).map((r) => r.ma_dot), todayLocal());
+    const { data, error } = await db.from('proposal_batches')
+      .insert({ ma_dot, ngay_chay: todayLocal(), trang_thai: 'NHAP', nguoi_tao: nguoiTao || '' })
+      .select().single();
+    if (error) throw error;
+    batch = data;
+  }
+
+  const today = todayLocal();
+  const rows = lines.map((l, i) => ({
+    ...l,
+    batch_id: batch.id,
+    dlk_code: `${batch.ma_dot}-${String(i + 1).padStart(3, '0')}`,
+    ngay_de_xuat: today,
+    tien_do: 'Mới',
+    trang_thai: 'CHO_HANG',
+    source: l.bom_qty > 0 && l.retail_qty > 0 ? 'both' : (l.retail_qty > 0 ? 'retail' : 'bom'),
+    note: '',
+  }));
+  if (rows.length) {
+    const { error } = await db.from('purchase_proposals').insert(rows);
+    if (error) throw error;
+  }
+  return { batch, soDong: rows.length, missingParams };
+}
+
+// Gửi đợt: NHÁP → ĐÃ GỬI. Từ đây calculated_qty khoá, chỉ actual_qty còn sửa được.
+// Điều kiện .eq('trang_thai','NHAP') để hai người bấm cùng lúc chỉ một lệnh ăn.
+export async function sendBatch(batchId, nguoiGui) {
+  const { error } = await db.from('proposal_batches').update({
+    trang_thai: 'DA_GUI', nguoi_gui: nguoiGui || '', ngay_gui: new Date().toISOString(),
+  }).eq('id', batchId).eq('trang_thai', 'NHAP');
+  if (error) throw error;
+}
+
+// Huỷ nháp: xoá dòng rồi xoá đợt. Chỉ khi còn là NHÁP.
+export async function discardDraft(batchId) {
+  const { error: e1 } = await db.from('purchase_proposals').delete().eq('batch_id', batchId);
+  if (e1) throw e1;
+  const { error } = await db.from('proposal_batches')
+    .delete().eq('id', batchId).eq('trang_thai', 'NHAP');
+  if (error) throw error;
+}
+
+// Danh sách đợt, mới nhất trước.
+export async function listBatches(limit = 50) {
+  const { data, error } = await db.from('proposal_batches')
+    .select('*').order('created_at', { ascending: false }).limit(limit);
+  if (error) throw error;
+  return data || [];
 }
