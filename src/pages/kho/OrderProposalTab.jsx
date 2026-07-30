@@ -160,7 +160,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
   const [draftBusy, setDraftBusy] = useState(false);                    // đang Chạy/Gửi/Huỷ — chặn bấm chồng
   const [draftSaving, setDraftSaving] = useState(false);                // đang lưu SL Đặt của 1 dòng nháp
   const [viewMode, setViewMode] = useState('committed');                // 'committed' (bảng chính) | 'draft' (bảng nháp)
-  const [missingParams, setMissingParams] = useState([]);               // mã thiếu lead time/an toàn ở lần Chạy gần nhất
+  const [missingParams, setMissingParams] = useState([]);               // mã thiếu lead time/an toàn — fetchDraft() tính lại từ danh mục mỗi lần gọi
   const [expandedDraft, setExpandedDraft] = useState(() => new Set());  // dòng nháp đang mở xem cách tính
   const [batchListOpen, setBatchListOpen] = useState(false);
   const [batchListRows, setBatchListRows] = useState([]);
@@ -182,6 +182,23 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
       } else {
         setDraftLines([]);
       }
+
+      // Tính lại danh sách mã thiếu tham số TỪ DỮ LIỆU, không giữ trong state phiên.
+      // Nếu chỉ nhớ giá trị trả về của lần chạy, tải lại trang là cảnh báo biến mất
+      // trong khi đợt vẫn thiếu đúng những mã đó — cảnh báo mất mà lỗi còn nguyên.
+      const { data: dm } = await db.from('inventory_items')
+        .select('item_code, lead_time_days, backup_stock_days');
+      const thieu = (dm || [])
+        .filter(i => {
+          const lt = Number(i.lead_time_days) || 0;
+          const bs = Number(i.backup_stock_days) || 0;
+          return lt < 0 || bs < 0 || (lt === 0 && bs === 0);
+        })
+        .map(i => i.item_code);
+      // Chỉ réo những mã CÓ bán 90 ngày — mã không bán thì không cần tham số.
+      const { data: bans } = await db.from('sales_90d_summary').select('ma_san_pham');
+      const coBan = new Set((bans || []).map(r => r.ma_san_pham));
+      setMissingParams(thieu.filter(c => coBan.has(c)));
     } catch (e) {
       console.error(e);
       alert('Lỗi tải bản nháp: ' + e.message);
@@ -250,8 +267,9 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
     setDraftBusy(true);
     try {
       const nguoiTao = (user && (user.name || user.id)) || '';
-      const { missingParams: mp } = await runProposalDraft(nguoiTao);
-      setMissingParams(mp || []);
+      // missingParams không lấy từ giá trị trả về nữa — fetchDraft() bên dưới tự tính
+      // lại TỪ DỮ LIỆU (bảng danh mục), nên cảnh báo còn sống sót qua lần tải lại trang.
+      await runProposalDraft(nguoiTao);
       await fetchDraft();
       setViewMode('draft');
     } catch (e) {
@@ -275,7 +293,8 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
         await fetchDraft();
         return;
       }
-      setMissingParams([]);
+      // Không tự setMissingParams([]) ở đây — fetchDraft() ngay dưới tính lại từ danh
+      // mục thật, gán rỗng trước sẽ chỉ nhấp nháy rồi bị ghi đè, không có tác dụng gì.
       setViewMode('committed');
       await fetchDraft();
     } catch (e) {
@@ -301,7 +320,7 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
         await fetchProposals();
         return;
       }
-      setMissingParams([]);
+      // Không tự setMissingParams([]) ở đây, cùng lý do như handleDiscardDraft.
       setViewMode('committed');
       await fetchDraft();
       await fetchProposals();
@@ -537,7 +556,10 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
                 <Ban size={12}/>Huỷ nháp
               </button>
             )}
-            {perms.create && (
+            {/* Gửi là cam kết mua hàng thật, khác Chạy (chỉ tính toán, Chạy lại vô hại
+                bất cứ lúc nào) — nên siết chặt hơn: phải có CẢ create lẫn edit, không
+                dùng chung mỗi quyền create với 2 nút Chạy ở trên. */}
+            {perms.create && perms.edit && (
               <button onClick={handleSendDraft} disabled={draftBusy} title="Gửi đợt này sang danh sách theo dõi đặt hàng" style={{...s.btn,padding:'0.3rem 0.55rem',fontSize:'0.7rem',color:'#fff',background:'#16a34a',border:'none',whiteSpace:'nowrap'}}>
                 <Send size={12}/>Gửi đề xuất
               </button>
@@ -546,13 +568,14 @@ export default function OrderProposalTab({ navigateTo, perms = { view: true, cre
         </div>
       )}
 
-      {/* Cảnh báo mã thiếu tham số — chỉ có sau 1 lần Chạy trong phiên này (không lưu ở
-          CSDL), không được ẩn đi vì đây là lý do 1 số mã bị thiếu khỏi bản nháp. */}
-      {draft && missingParams.length > 0 && (
+      {/* Cảnh báo mã thiếu tham số — tính lại TỪ DANH MỤC mỗi lần fetchDraft() chạy (xem
+          hàm đó), không phụ thuộc có đang có bản nháp hay không và không mất khi tải lại
+          trang. Còn thiếu tham số là phải báo, kể cả trước khi bấm Chạy lần nào. */}
+      {missingParams.length > 0 && (
         <div style={{background:'#fef2f2',borderBottom:'1px solid #fca5a5',padding:'0.5rem 0.75rem',display:'flex',alignItems:'flex-start',gap:6}}>
           <AlertTriangle size={14} style={{color:'#dc2626',flexShrink:0,marginTop:2}}/>
           <span style={{fontSize:'0.72rem',color:'#991b1b',lineHeight:1.5}}>
-            <b>{missingParams.length} mã chưa khai đủ lead time / thời gian an toàn</b> nên KHÔNG tính được nhu cầu, bản nháp đang THIẾU các mã này: <b>{missingParams.join(', ')}</b>. Vào tab Danh mục bổ sung lead time / thời gian an toàn rồi bấm "Chạy lại".
+            <b>{missingParams.length} mã chưa khai đủ lead time / thời gian an toàn</b> nên KHÔNG tính được nhu cầu — {draft ? 'bản nháp hiện tại đang THIẾU các mã này' : 'nếu bấm "Chạy đề xuất" bây giờ, các mã này sẽ bị bỏ qua'}: <b>{missingParams.join(', ')}</b>. Vào tab Danh mục bổ sung lead time / thời gian an toàn rồi {draft ? 'bấm "Chạy lại"' : 'chạy lại'}.
           </span>
         </div>
       )}
