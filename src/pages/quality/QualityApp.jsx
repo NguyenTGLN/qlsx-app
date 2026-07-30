@@ -10,6 +10,18 @@ import ModuleShell, { ActionButton } from '../../components/ModuleShell';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
+import { signQcUrl, laVideo } from '../../lib/qcSignedUrl';
+import QcMedia from './QcMedia';
+
+// Mở ảnh ở tab mới: phải xin link ký trước — link công khai đã bị chặn đọc
+const moAnhTabMoi = async (e, urlDaLuu) => {
+  e.stopPropagation();
+  try {
+    window.open(await signQcUrl(urlDaLuu), '_blank');
+  } catch (err) {
+    alert('Không tải được ảnh: ' + (err?.message || err));
+  }
+};
 
 const QualityApp = () => {
   const navigate = useNavigate();
@@ -393,6 +405,16 @@ const QualityApp = () => {
     }
   };
 
+  // Ảnh trong ZIP: xin link ký rồi mới tải về nhúng base64
+  const fetchQcImageAsBase64 = async (urlDaLuu) => {
+    try {
+      return await fetchImageAsBase64(await signQcUrl(urlDaLuu));
+    } catch (e) {
+      console.warn('Không ký được link ảnh:', urlDaLuu, e);
+      return null;
+    }
+  };
+
   // Download ZIP with HTML report + Excel — generic, works for any product
   const handleDownloadZip = async (targetCode, targetIssues) => {
     const code = targetCode || lookupSelectedCode;
@@ -432,14 +454,14 @@ const QualityApp = () => {
 
         const issueImgB64 = [];
         for (const url of issueImgUrls) {
-          const b64 = await fetchImageAsBase64(url);
-          if (b64) issueImgB64.push({ src: b64, isVideo: !!url.match(/\.(mp4|webm|ogg|mov)$/i) });
+          const b64 = await fetchQcImageAsBase64(url);
+          if (b64) issueImgB64.push({ src: b64, isVideo: laVideo(url) });
         }
 
         const solImgB64 = [];
         for (const url of solImgUrls) {
-          const b64 = await fetchImageAsBase64(url);
-          if (b64) solImgB64.push({ src: b64, isVideo: !!url.match(/\.(mp4|webm|ogg|mov)$/i) });
+          const b64 = await fetchQcImageAsBase64(url);
+          if (b64) solImgB64.push({ src: b64, isVideo: laVideo(url) });
         }
 
         issueDataArr.push({ issue, issueImgB64, solImgB64 });
@@ -749,18 +771,11 @@ const QualityApp = () => {
                              if (imgs.length === 0) return null;
                              return (
                                <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', marginTop: '0.5rem', paddingBottom: '0.5rem' }}>
-                                 {imgs.map((img, i) => {
-                                   const isVideo = img.match(/\.(mp4|webm|ogg|mov)$/i);
-                                   return (
-                                     <div key={i} style={{ flexShrink: 0, width: '100px', height: '100px', background: '#f8fafc', borderRadius: '6px', overflow: 'hidden' }} onClick={(e) => { e.stopPropagation(); window.open(img, '_blank'); }}>
-                                       {isVideo ? (
-                                         <video src={img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted />
-                                       ) : (
-                                         <img src={img} alt="QC Issue" style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }} />
-                                       )}
-                                     </div>
-                                   );
-                                 })}
+                                 {imgs.map((img, i) => (
+                                   <div key={i} style={{ flexShrink: 0, width: '100px', height: '100px', background: '#f8fafc', borderRadius: '6px', overflow: 'hidden' }} onClick={(e) => moAnhTabMoi(e, img)}>
+                                     <QcMedia url={img} alt="QC Issue" style={{ width: '100%', height: '100%', objectFit: 'cover', cursor: 'zoom-in' }} />
+                                   </div>
+                                 ))}
                                </div>
                              );
                            })()}
@@ -777,14 +792,11 @@ const QualityApp = () => {
 
                         {issue.solution_images && issue.solution_images.length > 0 && (
                           <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-                            {issue.solution_images.map((img, i) => {
-                               const isVideo = img.match(/\.(mp4|webm|ogg|mov)$/i);
-                               return isVideo ? (
-                                 <video key={i} src={img} onClick={(e) => { e.stopPropagation(); window.open(img, '_blank'); }} style={{ width: '60px', height: '60px', borderRadius: '4px', objectFit: 'cover', cursor: 'zoom-in', border: '1px solid #cbd5e1' }} muted />
-                               ) : (
-                                 <img key={i} src={img} alt="Solution" onClick={(e) => { e.stopPropagation(); window.open(img, '_blank'); }} style={{ width: '60px', height: '60px', borderRadius: '4px', objectFit: 'cover', cursor: 'zoom-in', border: '1px solid #cbd5e1' }} />
-                               )
-                            })}
+                            {issue.solution_images.map((img, i) => (
+                              <div key={i} onClick={(e) => moAnhTabMoi(e, img)} style={{ width: '60px', height: '60px', borderRadius: '4px', overflow: 'hidden', cursor: 'zoom-in', border: '1px solid #cbd5e1', flexShrink: 0 }}>
+                                <QcMedia url={img} alt="Solution" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              </div>
+                            ))}
                           </div>
                         )}
                         
@@ -934,10 +946,9 @@ const QualityApp = () => {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
                       {/* Render existing images */}
                       {existingIssueImages.map((url, i) => {
-                         const isVideo = url.match(/\.(mp4|webm|ogg|mov)$/i);
                          return (
                           <div key={`ext-iss-${i}`} style={{ position: 'relative', width: '80px', height: '80px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                            {isVideo ? <video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted /> : <img src={url} alt="Issue" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                            <QcMedia url={url} alt="Issue" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             <button type="button" onClick={() => removeExistingIssueImage(i)} style={{ position: 'absolute', top: '2px', right: '2px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={12}/></button>
                           </div>
                          )
@@ -992,10 +1003,9 @@ const QualityApp = () => {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
                       {/* Render existing images */}
                       {existingSolutionImages.map((url, i) => {
-                         const isVideo = url.match(/\.(mp4|webm|ogg|mov)$/i);
                          return (
                           <div key={`ext-${i}`} style={{ position: 'relative', width: '80px', height: '80px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                            {isVideo ? <video src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted /> : <img src={url} alt="Sol" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                            <QcMedia url={url} alt="Sol" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             <button type="button" onClick={() => removeExistingSolutionImage(i)} style={{ position: 'absolute', top: '2px', right: '2px', background: 'rgba(0,0,0,0.6)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}><X size={12}/></button>
                           </div>
                          )
@@ -1289,27 +1299,20 @@ const QualityApp = () => {
                               <div style={{ marginBottom: '0.75rem' }}>
                                 <p style={{ margin: '0 0 0.4rem 0', fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>HÌNH ẢNH LỖI:</p>
                                 <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-                                  {issueImgs.map((img, i) => {
-                                    const isVideo = img.match(/\.(mp4|webm|ogg|mov)$/i);
-                                    return (
-                                      <div key={i} style={{ 
-                                        flexShrink: 0, width: '120px', height: '120px', 
-                                        background: '#f8fafc', borderRadius: '8px', overflow: 'hidden',
-                                        border: '2px solid #fecaca', cursor: 'pointer',
-                                        transition: 'transform 0.15s'
-                                      }}
-                                      onClick={() => setLightboxUrl(img)}
-                                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
-                                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-                                      >
-                                        {isVideo ? (
-                                          <video src={img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted />
-                                        ) : (
-                                          <img src={img} alt="QC Issue" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        )}
-                                      </div>
-                                    );
-                                  })}
+                                  {issueImgs.map((img, i) => (
+                                    <div key={i} style={{
+                                      flexShrink: 0, width: '120px', height: '120px',
+                                      background: '#f8fafc', borderRadius: '8px', overflow: 'hidden',
+                                      border: '2px solid #fecaca', cursor: 'pointer',
+                                      transition: 'transform 0.15s'
+                                    }}
+                                    onClick={() => setLightboxUrl(img)}
+                                    onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
+                                    onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                    >
+                                      <QcMedia url={img} alt="QC Issue" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             )}
@@ -1334,27 +1337,20 @@ const QualityApp = () => {
                               <div>
                                 <p style={{ margin: '0 0 0.4rem 0', fontSize: '0.72rem', fontWeight: 700, color: '#64748b' }}>HÌNH ẢNH ĐỐI SÁCH:</p>
                                 <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-                                  {solImgs.map((img, i) => {
-                                    const isVideo = img.match(/\.(mp4|webm|ogg|mov)$/i);
-                                    return (
-                                      <div key={i} style={{ 
-                                        flexShrink: 0, width: '100px', height: '100px', 
-                                        background: '#f8fafc', borderRadius: '8px', overflow: 'hidden',
-                                        border: '2px solid #bbf7d0', cursor: 'pointer',
-                                        transition: 'transform 0.15s'
-                                      }}
-                                      onClick={() => setLightboxUrl(img)}
-                                      onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
-                                      onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-                                      >
-                                        {isVideo ? (
-                                          <video src={img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted />
-                                        ) : (
-                                          <img src={img} alt="Solution" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        )}
-                                      </div>
-                                    );
-                                  })}
+                                  {solImgs.map((img, i) => (
+                                    <div key={i} style={{
+                                      flexShrink: 0, width: '100px', height: '100px',
+                                      background: '#f8fafc', borderRadius: '8px', overflow: 'hidden',
+                                      border: '2px solid #bbf7d0', cursor: 'pointer',
+                                      transition: 'transform 0.15s'
+                                    }}
+                                    onClick={() => setLightboxUrl(img)}
+                                    onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
+                                    onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                                    >
+                                      <QcMedia url={img} alt="Solution" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
                             )}
@@ -1425,21 +1421,13 @@ const QualityApp = () => {
           >
             <X size={22}/>
           </button>
-          {lightboxUrl.match(/\.(mp4|webm|ogg|mov)$/i) ? (
-            <video 
-              src={lightboxUrl} 
-              controls autoPlay 
-              onClick={e => e.stopPropagation()}
-              style={{ maxWidth: '90%', maxHeight: '90vh', borderRadius: '8px', boxShadow: '0 0 40px rgba(0,0,0,0.5)' }} 
-            />
-          ) : (
-            <img 
-              src={lightboxUrl} 
-              alt="Full size" 
-              onClick={e => e.stopPropagation()}
-              style={{ maxWidth: '90%', maxHeight: '90vh', borderRadius: '8px', objectFit: 'contain', boxShadow: '0 0 40px rgba(0,0,0,0.5)' }} 
-            />
-          )}
+          <QcMedia
+            url={lightboxUrl}
+            alt="Full size"
+            style={{ maxWidth: '90%', maxHeight: '90vh', borderRadius: '8px', objectFit: 'contain', boxShadow: '0 0 40px rgba(0,0,0,0.5)' }}
+            videoProps={{ controls: true, autoPlay: true, muted: false, onClick: (e) => e.stopPropagation() }}
+            imgProps={{ onClick: (e) => e.stopPropagation() }}
+          />
         </div>
       )}
 

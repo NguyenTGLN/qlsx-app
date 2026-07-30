@@ -61,6 +61,11 @@ DECLARE
   v_wip_qty       NUMERIC;
   v_unit          TEXT;
 BEGIN
+  -- Chặn người chưa đăng nhập, dù quyền EXECUTE có bị cấp lại cho anon
+  IF coalesce(auth.jwt() ->> 'nv_role', '') = '' THEN
+    RAISE EXCEPTION 'Chưa đăng nhập' USING errcode = '42501';
+  END IF;
+
   IF p_reason IS NULL OR trim(p_reason) = '' THEN
     RAISE EXCEPTION 'Vui lòng nhập lý do hủy phiếu.';
   END IF;

@@ -4,6 +4,7 @@ import { Plus, X, ThumbsUp, Loader2, AlertTriangle, ChevronLeft, Trophy, ListChe
 import AttachmentInput from '../../components/AttachmentInput';
 import AttachmentList from '../../components/AttachmentList';
 import { deleteRemoved, collectPaths, deleteAttachments } from '../../lib/attachmentStorage';
+import { useSignedAttachment } from '../../lib/attachmentSignedUrl';
 import { CATEGORIES, DEFAULT_CONFIG, tinhGiaTri, chamDiem, fmtTien } from '../../lib/caiTienValue';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -831,16 +832,20 @@ export default function CaiTienTab({ me, users = [], perm = {} }) {
               const tacGia = users.find(u => u.id === row.nhan_vien_id);
               const anhTruoc = (row.attachments_before || [])[0];
               const anhSau = (row.attachments_after || [])[0];
-              const OAnh = ({ att, nhan }) => (
+              const OAnh = ({ att, nhan }) => {
+                // Bucket task-attachments không đọc công khai → xin link ký rồi mới đặt làm nền.
+                const { url: urlKy } = useSignedAttachment(att?.kind === 'image' ? att : null);
+                return (
                 <div style={{
                   flex: 1, height: 96, borderRadius: 10, overflow: 'hidden', position: 'relative',
-                  background: att?.kind === 'image' ? `url(${att.url}) center/cover` : 'linear-gradient(135deg,#64748b,#94a3b8)',
+                  background: urlKy ? `url(${urlKy}) center/cover` : 'linear-gradient(135deg,#64748b,#94a3b8)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   {att?.kind !== 'image' && <span style={{ fontSize: 22 }}>{att ? '🎬' : '📷'}</span>}
                   <span style={{ position: 'absolute', top: 5, left: 5, background: 'rgba(15,23,42,.65)', color: '#fff', fontSize: '0.58rem', fontWeight: 700, letterSpacing: 0.5, padding: '2px 7px', borderRadius: 999 }}>{nhan}</span>
                 </div>
-              );
+                );
+              };
               const soLike = (row.likes || []).length;
               const daLike = (row.likes || []).includes(me.id);
               return (
