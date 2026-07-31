@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import {
   dsNhanVienChamChung, dungMaTran, dsChiTieuThemDuoc,
-  canHoiLyDo, timDongLyDo, NGUON_BANG_CHUNG,
+  canHoiLyDo, timDongLyDo, NGUON_BANG_CHUNG, laChamTuDong,
 } from '../../lib/kpiBangChung';
 import { ChevronLeft, Plus, X, AlertTriangle } from 'lucide-react';
 
@@ -137,6 +137,11 @@ export default function KpiBangChung({ ky, rows, logs, users, me, perm, onBack, 
 // tới đó, và lỗi hiện ngay tại ô sai thay vì một thông báo chung chung cho 52 ô.
 function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
   const dongLyDo = timDongLyDo(logs);
+  // Chỉ tiêu app tự tính → ô CHỈ ĐỌC. Gõ tay ở đây ghi xuống DB thật rồi bị luật tự động đè
+  // lại lúc hiển thị: số vừa gõ biến mất mà không báo gì. Tab KPI cá nhân đã khoá từ lâu
+  // (KpiTab.jsx:1064) — đây là chỗ còn sót, và là nguyên nhân 13/13 dòng ĐÓNG GÓP CẢI TIẾN
+  // kỳ 07/2026 mang dấu vết chấm tay.
+  const tuDong = laChamTuDong(ct);
   // Chưa chấm thì ô HIỆN MỨC TỐI ĐA chứ không để trống. Engine coi `diem_chot = null` là đạt
   // đủ điểm, nên ô trống nói dối: bảng KPI cá nhân của người đó đang hiện điểm tối đa.
   const macDinh = ct.diem_chot != null
@@ -177,6 +182,9 @@ function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
   // thì đóng bảng lý do giữa chừng là mất luôn số vừa gõ.
   // Không đổi gì so với lúc mở thì không ghi: tab qua 52 ô không được biến thành 52 lệnh ghi.
   async function roiO() {
+    // Chốt chặn thứ hai sau `disabled`: nếu sau này ai bỏ `disabled` để chỉnh giao diện thì
+    // vẫn không có đường ghi lén xuống DB.
+    if (tuDong) return;
     if (diem === macDinh) return;
     const xong = await luu();
     if (xong && thieu) setMoLyDo(true);
@@ -185,18 +193,25 @@ function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
   return (
     <div>
       <input
-        type="text" inputMode="decimal" value={diem} disabled={!doiDuoc || dangLuu}
+        type="text" inputMode="decimal" value={diem} disabled={tuDong || !doiDuoc || dangLuu}
         onChange={e => setDiem(e.target.value)}
         onBlur={roiO}
         aria-label={`Điểm ${ct.ten}`}
+        title={tuDong ? 'App tự tính chỉ tiêu này — không chấm tay được' : undefined}
         style={{
           width: 62, padding: '0.35rem', borderRadius: 7, textAlign: 'center',
           border: `1px solid ${loi ? '#dc2626' : '#e2e8f0'}`,
-          background: loi ? '#fef2f2' : thieu ? '#fff5f6' : '#f0fdf4',
+          background: tuDong ? '#f1f5f9' : loi ? '#fef2f2' : thieu ? '#fff5f6' : '#f0fdf4',
+          color: tuDong ? '#64748b' : undefined,
           fontWeight: 700, fontSize: '0.82rem',
         }}
       />
-      {thieu && (
+      {tuDong && (
+        <div style={{ fontSize: '0.62rem', color: '#64748b', marginTop: 2, lineHeight: 1.2 }}>
+          tự tính
+        </div>
+      )}
+      {thieu && !tuDong && (
         <button
           onClick={() => setMoLyDo(true)} disabled={!doiDuoc}
           title={lyDo || 'Chưa ghi lý do — bấm để ghi'}
