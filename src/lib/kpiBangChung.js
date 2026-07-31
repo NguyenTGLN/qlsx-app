@@ -17,6 +17,11 @@ export const khoaChiTieu = ct => ct.ma || ct.ten;
 //
 // Thiếu `cach_cham` thì trả false: dòng cũ chưa chạy migration phải giữ đường chấm tay, khoá
 // nhầm là cả một chỉ tiêu không ai chấm được mà không có lỗi nào báo.
+//
+// Cột `cach_cham` (đặt bởi sql/danh_dau_chi_tieu_tu_dong.sql) và LUAT_TU_DONG trong
+// kpiTuDong.js là HAI nguồn tách rời, chỉ trùng nhau vì tay đặt đúng cả hai. Thêm luật mới
+// vào LUAT_TU_DONG mà quên cập nhật cach_cham='TU_DONG' trong DB thì ô nhập ở đây mở lại,
+// không có lỗi nào báo.
 export const laChamTuDong = ct => ct?.cach_cham === 'TU_DONG';
 
 // Danh sách nhân viên = các cột của bảng, sắp theo tên hiển thị.

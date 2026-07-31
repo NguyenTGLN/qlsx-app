@@ -167,6 +167,9 @@ function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
   // `lyDoMoi` truyền tường minh chứ không đọc state `lyDo`: bảng lý do gọi hàm này ngay sau
   // setLyDo, mà state React chưa kịp mới ở lượt render đó.
   async function luu(lyDoMoi = lyDo) {
+    // Chốt chặn cuối cùng: MỌI đường ghi (rời ô, bảng lý do) đều đi qua đây. Đặt ở `roiO`
+    // thì bảng lý do vẫn còn một cửa sau.
+    if (tuDong) return false;
     const l0 = loiNhapLieu();
     setLoi(l0);
     if (l0) return false;
@@ -182,8 +185,10 @@ function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
   // thì đóng bảng lý do giữa chừng là mất luôn số vừa gõ.
   // Không đổi gì so với lúc mở thì không ghi: tab qua 52 ô không được biến thành 52 lệnh ghi.
   async function roiO() {
-    // Chốt chặn thứ hai sau `disabled`: nếu sau này ai bỏ `disabled` để chỉnh giao diện thì
-    // vẫn không có đường ghi lén xuống DB.
+    // Ô tự động dùng `readOnly` để bàn phím còn tab tới được (khác `disabled`, vốn bị gạt
+    // khỏi tab order) — mà readOnly VẪN phát sự kiện blur khi tab qua. `luu()` cũng tự chặn
+    // lại (chốt cuối, phủ luôn PopupLyDo) nên không lọt xuống được DB dù thiếu dòng này, nhưng
+    // chặn sớm ở đây đỡ một lượt gọi vô ích mỗi lần tab qua ô.
     if (tuDong) return;
     if (diem === macDinh) return;
     const xong = await luu();
@@ -193,22 +198,28 @@ function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
   return (
     <div>
       <input
-        type="text" inputMode="decimal" value={diem} disabled={tuDong || !doiDuoc || dangLuu}
+        type="text" inputMode="decimal" value={tuDong ? macDinh : diem}
         onChange={e => setDiem(e.target.value)}
         onBlur={roiO}
-        aria-label={`Điểm ${ct.ten}`}
-        title={tuDong ? 'App tự tính chỉ tiêu này — không chấm tay được' : undefined}
+        readOnly={tuDong}
+        disabled={!doiDuoc || dangLuu}
+        aria-readonly={tuDong || undefined}
+        aria-label={tuDong ? `Điểm ${ct.ten} — app tự động tính, không chấm tay được` : `Điểm ${ct.ten}`}
+        title={tuDong ? 'App tự động tính chỉ tiêu này — không chấm tay được' : undefined}
         style={{
           width: 62, padding: '0.35rem', borderRadius: 7, textAlign: 'center',
           border: `1px solid ${loi ? '#dc2626' : '#e2e8f0'}`,
-          background: tuDong ? '#f1f5f9' : loi ? '#fef2f2' : thieu ? '#fff5f6' : '#f0fdf4',
-          color: tuDong ? '#64748b' : undefined,
+          // Tím trùng màu TU_DONG của bảng KPI cá nhân (KpiTab.jsx:885) — cùng một phân loại
+          // phải cùng một màu ở mọi màn hình, xám nhạt lại đọc thành "bị khoá" (một trạng thái
+          // khác hẳn). #6b21a8 trên nền #e9d5ff đạt ~6.4:1, vượt ngưỡng AA (4.5:1) cho chữ nhỏ.
+          background: tuDong ? '#e9d5ff' : loi ? '#fef2f2' : thieu ? '#fff5f6' : '#f0fdf4',
+          color: tuDong ? '#6b21a8' : undefined,
           fontWeight: 700, fontSize: '0.82rem',
         }}
       />
       {tuDong && (
-        <div style={{ fontSize: '0.62rem', color: '#64748b', marginTop: 2, lineHeight: 1.2 }}>
-          tự tính
+        <div style={{ fontSize: '0.62rem', color: '#6b21a8', marginTop: 2, lineHeight: 1.2 }}>
+          tự động
         </div>
       )}
       {thieu && !tuDong && (

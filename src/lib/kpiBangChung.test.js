@@ -144,7 +144,7 @@ describe('dsChiTieuThemDuoc', () => {
     // Đảo thứ tự: dòng THU_CONG đến TRƯỚC. Bắt buộc phải có — bản lọc kiểu
     // `if (khoaTuDong.has(k)) continue;` ngay trong vòng lặp vẫn qua được ca trên
     // mà hỏng ở ca này. Xoá sau vòng lặp mới là thứ làm nó độc lập thứ tự.
-    expect(dsChiTieuThemDuoc([lan[1], lan[0]])).toEqual([]);
+    expect(dsChiTieuThemDuoc([...lan].reverse())).toEqual([]);
   });
 });
 
