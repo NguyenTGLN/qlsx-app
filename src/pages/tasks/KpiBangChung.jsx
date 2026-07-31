@@ -154,6 +154,9 @@ function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
   const [dangLuu, setDangLuu] = useState(false);
 
   const soDiem = diem.trim() === '' ? null : Number(diem);
+  // Ô tự động không cho gõ nên `diem` đứng yên ở giá trị lúc mount, trong khi `macDinh` (props)
+  // vẫn sống — soDiem/thieu vì vậy chỉ đúng cho dòng CHẤM TAY. Mọi chỗ dùng hiện tại đều có
+  // `tuDong` chắn trước; thêm chỗ dùng mới cho `thieu` mà quên `&& !tuDong` là đọc nhầm điểm cũ.
   const thieu = canHoiLyDo(ct, soDiem);
 
   function loiNhapLieu() {
@@ -169,7 +172,7 @@ function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
   async function luu(lyDoMoi = lyDo) {
     // Chốt chặn cuối cùng: MỌI đường ghi (rời ô, bảng lý do) đều đi qua đây. Đặt ở `roiO`
     // thì bảng lý do vẫn còn một cửa sau.
-    if (tuDong) return false;
+    if (tuDong) { setLoi('App tự động tính chỉ tiêu này — không chấm tay được'); return false; }
     const l0 = loiNhapLieu();
     setLoi(l0);
     if (l0) return false;
@@ -214,6 +217,7 @@ function OChamDiem({ ct, tenNhanVien, logs, me, doiDuoc, onXong }) {
           // khác hẳn). #6b21a8 trên nền #e9d5ff đạt ~6.4:1, vượt ngưỡng AA (4.5:1) cho chữ nhỏ.
           background: tuDong ? '#e9d5ff' : loi ? '#fef2f2' : thieu ? '#fff5f6' : '#f0fdf4',
           color: tuDong ? '#6b21a8' : undefined,
+          cursor: tuDong ? 'default' : undefined,
           fontWeight: 700, fontSize: '0.82rem',
         }}
       />
