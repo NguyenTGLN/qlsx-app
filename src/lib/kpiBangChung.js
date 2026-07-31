@@ -76,18 +76,18 @@ export const NGUON_BANG_CHUNG = 'BANG_CHUNG';
 // `soNguoi` để chủ app biết thêm vào thì bảng rộng ra bao nhiêu ô thật, bao nhiêu ô gạch chéo.
 export function dsChiTieuThemDuoc(rows = []) {
   const nhom = new Map();
-  const maTuDong = new Set();   // mã có DÙ CHỈ MỘT dòng tự động
+  const khoaTuDong = new Set();   // khoá nhóm có DÙ CHỈ MỘT dòng tự động
   for (const r of rows) {
     if (r.cap_do === 'BO_PHAN' || r.cham_chung || !r.nhan_vien_id) continue;
     const k = khoaChiTieu(r);
     // Bật cham_chung ghi theo `ma` cho CẢ nhóm (KpiBangChung.jsx:34-36), nên đọc cũng phải
     // theo nhóm: còn một dòng tự động là cả nhóm không được mời vào bảng chung. Lọc từng
     // dòng thì một dòng THU_CONG lạc (KpiTab.jsx:491 mặc định) đủ kéo cả nhóm quay lại.
-    if (laChamTuDong(r)) { maTuDong.add(k); continue; }
+    if (laChamTuDong(r)) { khoaTuDong.add(k); continue; }
     if (!nhom.has(k)) nhom.set(k, { ma: r.ma || null, ten: r.ten, soNguoi: 0 });
     nhom.get(k).soNguoi += 1;
   }
-  for (const k of maTuDong) nhom.delete(k);
+  for (const k of khoaTuDong) nhom.delete(k);
   return [...nhom.values()]
     .sort((a, b) => b.soNguoi - a.soNguoi || a.ten.localeCompare(b.ten, 'vi'));
 }

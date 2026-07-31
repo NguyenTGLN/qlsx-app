@@ -141,6 +141,10 @@ describe('dsChiTieuThemDuoc', () => {
       { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'DONG_GOP_CAI_TIEN', ten: 'ĐÓNG GÓP CẢI TIẾN', cham_chung: false, cach_cham: 'THU_CONG' },
     ];
     expect(dsChiTieuThemDuoc(lan)).toEqual([]);
+    // Đảo thứ tự: dòng THU_CONG đến TRƯỚC. Bắt buộc phải có — bản lọc kiểu
+    // `if (khoaTuDong.has(k)) continue;` ngay trong vòng lặp vẫn qua được ca trên
+    // mà hỏng ở ca này. Xoá sau vòng lặp mới là thứ làm nó độc lập thứ tự.
+    expect(dsChiTieuThemDuoc([lan[1], lan[0]])).toEqual([]);
   });
 });
 
