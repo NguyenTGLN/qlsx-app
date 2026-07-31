@@ -12,6 +12,7 @@ import WarrantyProposalPrint from '../../components/WarrantyProposalPrint';
 import ProposalLanCell from './WarrantyProposalLanCell';
 import { getEffectiveProposalLan, nextProposalLanNo, buildProposalSnapshot } from '../../lib/warrantyProposalLan';
 import { downloadProposals } from '../../lib/warrantyProposalExcel';
+import { pollUntilChanged } from '../../lib/pollUntilChanged';
 import { FileText } from 'lucide-react';
 
 const statusMeta = (id) => TRANG_THAI_XU_LY.find(s => s.id === id) || { label: id || 'Chưa xử lý', color: '#64748b' };
@@ -863,21 +864,58 @@ export default function WarrantyProcessing() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Đồng bộ CS → APP: gọi webhook n8n để tải dữ liệu bảo hành mới nhất từ Caresoft về DB,
-  // rồi tải lại danh sách. Webhook chạy bất đồng bộ nên đợi nó trả về xong mới fetch lại.
+  // rồi tải lại danh sách.
+  //
+  // ⚠ Webhook n8n để chế độ mặc định "Respond: Immediately": nó trả 200
+  // {"message":"Workflow was started"} rồi MỚI đi làm việc. Đo 31/07/2026: HTTP 200 về sau
+  // 455ms, còn 34 dòng chỉ thật sự vào DB trong ~21s kế tiếp. Bản cũ fetch ngay sau khi
+  // webhook trả về nên luôn đọc trúng dữ liệu CŨ, phải bấm thêm "Làm mới" mới thấy.
+  // Nay: chờ dấu vân tay dữ liệu đổi rồi mới tải danh sách (giống cách tab này đã poll
+  // phiếu 'pending' ở chiều APP → Caresoft bên dưới).
   const CS_APP_SYNC_WEBHOOK = 'https://thegioilocnuoc.site/webhook/tai_du_lieu_bao_hanh_tu_caresoft_ve_database_cap_nhat_app';
+  const SYNC_POLL_INTERVAL_MS = 3000;
+  const SYNC_POLL_TIMEOUT_MS = 60000; // ~3× thời gian workflow đo được, đủ dôi mà không treo lâu
+
+  // Dấu vân tay dữ liệu Caresoft đang nằm trong DB: số dòng + mốc cập nhật mới nhất.
+  // Rẻ (1 count HEAD + 1 dòng) nên hỏi lại nhiều nhịp vẫn nhẹ. Cột "thời_điểm_cập_nhật" là
+  // text ISO 8601 (2026-07-31T11:15:56Z) nên so sánh/sắp xếp bằng chuỗi là đúng.
+  // Chỉ đếm số dòng KHÔNG đủ: đợt đồng bộ thường chỉ UPDATE, không thêm dòng nào.
+  const readCsFingerprint = async () => {
+    const { count, error: cErr } = await taskDb
+      .from('xu_ly_phieu_bao_hanh')
+      .select('id', { count: 'exact', head: true });
+    if (cErr) throw new Error(cErr.message);
+    const { data, error: mErr } = await taskDb
+      .from('xu_ly_phieu_bao_hanh')
+      .select('"thời_điểm_cập_nhật"')
+      .order('thời_điểm_cập_nhật', { ascending: false })
+      .limit(1);
+    if (mErr) throw new Error(mErr.message);
+    return `${count ?? -1}|${data?.[0]?.['thời_điểm_cập_nhật'] || ''}`;
+  };
+
   const handleSyncCsApp = async () => {
     if (syncingCs) return;
     if (!window.confirm('Tải dữ liệu bảo hành mới nhất từ Caresoft về app?')) return;
     setSyncingCs(true);
     try {
+      const truoc = await readCsFingerprint();
       const res = await fetch(CS_APP_SYNC_WEBHOOK, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source: 'qlsx-app', action: 'sync_cs_app', người_yêu_cầu: (user && (user.name || user.id)) || '' }),
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
+      const { changed } = await pollUntilChanged({
+        read: readCsFingerprint,
+        baseline: truoc,
+        intervalMs: SYNC_POLL_INTERVAL_MS,
+        timeoutMs: SYNC_POLL_TIMEOUT_MS,
+      });
       await fetchRows();
-      alert('Đã đồng bộ dữ liệu từ Caresoft về app.');
+      alert(changed
+        ? 'Đã đồng bộ dữ liệu từ Caresoft về app.'
+        : 'Đã chạy đồng bộ nhưng chưa thấy dữ liệu đổi. Có thể Caresoft không có gì mới, hoặc n8n còn đang chạy — bấm "Làm mới" sau ít phút.');
     } catch (e) {
       alert('Lỗi đồng bộ CS-APP: ' + (e?.message || e));
     } finally {
