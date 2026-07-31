@@ -9,6 +9,16 @@
 // màn hình vẫn chạy được thay vì gom tất cả vào một nhóm `null`.
 export const khoaChiTieu = ct => ct.ma || ct.ten;
 
+// Chỉ tiêu app TỰ TÍNH điểm (luật trong kpiTuDong.js) — không ai chấm tay được.
+//
+// Bảng chấm chung phải hỏi câu này ở HAI chỗ: khoá ô nhập, và loại khỏi popup "＋ Thêm chỉ
+// tiêu". Thiếu chỗ thứ hai thì chỉ tiêu vừa gỡ ra được thêm vào lại ngay lượt sau, và bẫy cũ
+// tái diễn y nguyên.
+//
+// Thiếu `cach_cham` thì trả false: dòng cũ chưa chạy migration phải giữ đường chấm tay, khoá
+// nhầm là cả một chỉ tiêu không ai chấm được mà không có lỗi nào báo.
+export const laChamTuDong = ct => ct?.cach_cham === 'TU_DONG';
+
 // Danh sách nhân viên = các cột của bảng, sắp theo tên hiển thị.
 export function dsNhanVienChamChung(rows = [], users = []) {
   const ids = [];
@@ -68,6 +78,8 @@ export function dsChiTieuThemDuoc(rows = []) {
   const nhom = new Map();
   for (const r of rows) {
     if (r.cap_do === 'BO_PHAN' || r.cham_chung || !r.nhan_vien_id) continue;
+    // App tự tính thì đưa vào bảng chung là mời người ta gõ một con số sẽ bị đè lúc hiển thị.
+    if (laChamTuDong(r)) continue;
     const k = khoaChiTieu(r);
     if (!nhom.has(k)) nhom.set(k, { ma: r.ma || null, ten: r.ten, soNguoi: 0 });
     nhom.get(k).soNguoi += 1;

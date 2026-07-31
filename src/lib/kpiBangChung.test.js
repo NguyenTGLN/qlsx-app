@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   dsNhanVienChamChung, dungMaTran, dsChiTieuThemDuoc, canHoiLyDo, timDongLyDo, NGUON_BANG_CHUNG,
   demNguoiTheoChiTieu, phanLoaiChiTieu, xepTheoLoai, THU_TU_LOAI, sinhMaChiTieu, dsChiTieuCoSan,
+  laChamTuDong,
 } from './kpiBangChung';
 
 describe('dsNhanVienChamChung', () => {
@@ -84,13 +85,34 @@ describe('dungMaTran', () => {
   });
 });
 
+describe('laChamTuDong', () => {
+  it('đúng khi cach_cham là TU_DONG', () => {
+    expect(laChamTuDong({ cach_cham: 'TU_DONG' })).toBe(true);
+  });
+
+  it('sai với chấm tay', () => {
+    expect(laChamTuDong({ cach_cham: 'THU_CONG' })).toBe(false);
+  });
+
+  it('thiếu cach_cham thì coi là chấm tay — dòng cũ chưa chạy migration không được tự khoá', () => {
+    expect(laChamTuDong({})).toBe(false);
+  });
+
+  it('không nổ với null/undefined', () => {
+    expect(laChamTuDong(null)).toBe(false);
+    expect(laChamTuDong(undefined)).toBe(false);
+  });
+});
+
 describe('dsChiTieuThemDuoc', () => {
   const rows = [
-    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: '5S', ten: '5S', cham_chung: true },
-    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'SAN_XUAT', ten: 'SẢN XUẤT', cham_chung: false },
-    { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'SAN_XUAT', ten: 'SẢN XUẤT', cham_chung: false },
-    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'THE_KHO', ten: 'THẺ KHO', cham_chung: false },
-    { cap_do: 'BO_PHAN', nhan_vien_id: null, ma: 'CHUYEN_CAN_BO_PHAN', ten: 'CHUYÊN CẦN BỘ PHẬN', cham_chung: false },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: '5S', ten: '5S', cham_chung: true, cach_cham: 'THU_CONG' },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'SAN_XUAT', ten: 'SẢN XUẤT', cham_chung: false, cach_cham: 'THU_CONG' },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'SAN_XUAT', ten: 'SẢN XUẤT', cham_chung: false, cach_cham: 'THU_CONG' },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'THE_KHO', ten: 'THẺ KHO', cham_chung: false, cach_cham: 'THU_CONG' },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'DONG_GOP_CAI_TIEN', ten: 'ĐÓNG GÓP CẢI TIẾN', cham_chung: false, cach_cham: 'TU_DONG' },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'DONG_GOP_CAI_TIEN', ten: 'ĐÓNG GÓP CẢI TIẾN', cham_chung: false, cach_cham: 'TU_DONG' },
+    { cap_do: 'BO_PHAN', nhan_vien_id: null, ma: 'CHUYEN_CAN_BO_PHAN', ten: 'CHUYÊN CẦN BỘ PHẬN', cham_chung: false, cach_cham: 'THU_CONG' },
   ];
 
   it('không liệt kê chỉ tiêu đã ở trong bảng chung', () => {
@@ -107,6 +129,14 @@ describe('dsChiTieuThemDuoc', () => {
 
   it('bỏ dòng BO_PHAN — không đưa chỉ tiêu cả bộ phận vào bảng chung được', () => {
     expect(dsChiTieuThemDuoc(rows).some(c => c.ma === 'CHUYEN_CAN_BO_PHAN')).toBe(false);
+  });
+
+  it('bỏ chỉ tiêu app tự tính — thêm vào bảng chung là mời chấm tay một số sẽ bị đè', () => {
+    expect(dsChiTieuThemDuoc(rows).some(c => c.ma === 'DONG_GOP_CAI_TIEN')).toBe(false);
+  });
+
+  it('vẫn giữ đủ chỉ tiêu chấm tay — khoá tự động không được nuốt nhầm dòng THU_CONG', () => {
+    expect(dsChiTieuThemDuoc(rows).map(c => c.ma)).toEqual(['SAN_XUAT', 'THE_KHO']);
   });
 });
 
