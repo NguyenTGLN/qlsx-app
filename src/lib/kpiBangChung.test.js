@@ -107,8 +107,8 @@ describe('laChamTuDong', () => {
 describe('dsChiTieuThemDuoc', () => {
   const rows = [
     { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: '5S', ten: '5S', cham_chung: true, cach_cham: 'THU_CONG' },
-    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'SAN_XUAT', ten: 'SẢN XUẤT', cham_chung: false, cach_cham: 'THU_CONG' },
-    { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'SAN_XUAT', ten: 'SẢN XUẤT', cham_chung: false, cach_cham: 'THU_CONG' },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'QUY_DINH_CONG_TY', ten: 'QUY ĐỊNH CÔNG TY', cham_chung: false, cach_cham: 'THU_CONG' },
+    { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'QUY_DINH_CONG_TY', ten: 'QUY ĐỊNH CÔNG TY', cham_chung: false, cach_cham: 'THU_CONG' },
     { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'THE_KHO', ten: 'THẺ KHO', cham_chung: false, cach_cham: 'THU_CONG' },
     { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'DONG_GOP_CAI_TIEN', ten: 'ĐÓNG GÓP CẢI TIẾN', cham_chung: false, cach_cham: 'TU_DONG' },
     { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'DONG_GOP_CAI_TIEN', ten: 'ĐÓNG GÓP CẢI TIẾN', cham_chung: false, cach_cham: 'TU_DONG' },
@@ -120,11 +120,11 @@ describe('dsChiTieuThemDuoc', () => {
   });
 
   it('đếm đúng số người có mỗi chỉ tiêu', () => {
-    expect(dsChiTieuThemDuoc(rows).find(c => c.ma === 'SAN_XUAT').soNguoi).toBe(2);
+    expect(dsChiTieuThemDuoc(rows).find(c => c.ma === 'QUY_DINH_CONG_TY').soNguoi).toBe(2);
   });
 
   it('nhiều người có thì xếp lên trước', () => {
-    expect(dsChiTieuThemDuoc(rows).map(c => c.ma)).toEqual(['SAN_XUAT', 'THE_KHO']);
+    expect(dsChiTieuThemDuoc(rows).map(c => c.ma)).toEqual(['QUY_DINH_CONG_TY', 'THE_KHO']);
   });
 
   it('bỏ dòng BO_PHAN — không đưa chỉ tiêu cả bộ phận vào bảng chung được', () => {
@@ -135,8 +135,12 @@ describe('dsChiTieuThemDuoc', () => {
     expect(dsChiTieuThemDuoc(rows).some(c => c.ma === 'DONG_GOP_CAI_TIEN')).toBe(false);
   });
 
-  it('vẫn giữ đủ chỉ tiêu chấm tay — khoá tự động không được nuốt nhầm dòng THU_CONG', () => {
-    expect(dsChiTieuThemDuoc(rows).map(c => c.ma)).toEqual(['SAN_XUAT', 'THE_KHO']);
+  it('nhóm lẫn lộn cach_cham vẫn bị loại — một dòng THU_CONG lạc không kéo cả nhóm về', () => {
+    const lan = [
+      { cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'DONG_GOP_CAI_TIEN', ten: 'ĐÓNG GÓP CẢI TIẾN', cham_chung: false, cach_cham: 'TU_DONG' },
+      { cap_do: 'CA_NHAN', nhan_vien_id: 'b', ma: 'DONG_GOP_CAI_TIEN', ten: 'ĐÓNG GÓP CẢI TIẾN', cham_chung: false, cach_cham: 'THU_CONG' },
+    ];
+    expect(dsChiTieuThemDuoc(lan)).toEqual([]);
   });
 });
 

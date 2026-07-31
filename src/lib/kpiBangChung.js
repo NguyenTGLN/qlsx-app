@@ -76,14 +76,18 @@ export const NGUON_BANG_CHUNG = 'BANG_CHUNG';
 // `soNguoi` để chủ app biết thêm vào thì bảng rộng ra bao nhiêu ô thật, bao nhiêu ô gạch chéo.
 export function dsChiTieuThemDuoc(rows = []) {
   const nhom = new Map();
+  const maTuDong = new Set();   // mã có DÙ CHỈ MỘT dòng tự động
   for (const r of rows) {
     if (r.cap_do === 'BO_PHAN' || r.cham_chung || !r.nhan_vien_id) continue;
-    // App tự tính thì đưa vào bảng chung là mời người ta gõ một con số sẽ bị đè lúc hiển thị.
-    if (laChamTuDong(r)) continue;
     const k = khoaChiTieu(r);
+    // Bật cham_chung ghi theo `ma` cho CẢ nhóm (KpiBangChung.jsx:34-36), nên đọc cũng phải
+    // theo nhóm: còn một dòng tự động là cả nhóm không được mời vào bảng chung. Lọc từng
+    // dòng thì một dòng THU_CONG lạc (KpiTab.jsx:491 mặc định) đủ kéo cả nhóm quay lại.
+    if (laChamTuDong(r)) { maTuDong.add(k); continue; }
     if (!nhom.has(k)) nhom.set(k, { ma: r.ma || null, ten: r.ten, soNguoi: 0 });
     nhom.get(k).soNguoi += 1;
   }
+  for (const k of maTuDong) nhom.delete(k);
   return [...nhom.values()]
     .sort((a, b) => b.soNguoi - a.soNguoi || a.ten.localeCompare(b.ten, 'vi'));
 }
@@ -132,7 +136,7 @@ export function demNguoiTheoChiTieu(rows = []) {
 // `soNhanVien <= 0` (chưa tải xong danh sách) thì KHÔNG được kết luận là chung: đoán bừa ở
 // đây sẽ tô cả bảng thành một màu trong lúc đang tải, người dùng đọc sai ngay từ cái nhìn đầu.
 export function phanLoaiChiTieu(ct, demNguoi, soNhanVien = 0) {
-  if (ct?.cach_cham === 'TU_DONG') return 'TU_DONG';
+  if (laChamTuDong(ct)) return 'TU_DONG';
   if (ct?.cham_chung) return 'BANG_CHUNG';
   if (ct?.lien_ket_bo_phan) return 'BO_PHAN';
   const n = demNguoi?.get?.(khoaChiTieu(ct || {})) || 0;
