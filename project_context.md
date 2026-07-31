@@ -283,6 +283,46 @@ graph LR
 > và bucket `zalo-reports`. Không dùng nữa. Script gỡ DB: `sql/drop_zalo_reports.sql`.
 > **KPI CSKH Zalo và hệ thống nhắc việc Zalo KHÔNG bị ảnh hưởng.**
 
+#### 5.5.1 Luồng dữ liệu Zalo — bản đồ đầy đủ (cập nhật 31/07/2026)
+
+```
+Zalo → n8n "Zalo Trigger" → If1 → If → INSERT zalo_messages
+                                              │
+                    ┌─────────────────────────┴──────────────────────────┐
+                    │ BEFORE INSERT                    AFTER INSERT      │
+                    │ process_zalo_message_kpi   process_zalo_auto_complete_task
+                    │ → dựng zalo_conversations  → đóng việc báo cáo cuối ngày
+                    │   (nuôi tab KPI CSKH)        (ghi cong_viec_duoc_giao + tien_do)
+                    └────────────────────────────────────────────────────┘
+```
+
+**App CHỈ đọc, không bao giờ ghi `zalo_messages`.** Toàn bộ dữ liệu do n8n đẩy vào. Tab
+KPI đọc `zalo_conversations`; bộ lọc nhóm đọc `zalo_groups`.
+
+**`is_staff` do CSDL quyết định, không phải n8n.** `process_zalo_message_kpi` ghi đè
+trường này bằng `EXISTS(SELECT 1 FROM nhan_vien WHERE uid_from = NEW.uid_from)`. Giá trị
+n8n gửi lên bị vứt bỏ. ⚠️ **Nhân viên chưa có `uid_from` sẽ bị đếm là KHÁCH HÀNG**, làm
+phồng "Tổng lượt hội thoại" và sai "Tốc độ phản hồi (TB)". Tính đến 31/07/2026 mới có
+3/17 nhân viên được map.
+
+**Tin nhân viên gửi vào nhóm mà không quote/tag ai thì KHÔNG tạo hội thoại** — đúng thiết
+kế, coi là trao đổi nội bộ (`v_customer_uid := NULL`). Đừng nhầm là mất dữ liệu.
+
+**Trigger tự động đóng việc báo cáo** (`sql/setup_auto_complete_task.sql`): nhóm báo cáo
+`6491009630666576664`; nội dung có "báo cáo" hoặc từ "bc" đứng riêng; người gửi phải có
+trong `nhan_vien.uid_from`; việc phải `IN_PROGRESS` và đúng ngày (giờ VN). Đủ điều kiện
+thì sinh dòng `tien_do` — **dòng log này là cách duy nhất phân biệt đóng tự động với
+bấm tay**. Thiếu điều kiện nào thì im lặng bỏ qua, không báo lỗi.
+
+**Khi chẩn đoán "tab KPI không cập nhật", đo theo thứ tự này** — sai thứ tự là kết luận nhầm:
+
+1. `select max(created_at) from zalo_messages` — nguồn còn sống không? Nếu đứng im thì
+   lỗi ở n8n/phiên Zalo, **không phải ở app**.
+2. So số dòng tab hiển thị với `count(*) from zalo_conversations` trong cùng khoảng ngày.
+   Bằng nhau ⇒ app không hỏng.
+3. Bộ lọc ngày lưu trong `localStorage` (`cskh_dateRange`), preset "Tùy chỉnh" giữ
+   nguyên giữa các phiên — kiểm tra trước khi nghi ngờ mã nguồn.
+
 ---
 
 ### 5.6 🏪 Phân Hệ Kho Hàng (KhoHangApp)

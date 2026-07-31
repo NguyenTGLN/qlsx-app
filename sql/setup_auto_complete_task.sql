@@ -1,10 +1,21 @@
 -- ==============================================================================
 -- TRIGGER TỰ ĐỘNG HOÀN THÀNH CÔNG VIỆC TỪ ZALO
 -- Mục đích: Đóng task "Báo cáo công việc cuối ngày" khi nhân viên nhắn vào nhóm
--- Nhóm đích: 6274675927160413910
--- Điều kiện: Tin nhắn phải chứa cụm từ "em gửi báo cáo" hoặc "em báo cáo"
+-- Nhóm đích: 6491009630666576664 (đang dùng) + 6274675927160413910 (nhóm cũ)
+-- Điều kiện: Tin nhắn có chữ "báo cáo" (kể cả viết liền) HOẶC từ "bc" đứng riêng
 -- Việc nhóm: ai trong nhóm gửi cũng đóng được việc cho cả nhóm
 --            (luật "ai xong trước là xong cả nhóm" — xem sql/setup_task_multi_assignee.sql)
+--
+-- SỬA 31/07/2026 — trigger nằm im từ 26/05/2026, do hai lỗi chồng nhau:
+--   1. SAI MÃ NHÓM. Bản cũ canh '6274675927160413910', nhưng nhóm báo cáo đang dùng là
+--      '6491009630666576664' (xác nhận bằng tin thật lúc 19:00 ngày 31/07/2026).
+--      Giữ lại mã cũ trong danh sách để ai còn gửi vào nhóm cũ vẫn đóng được việc.
+--   2. TỪ KHOÁ QUÁ CHẶT. Bản cũ chỉ khớp 'em gửi báo cáo'/'em báo cáo' nên trượt tin
+--      thật "E gửi bc ngày 06.06 ạ" (đo được trong zalo_messages ngày 06/06/2026).
+--
+-- GIỚI HẠN ĐÃ BIẾT của cách nhận diện theo từ khoá:
+--   - Ảnh chụp báo cáo KHÔNG kèm chú thích sẽ trượt, vì lúc đó content chỉ là '[Hình ảnh]'.
+--   - Câu như "em xem báo cáo rồi nhé" vẫn bị tính là đã báo cáo.
 -- ==============================================================================
 
 CREATE OR REPLACE FUNCTION public.process_zalo_auto_complete_task()
@@ -15,11 +26,20 @@ DECLARE
     v_task_id TEXT;
     v_max_id INT;
     v_new_td_id TEXT;
+    -- Nhóm Zalo dùng để gửi báo cáo cuối ngày.
+    c_nhom_bao_cao CONSTANT TEXT[] := ARRAY['6491009630666576664', '6274675927160413910'];
 BEGIN
-    -- 1. CHỈ CHẠY NẾU TIN NHẮN GỬI VÀO ĐÚNG NHÓM VÀ CÓ CHỨA CÁC CỤM TỪ KHOÁ (Không phân biệt hoa/thường)
-    IF NEW.thread_id = '6274675927160413910' 
-       AND (NEW.content ILIKE '%em gửi báo cáo%' OR NEW.content ILIKE '%em báo cáo%') THEN
-        
+    -- 1. CHỈ CHẠY NẾU TIN VÀO ĐÚNG NHÓM BÁO CÁO VÀ CÓ DẤU HIỆU LÀ TIN BÁO CÁO.
+    --    ILIKE cho phần tiếng Việt (đã kiểm chứng khớp được cả chữ hoa lẫn dấu);
+    --    regex \y cho "bc" để KHÔNG bắt nhầm chữ chứa "bc" bên trong (vd mã 'ABC123').
+    IF NEW.thread_id = ANY(c_nhom_bao_cao)
+       AND NEW.content IS NOT NULL
+       AND (
+              NEW.content ILIKE '%báo cáo%'
+           OR NEW.content ILIKE '%báocáo%'
+           OR NEW.content ~* '\ybc\y'
+           ) THEN
+
         -- 2. TÌM MÃ NHÂN VIÊN (DỰA VÀO ZALO UID)
         SELECT id, name INTO v_staff_id, v_staff_name
         FROM public.nhan_vien
@@ -95,7 +115,13 @@ EXECUTE FUNCTION public.process_zalo_auto_complete_task();
 --
 -- Thay vào đó test đúng THỨ ĐÃ ĐỔI: mệnh đề WHERE tìm việc. Chứng minh 2 chiều —
 -- mệnh đề mới TÌM THẤY việc nhóm, mệnh đề cũ KHÔNG (nếu cũ cũng thấy thì test vô nghĩa).
--- Kiểm tra đầu-cuối thật sự: để một NV gửi "em gửi báo cáo" vào nhóm Zalo như thường ngày.
+-- Kiểm tra đầu-cuối thật sự: để một NV gửi "bc" / "báo cáo" vào nhóm 6491009630666576664.
+--
+-- 31/07/2026 đã kiểm đầu-cuối bằng giao dịch TỰ HUỶ (chèn tin thử → kiểm tra → RAISE để
+-- rollback, không để lại dòng nào trong zalo_messages). Ba ca đều đạt:
+--   CA1 đúng nhóm nhưng nội dung "3"            → KHÔNG đóng việc  ✔
+--   CA2 có chữ "báo cáo" nhưng gửi nhóm khác     → KHÔNG đóng việc  ✔
+--   CA3 đúng nhóm + "E gửi bc ngày 31.07 ạ"      → ĐÓNG việc + ghi log tiến độ  ✔
 -- ==============================================================================
 DO $$
 DECLARE
