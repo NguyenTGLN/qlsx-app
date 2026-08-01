@@ -247,13 +247,11 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     if (locNhom && !dsNhomLoc.some(n => n.gia === locNhom)) setLocNhom('');
   }, [dsNhomLoc, locNhom]);
 
-  if (loading) return (
-    <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
-      <Loader2 size={18} className="spin" style={{ verticalAlign: 'middle', marginRight: 6 }} />
-      Đang tải chấm công…
-    </div>
-  );
-
+  // if (manPhanNhom) PHẢI đứng trước if (loading): doiNhom (đổi nhóm) gọi taiDuLieu() ở cuối,
+  // mà taiDuLieu() luôn setLoading(true) trước khi fetch. Nếu if (loading) đứng trước, mỗi lần
+  // chọn một nhóm trong ô select cả màn hình sẽ nháy về "Đang tải chấm công…" rồi mới quay lại
+  // màn phân nhóm — trong khi dữ liệu cũ (kpiRows, dsNhanVien) vẫn hiển thị đúng bình thường
+  // cho tới khi có dữ liệu mới, không có lý do gì phải nhường chỗ cho màn hình tải.
   if (manPhanNhom) {
     return (
       <ManPhanNhom
@@ -262,6 +260,13 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
       />
     );
   }
+
+  if (loading) return (
+    <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
+      <Loader2 size={18} className="spin" style={{ verticalAlign: 'middle', marginRight: 6 }} />
+      Đang tải chấm công…
+    </div>
+  );
 
   if (chon) {
     const nv = dsNhanVien.find(x => x.id === chon) || { id: chon, ten: chon };
