@@ -4,13 +4,17 @@ import {
   gomThongKe, tongTatCa, docNhomTuKpi, MA_CHI_TIEU_NHOM, dsNguoiPhanNhom,
 } from '../../lib/chamCongThongKe';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
-import { ChevronLeft, AlertTriangle, Loader2, ChevronRight, Users } from 'lucide-react';
+import NapChamCong from './NapChamCong';
+import { ChevronLeft, AlertTriangle, Loader2, ChevronRight, Users, Upload } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Màn hình CHỈ ĐỌC: xem bảng chấm công gốc (dữ liệu máy chấm công) — căn cứ của 2 chỉ
-// tiêu chuyên cần trong KPI. Chủ app trước đây phải vào Supabase mới xem được, nhân
-// viên không có chỗ nào để tự tra vì sao mình bị trừ điểm. Không có nút sửa/xoá/nhập gì
-// cả — dữ liệu vào bằng scripts/import-cham-cong.mjs.
+// Xem bảng chấm công gốc (dữ liệu máy chấm công) — căn cứ của 2 chỉ tiêu chuyên cần
+// trong KPI. Chủ app trước đây phải vào Supabase mới xem được, nhân viên không có chỗ
+// nào để tự tra vì sao mình bị trừ điểm. Từng Ô vẫn KHÔNG sửa được — dữ liệu chỉ vào
+// theo CẢ KỲ một lượt, qua nút "Nạp từ Excel" ngay trong màn hình này (NapChamCong.jsx)
+// hoặc qua scripts/import-cham-cong.mjs chạy tay. Cả hai ĐÁNG LẼ đọc tệp qua chung một
+// bộ hàm thuần ở src/lib/chamCongExcel.js — đó là Ý ĐỊNH, nhưng CHƯA THÀNH HIỆN THỰC:
+// script vẫn giữ bản sao riêng của nó (xem đầu chamCongExcel.js).
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Kỳ mặc định = tháng hiện tại, dạng 'YYYY-MM'. Copy nguyên từ KpiTab.jsx cho đồng bộ.
@@ -67,6 +71,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   const [locNhom, setLocNhom] = useState(() => new Set());
   const [bung, setBung] = useState(() => new Set()); // khoá nhóm đang bung trong khối thống kê
   const [manPhanNhom, setManPhanNhom] = useState(false);
+  const [moNap, setMoNap] = useState(false); // true = đang mở modal "Nạp từ Excel" (NapChamCong.jsx)
 
   const taiDuLieu = useCallback(async () => {
     setLoading(true);
@@ -309,6 +314,19 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
           type="month" value={ky} onChange={e => setKy(e.target.value || kyHienTai())}
           style={{ ...oInput, width: 'auto' }}
         />
+        {/* Hai nút VIỆC đứng liền ô chọn tháng, dãy nút LỌC đứng sau: nút việc luôn có mặt và
+            rộng cố định, còn dãy lọc dài ngắn theo số nhóm của kỳ — xếp ngược lại thì mỗi lần
+            đổi kỳ hai nút việc lại nhảy chỗ. */}
+        {canEdit && (
+          <button onClick={() => setMoNap(true)} style={nutNapExcel}>
+            <Upload size={13} /> Nạp từ Excel
+          </button>
+        )}
+        {canEdit && kpiRows.length > 0 && (
+          <button onClick={() => setManPhanNhom(true)} style={nutPhanNhom}>
+            <Users size={13} /> Phân nhóm
+          </button>
+        )}
         {dsNhomLoc.length > 1 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.74rem', color: '#64748b' }}>Nhóm:</span>
@@ -329,11 +347,6 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
               <button onClick={() => setLocNhom(new Set())} style={nutBoLoc}>✕ Bỏ lọc</button>
             )}
           </div>
-        )}
-        {canEdit && kpiRows.length > 0 && (
-          <button onClick={() => setManPhanNhom(true)} style={nutPhanNhom}>
-            <Users size={13} /> Phân nhóm
-          </button>
         )}
         {rows.length > 0 && (
           <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
@@ -368,7 +381,8 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
 
       {!loi && rows.length === 0 && (
         <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
-          Chưa có dữ liệu chấm công cho kỳ này. Dữ liệu nạp bằng scripts/import-cham-cong.mjs.
+          Chưa có dữ liệu chấm công cho kỳ này. Nạp bằng nút “Nạp từ Excel” ở trên (cần quyền
+          chỉnh sửa), hoặc chạy scripts/import-cham-cong.mjs.
         </div>
       )}
 
@@ -428,6 +442,29 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {moNap && (
+        <NapChamCong
+          users={users}
+          onXong={kyDaNap => {
+            // Kỳ của NapChamCong suy từ NỘI DUNG tệp Excel; kỳ của tab này là ô chọn tháng
+            // — hai thứ độc lập. Nạp tệp tháng 8 trong khi ô đang chọn tháng 7 mà chỉ gọi
+            // taiDuLieu() thì nó tải lại đúng tháng 7, màn hình không đổi gì, chủ app
+            // tưởng nạp hỏng rồi bấm nạp lại — lần hai vẫn im lặng y hệt. Đổi ky sang đúng
+            // kỳ vừa nạp thì tự tải lại (taiDuLieu là useCallback phụ thuộc [ky], useEffect
+            // ở trên phụ thuộc taiDuLieu — cùng cơ chế ô <input type="month"> đang dùng),
+            // không cần gọi thêm taiDuLieu() ở nhánh đó.
+            //
+            // NapChamCong.jsx truyền kèm kỳ vừa nạp (onXong?.(ketQua.ky)). Nhánh else vẫn giữ
+            // để phòng nơi gọi khác không truyền gì, và cho trường hợp kỳ vừa nạp TRÙNG kỳ đang
+            // chọn — lúc đó setKy là lệnh rỗng (React bỏ qua giá trị nguyên thuỷ không đổi) nên
+            // không có gì kích hoạt tải lại, phải gọi taiDuLieu() tay.
+            if (kyDaNap && kyDaNap !== ky) setKy(kyDaNap);
+            else taiDuLieu();
+          }}
+          onDong={() => setMoNap(false)}
+        />
       )}
     </div>
   );
@@ -773,6 +810,12 @@ const nutTen = {
   padding: '8px 10px', font: 'inherit', fontWeight: 600, fontSize: '0.78rem', color: '#0f172a',
 };
 
+const nutNapExcel = {
+  display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', borderRadius: 8,
+  background: '#2563eb', color: '#fff', fontSize: '0.8rem', fontWeight: 600,
+  padding: '0.4rem 0.7rem', cursor: 'pointer', whiteSpace: 'nowrap',
+};
+
 // Cột trái ghim cứng: cuộn ngang qua vài chục cột ngày mà mất tên dòng thì không biết
 // đang xem ai.
 const thTen = {
@@ -868,7 +911,10 @@ const chip = {
   whiteSpace: 'nowrap', font: 'inherit', fontWeight: 400, lineHeight: 1.4,
 };
 const chipChon = {
-  ...chip, borderColor: '#2563eb', background: '#eff6ff', color: '#1d4ed8', fontWeight: 600,
+  // Ghi lại trọn `border` chứ KHÔNG chỉ đè `borderColor`: `chip` đặt viết tắt `border`, trộn
+  // viết tắt với viết riêng cho cùng một thuộc tính làm React cảnh báo và có thể mất viền khi
+  // vẽ lại — nút đang chọn hết sáng viền xanh.
+  ...chip, border: '1px solid #2563eb', background: '#eff6ff', color: '#1d4ed8', fontWeight: 600,
 };
 const nutBoLoc = {
   border: 'none', background: 'none', color: '#64748b', fontSize: '0.74rem',

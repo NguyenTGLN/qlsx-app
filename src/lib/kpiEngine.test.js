@@ -323,4 +323,43 @@ describe('giaiThich', () => {
     expect(g.buoc[0].dienGiai).toContain('CHUYEN_CAN_KHO');
     expect(g.buoc[0].dienGiai).not.toContain('Chấm chung cả bộ phận');
   });
+
+  // ĐÚNG HÌNH DẠNG dữ liệu thật kỳ 2026-07: apDungChamTuDong đè `diem_chot` bằng số app tính,
+  // và cả 13 dòng vẫn mang `chot_boi = 'Nguyên'` từ lần chấm tay cũ. Nếu popup/Excel/bản in
+  // đọc `diem_chot != null` rồi kết luận "chốt tay", nhân viên và BGD sẽ ký vào một câu vu cho
+  // Nguyên con số mà app tự tính ra từ bảng cải tiến.
+  it('dòng app tự tính nói "App tự tính", KHÔNG ghi công cho người chốt tay cũ', () => {
+    const g = giaiThich({
+      ten: 'ĐÓNG GÓP CẢI TIẾN', chi_tieu: 2, trong_so: 3,
+      diem_chot: 2, chot_boi: 'Nguyên', chot_luc: '2026-07-28T03:00:00Z', __tuDong: true,
+    }, []);
+    expect(g.buoc[0].nguon).toBe('TU_DONG');
+    expect(g.buoc[0].dienGiai).toBe('App tự tính: 2/2');
+    expect(g.buoc[0].dienGiai).not.toContain('Nguyên');
+    expect(g.buoc[0].dienGiai).not.toContain('chốt tay');
+    expect(g.buoc[0].ketQua).toBe(2);
+  });
+
+  it('dòng thưởng do app tự tính cũng nói "App tự tính", không ghi công chốt tay', () => {
+    const g = giaiThich({
+      ten: 'HOÀN THÀNH CÔNG VIỆC ĐÚNG THỜI HẠN', chi_tieu: null, trong_so: 0,
+      diem_chot: 0, chot_boi: 'Nguyên', __tuDong: true,
+    }, []);
+    expect(g.buoc[0].nguon).toBe('TU_DONG');
+    expect(g.buoc[0].dienGiai).toBe('App tự tính: 0');
+    expect(g.buoc[0].dienGiai).not.toContain('Nguyên');
+  });
+
+  // Mặt còn lại của cùng một luật: chỉ tiêu chấm tay THẬT (5S, QUY ĐỊNH CÔNG TY) không mang
+  // dấu __tuDong, nên câu "Quản lý chốt tay bởi …" phải giữ nguyên. Nuốt mất tên người chấm
+  // cũng là làm hỏng bằng chứng, chỉ theo chiều ngược lại.
+  it('chỉ tiêu chấm tay thật vẫn ghi rõ "Quản lý chốt tay bởi …"', () => {
+    const g = giaiThich({
+      ten: 'QUY ĐỊNH CÔNG TY', chi_tieu: 10, trong_so: 5,
+      diem_chot: 8, chot_boi: 'Nguyên', chot_luc: '2026-07-28T03:00:00Z',
+    }, []);
+    expect(g.buoc[0].nguon).toBe('CHOT_TAY');
+    expect(g.buoc[0].dienGiai).toContain('Quản lý chốt tay bởi Nguyên');
+    expect(g.buoc[0].dienGiai).not.toContain('App tự tính');
+  });
 });

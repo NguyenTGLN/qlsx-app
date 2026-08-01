@@ -1,0 +1,211 @@
+// Engine tính nhu cầu mua linh kiện. Hàm THUẦN — không import Supabase, không I/O.
+// Phần gọi DB nằm ở giai đoạn 2. Xem spec:
+//   docs/superpowers/specs/2026-07-29-de-xuat-linh-kien-theo-dot-design.md
+
+// LƯU Ý: StockSummaryTab.jsx:94 hiện vẫn dùng công thức CŨ (lead + an toàn × 2)
+// cho cột "Tồn An Toàn" ở tab Tồn HH. Hai công thức cùng tồn tại tới giai đoạn 3.
+// Ai sửa chỗ này nhớ ngó cả bên đó, kẻo "chữa" nhầm bên đúng.
+
+const SALES_WINDOW_DAYS = 90;
+
+const num = (v) => Number(v) || 0;
+
+// Tồn an toàn = TB bán/ngày × (lead_time × 2 + thời gian an toàn).
+// Hệ số lead nhân 2 để phòng nhà cung cấp giao chậm gấp đôi cam kết.
+//
+// Ô nhập ở AddCatalogItemModal.jsx:71 không chặn số âm, nên lead_time hay thời gian
+// an toàn bị gõ nhầm dấu là chuyện có thật. Kẹp TỪNG Ô một, KHÔNG kẹp trên tổng:
+// kẹp tổng thì một ô âm sẽ ăn mất ô kia — lead −5 cạnh an toàn 30 cho ra 20 ngày
+// thay vì 30, sai một nửa mà không âm, không kẹp, không ai thấy.
+// Phần réo lên do buildProposalLines lo (Task 4): ô nào âm là vào missingParams.
+export function computeSafetyStock({ totalSales90d, leadTimeDays, backupStockDays } = {}) {
+  const avgDaily = Math.max(0, num(totalSales90d)) / SALES_WINDOW_DAYS;
+  const days = Math.max(0, num(leadTimeDays)) * 2 + Math.max(0, num(backupStockDays));
+  return Math.round(avgDaily * days);
+}
+
+// Cần bổ sung = tồn an toàn − tồn hiện tại (không âm).
+export function computeReplenishQty({ totalSales90d, leadTimeDays, backupStockDays, totalQuantity } = {}) {
+  const safety = computeSafetyStock({ totalSales90d, leadTimeDays, backupStockDays });
+  return Math.max(0, safety - num(totalQuantity));
+}
+
+// Lỗi dữ liệu BOM có vòng lặp. Giữ nguyên mảng `cycle` để giao diện chỉ đúng chỗ hỏng.
+// Hàm explodeBom cũ ÂM THẦM bỏ qua vòng lặp — chính kiểu che giấu đó khiến 3 dòng BOM
+// khai ngược chiều sống được 2 tháng mà không ai biết. Ở đây phải nổ ra.
+export class BomCycleError extends Error {
+  constructor(cycle) {
+    super(`BOM có vòng lặp: ${cycle.join(' → ')}`);
+    this.name = 'BomCycleError';
+    this.cycle = cycle;
+  }
+}
+
+// Xếp mọi mã trong bomMap theo thứ tự cha trước con.
+// bomMap dạng { [product_code]: [{ component, qty }] } — giống loadBomMap().
+export function topoSort(bomMap = {}) {
+  const nodes = new Set();
+  Object.keys(bomMap).forEach((p) => {
+    nodes.add(p);
+    (bomMap[p] || []).forEach((c) => nodes.add(c.component));
+  });
+
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  // Object.create(null) chứ không phải {}: mã hàng tên '__proto__' gán vào object
+  // thường sẽ không tạo thuộc tính riêng, màu không bám, node bị duyệt nhiều lần
+  // và thứ tự cha-con vỡ. Không xảy ra với danh mục hiện tại, nhưng đây là nền
+  // của cả engine nên không đáng để hở.
+  const color = Object.create(null);
+  nodes.forEach((n) => { color[n] = WHITE; });
+
+  const order = [];   // gom theo hậu thứ tự: con trước, cha sau
+  const path = [];    // nhánh đang duyệt, để dựng lại vòng lặp khi gặp
+
+  function visit(n) {
+    if (color[n] === BLACK) return;
+    if (color[n] === GRAY) {
+      throw new BomCycleError(path.slice(path.indexOf(n)).concat(n));
+    }
+    color[n] = GRAY;
+    path.push(n);
+    (bomMap[n] || []).forEach((c) => visit(c.component));
+    path.pop();
+    color[n] = BLACK;
+    order.push(n);
+  }
+
+  nodes.forEach((n) => visit(n));
+  return order.reverse();   // đảo lại thành cha trước con
+}
+
+// Làm tròn 3 số lẻ — khớp cách dksxEngine đang làm, tránh sai số dấu phẩy động
+// khi định mức BOM là số lẻ (ví dụ 0.6 mét dây/máy).
+const round3 = (v) => Math.round(v * 1000) / 1000;
+
+// Nổ BOM có trừ tồn ở TỪNG CẤP.
+//   demand     { [mã thành phẩm]: cần bổ sung }
+//   bomMap     { [mã cha]: [{ component, qty }] }
+//   stockMap   { [mã]: tồn kho }            — gồm cả vị trí WIP SX9-
+//   onOrderMap { [mã]: đang về }            — Σ(SL đặt − đã nhập) của dòng CHO_HANG đợt trước
+//
+// Trả { gross, net, buy }:
+//   gross = tổng nhu cầu trước khi trừ   → lưu vào snapshot_gross
+//   net   = sau khi trừ tồn và hàng đang về
+//   buy   = phần net > 0 của những mã KHÔNG có BOM (mã có BOM thì tự sản xuất)
+//
+// Duyệt theo thứ tự tô-pô nên khi tới lượt một mã thì nhu cầu từ MỌI cha đã cộng đủ
+// vào gross — nhờ vậy tồn kho chỉ bị tiêu đúng một lần.
+export function explodeNetted({ demand = {}, bomMap = {}, stockMap = {}, onOrderMap = {} } = {}) {
+  const order = topoSort(bomMap);
+
+  const gross = {};
+  Object.keys(demand).forEach((c) => {
+    gross[c] = round3((gross[c] || 0) + num(demand[c]));
+  });
+
+  const net = {};
+
+  order.forEach((code) => {
+    const avail = num(stockMap[code]) + num(onOrderMap[code]);
+    const n = Math.max(0, round3((gross[code] || 0) - avail));
+    net[code] = n;
+
+    const bom = bomMap[code];
+    if (bom && bom.length > 0 && n > 0) {
+      bom.forEach((c) => {
+        gross[c.component] = round3((gross[c.component] || 0) + n * num(c.qty));
+      });
+    }
+  });
+
+  // Mã có nhu cầu nhưng không xuất hiện ở đâu trong bomMap (không BOM, không là con của ai)
+  Object.keys(gross).forEach((code) => {
+    // Dùng `in` chứ không phải giá trị: net[code] = 0 là hợp lệ, không được bỏ qua nhầm.
+    if (code in net) return;   // vòng trên đã tính rồi
+    const avail = num(stockMap[code]) + num(onOrderMap[code]);
+    net[code] = Math.max(0, round3(gross[code] - avail));
+  });
+
+  const buy = {};
+  Object.keys(net).forEach((code) => {
+    const isParent = bomMap[code] && bomMap[code].length > 0;
+    // round3 đã quy về bội của 0.001 nên không giá trị nào rơi vào khe 0..0.0001.
+    // Giữ ngưỡng cho khớp dksxEngine.js:138, coi như đai an toàn thứ hai.
+    if (!isParent && net[code] > 0.0001) buy[code] = net[code];
+  });
+
+  return { gross, net, buy };
+}
+
+// Dựng các dòng sẽ ghi vào purchase_proposals cho một đợt đề xuất.
+//   items = mảng từ RPC get_stock_summary, mỗi phần tử có:
+//     item_code, item_name, unit, total_sales_90d, lead_time_days, backup_stock_days
+//   (total_quantity của RPC KHÔNG dùng ở đây — tồn lấy từ stockMap để trừ đúng
+//    một lần ở mọi cấp trong explodeNetted.)
+//
+// Trả { lines, missingParams }:
+//   lines         = dòng đề xuất, đã sắp theo mã
+//   missingParams = mã có bán nhưng khai thiếu/sai tham số → hiện lên đầu màn hình,
+//                   KHÔNG âm thầm bỏ qua
+export function buildProposalLines({ items = [], bomMap = {}, stockMap = {}, onOrderMap = {} } = {}) {
+  const dict = {};
+  items.forEach((it) => { dict[it.item_code] = it; });
+
+  // Làm tròn tồn và hàng đang về 3 số lẻ để SỐ LƯU VÀO snapshot sạch: tồn thật có
+  // dòng bị trôi số thực (T-0402 tại HM5 = 2782.7000000000003, 13 chữ số lẻ, do cộng
+  // dồn nhiều lần), không làm tròn thì con số đó nằm nguyên trong snapshot_ton.
+  // Riêng phần đưa vào explodeNetted thì làm tròn ở đây là thừa — hàm đó đã round3
+  // sau mỗi phép trừ. Giữ chung một bản đã làm tròn cho cả hai để khỏi lệch nguồn.
+  const ton = {};
+  Object.keys(stockMap).forEach((k) => { ton[k] = round3(num(stockMap[k])); });
+  const dangVe = {};
+  Object.keys(onOrderMap).forEach((k) => { dangVe[k] = round3(num(onOrderMap[k])); });
+
+  // Nhu cầu gốc = TỒN AN TOÀN (mức cần có trong kho), KHÔNG phải "cần bổ sung".
+  // Phép trừ tồn để explodeNetted lo, và nó trừ đúng MỘT lần cho mọi cấp.
+  // Nếu gieo bằng "cần bổ sung" (đã trừ tồn rồi) thì tồn bị trừ HAI lần và nhu cầu
+  // bốc hơi: F-CB-BNC an toàn 982, tồn 524 → gieo 458 → net = 458 − 524 = 0.
+  const rootDemand = {};
+  const missingParams = [];
+
+  items.forEach((it) => {
+    if (num(it.total_sales_90d) <= 0) return;   // không bán trong 90 ngày → không đề xuất
+    // Réo lên khi BẤT KỲ ô nào âm, hoặc khi cả hai ô đều bỏ trống.
+    // Không dùng `lt <= 0 && bs <= 0`: lỗi hay gặp nhất là MỘT ô gõ nhầm dấu nằm
+    // cạnh một ô đúng — điều kiện "và" bỏ lọt đúng ca đó, mã bị tính hụt trong im lặng.
+    const lt = num(it.lead_time_days);
+    const bs = num(it.backup_stock_days);
+    if (lt < 0 || bs < 0 || (lt === 0 && bs === 0)) {
+      missingParams.push(it.item_code);
+    }
+    const safety = computeSafetyStock({
+      totalSales90d: it.total_sales_90d,
+      leadTimeDays: it.lead_time_days,
+      backupStockDays: it.backup_stock_days,
+    });
+    if (safety > 0) rootDemand[it.item_code] = safety;
+  });
+
+  const { gross, buy } = explodeNetted({
+    demand: rootDemand, bomMap, stockMap: ton, onOrderMap: dangVe,
+  });
+
+  const lines = Object.keys(buy).sort().map((code) => {
+    const retail = num(rootDemand[code]);          // phần do chính mã này bán ra
+    const g = num(gross[code]);
+    return {
+      item_code: code,
+      item_name: dict[code]?.item_name || '',
+      unit: dict[code]?.unit || '',
+      snapshot_gross: g,
+      snapshot_ton: num(ton[code]),
+      snapshot_dang_ve: num(dangVe[code]),
+      retail_qty: retail,
+      bom_qty: round3(g - retail),                 // phần do cha kéo xuống
+      calculated_qty: buy[code],
+      actual_qty: buy[code],
+    };
+  });
+
+  return { lines, missingParams };
+}

@@ -5,12 +5,26 @@ import { useRef, useState } from 'react';
 import { Paperclip, X, FileText, Play, AlertTriangle, Loader2, RotateCw } from 'lucide-react';
 import { planSelection, totalSize, fmtSize, MAX_COUNT } from '../lib/attachments';
 import { uploadAttachment, deleteAttachments } from '../lib/attachmentStorage';
+import { useSignedAttachment } from '../lib/attachmentSignedUrl';
 
 const thumb = {
   width: 62, height: 62, borderRadius: 'var(--border-radius-sm)',
   border: '1px solid var(--border-color)', overflow: 'hidden',
   position: 'relative', flexShrink: 0, background: 'var(--bg-primary)',
 };
+
+// Ảnh đã nằm trong Storage: bucket không cho đọc công khai nên phải xin link ký.
+function AnhDaTai({ att }) {
+  const { url, loi } = useSignedAttachment(att);
+  if (!url) {
+    return (
+      <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 600, color: loi ? 'var(--danger-color)' : 'var(--text-tertiary)' }}>
+        {loi ? 'lỗi' : '…'}
+      </span>
+    );
+  }
+  return <img src={url} alt={att.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
+}
 
 // onChange LUÔN nhận một hàm cập nhật: onChange(prev => next).
 // Bắt buộc phải vậy — nhiều file tải song song cùng lúc, nếu dựng danh sách mới từ `value`
@@ -102,7 +116,7 @@ export default function AttachmentInput({ value, onChange, folder = 'tasks', use
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {list.map(a => (
             <div key={a.path} style={thumb} title={`${a.name} · ${fmtSize(a.size)}`}>
-              {a.kind === 'image' && <img src={a.url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+              {a.kind === 'image' && <AnhDaTai att={a} />}
               {a.kind === 'video' && (
                 <span style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', color: '#fff' }}>
                   <Play size={18} fill="#fff" />

@@ -143,22 +143,34 @@ export function giaiThich(ct, logs = [], bpMap = {}) {
   const kq = tinhChiTieu(ct, logs, bpMap);
 
   const chotTay = ct.diem_chot != null;
+  // Dòng do APP tự tính, `apDungChamTuDong` đánh dấu. Phải hỏi TRƯỚC `chotTay` ở mọi nhánh:
+  // hàm đó ghi thẳng `diem_chot` nên `chotTay` cũng bật theo, hỏi sai thứ tự là ghi công một
+  // con số app tính cho người chốt tay gần nhất — đúng cái sai đã in ra bản ký của nhân viên.
+  const tuDong = !!ct.__tuDong;
   // Chốt tay ghi rõ ai chốt, lúc nào — dùng chung cho cả dòng thường lẫn dòng thưởng.
   const nguoiChot = ct.chot_boi ? ` bởi ${ct.chot_boi}` : '';
   const lucChot = ct.chot_luc ? ` (${new Date(ct.chot_luc).toLocaleDateString('vi-VN')})` : '';
 
   if (kq.laThuong) {
+    // Nhánh này CŨNG cần TU_DONG. Dòng thưởng là dòng bỏ trống `chi_tieu`; hai luật chuyên
+    // cần đi qua `tuDiemTru` nên thiếu `chi_tieu` là chúng trả "không chấm", nhưng 5 luật còn
+    // lại (việc đúng hạn, video, báo cáo cuối ngày, sản xuất, cải tiến) không đọc `chi_tieu`
+    // — dòng thưởng mang `ma` của chúng vẫn bị chấm tự động. Form "Thêm chỉ tiêu" cho chép
+    // `ma` của người khác rồi bỏ trống mức chỉ tiêu, nên hình dạng đó dựng được từ giao diện.
+    const nguonThuong = tuDong ? 'TU_DONG' : chotTay ? 'CHOT_TAY' : 'NHAT_KY';
     return {
       ten: ct.ten,
       buoc: [{
         nhan: 'Điểm cộng thêm',
         // Chốt tay thì nhật ký KHÔNG còn quyết định điểm nữa, nên diễn giải phải nói đúng
         // nguồn — liệt kê "+1.5" trong khi kết quả là 3 sẽ phá chính mục đích popup bằng chứng.
-        dienGiai: chotTay
-          ? `Quản lý chốt tay${nguoiChot}${lucChot}: ${soGon(kq.diemQuyDoi)}`
-          : (logs.map(l => `${num(l.so_diem) > 0 ? '+' : ''}${num(l.so_diem)}`).join(' ') || '0'),
+        dienGiai: tuDong
+          ? `App tự tính: ${soGon(kq.diemQuyDoi)}`
+          : chotTay
+            ? `Quản lý chốt tay${nguoiChot}${lucChot}: ${soGon(kq.diemQuyDoi)}`
+            : (logs.map(l => `${num(l.so_diem) > 0 ? '+' : ''}${num(l.so_diem)}`).join(' ') || '0'),
         ketQua: soGon(kq.diemQuyDoi),
-        nguon: chotTay ? 'CHOT_TAY' : 'NHAT_KY',
+        nguon: nguonThuong,
       }],
       nhatKy: logs,
     };
@@ -180,6 +192,15 @@ export function giaiThich(ct, logs = [], bpMap = {}) {
     buocDat = {
       nhan: 'Điểm đạt', nguon: 'BO_PHAN',
       dienGiai: `Chấm chung cả bộ phận: ${soGon(kq.diemDat)}/${ct.chi_tieu}`,
+      ketQua: soGon(kq.diemDat),
+    };
+  } else if (tuDong) {
+    // Đứng SAU nhánh bộ phận có chủ đích: dòng bộ phận đang ghi "Chấm chung cả bộ phận: 8/10"
+    // — câu đó đúng sự thật và KHÔNG ghi công cho ai, đổi nó chỉ làm mất thông tin "cả bộ
+    // phận". Chỉ nhánh `chotTay` mới nói sai người, nên chỉ nhánh đó bị chặn trước.
+    buocDat = {
+      nhan: 'Điểm đạt', nguon: 'TU_DONG',
+      dienGiai: `App tự tính: ${soGon(kq.diemDat)}/${ct.chi_tieu}`,
       ketQua: soGon(kq.diemDat),
     };
   } else if (chotTay) {

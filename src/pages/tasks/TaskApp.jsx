@@ -25,7 +25,7 @@ import { useNavigate } from 'react-router-dom';
     // ⚙️  CẤU HÌNH
     // ============================================================
     const SUPABASE_URL    = 'https://ngwkzicrnspeggunsblr.supabase.co'
-    const SUPABASE_ANON   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5nd2t6aWNybnNwZWdndW5zYmxyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMTU4MTgsImV4cCI6MjA4NzY5MTgxOH0.XgxezghOyUYgr370Ge13VN_V2r-PfR4BEq7JDDF4Pts'
+    const SUPABASE_ANON   = 'sb_publishable_I_2VImB-EKu5Vork7t--QQ_4Qi8nXwX'
     const N8N_WEBHOOK     = 'https://YOUR_N8N_HOST/webhook/YOUR_WEBHOOK_ID'
 
     
@@ -172,7 +172,10 @@ import { useNavigate } from 'react-router-dom';
         fetchAllRows(() => db.from('cong_viec_duoc_giao').select('*').order('created_date',{ascending:false})),
         db.from('nhan_vien').select('*'),
         fetchAllRows(() => db.from('tien_do').select('*').order('time',{ascending:true})),
-        db.from('production_orders').select('*, production_logs(actual_quantity)').not('status', 'eq', 'cancelled').order('created_at', { ascending: false }),
+        // Lọc SAN_XUAT: 5 phiếu công việc hỗ trợ (VIEC-GH/NH/DK/DTNB/PS) là phiếu thường
+        // trực của màn hình thợ, không phải lệnh sản xuất đang chờ — lọt vào đây thì danh
+        // sách lệnh chờ lúc nào cũng có 5 dòng không liên quan.
+        db.from('production_orders').select('*, production_logs(actual_quantity)').eq('loai_viec', 'SAN_XUAT').not('status', 'eq', 'cancelled').order('created_at', { ascending: false }),
       ])
       if (tRes.error) throw tRes.error; if (uRes.error) throw uRes.error
 
@@ -1291,11 +1294,20 @@ import { useNavigate } from 'react-router-dom';
       useEffect(() => { if (me && !canSeeTab(me,'tasks','dashboard') && view === 'dashboard') { setView('tasks'); setAssFilter(me.id) } }, [me, view])
 
       const lastCheckDayRef = useRef(new Date().toISOString().split('T')[0])
+      // ── TĐ-12 ──────────────────────────────────────────────────────────────
+      // TRƯỚC ĐÂY: cứ 5 phút gọi loadAll() một lần — kéo trọn `cong_viec_duoc_giao`,
+      //   `tien_do`, `nhan_vien` và `production_orders` (đều select('*')), tức 12 lượt/giờ.
+      //   Nhưng kết quả CHỈ được dùng khi `newClones.length > 0 || isNewDay` — thực tế
+      //   chỉ cần đúng 1 lần/ngày. 11/12 lượt gọi là bỏ đi hoàn toàn.
+      // NAY: thoát sớm nếu chưa sang ngày mới ⇒ giảm ~92% số lần gọi.
+      // Việc "thấy ngay khi đồng nghiệp tạo/sửa việc" được BÙ bằng realtime ở useEffect
+      //   ngay bên dưới — nhanh hơn hẳn mức 5 phút cũ mà gần như không tốn gì.
       useEffect(() => {
         if (!me) return
         const interval = setInterval(async () => {
           const today = new Date().toISOString().split('T')[0]
           const isNewDay = today !== lastCheckDayRef.current
+          if (!isNewDay) return          // ← chưa sang ngày mới thì không đụng tới DB
           lastCheckDayRef.current = today
           try {
             const {tasks:t, users:u, pendingOrders:po} = await loadAll()
@@ -1309,9 +1321,38 @@ import { useNavigate } from 'react-router-dom';
               if (newClones.length > 0) toast(`Tự động tạo ${newClones.length} việc lặp lại`)
             }
           } catch(_) {}
-        }, 5 * 60 * 1000) 
+        }, 5 * 60 * 1000)
         return () => clearInterval(interval)
       }, [me])
+
+      // TĐ-12 (phần bù): thay polling bằng realtime cập nhật CỤC BỘ trên `cong_viec_duoc_giao`.
+      // Không gọi lại loadAll() — chỉ vá đúng dòng thay đổi vào mảng tasks đang có, nên
+      // gần như không tốn băng thông. Đã kiểm chứng relreplident='d': INSERT/UPDATE có đủ
+      // dòng mới trong payload.new; DELETE chỉ có khoá chính — mã dưới chỉ dùng payload.old.id.
+      useEffect(() => {
+        if (!me) return
+        const ch = db.channel(`tasks_rt_${Math.random().toString(36).slice(2)}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'cong_viec_duoc_giao' }, (payload) => {
+            setTasks(prev => {
+              const um = new Map((users || []).map(x => [x.id, x]))
+              if (payload.eventType === 'INSERT') {
+                if (prev.some(t => t.id === payload.new.id)) return prev
+                return [withMembers({ ...payload.new, progressUpdates: [] }, um), ...prev]
+              }
+              if (payload.eventType === 'UPDATE') {
+                return prev.map(t => t.id === payload.new.id
+                  ? withMembers({ ...t, ...payload.new, progressUpdates: t.progressUpdates || [] }, um)
+                  : t)
+              }
+              if (payload.eventType === 'DELETE') {
+                return prev.filter(t => t.id !== payload.old.id)
+              }
+              return prev
+            })
+          })
+          .subscribe()
+        return () => { db.removeChannel(ch) }
+      }, [me, users])
 
       const TASK_CACHE_KEY = 'task_app_data';
 
@@ -1436,7 +1477,13 @@ import { useNavigate } from 'react-router-dom';
           if (idChanged) {
             const {data:oldRow, error:fetchErr} = await db.from('nhan_vien').select('*').eq('id', originalId).single();
             if (fetchErr) throw new Error('Không tìm thấy NV: ' + fetchErr.message);
-            const { password:_omit, ...oldNoPw } = oldRow;          // không mang cột password (sẽ bị bỏ)
+            // `ten_cham_cong` PHẢI bị tách khỏi bản sao, không phải dọn dẹp cho gọn: chỉ mục
+            // duy nhất `nhan_vien_ten_cham_cong_uniq` (sql/them_ten_cham_cong.sql) cấm hai
+            // dòng cùng họ tên chấm công. Ở thời điểm insert này dòng mã CŨ vẫn còn trong
+            // bảng, nên bê nguyên cột đó sang dòng mới là đụng chỉ mục → insert hỏng ngay
+            // câu đầu tiên và cả luồng đổi mã chết với lỗi trùng khoá của Postgres. Giá trị
+            // được đặt lại SAU khi xoá dòng cũ (xem cuối khối), lúc đó nó chỉ còn một chủ.
+            const { password:_omit, ten_cham_cong:_omitTenChamCong, ...oldNoPw } = oldRow; // không mang cột password (sẽ bị bỏ)
             const newUser = {...oldNoPw, ...data, id: form.id};
             const {error:insErr} = await db.from('nhan_vien').insert(newUser);
             if (insErr) throw new Error('Lỗi tạo ID: ' + insErr.message);
@@ -1453,15 +1500,42 @@ import { useNavigate } from 'react-router-dom';
             if (renErr) throw new Error('Lỗi chuyển việc sang mã mới: ' + renErr.message);
             await db.from('cong_viec_duoc_giao').update({updated_by: form.id}).eq('updated_by', originalId);
             await db.from('tien_do').update({updated_by_id: form.id}).eq('updated_by_id', originalId);
-            // BẮT BUỘC trước khi xoá mã cũ: kpi_chi_tieu.nhan_vien_id là FK
-            // `on delete cascade` (sql/create_kpi_module.sql) — đây là FK cascade DUY NHẤT
-            // trỏ vào nhan_vien. Xoá bản ghi mã cũ mà chưa chuyển thì cascade nuốt sạch
-            // kpi_chi_tieu của MỌI KỲ, rồi cascade tiếp nuốt kpi_nhat_ky (bằng chứng chấm
-            // điểm). Không cảnh báo, không phục hồi được, mà KPI gắn thẳng với lương thưởng.
+            // BẮT BUỘC trước khi xoá mã cũ. BỐN bảng dưới đây đều có FK `on delete cascade`
+            // trỏ vào nhan_vien — không phải một bảng như chú thích cũ ghi nhầm. Xoá dòng mã
+            // cũ mà chưa chuyển thì cascade nuốt sạch dữ liệu của MỌI KỲ: không cảnh báo,
+            // không phục hồi được. Đủ bốn dòng update mới an toàn, thiếu một dòng là mất im
+            // lặng đúng bảng đó:
+            //   kpi_chi_tieu        (sql/create_kpi_module.sql)        — mất luôn kpi_nhat_ky
+            //                       theo cascade tầng hai (bằng chứng chấm điểm); KPI gắn
+            //                       thẳng với lương thưởng.
+            //   cham_cong          (sql/create_cham_cong.sql)          — mất trọn lịch sử
+            //                       chấm công, hai chỉ tiêu chuyên cần mất căn cứ.
+            //   chuyen_can_ngoai_le (sql/create_chuyen_can_ngoai_le.sql) — mất các ngày đã
+            //                       miễn trừ, người đó bị trừ điểm chuyên cần oan.
+            //   cai_tien           (sql/create_cai_tien.sql)           — mất mọi sáng kiến đã
+            //                       gửi cùng số tiền thưởng đã tính.
+            // Hai bảng cascade/khoá ngoại còn lại đã được lo ở trên, KHÔNG cần update ở đây:
+            // nhan_vien_secret (rpc sao_chep_secret) và cong_viec_duoc_giao / tien_do
+            // (rpc doi_ma_nv_trong_viec + hai lệnh update updated_by).
             const {error:kpiErr} = await db.from('kpi_chi_tieu').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
             if (kpiErr) throw new Error('Lỗi chuyển KPI sang mã mới: ' + kpiErr.message);
+            const {error:ccErr} = await db.from('cham_cong').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
+            if (ccErr) throw new Error('Lỗi chuyển chấm công sang mã mới: ' + ccErr.message);
+            const {error:nlErr} = await db.from('chuyen_can_ngoai_le').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
+            if (nlErr) throw new Error('Lỗi chuyển ngày chuyên cần ngoại lệ sang mã mới: ' + nlErr.message);
+            const {error:ctErr} = await db.from('cai_tien').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
+            if (ctErr) throw new Error('Lỗi chuyển cải tiến sang mã mới: ' + ctErr.message);
             const {error:delErr} = await db.from('nhan_vien').delete().eq('id', originalId);
             if (delErr) throw new Error('Lỗi xóa ID cũ: ' + delErr.message);
+            // Trả `ten_cham_cong` lại cho dòng mã mới, NGAY SAU khi dòng mã cũ đã biến mất —
+            // giá trị lúc này chỉ còn một chủ nên không đụng chỉ mục duy nhất
+            // `nhan_vien_ten_cham_cong_uniq` nữa (xem lý do tách cột ở đầu khối). Bỏ bước này
+            // là mất ánh xạ họ tên máy chấm công: lần nạp Excel sau app không nhận ra người
+            // này nữa mà hỏi lại, và một lần chọn nhầm là chấm công chạy sang người khác.
+            if (oldRow.ten_cham_cong != null) {
+              const {error:tccErr} = await db.from('nhan_vien').update({ten_cham_cong: oldRow.ten_cham_cong}).eq('id', form.id);
+              if (tccErr) throw new Error('Lỗi chuyển họ tên chấm công sang mã mới: ' + tccErr.message);
+            }
             const newUsers = users.map(u => u.id === originalId ? {...u, ...data, id: form.id} : u);
             setUsers(newUsers);
             const um = new Map(newUsers.map(u=>[u.id,u]));
@@ -1652,4 +1726,4 @@ import { useNavigate } from 'react-router-dom';
         userModal && h(UserModal,{ user: userModal.user||null, onSave: handleSaveUser, onClose: ()=>setUserModal(null) })
       )
     }
-export default App;
+export default App;

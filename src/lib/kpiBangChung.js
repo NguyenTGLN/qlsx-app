@@ -9,6 +9,21 @@
 // màn hình vẫn chạy được thay vì gom tất cả vào một nhóm `null`.
 export const khoaChiTieu = ct => ct.ma || ct.ten;
 
+// Chỉ tiêu app TỰ TÍNH điểm (luật trong kpiTuDong.js) — không ai chấm tay được.
+//
+// Bảng chấm chung phải hỏi câu này ở HAI chỗ: khoá ô nhập, và loại khỏi popup "＋ Thêm chỉ
+// tiêu". Thiếu chỗ thứ hai thì chỉ tiêu vừa gỡ ra được thêm vào lại ngay lượt sau, và bẫy cũ
+// tái diễn y nguyên.
+//
+// Thiếu `cach_cham` thì trả false: dòng cũ chưa chạy migration phải giữ đường chấm tay, khoá
+// nhầm là cả một chỉ tiêu không ai chấm được mà không có lỗi nào báo.
+//
+// Cột `cach_cham` (đặt bởi sql/danh_dau_chi_tieu_tu_dong.sql) và LUAT_TU_DONG trong
+// kpiTuDong.js là HAI nguồn tách rời, chỉ trùng nhau vì tay đặt đúng cả hai. Thêm luật mới
+// vào LUAT_TU_DONG mà quên cập nhật cach_cham='TU_DONG' trong DB thì ô nhập ở đây mở lại,
+// không có lỗi nào báo.
+export const laChamTuDong = ct => ct?.cach_cham === 'TU_DONG';
+
 // Danh sách nhân viên = các cột của bảng, sắp theo tên hiển thị.
 export function dsNhanVienChamChung(rows = [], users = []) {
   const ids = [];
@@ -66,12 +81,18 @@ export const NGUON_BANG_CHUNG = 'BANG_CHUNG';
 // `soNguoi` để chủ app biết thêm vào thì bảng rộng ra bao nhiêu ô thật, bao nhiêu ô gạch chéo.
 export function dsChiTieuThemDuoc(rows = []) {
   const nhom = new Map();
+  const khoaTuDong = new Set();   // khoá nhóm có DÙ CHỈ MỘT dòng tự động
   for (const r of rows) {
     if (r.cap_do === 'BO_PHAN' || r.cham_chung || !r.nhan_vien_id) continue;
     const k = khoaChiTieu(r);
+    // Bật cham_chung ghi theo `ma` cho CẢ nhóm (KpiBangChung.jsx:34-36), nên đọc cũng phải
+    // theo nhóm: còn một dòng tự động là cả nhóm không được mời vào bảng chung. Lọc từng
+    // dòng thì một dòng THU_CONG lạc (KpiTab.jsx:491 mặc định) đủ kéo cả nhóm quay lại.
+    if (laChamTuDong(r)) { khoaTuDong.add(k); continue; }
     if (!nhom.has(k)) nhom.set(k, { ma: r.ma || null, ten: r.ten, soNguoi: 0 });
     nhom.get(k).soNguoi += 1;
   }
+  for (const k of khoaTuDong) nhom.delete(k);
   return [...nhom.values()]
     .sort((a, b) => b.soNguoi - a.soNguoi || a.ten.localeCompare(b.ten, 'vi'));
 }
@@ -120,7 +141,7 @@ export function demNguoiTheoChiTieu(rows = []) {
 // `soNhanVien <= 0` (chưa tải xong danh sách) thì KHÔNG được kết luận là chung: đoán bừa ở
 // đây sẽ tô cả bảng thành một màu trong lúc đang tải, người dùng đọc sai ngay từ cái nhìn đầu.
 export function phanLoaiChiTieu(ct, demNguoi, soNhanVien = 0) {
-  if (ct?.cach_cham === 'TU_DONG') return 'TU_DONG';
+  if (laChamTuDong(ct)) return 'TU_DONG';
   if (ct?.cham_chung) return 'BANG_CHUNG';
   if (ct?.lien_ket_bo_phan) return 'BO_PHAN';
   const n = demNguoi?.get?.(khoaChiTieu(ct || {})) || 0;
