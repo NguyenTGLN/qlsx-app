@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { nhanNhomGon, docNhomTuKpi, thongKeMotNguoi } from './chamCongThongKe';
+import { apDungChamTuDong } from './kpiTuDong';
 
 describe('nhanNhomGon', () => {
   it('cắt phần trước dấu — để lấy tên nhóm ngắn', () => {
@@ -136,5 +137,49 @@ describe('thongKeMotNguoi', () => {
       tongNghi: 0, nghiPhep: 0, nghiQuaQuyDinh: 0,
       phutMuon: 0, phutVeSom: 0, soNgayMien: 0,
     });
+  });
+});
+
+describe('khoá với KPI — nghiQuaQuyDinh phải bằng vuotPhep mà kpiTuDong dùng để trừ điểm', () => {
+  const d = ngay => ({
+    nhan_vien_id: 'a', ky: '2026-07', ngay,
+    di_muon_phut: 0, ve_som_phut: 0, nghi: true,
+  });
+  const chiTieu = { id: 'ct', cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'CHUYEN_CAN_CA_NHAN', chi_tieu: 10 };
+
+  // vuotPhep KPI đang dùng, suy ngược từ điểm: truNghi = vuotPhep × 3, không có phút muộn nào.
+  const vuotPhepTheoKpi = (chamCong, ngoaiLe) => {
+    const kq = apDungChamTuDong([chiTieu], [], [], '2026-07', '2026-07-31', [], chamCong, ngoaiLe);
+    return (10 - kq.rows[0].diem_chot) / 3;
+  };
+
+  it('4 ngày nghỉ, không ngày nào có dấu', () => {
+    const cc = [d('2026-07-01'), d('2026-07-02'), d('2026-07-03'), d('2026-07-06')];
+    const tk = thongKeMotNguoi(cc, () => false);
+    expect(tk.nghiQuaQuyDinh).toBe(3);
+    expect(tk.nghiQuaQuyDinh).toBe(vuotPhepTheoKpi(cc, []));
+  });
+
+  it('4 ngày nghỉ, 1 ngày có dấu Đặc biệt', () => {
+    const cc = [d('2026-07-01'), d('2026-07-02'), d('2026-07-03'), d('2026-07-06')];
+    const ngoaiLe = [{ nhan_vien_id: 'a', ngay: '2026-07-02', ly_do: 'ốm' }];
+    const tk = thongKeMotNguoi(cc, ngay => ngay === '2026-07-02');
+    expect(tk.nghiQuaQuyDinh).toBe(2);
+    expect(tk.nghiQuaQuyDinh).toBe(vuotPhepTheoKpi(cc, ngoaiLe));
+  });
+
+  it('1 ngày nghỉ trong hạn mức — cả hai đều ra 0', () => {
+    const cc = [d('2026-07-06')];
+    const tk = thongKeMotNguoi(cc, () => false);
+    expect(tk.nghiQuaQuyDinh).toBe(0);
+    expect(tk.nghiQuaQuyDinh).toBe(vuotPhepTheoKpi(cc, []));
+  });
+
+  it('mọi ngày nghỉ đều có dấu — cả hai đều ra 0', () => {
+    const cc = [d('2026-07-01'), d('2026-07-02'), d('2026-07-03')];
+    const ngoaiLe = cc.map(c => ({ nhan_vien_id: 'a', ngay: c.ngay, ly_do: 'ốm' }));
+    const tk = thongKeMotNguoi(cc, () => true);
+    expect(tk.nghiQuaQuyDinh).toBe(0);
+    expect(tk.nghiQuaQuyDinh).toBe(vuotPhepTheoKpi(cc, ngoaiLe));
   });
 });
