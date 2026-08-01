@@ -167,6 +167,27 @@ describe('apDungChamTuDong', () => {
     expect(kq.logs.find(l => l.chi_tieu_id === 'ct-2').ly_do).toContain('Chưa tạo việc');
   });
 
+  // Đè điểm mà GIỮ chot_boi là để lại một lời khai sai: giaiThich thấy diem_chot != null sẽ
+  // kết luận "chốt tay" và in "Quản lý chốt tay bởi Nguyên: 2" ra popup bằng chứng, cột ghi
+  // chú Excel và BẢN IN nhân viên ký — trong khi Nguyên không hề chấm con số đó.
+  it('đè điểm tự động thì xoá luôn chot_boi/chot_luc và đánh dấu __tuDong', () => {
+    const r = dong({ diem_chot: 0, chot_boi: 'Nguyên', chot_luc: '2026-07-28T03:00:00Z' });
+    const kq = apDungChamTuDong([r], [], [viec()], '2026-07', NGAY);
+    expect(kq.rows[0].diem_chot).toBe(10);
+    expect(kq.rows[0].chot_boi).toBeNull();
+    expect(kq.rows[0].chot_luc).toBeNull();
+    expect(kq.rows[0].__tuDong).toBe(true);
+    // Dòng gốc vẫn nguyên vẹn — hàm chỉ trả bản sao, không sửa dữ liệu vừa tải về.
+    expect(r.chot_boi).toBe('Nguyên');
+  });
+
+  it('luật không chấm (tiLe null) thì chot_boi cũ còn nguyên — điểm vẫn là của người chốt', () => {
+    const r = dong({ id: 'ct-2', ma: 'VIDEO_KY_THUAT', chi_tieu: 6, diem_chot: 3, chot_boi: 'Nguyên' });
+    const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY);
+    expect(kq.rows[0].chot_boi).toBe('Nguyên');
+    expect(kq.rows[0].__tuDong).toBeUndefined();
+  });
+
   it('chỉ tiêu không có luật thì giữ nguyên, không mọc dòng ảo', () => {
     const r = dong({ id: 'ct-3', ma: '5S' });
     const kq = apDungChamTuDong([r], [], [viec()], '2026-07', NGAY);
@@ -551,6 +572,20 @@ describe('apDungChamTuDong với chỉ tiêu bộ phận', () => {
     const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY, [], [cc('a', 0)]);
     expect(kq.rows[0].diem_chot).toBe(4);
     expect(kq.logs[0].ly_do).toContain('đang dùng điểm chốt tay của Nguyên');
+  });
+
+  // Ngoại lệ này PHẢI sống sót qua phần rũ dấu vết chốt tay: ở đây điểm đúng là của người
+  // thật, nên câu "Quản lý chốt tay bởi Nguyên" là sự thật chứ không phải vu oan. Rũ nhầm
+  // chỗ này là xoá tên người đã thực sự chấm.
+  it('nhường chấm tay: chot_boi/chot_luc còn nguyên, KHÔNG bị đánh dấu __tuDong', () => {
+    const r = {
+      id: 'ct-cn', cap_do: 'CA_NHAN', nhan_vien_id: 'a', ma: 'CHUYEN_CAN_CA_NHAN',
+      chi_tieu: 10, diem_chot: 4, chot_boi: 'Nguyên', chot_luc: '2026-07-28T03:00:00Z',
+    };
+    const kq = apDungChamTuDong([r], [], [], '2026-07', NGAY, [], [cc('a', 0)]);
+    expect(kq.rows[0].chot_boi).toBe('Nguyên');
+    expect(kq.rows[0].chot_luc).toBe('2026-07-28T03:00:00Z');
+    expect(kq.rows[0].__tuDong).toBeUndefined();
   });
 
   it('không có ai chốt tay thì điểm tự động vẫn được dùng', () => {

@@ -520,7 +520,15 @@ export function apDungChamTuDong(
     const daChotTay = kq.nhuongChamTay && r.diem_chot != null && !!r.chot_boi;
     // tiLe = null → KHÔNG chấm: giữ nguyên đường tính cũ, chỉ kèm lời giải thích.
     const boQua = daChotTay || kq.tiLe == null;
-    rowsMoi.push(boQua ? r : { ...r, diem_chot: (r.chi_tieu ?? 0) * kq.tiLe });
+    rowsMoi.push(boQua ? r : {
+      ...r,
+      diem_chot: (r.chi_tieu ?? 0) * kq.tiLe,
+      // Xoá dấu vết chốt tay CŨ và đánh dấu dòng này do app tính. Không xoá thì giaiThich
+      // thấy diem_chot != null là kết luận "chốt tay", rồi in ra "Quản lý chốt tay bởi
+      // Nguyên: 2" — trong khi Nguyên không hề chấm số 2 đó. Câu ấy đi thẳng ra popup
+      // bằng chứng, cột ghi chú Excel và BẢN IN nhân viên ký.
+      chot_boi: null, chot_luc: null, __tuDong: true,
+    });
 
     logsAo.push({
       id: `ao-${r.id}`, chi_tieu_id: r.id, ngay, so_diem: 0,
