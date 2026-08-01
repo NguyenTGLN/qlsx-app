@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  nhanNhomGon, docNhomTuKpi, thongKeMotNguoi, thongKeNhom, gomThongKe, tongTatCa,
+  nhanNhomGon, docNhomTuKpi, thongKeMotNguoi, thongKeNhom, gomThongKe, tongTatCa, dsNguoiPhanNhom,
 } from './chamCongThongKe';
 import { apDungChamTuDong } from './kpiTuDong';
 
@@ -288,5 +288,61 @@ describe('tongTatCa', () => {
 
   it('mảng rỗng → tất cả 0', () => {
     expect(tongTatCa([]).soNguoi).toBe(0);
+  });
+});
+
+describe('dsNguoiPhanNhom', () => {
+  const caNhan = (nv, khoa) => ({
+    ma: 'CHUYEN_CAN_BO_PHAN', cap_do: 'CA_NHAN', nhan_vien_id: nv, lien_ket_bo_phan: khoa,
+  });
+  const users = [{ id: 'dvx', name: 'Xuân' }, { id: 'vta', name: 'Tuấn' }, { id: 'moi', name: 'Mới' }];
+
+  it('kỳ CHƯA nạp chấm công vẫn phân nhóm được — lấy người từ chỉ tiêu KPI', () => {
+    const ds = dsNguoiPhanNhom({
+      kpiRows: [caNhan('dvx', 'CHUYEN_CAN_SX'), caNhan('vta', 'CHUYEN_CAN_SX')],
+      dsNhanVien: [], users,
+    });
+    expect(ds.map(x => x.ten)).toEqual(['Tuấn', 'Xuân']);
+    expect(ds.every(x => x.coDong)).toBe(true);
+  });
+
+  it('người có chấm công mà chưa có chỉ tiêu vẫn hiện, nhưng coDong = false', () => {
+    const ds = dsNguoiPhanNhom({
+      kpiRows: [caNhan('dvx', 'CHUYEN_CAN_SX')],
+      dsNhanVien: [{ id: 'dvx', ten: 'Xuân' }, { id: 'moi', ten: 'Mới' }], users,
+    });
+    expect(ds.map(x => x.ten)).toEqual(['Mới', 'Xuân']);
+    expect(ds.find(x => x.id === 'moi').coDong).toBe(false);
+    expect(ds.find(x => x.id === 'dvx').coDong).toBe(true);
+  });
+
+  it('người vừa có chỉ tiêu vừa có chấm công chỉ hiện MỘT lần', () => {
+    const ds = dsNguoiPhanNhom({
+      kpiRows: [caNhan('dvx', 'CHUYEN_CAN_SX')],
+      dsNhanVien: [{ id: 'dvx', ten: 'Xuân' }], users,
+    });
+    expect(ds).toHaveLength(1);
+  });
+
+  it('bỏ qua dòng chỉ tiêu khác và dòng cấp BỘ PHẬN (không phải người)', () => {
+    const ds = dsNguoiPhanNhom({
+      kpiRows: [
+        { ma: 'HT_CONG_VIEC_DUNG_HAN', cap_do: 'CA_NHAN', nhan_vien_id: 'vta', lien_ket_bo_phan: 'X' },
+        { ma: 'CHUYEN_CAN_BO_PHAN', cap_do: 'BO_PHAN', nhan_vien_id: null, lien_ket_bo_phan: 'CHUYEN_CAN_SX' },
+        caNhan('dvx', 'CHUYEN_CAN_SX'),
+      ],
+      dsNhanVien: [], users,
+    });
+    expect(ds.map(x => x.id)).toEqual(['dvx']);
+  });
+
+  it('không có trong users thì lấy id làm tên, không bỏ sót người', () => {
+    const ds = dsNguoiPhanNhom({ kpiRows: [caNhan('la', 'CHUYEN_CAN_SX')], dsNhanVien: [], users });
+    expect(ds[0]).toMatchObject({ id: 'la', ten: 'la', coDong: true });
+  });
+
+  it('không có gì → mảng rỗng, không ném lỗi', () => {
+    expect(dsNguoiPhanNhom()).toEqual([]);
+    expect(dsNguoiPhanNhom({ kpiRows: [], dsNhanVien: [], users: [] })).toEqual([]);
   });
 });

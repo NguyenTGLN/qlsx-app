@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
-import { gomThongKe, tongTatCa, docNhomTuKpi, MA_CHI_TIEU_NHOM } from '../../lib/chamCongThongKe';
+import {
+  gomThongKe, tongTatCa, docNhomTuKpi, MA_CHI_TIEU_NHOM, dsNguoiPhanNhom,
+} from '../../lib/chamCongThongKe';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import { ChevronLeft, AlertTriangle, Loader2, ChevronRight, Users } from 'lucide-react';
 
@@ -205,6 +207,12 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
 
   const nhomCuaNguoi = useMemo(() => docNhomTuKpi(kpiRows).theoNguoi, [kpiRows]);
 
+  // Người hiện trong màn phân nhóm = HỢP của (người có chỉ tiêu KPI nhóm) và (người có chấm
+  // công) trong kỳ — xem chamCongThongKe.js. Phải tính TRƯỚC mọi return sớm bên dưới, vì
+  // return sớm if (manPhanNhom) dùng ngay kết quả này.
+  const dsNguoiXepNhom = useMemo(
+    () => dsNguoiPhanNhom({ kpiRows, dsNhanVien, users }), [kpiRows, dsNhanVien, users]);
+
   // Danh sách nhóm cho ô lọc — chỉ nhóm THẬT SỰ có người trong kỳ, không liệt kê nhóm rỗng.
   const dsNhomLoc = useMemo(
     () => dsThongKe.map(n => ({ gia: n.khoa == null ? 'KHONG_NHOM' : n.khoa, nhan: n.nhan })),
@@ -255,7 +263,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   if (manPhanNhom) {
     return (
       <ManPhanNhom
-        ky={ky} kpiRows={kpiRows} dsNhanVien={dsNhanVien} nhomCuaNguoi={nhomCuaNguoi}
+        ky={ky} kpiRows={kpiRows} dsNguoi={dsNguoiXepNhom} nhomCuaNguoi={nhomCuaNguoi}
         loi={loi} onDoiNhom={doiNhom} onBack={() => setManPhanNhom(false)}
       />
     );
@@ -654,7 +662,7 @@ const TIP_PHUT = 'Đã bỏ các ngày được đánh dấu Đặc biệt — n
 // Không tạo/xoá/đổi tên nhóm ở đây: tạo nhóm mới là sinh thêm một dòng chỉ tiêu KPI cho mọi
 // thành viên, phải đặt đúng chỉ tiêu và trọng số — việc đó làm ở tab KPI.
 // ─────────────────────────────────────────────────────────────────────────────
-function ManPhanNhom({ ky, kpiRows, dsNhanVien, nhomCuaNguoi, loi, onDoiNhom, onBack }) {
+function ManPhanNhom({ ky, kpiRows, dsNguoi, nhomCuaNguoi, loi, onDoiNhom, onBack }) {
   // Nhóm chọn được = các nhóm có dòng BO_PHAN trong kỳ. Sắp theo nhãn cho ổn định.
   const dsNhom = useMemo(() => {
     const { nhan } = docNhomTuKpi(kpiRows);
@@ -662,12 +670,6 @@ function ManPhanNhom({ ky, kpiRows, dsNhanVien, nhomCuaNguoi, loi, onDoiNhom, on
       .map(([khoa, ten]) => ({ khoa, ten }))
       .sort((a, b) => a.ten.localeCompare(b.ten, 'vi'));
   }, [kpiRows]);
-
-  // Ai CÓ dòng chỉ tiêu nhóm trong kỳ này. Người không có thì ô chọn phải khoá — tự insert là
-  // tự thêm một chỉ tiêu KPI vào bảng điểm của họ mà không ai yêu cầu.
-  const coDong = useMemo(() => new Set(
-    kpiRows.filter(r => r.ma === MA_CHI_TIEU_NHOM && r.cap_do === 'CA_NHAN' && r.nhan_vien_id)
-      .map(r => r.nhan_vien_id)), [kpiRows]);
 
   return (
     <div style={{ width: '100%' }}>
@@ -677,7 +679,7 @@ function ManPhanNhom({ ky, kpiRows, dsNhanVien, nhomCuaNguoi, loi, onDoiNhom, on
 
       <div style={{ background: '#fff', borderRadius: 14, padding: '1rem', border: '1px solid #e2e8f0', marginBottom: 12 }}>
         <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Phân nhóm chuyên cần</div>
-        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Kỳ {ky} · {dsNhanVien.length} nhân viên · {dsNhom.length} nhóm</div>
+        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Kỳ {ky} · {dsNguoi.length} nhân viên · {dsNhom.length} nhóm</div>
       </div>
 
       {loi && (
@@ -702,13 +704,13 @@ function ManPhanNhom({ ky, kpiRows, dsNhanVien, nhomCuaNguoi, loi, onDoiNhom, on
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
-        {dsNhanVien.map(nv => (
+        {dsNguoi.map(nv => (
           <div key={nv.id} style={{
             background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10,
             padding: '0.6rem 0.7rem',
           }}>
             <div style={{ fontSize: '0.78rem', fontWeight: 600, marginBottom: 6 }}>{nv.ten}</div>
-            {coDong.has(nv.id) ? (
+            {nv.coDong ? (
               <select
                 value={nhomCuaNguoi.get(nv.id) || ''}
                 onChange={e => onDoiNhom(nv.id, e.target.value)}

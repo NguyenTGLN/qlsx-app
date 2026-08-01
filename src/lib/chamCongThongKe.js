@@ -138,3 +138,29 @@ export function gomThongKe({ rows = [], ngoaiLe = [], kpiRows = [], users = [] }
 export function tongTatCa(dsNhom = []) {
   return thongKeNhom((dsNhom || []).flatMap(n => n.thanhVien || []));
 }
+
+// Ai được hiện trong màn phân nhóm của một kỳ.
+//
+// HỢP của hai nguồn, không phải chỉ lấy theo chấm công: người có dòng chỉ tiêu chuyên cần bộ
+// phận trong kỳ là người xếp nhóm ĐƯỢC, còn người có chấm công là người cần THẤY để biết họ
+// chưa có chỉ tiêu. Lấy mỗi chấm công thì kỳ chưa nạp chấm công sẽ không phân nhóm được ai —
+// đúng lúc cần làm việc đó nhất — và người có chỉ tiêu nhưng không có ngày công nào trong
+// tháng (mới vào, nghỉ dài) sẽ biến mất khỏi màn hình.
+//
+// `coDong` = có dòng chỉ tiêu để mà UPDATE. Người không có thì màn hình khoá ô chọn: tự thêm
+// dòng là tự thêm một chỉ tiêu vào bảng KPI của họ mà không ai yêu cầu.
+export function dsNguoiPhanNhom({ kpiRows = [], dsNhanVien = [], users = [] } = {}) {
+  const coDong = new Set();
+  for (const r of kpiRows || []) {
+    if (r?.ma === MA_CHI_TIEU_NHOM && r.cap_do === 'CA_NHAN' && r.nhan_vien_id) {
+      coDong.add(r.nhan_vien_id);
+    }
+  }
+  const tenCua = id => (users || []).find(u => u.id === id)?.name
+    || (dsNhanVien || []).find(x => x.id === id)?.ten
+    || id;
+  const ids = new Set([...coDong, ...(dsNhanVien || []).map(x => x.id)]);
+  return [...ids]
+    .map(id => ({ id, ten: tenCua(id), coDong: coDong.has(id) }))
+    .sort((a, b) => a.ten.localeCompare(b.ten, 'vi'));
+}
