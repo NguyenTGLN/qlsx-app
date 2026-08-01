@@ -92,3 +92,56 @@ describe('soSanhDiemChuyenCan', () => {
     expect(kq[0].diemSau).toBe(10);
   });
 });
+
+// Màn KPI thật (apDungChamTuDong, kpiTuDong.js) LUÔN giữ điểm người đã chốt tay bất kể chấm
+// công mới nạp gì — luật chuyên cần cá nhân chủ động nhường vì dữ liệu chấm công chỉ đo được
+// một phần quy định (không thấy có phép/không phép). Xem trước mà không mượn đúng điều kiện
+// đó thì đưa ra một con số mà màn KPI sẽ không bao giờ hiện, đúng lúc người dùng tin nó nhất.
+describe('chốt tay thắng điểm tự động — mượn ĐÚNG điều kiện của apDungChamTuDong', () => {
+  // Chấm công "nặng": 2 ngày muộn >15 phút → nếu tính từ đây sẽ ra 0 điểm, khác hẳn 7. Dùng
+  // để chứng minh khi đã chốt tay thì các dòng này KHÔNG được lộ diện vào điểm hiển thị.
+  const ccNang = [cc('a', '2026-07-01'), cc('a', '2026-07-08', 30), cc('a', '2026-07-21', 30)];
+
+  it('có CẢ diem_chot lẫn chot_boi: giữ nguyên điểm người chốt ở cả hai cột, không tính lại', () => {
+    const ctChot = { ...ct('a'), diem_chot: 7, chot_boi: 'Nguyên' };
+    const kq = soSanhDiemChuyenCan({
+      ky: '2026-07', ctRows: [ctChot], users,
+      chamCongCu: ccNang, chamCongMoi: ccNang,
+    });
+    expect(kq[0].diemTruoc).toBe(7);
+    expect(kq[0].diemSau).toBe(7);
+    expect(kq[0].daChotTay).toBe(true);
+    expect(kq[0].nguoiChot).toBe('Nguyên');
+  });
+
+  it('có diem_chot nhưng chot_boi rỗng (hàng nhập Excel cũ, không phải người chốt): vẫn tính từ chấm công', () => {
+    const ctNhapExcel = { ...ct('a'), diem_chot: 7, chot_boi: null };
+    const kq = soSanhDiemChuyenCan({
+      ky: '2026-07', ctRows: [ctNhapExcel], users,
+      chamCongCu: [], chamCongMoi: ccNang,
+    });
+    expect(kq[0].daChotTay).toBe(false);
+    expect(kq[0].nguoiChot).toBeNull();
+    // 2 ngày muộn nặng (30′) → trừ 10 → sàn 0, KHÔNG phải giữ nguyên số 7 cũ.
+    expect(kq[0].diemSau).toBe(0);
+  });
+
+  it('có chot_boi nhưng diem_chot rỗng: chưa ai thật sự chốt số, vẫn tính từ chấm công', () => {
+    const ctChuaChotSo = { ...ct('a'), diem_chot: null, chot_boi: 'Nguyên' };
+    const kq = soSanhDiemChuyenCan({
+      ky: '2026-07', ctRows: [ctChuaChotSo], users,
+      chamCongCu: [], chamCongMoi: ccNang,
+    });
+    expect(kq[0].daChotTay).toBe(false);
+    expect(kq[0].diemSau).toBe(0);
+  });
+
+  it('dòng bình thường (không diem_chot, không chot_boi): daChotTay false, nguoiChot null', () => {
+    const kq = soSanhDiemChuyenCan({
+      ky: '2026-07', ctRows: [ct('a')], users,
+      chamCongCu: [], chamCongMoi: [cc('a', '2026-07-01')],
+    });
+    expect(kq[0].daChotTay).toBe(false);
+    expect(kq[0].nguoiChot).toBeNull();
+  });
+});
