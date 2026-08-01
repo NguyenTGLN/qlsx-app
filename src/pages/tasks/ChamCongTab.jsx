@@ -62,7 +62,9 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   const [loi, setLoi] = useState('');
   const [chon, setChon] = useState(null); // nhan_vien_id đang xem chi tiết, null = bảng tổng quan
   const [kpiRows, setKpiRows] = useState([]);       // dòng chỉ tiêu chở khoá nhóm
-  const [locNhom, setLocNhom] = useState('');       // '' = tất cả; 'KHONG_NHOM' = chưa phân nhóm
+  // Tập khoá nhóm đang lọc. RỖNG = xem tất cả (không phải "không xem gì") — giữ đúng hành vi
+  // cũ khi chưa ai bấm nút nào. 'KHONG_NHOM' là khoá giả của nhóm "Chưa phân nhóm".
+  const [locNhom, setLocNhom] = useState(() => new Set());
   const [bung, setBung] = useState(() => new Set()); // khoá nhóm đang bung trong khối thống kê
   const [manPhanNhom, setManPhanNhom] = useState(false);
 
@@ -219,8 +221,8 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     [dsThongKe]);
 
   const dsThongKeLoc = useMemo(() => {
-    if (!locNhom) return dsThongKe;
-    return dsThongKe.filter(n => (n.khoa == null ? 'KHONG_NHOM' : n.khoa) === locNhom);
+    if (!locNhom.size) return dsThongKe;
+    return dsThongKe.filter(n => locNhom.has(n.khoa == null ? 'KHONG_NHOM' : n.khoa));
   }, [dsThongKe, locNhom]);
 
   const idsHienThi = useMemo(
@@ -240,19 +242,24 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     [rows, idsHienThi]);
 
   const tenNhomDangLoc = useMemo(
-    () => dsNhomLoc.find(n => n.gia === locNhom)?.nhan || '', [dsNhomLoc, locNhom]);
+    () => dsNhomLoc.filter(n => locNhom.has(n.gia)).map(n => n.nhan).join(', '),
+    [dsNhomLoc, locNhom]);
 
-  // Lọc một nhóm thì bung sẵn nhóm đó — người dùng vừa nói rõ họ quan tâm nhóm nào.
+  // Chọn ĐÚNG một nhóm thì bung sẵn nhóm đó — người dùng vừa nói rõ họ quan tâm nhóm nào.
+  // Từ 2 nhóm trở lên thì KHÔNG bung: các dòng nhân viên chen giữa các dòng nhóm làm mất khả
+  // năng so sánh nhóm với nhau, mà so sánh mới là lý do người ta chọn nhiều nhóm.
   useEffect(() => {
-    if (locNhom) setBung(new Set([locNhom]));
+    if (locNhom.size === 1) setBung(new Set(locNhom));
   }, [locNhom]);
 
-  // Bộ lọc TỰ GỠ khi nhóm đang chọn không còn tồn tại. Bắt buộc phải có: đang lọc SẢN XUẤT ở
-  // kỳ 2026-07 rồi chuyển sang kỳ 2026-06 (kỳ đó cả công ty chung MỘT nhóm, không có
-  // CHUYEN_CAN_SX) thì không có nhóm nào khớp — màn hình trắng trơn và người dùng không hiểu
-  // vì sao, vì ô lọc lúc đó cũng đã biến mất.
+  // Bộ lọc TỰ GỠ những nhóm không còn tồn tại, giữ lại các nhóm vẫn còn. Bắt buộc phải có:
+  // đang lọc SẢN XUẤT ở kỳ 2026-07 rồi chuyển sang kỳ 2026-06 (kỳ đó cả công ty chung MỘT
+  // nhóm, không có CHUYEN_CAN_SX) thì không nhóm nào khớp — màn hình trắng trơn và người dùng
+  // không hiểu vì sao, vì dãy nút lọc lúc đó cũng đã biến mất.
   useEffect(() => {
-    if (locNhom && !dsNhomLoc.some(n => n.gia === locNhom)) setLocNhom('');
+    const con = new Set(dsNhomLoc.map(n => n.gia));
+    if ([...locNhom].every(k => con.has(k))) return;   // không đổi gì → không setState, tránh lặp vô hạn
+    setLocNhom(s => new Set([...s].filter(k => con.has(k))));
   }, [dsNhomLoc, locNhom]);
 
   // if (manPhanNhom) PHẢI đứng trước if (loading): doiNhom (đổi nhóm) gọi taiDuLieu() ở cuối,
@@ -296,11 +303,25 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
           style={{ ...oInput, width: 'auto' }}
         />
         {dsNhomLoc.length > 1 && (
-          <select value={locNhom} onChange={e => setLocNhom(e.target.value)}
-            style={{ ...oInput, width: 'auto' }}>
-            <option value="">Tất cả nhóm</option>
-            {dsNhomLoc.map(n => <option key={n.gia} value={n.gia}>{n.nhan}</option>)}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.74rem', color: '#64748b' }}>Nhóm:</span>
+            {dsNhomLoc.map(n => {
+              const dangChon = locNhom.has(n.gia);
+              return (
+                <button
+                  key={n.gia} aria-pressed={dangChon} style={dangChon ? chipChon : chip}
+                  onClick={() => setLocNhom(s => {
+                    const m = new Set(s);
+                    if (m.has(n.gia)) m.delete(n.gia); else m.add(n.gia);
+                    return m;
+                  })}
+                >{n.nhan}</button>
+              );
+            })}
+            {locNhom.size > 0 && (
+              <button onClick={() => setLocNhom(new Set())} style={nutBoLoc}>✕ Bỏ lọc</button>
+            )}
+          </div>
         )}
         {canEdit && kpiRows.length > 0 && (
           <button onClick={() => setManPhanNhom(true)} style={nutPhanNhom}>
@@ -310,7 +331,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
         {rows.length > 0 && (
           <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
             {dsNhanVienLoc.length} nhân viên · {soNgayCongLoc} ngày công · {soNghiVanLoc} dòng dữ liệu đáng ngờ
-            {locNhom ? ` (lọc theo ${tenNhomDangLoc})` : ''}
+            {locNhom.size ? ` (lọc theo ${tenNhomDangLoc})` : ''}
           </span>
         )}
       </div>
@@ -832,4 +853,17 @@ const tdTK = {
 const nutTenTK = {
   border: 'none', background: 'none', cursor: 'pointer', padding: 0,
   font: 'inherit', fontSize: '0.78rem', color: '#0f172a', textAlign: 'left',
+};
+
+const chip = {
+  border: '1px solid #e2e8f0', background: '#fff', color: '#475569',
+  fontSize: '0.74rem', borderRadius: 999, padding: '0.3rem 0.7rem', cursor: 'pointer',
+  whiteSpace: 'nowrap', font: 'inherit', fontWeight: 400, lineHeight: 1.4,
+};
+const chipChon = {
+  ...chip, borderColor: '#2563eb', background: '#eff6ff', color: '#1d4ed8', fontWeight: 600,
+};
+const nutBoLoc = {
+  border: 'none', background: 'none', color: '#64748b', fontSize: '0.74rem',
+  cursor: 'pointer', padding: '0.3rem 0.2rem', whiteSpace: 'nowrap',
 };
