@@ -48,3 +48,20 @@ where cham_chung and cach_cham = 'TU_DONG' group by ky, ma order by ky desc, ma;
 select ma, cach_cham, count(*) from kpi_chi_tieu
 where ky = '2026-07' and cham_chung and cap_do = 'CA_NHAN'
 group by ma, cach_cham order by ma;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- HOÀN TÁC — dán chạy được ngay
+--
+-- Phải ghi RÕ KỲ, không hoàn tác toàn bộ. Lệnh trên gỡ ở mọi kỳ, nhưng chỉ kỳ
+-- 2026-07 vốn có cham_chung = true (đo 31/07/2026: kỳ 2026-06 vốn đã false).
+-- Hoàn tác không kèm `ky` sẽ BẬT chấm chung cho cả những kỳ chưa từng bật —
+-- tạo ra trạng thái chưa bao giờ tồn tại, tệ hơn là để nguyên.
+--
+-- ⚠ Hoàn tác chỉ đưa chỉ tiêu HIỆN LẠI trong Bảng chấm chung. Ô nhập vẫn KHOÁ,
+--   vì phần khoá nằm ở mã nguồn (laChamTuDong trong src/lib/kpiBangChung.js),
+--   không nằm ở cột này. Muốn chấm tay lại thật thì phải lùi cả mã nguồn.
+-- ════════════════════════════════════════════════════════════════════════════
+-- update kpi_chi_tieu
+-- set cham_chung = true
+-- where ma = 'DONG_GOP_CAI_TIEN'
+--   and ky = '2026-07';
