@@ -86,18 +86,33 @@ begin
   return jsonb_build_object('so_xoa', so_xoa, 'so_nap', so_nap);
 end $$;
 
--- Lớp thứ hai, không phải lớp duy nhất: Postgres mặc định cho `public` chạy hàm mới.
+-- Lớp thứ hai, không phải lớp duy nhất: Postgres mặc định cấp quyền chạy hàm mới cho
+-- `PUBLIC`, và `anon` thừa hưởng qua đó.
+--
+-- ⚠ PHẢI THU TỪ `public`, KHÔNG CHỈ TỪ `anon`. Đo 01/08/2026: chỉ chạy
+--   `revoke ... from anon` xong thì has_function_privilege('anon', …) VẪN trả TRUE —
+--   thu quyền của riêng anon không gỡ được đường thừa kế từ PUBLIC. Suýt để lại một hàm
+--   ai cũng gọi được trong khi tệp này ghi là đã chặn.
+revoke execute on function nap_cham_cong(text, jsonb) from public;
 revoke execute on function nap_cham_cong(text, jsonb) from anon;
+grant  execute on function nap_cham_cong(text, jsonb) to authenticated;
 
 -- KIỂM TRA SAU KHI CHẠY
 -- 1) Hàm KHÔNG được là security definer (kỳ vọng: prosecdef = false):
 select proname, prosecdef from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public' and p.proname = 'nap_cham_cong';
 
--- 2) `anon` KHÔNG chạy được (kỳ vọng: false):
-select has_function_privilege('anon', p.oid, 'EXECUTE') as anon_chay_duoc
-from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-where n.nspname = 'public' and p.proname = 'nap_cham_cong';
+-- 2) `anon` KHÔNG chạy được, `authenticated` chạy được (kỳ vọng: false, true).
+--    Đây là câu ĐÃ BẮT ĐƯỢC lỗi thật hôm 01/08 — đừng bỏ qua:
+select has_function_privilege('anon', 'nap_cham_cong(text,jsonb)', 'EXECUTE') as anon_chay_duoc,
+       has_function_privilege('authenticated', 'nap_cham_cong(text,jsonb)', 'EXECUTE') as authenticated_chay_duoc;
+
+-- 3) Đo từ NGOÀI bằng chính khoá công khai — bảng quyền nói một đằng, thực tế có thể
+--    một nẻo. Thay <KEY> bằng khoá sb_publishable_… lấy trong src/lib/supabase.js:
+--    curl -s -X POST "https://ngwkzicrnspeggunsblr.supabase.co/rest/v1/rpc/nap_cham_cong" \
+--      -H "apikey: <KEY>" -H "Authorization: Bearer <KEY>" -H "Content-Type: application/json" \
+--      -d '{"p_ky":"1900-01","p_dong":[]}'
+--    Kỳ vọng: {"code":"42501", ... "permission denied for function nap_cham_cong"}
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- HOÀN TÁC — bỏ dấu `--` rồi chạy
