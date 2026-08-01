@@ -37,3 +37,34 @@ export function docNhomTuKpi(kpiRows = []) {
   }
   return { theoNguoi, nhan };
 }
+
+const so = v => Number(v) || 0;
+
+// 5 chỉ số của MỘT người trong kỳ. `laMien(ngay)` trả true khi ngày đó đã được admin đánh dấu
+// "Đặc biệt" (bảng chuyen_can_ngoai_le).
+//
+// Quy ước nghỉ phép do chủ app chốt 01/08/2026: ngày nghỉ có giải trình KHÔNG tiêu hạn mức,
+// hạn mức NGAY_PHEP_THANG chỉ áp lên các ngày nghỉ chưa có giải trình. Nhờ vậy
+// `nghiQuaQuyDinh` bằng ĐÚNG `vuotPhep` mà luatChuyenCanCaNhan dùng để trừ điểm — Task 4 khoá
+// điều này bằng test, đừng đổi công thức mà không sửa test đó.
+export function thongKeMotNguoi(rows = [], laMien = () => false) {
+  let nghiCoDau = 0, nghiChuaDau = 0, phutMuon = 0, phutVeSom = 0, soNgayMien = 0;
+  for (const r of rows || []) {
+    const mien = !!laMien(r.ngay);
+    if (mien) soNgayMien += 1;
+    if (r.nghi) {
+      if (mien) nghiCoDau += 1;
+      else nghiChuaDau += 1;
+    }
+    if (!mien) {
+      phutMuon += so(r.di_muon_phut);
+      phutVeSom += so(r.ve_som_phut);
+    }
+  }
+  return {
+    tongNghi: nghiCoDau + nghiChuaDau,
+    nghiPhep: nghiCoDau + Math.min(nghiChuaDau, NGAY_PHEP_THANG),
+    nghiQuaQuyDinh: Math.max(0, nghiChuaDau - NGAY_PHEP_THANG),
+    phutMuon, phutVeSom, soNgayMien,
+  };
+}

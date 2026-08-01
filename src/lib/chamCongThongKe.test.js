@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nhanNhomGon, docNhomTuKpi } from './chamCongThongKe';
+import { nhanNhomGon, docNhomTuKpi, thongKeMotNguoi } from './chamCongThongKe';
 
 describe('nhanNhomGon', () => {
   it('cắt phần trước dấu — để lấy tên nhóm ngắn', () => {
@@ -60,5 +60,81 @@ describe('docNhomTuKpi', () => {
   it('mảng rỗng / undefined → hai Map rỗng, không ném lỗi', () => {
     expect(docNhomTuKpi([]).theoNguoi.size).toBe(0);
     expect(docNhomTuKpi().nhan.size).toBe(0);
+  });
+});
+
+describe('thongKeMotNguoi', () => {
+  const d = (ngay, o = {}) => ({
+    nhan_vien_id: 'a', ky: '2026-07', ngay,
+    di_muon_phut: 0, ve_som_phut: 0, nghi: false, ...o,
+  });
+  const khongMien = () => false;
+
+  it('nghỉ 4 ngày không ngày nào có dấu → 1 phép, 3 quá quy định (ca của Tuấn kỳ 7)', () => {
+    const tk = thongKeMotNguoi([
+      d('2026-07-01', { nghi: true }), d('2026-07-02', { nghi: true }),
+      d('2026-07-03', { nghi: true }), d('2026-07-06', { nghi: true }),
+    ], khongMien);
+    expect(tk.tongNghi).toBe(4);
+    expect(tk.nghiPhep).toBe(1);
+    expect(tk.nghiQuaQuyDinh).toBe(3);
+  });
+
+  it('nghỉ 2 ngày, 1 ngày có dấu Đặc biệt → 2 phép, 0 quá quy định (ca của Xuyên kỳ 7)', () => {
+    const tk = thongKeMotNguoi(
+      [d('2026-07-18', { nghi: true }), d('2026-07-21', { nghi: true })],
+      ngay => ngay === '2026-07-18');
+    expect(tk.tongNghi).toBe(2);
+    expect(tk.nghiPhep).toBe(2);
+    expect(tk.nghiQuaQuyDinh).toBe(0);
+    expect(tk.soNgayMien).toBe(1);
+  });
+
+  it('nghỉ đúng 1 ngày → vừa hết hạn mức, không quá quy định', () => {
+    const tk = thongKeMotNguoi([d('2026-07-06', { nghi: true })], khongMien);
+    expect(tk.nghiPhep).toBe(1);
+    expect(tk.nghiQuaQuyDinh).toBe(0);
+  });
+
+  it('không nghỉ ngày nào → tất cả bằng 0', () => {
+    const tk = thongKeMotNguoi([d('2026-07-01'), d('2026-07-02')], khongMien);
+    expect(tk.tongNghi).toBe(0);
+    expect(tk.nghiPhep).toBe(0);
+    expect(tk.nghiQuaQuyDinh).toBe(0);
+  });
+
+  it('cộng phút đi muộn và về sớm', () => {
+    const tk = thongKeMotNguoi([
+      d('2026-07-01', { di_muon_phut: 20 }),
+      d('2026-07-02', { di_muon_phut: 6, ve_som_phut: 15 }),
+    ], khongMien);
+    expect(tk.phutMuon).toBe(26);
+    expect(tk.phutVeSom).toBe(15);
+  });
+
+  it('ngày có dấu Đặc biệt KHÔNG tính phút muộn (giống hệt cách KPI bỏ ngày miễn)', () => {
+    const tk = thongKeMotNguoi([
+      d('2026-07-20', { di_muon_phut: 1 }),
+      d('2026-07-21', { di_muon_phut: 11 }),
+    ], ngay => ngay === '2026-07-20');
+    expect(tk.phutMuon).toBe(11);
+    expect(tk.soNgayMien).toBe(1);
+  });
+
+  it('cột số là null/chuỗi từ DB vẫn cộng ra số, không ra NaN', () => {
+    const tk = thongKeMotNguoi([
+      { ngay: '2026-07-01', di_muon_phut: null, ve_som_phut: undefined, nghi: false },
+      { ngay: '2026-07-02', di_muon_phut: '5', ve_som_phut: '3', nghi: false },
+    ], khongMien);
+    expect(tk.phutMuon).toBe(5);
+    expect(tk.phutVeSom).toBe(3);
+  });
+
+  it('không có dòng nào → tất cả 0, không ném lỗi', () => {
+    const tk = thongKeMotNguoi([], khongMien);
+    expect(tk).toEqual({
+      tongNghi: 0, nghiPhep: 0, nghiQuaQuyDinh: 0,
+      phutMuon: 0, phutVeSom: 0, soNgayMien: 0,
+    });
   });
 });
