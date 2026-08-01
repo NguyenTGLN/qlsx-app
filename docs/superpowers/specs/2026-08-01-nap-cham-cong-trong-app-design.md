@@ -130,27 +130,69 @@ Ba thứ phải làm đúng, nếu không con số xem trước lệch với con
 Bảng này chỉ nói về **chuyên cần cá nhân**. Chuyên cần bộ phận (điểm chung cả nhóm) cũng đổi theo,
 nhưng nó là một dòng cho cả nhóm nên không xếp vào bảng theo người — ghi một câu nhắc dưới bảng.
 
-## D. Ghi xuống CSDL — chèn trước, xoá sau
+## D. Ghi xuống CSDL — một hàm RPC, xoá rồi nạp trong CÙNG một transaction
 
 Script hiện tại `delete` sạch kỳ rồi `insert` lại, an toàn vì nằm trong một transaction SQL.
-**Trình duyệt không mở được transaction qua PostgREST**: rớt mạng giữa chừng là cả kỳ trống rỗng
-và điểm chuyên cần cả công ty về 0. Nên đảo thứ tự:
+**Trình duyệt không mở được transaction qua PostgREST** — gọi rời từng lệnh thì rớt mạng giữa
+chừng là cả kỳ trống rỗng và điểm chuyên cần cả công ty về 0.
 
-1. **Đọc trước** dòng đang có của kỳ đó: `select id, nhan_vien_id, ngay where ky = <ky>`.
-2. **Upsert** toàn bộ dòng mới, `onConflict: 'nhan_vien_id,ngay'`, chia lô 200 dòng.
-3. **Xoá** những dòng cũ không có trong tệp mới: so khoá `nhan_vien_id|ngay` ở BƯỚC JS, lấy ra
-   danh sách `id` thừa, rồi `.in('id', <mảng id>)` theo lô 200.
+Cách đúng: đẩy cả hai lệnh vào **một hàm trong CSDL**. Postgres tự bọc thân hàm trong một
+transaction, nên trình duyệt gọi đúng một lệnh và hoặc ăn cả, hoặc không đổi một ly nào.
 
-Bước 3 phải lọc trong JS rồi xoá theo `id`, **không** dùng `.not('ngay','in','(…)')`: tệp một
-tháng có tới 388 dòng, nhét cả danh sách ngày vào URL là vượt giới hạn độ dài và lệnh hỏng giữa
-chừng. Lọc trong JS còn cho biết **chính xác sẽ xoá bao nhiêu dòng** để hiện lên màn hình xác nhận
-— thường là 0, và một con số khác 0 bất ngờ chính là dấu hiệu tệp xuất thiếu người.
+File mới `sql/rpc_nap_cham_cong.sql`:
 
-Bảng có sẵn `id bigint` và ràng buộc duy nhất `(nhan_vien_id, ngay)` (đã đo 01/08/2026) nên cả
-`onConflict` lẫn xoá theo `id` đều dùng được ngay, không phải thêm cột hay chỉ mục nào.
+```sql
+create or replace function nap_cham_cong(p_ky text, p_dong jsonb)
+returns jsonb
+language plpgsql
+-- search_path cố định: cùng lý do như mọi hàm khác trong dự án, để người gọi không
+-- trỏ `cham_cong` sang bảng giả trong schema của họ.
+set search_path = public, pg_temp
+as $$
+declare so_xoa int; so_nap int;
+begin
+  -- Chặn sớm để câu lỗi ĐỌC HIỂU ĐƯỢC. RLS bên dưới mới là thứ thật sự chặn (đã đo,
+  -- xem phần Bảo mật) — dòng này chỉ để người dùng không nhận một lỗi RLS khó hiểu.
+  if coalesce(auth.jwt()->>'nv_role','') <> 'ADMIN' then
+    return jsonb_build_object('loi', 'Chỉ tài khoản quản trị mới nạp được chấm công');
+  end if;
 
-Không có khoảnh khắc nào dữ liệu biến mất. Bước 2 hỏng giữa chừng thì dữ liệu là trộn cũ-mới nhưng
-vẫn đủ dòng; bấm nạp lại là xong (upsert lặp lại an toàn, xoá theo id cũng vậy).
+  delete from cham_cong where ky = p_ky;
+  get diagnostics so_xoa = row_count;
+
+  insert into cham_cong (ky, nhan_vien_id, ngay, thu, gio_in_sang, gio_in_chieu, gio_out,
+                         tang_ca_phut, di_muon_phut, ve_som_phut, nghi, nghi_van)
+  select p_ky, d.nhan_vien_id, d.ngay, d.thu, d.gio_in_sang, d.gio_in_chieu, d.gio_out,
+         d.tang_ca_phut, d.di_muon_phut, d.ve_som_phut, d.nghi, d.nghi_van
+  from jsonb_to_recordset(p_dong) as d(
+    nhan_vien_id text, ngay date, thu text, gio_in_sang text, gio_in_chieu text,
+    gio_out text, tang_ca_phut int, di_muon_phut int, ve_som_phut int,
+    nghi boolean, nghi_van text);
+  get diagnostics so_nap = row_count;
+
+  return jsonb_build_object('so_xoa', so_xoa, 'so_nap', so_nap);
+end $$;
+
+revoke execute on function nap_cham_cong(text, jsonb) from anon;
+```
+
+### ⚠ Hàm này TUYỆT ĐỐI không được là `SECURITY DEFINER`
+
+`SECURITY DEFINER` bảo Postgres chạy hàm bằng quyền chủ sở hữu và **bỏ qua RLS** — lúc đó người
+cầm khoá công khai xoá sạch được cả bảng chấm công chỉ bằng một lệnh gọi. Hàm phải để **mặc định
+(`INVOKER`)**, tức vẫn chịu RLS. Đo 01/08/2026 bằng một hàm nháp cùng hình dạng: gọi bằng khoá
+công khai thì **xoá được 0 dòng**, dữ liệu thật còn nguyên 388 dòng. Xem phần Bảo mật.
+
+`revoke execute … from anon` là lớp thứ hai, không phải lớp duy nhất.
+
+### Phía trình duyệt
+
+Một lệnh: `supabase.rpc('nap_cham_cong', { p_ky, p_dong })`. 388 dòng dạng JSON khoảng 60 KB —
+nằm gọn trong thân POST, không cần chia lô.
+
+Con số "sẽ xoá bao nhiêu dòng" hiện ở bước **xem trước** vẫn tính ở trình duyệt, từ chính dữ liệu
+cũ đã đọc về để dựng bảng điểm trước/sau — không phải gọi thêm gì. Hàm trả `so_xoa` / `so_nap`
+thật sau khi chạy để đối chiếu: hai con số lệch nhau là dấu hiệu có người vừa sửa dữ liệu cùng lúc.
 
 ## E. Test — `src/lib/chamCongExcel.test.js`
 
@@ -171,10 +213,26 @@ Vitest, hàm thuần nên không cần DOM lẫn mạng:
 
 ## Bảo mật
 
-Có thêm cột vào `nhan_vien` và mở một đường **ghi mới** từ app vào `cham_cong` ⇒ **bắt buộc chạy
-skill `kiem-tra-bao-mat-du-lieu` trước khi bàn giao**.
+Có thêm cột vào `nhan_vien`, thêm một **hàm RPC mới**, và mở một đường **ghi mới** từ app vào
+`cham_cong` ⇒ **bắt buộc chạy skill `kiem-tra-bao-mat-du-lieu` trước khi bàn giao**.
 
-Đã đo trước: RLS `cham_cong` sẵn chỉ cho `nv_role = 'ADMIN'` ghi, nên **không sửa policy nào**.
-Phải đo lại sau khi làm xong: người cầm khoá công khai vẫn không ghi được, và tài khoản đã đăng
-nhập nhưng KHÔNG phải ADMIN cũng không ghi được — kiểm bằng chính đường mới này chứ không chỉ
-bằng curl.
+### Đã đo trước khi thiết kế (01/08/2026)
+
+| Phép thử | Kết quả |
+|---|---|
+| RLS `cham_cong` | `cc_ins`/`cc_upd`/`cc_del` chỉ cho `nv_role = 'ADMIN'` ⇒ **không sửa policy nào** |
+| Hàm plpgsql thường (INVOKER) có còn chịu RLS không? | **Có.** Tạo hàm nháp xoá `cham_cong`, gọi bằng khoá công khai → xoá **0 dòng** |
+| Dữ liệu sau phép thử | Còn nguyên 13 dòng ngày 01/07, 388 dòng cả kỳ |
+| Ai gọi được hàm? | Mặc định `public` gọi được — nên phải `revoke execute … from anon` |
+
+Hàm nháp đã xoá sau khi đo.
+
+### Phải đo lại sau khi làm xong
+
+1. Khoá công khai gọi `nap_cham_cong` → bị chặn, và `cham_cong` **không đổi một dòng nào**.
+2. Tài khoản đã đăng nhập nhưng **không phải ADMIN** → cũng bị chặn.
+3. Xác nhận hàm **không** mang `prosecdef = true`:
+   `select proname, prosecdef from pg_proc where proname = 'nap_cham_cong';` → phải là `false`.
+4. Cột `ten_cham_cong` là họ tên người thật ⇒ kiểm khoá công khai không đọc được `nhan_vien`.
+
+Đo bằng chính đường mới này, không chỉ bằng `curl` trên bảng.
