@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
-import { ChevronLeft, AlertTriangle, Loader2 } from 'lucide-react';
+import {
+  gomThongKe, tongTatCa, docNhomTuKpi, MA_CHI_TIEU_NHOM, dsNguoiPhanNhom,
+} from '../../lib/chamCongThongKe';
+import { loiGhiKpi } from '../../lib/kpiWriteGuard';
+import { ChevronLeft, AlertTriangle, Loader2, ChevronRight, Users } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Màn hình CHỈ ĐỌC: xem bảng chấm công gốc (dữ liệu máy chấm công) — căn cứ của 2 chỉ
@@ -57,6 +61,12 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
   const [chon, setChon] = useState(null); // nhan_vien_id đang xem chi tiết, null = bảng tổng quan
+  const [kpiRows, setKpiRows] = useState([]);       // dòng chỉ tiêu chở khoá nhóm
+  // Tập khoá nhóm đang lọc. RỖNG = xem tất cả (không phải "không xem gì") — giữ đúng hành vi
+  // cũ khi chưa ai bấm nút nào. 'KHONG_NHOM' là khoá giả của nhóm "Chưa phân nhóm".
+  const [locNhom, setLocNhom] = useState(() => new Set());
+  const [bung, setBung] = useState(() => new Set()); // khoá nhóm đang bung trong khối thống kê
+  const [manPhanNhom, setManPhanNhom] = useState(false);
 
   const taiDuLieu = useCallback(async () => {
     setLoading(true);
@@ -79,10 +89,24 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
       } catch {
         setNgoaiLe([]);
       }
+      // Nhóm tải RIÊNG và MỀM, cùng lý do như miễn trừ: hỏng chỗ này (mất mạng, RLS đổi) KHÔNG
+      // được xoá bảng chấm công đang hiển thị. Mất nhóm thì tab lui về đúng hành vi cũ — một
+      // danh sách phẳng, không lọc được — vẫn dùng được.
+      try {
+        const { data: kp, error: loiKp } = await fetchAllRows(() =>
+          supabase.from('kpi_chi_tieu')
+            .select('id, ky, cap_do, nhan_vien_id, lien_ket_bo_phan, ten, ma')
+            .eq('ky', ky).eq('ma', MA_CHI_TIEU_NHOM).order('id'));
+        if (loiKp) throw loiKp;
+        setKpiRows(kp || []);
+      } catch {
+        setKpiRows([]);
+      }
     } catch (err) {
       setLoi(err?.message || String(err));
       setRows([]);
       setNgoaiLe([]);
+      setKpiRows([]);
     } finally {
       setLoading(false);
     }
@@ -145,6 +169,26 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     }
   }, [me, taiDuLieu]);
 
+  // Đổi nhóm chuyên cần của MỘT người trong kỳ đang xem.
+  //
+  // ⚠ Đây là lệnh ghi vào kpi_chi_tieu — cùng bảng quyết định điểm KPI. Điểm chuyên cần bộ
+  // phận của CẢ nhóm cũ lẫn nhóm mới sẽ đổi ngay lần mở tab KPI kế tiếp, vì điểm tính trên
+  // trung bình đầu người. Chủ app chọn có chủ đích (01/08/2026).
+  //
+  // `.select()` + loiGhiKpi là BẮT BUỘC: PostgREST trả 204 với error === null khi RLS lọc sạch
+  // dòng, nên chỉ kiểm `if (error)` là báo "đã lưu" cho một thao tác không chạm được dòng nào.
+  const doiNhom = useCallback(async (nvId, khoaMoi) => {
+    setLoi('');
+    const { data, error } = await supabase.from('kpi_chi_tieu')
+      .update({ lien_ket_bo_phan: khoaMoi })
+      .eq('ky', ky).eq('ma', MA_CHI_TIEU_NHOM)
+      .eq('cap_do', 'CA_NHAN').eq('nhan_vien_id', nvId)
+      .select();
+    const loiGhi = loiGhiKpi(error, data);
+    if (loiGhi) { setLoi(loiGhi); return; }
+    await taiDuLieu();
+  }, [ky, taiDuLieu]);
+
   const tongTheoNguoi = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
@@ -158,6 +202,86 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   }, [rows]);
 
   const soDongNghiVan = useMemo(() => rows.filter(r => r.nghi_van).length, [rows]);
+
+  const dsThongKe = useMemo(
+    () => gomThongKe({ rows, ngoaiLe, kpiRows, users }),
+    [rows, ngoaiLe, kpiRows, users]);
+
+  const nhomCuaNguoi = useMemo(() => docNhomTuKpi(kpiRows).theoNguoi, [kpiRows]);
+
+  // Người hiện trong màn phân nhóm = HỢP của (người có chỉ tiêu KPI nhóm) và (người có chấm
+  // công) trong kỳ — xem chamCongThongKe.js. Phải tính TRƯỚC mọi return sớm bên dưới, vì
+  // return sớm if (manPhanNhom) dùng ngay kết quả này.
+  const dsNguoiXepNhom = useMemo(
+    () => dsNguoiPhanNhom({ kpiRows, dsNhanVien, users }), [kpiRows, dsNhanVien, users]);
+
+  // Danh sách nhóm cho ô lọc — chỉ nhóm THẬT SỰ có người trong kỳ, không liệt kê nhóm rỗng.
+  const dsNhomLoc = useMemo(
+    () => dsThongKe.map(n => ({ gia: n.khoa == null ? 'KHONG_NHOM' : n.khoa, nhan: n.nhan })),
+    [dsThongKe]);
+
+  const dsThongKeLoc = useMemo(() => {
+    if (!locNhom.size) return dsThongKe;
+    return dsThongKe.filter(n => locNhom.has(n.khoa == null ? 'KHONG_NHOM' : n.khoa));
+  }, [dsThongKe, locNhom]);
+
+  const idsHienThi = useMemo(
+    () => new Set(dsThongKeLoc.flatMap(n => n.thanhVien.map(x => x.id))),
+    [dsThongKeLoc]);
+
+  // Lưới lịch lọc theo NGƯỜI, KHÔNG lọc theo ngày: bỏ bớt cột ngày khi lọc nhóm sẽ làm người
+  // đọc tưởng những ngày đó cả công ty nghỉ.
+  const dsNhanVienLoc = useMemo(
+    () => dsNhanVien.filter(nv => idsHienThi.has(nv.id)), [dsNhanVien, idsHienThi]);
+
+  const soNgayCongLoc = useMemo(
+    () => rows.filter(r => idsHienThi.has(r.nhan_vien_id)).length, [rows, idsHienThi]);
+
+  const soNghiVanLoc = useMemo(
+    () => rows.filter(r => r.nghi_van && idsHienThi.has(r.nhan_vien_id)).length,
+    [rows, idsHienThi]);
+
+  const tenNhomDangLoc = useMemo(
+    () => dsNhomLoc.filter(n => locNhom.has(n.gia)).map(n => n.nhan).join(', '),
+    [dsNhomLoc, locNhom]);
+
+  // Mỗi lần ĐỔI bộ lọc thì đặt lại phần bung theo bộ lọc: chọn đúng một nhóm thì bung sẵn nhóm
+  // đó (người dùng vừa nói rõ họ quan tâm nhóm nào), còn lại thì thu hết.
+  //
+  // Phải THU khi có từ 2 nhóm, không chỉ "không bung thêm": người ta chọn nhiều nhóm bằng cách
+  // bấm lần lượt, nên nhóm bấm đầu tiên đã tự bung lúc nó còn một mình. Để nguyên thì màn hình
+  // thành một nhóm xổ hết người chen trên một nhóm thu gọn — đúng cái bố cục làm mất khả năng
+  // so sánh hai nhóm với nhau, mà so sánh mới là lý do người ta chọn nhiều nhóm.
+  //
+  // Không sợ đè lên thao tác tay: effect chỉ chạy khi `locNhom` đổi, còn tự bung/thu một nhóm
+  // chỉ đụng `bung` — bấm bung xong vẫn giữ nguyên cho tới khi đổi bộ lọc.
+  useEffect(() => {
+    setBung(locNhom.size === 1 ? new Set(locNhom) : new Set());
+  }, [locNhom]);
+
+  // Bộ lọc TỰ GỠ những nhóm không còn tồn tại, giữ lại các nhóm vẫn còn. Bắt buộc phải có:
+  // đang lọc SẢN XUẤT ở kỳ 2026-07 rồi chuyển sang kỳ 2026-06 (kỳ đó cả công ty chung MỘT
+  // nhóm, không có CHUYEN_CAN_SX) thì không nhóm nào khớp — màn hình trắng trơn và người dùng
+  // không hiểu vì sao, vì dãy nút lọc lúc đó cũng đã biến mất.
+  useEffect(() => {
+    const con = new Set(dsNhomLoc.map(n => n.gia));
+    if ([...locNhom].every(k => con.has(k))) return;   // không đổi gì → không setState, tránh lặp vô hạn
+    setLocNhom(s => new Set([...s].filter(k => con.has(k))));
+  }, [dsNhomLoc, locNhom]);
+
+  // if (manPhanNhom) PHẢI đứng trước if (loading): doiNhom (đổi nhóm) gọi taiDuLieu() ở cuối,
+  // mà taiDuLieu() luôn setLoading(true) trước khi fetch. Nếu if (loading) đứng trước, mỗi lần
+  // chọn một nhóm trong ô select cả màn hình sẽ nháy về "Đang tải chấm công…" rồi mới quay lại
+  // màn phân nhóm — trong khi dữ liệu cũ (kpiRows, dsNhanVien) vẫn hiển thị đúng bình thường
+  // cho tới khi có dữ liệu mới, không có lý do gì phải nhường chỗ cho màn hình tải.
+  if (manPhanNhom) {
+    return (
+      <ManPhanNhom
+        ky={ky} kpiRows={kpiRows} dsNguoi={dsNguoiXepNhom} nhomCuaNguoi={nhomCuaNguoi}
+        loi={loi} onDoiNhom={doiNhom} onBack={() => setManPhanNhom(false)}
+      />
+    );
+  }
 
   if (loading) return (
     <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
@@ -185,9 +309,36 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
           type="month" value={ky} onChange={e => setKy(e.target.value || kyHienTai())}
           style={{ ...oInput, width: 'auto' }}
         />
+        {dsNhomLoc.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.74rem', color: '#64748b' }}>Nhóm:</span>
+            {dsNhomLoc.map(n => {
+              const dangChon = locNhom.has(n.gia);
+              return (
+                <button
+                  key={n.gia} aria-pressed={dangChon} style={dangChon ? chipChon : chip}
+                  onClick={() => setLocNhom(s => {
+                    const m = new Set(s);
+                    if (m.has(n.gia)) m.delete(n.gia); else m.add(n.gia);
+                    return m;
+                  })}
+                >{n.nhan}</button>
+              );
+            })}
+            {locNhom.size > 0 && (
+              <button onClick={() => setLocNhom(new Set())} style={nutBoLoc}>✕ Bỏ lọc</button>
+            )}
+          </div>
+        )}
+        {canEdit && kpiRows.length > 0 && (
+          <button onClick={() => setManPhanNhom(true)} style={nutPhanNhom}>
+            <Users size={13} /> Phân nhóm
+          </button>
+        )}
         {rows.length > 0 && (
           <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-            {dsNhanVien.length} nhân viên · {rows.length} ngày công · {soDongNghiVan} dòng dữ liệu đáng ngờ
+            {dsNhanVienLoc.length} nhân viên · {soNgayCongLoc} ngày công · {soNghiVanLoc} dòng dữ liệu đáng ngờ
+            {locNhom.size ? ` (lọc theo ${tenNhomDangLoc})` : ''}
           </span>
         )}
       </div>
@@ -222,6 +373,18 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
       )}
 
       {rows.length > 0 && (
+        <KhoiThongKe
+          dsNhom={dsThongKeLoc} bung={bung}
+          onBung={khoa => setBung(s => {
+            const m = new Set(s);
+            if (m.has(khoa)) m.delete(khoa); else m.add(khoa);
+            return m;
+          })}
+          onChonNguoi={setChon}
+        />
+      )}
+
+      {rows.length > 0 && (
         <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12 }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', background: '#fff' }}>
             <thead>
@@ -239,7 +402,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
               </tr>
             </thead>
             <tbody>
-              {dsNhanVien.map(nv => {
+              {dsNhanVienLoc.map(nv => {
                 const tong = tongTheoNguoi.get(nv.id) || { muon: 0, somSom: 0, nghi: 0 };
                 return (
                   <tr key={nv.id}>
@@ -428,6 +591,175 @@ function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, canEdit, onDoiNg
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Khối thống kê hai cấp: dòng nhóm bấm được để bung ra từng nhân viên.
+//
+// Con số ở đây ĐÃ TRỪ ngày đánh dấu Đặc biệt, nên sẽ lệch với 3 cột tổng của lưới lịch bên
+// dưới (số thô). Cố ý: đổi ý nghĩa cột cũ là cách chắc nhất để người quen đọc nó đọc sai.
+// ─────────────────────────────────────────────────────────────────────────────
+function KhoiThongKe({ dsNhom, bung, onBung, onChonNguoi }) {
+  const tong = useMemo(() => tongTatCa(dsNhom), [dsNhom]);
+  if (!dsNhom.length) return null;
+
+  return (
+    <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12, marginBottom: 12 }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 640, background: '#fff' }}>
+        <thead>
+          <tr>
+            <th style={thTK.left}>Nhóm / Nhân viên</th>
+            <th style={thTK.num}>Người</th>
+            <th style={thTK.num}>Tổng nghỉ</th>
+            <th style={thTK.num} title={TIP_PHEP}>Nghỉ phép</th>
+            <th style={thTK.num} title={TIP_QUA}>Quá quy định</th>
+            <th style={thTK.num} title={TIP_PHUT}>Muộn (phút)</th>
+            <th style={thTK.num} title={TIP_PHUT}>Về sớm (phút)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {dsNhom.map(n => {
+            const khoa = n.khoa == null ? 'KHONG_NHOM' : n.khoa;
+            const mo = bung.has(khoa);
+            return (
+              <React.Fragment key={khoa}>
+                <tr style={{ background: '#f8fafc', cursor: 'pointer' }} onClick={() => onBung(khoa)}>
+                  <td style={{ ...tdTK.left, fontWeight: 700 }}>
+                    {mo ? <ChevronDownNho /> : <ChevronRight size={13} style={{ verticalAlign: -2 }} />}
+                    {' '}{n.nhan}
+                  </td>
+                  <td style={tdTK.num}>{n.soNguoi}</td>
+                  <SoTK v={n.tongNghi} dam />
+                  <SoTK v={n.nghiPhep} dam />
+                  <SoTK v={n.nghiQuaQuyDinh} dam canhBao />
+                  <SoTK v={n.phutMuon} dam canhBao />
+                  <SoTK v={n.phutVeSom} dam canhBao />
+                </tr>
+                {mo && n.thanhVien.map(x => (
+                  <tr key={x.id}>
+                    <td style={{ ...tdTK.left, paddingLeft: 30 }}>
+                      <button onClick={() => onChonNguoi(x.id)} style={nutTenTK}>{x.ten}</button>
+                    </td>
+                    <td style={tdTK.num} />
+                    <SoTK v={x.tongNghi} />
+                    <SoTK v={x.nghiPhep} />
+                    <SoTK v={x.nghiQuaQuyDinh} canhBao />
+                    <SoTK v={x.phutMuon} canhBao />
+                    <SoTK v={x.phutVeSom} canhBao />
+                  </tr>
+                ))}
+              </React.Fragment>
+            );
+          })}
+          <tr style={{ background: '#f1f5f9', borderTop: '2px solid #e2e8f0' }}>
+            <td style={{ ...tdTK.left, fontWeight: 700 }}>TỔNG</td>
+            <td style={{ ...tdTK.num, fontWeight: 700 }}>{tong.soNguoi}</td>
+            <SoTK v={tong.tongNghi} dam />
+            <SoTK v={tong.nghiPhep} dam />
+            <SoTK v={tong.nghiQuaQuyDinh} dam canhBao />
+            <SoTK v={tong.phutMuon} dam canhBao />
+            <SoTK v={tong.phutVeSom} dam canhBao />
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Số 0 để mờ — bắt mắt đọc một cột đầy số 0 là làm người ta bỏ sót con số thật sự khác 0.
+// `canhBao` = cột mà khác 0 là chuyện xấu (quá quy định, muộn, về sớm) → tô đỏ.
+function SoTK({ v, dam, canhBao }) {
+  const khac0 = Number(v) > 0;
+  return (
+    <td style={{
+      ...tdTK.num,
+      fontWeight: dam ? 700 : 400,
+      color: !khac0 ? '#cbd5e1' : (canhBao ? '#b91c1c' : '#0f172a'),
+    }}>{v}</td>
+  );
+}
+
+const ChevronDownNho = () => (
+  <ChevronRight size={13} style={{ verticalAlign: -2, transform: 'rotate(90deg)' }} />
+);
+
+const TIP_PHEP = 'Ngày nghỉ đã đánh dấu Đặc biệt (có giải trình) + tối đa 1 ngày phép trong tháng.';
+const TIP_QUA = 'Số ngày nghỉ CHƯA đánh dấu Đặc biệt, trừ đi 1 ngày phép. Đây đúng là con số KPI dùng để trừ điểm chuyên cần.';
+const TIP_PHUT = 'Đã bỏ các ngày được đánh dấu Đặc biệt — nên có thể lệch với cột tổng của bảng lịch bên dưới (số thô).';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Xếp từng nhân viên vào một trong các nhóm chuyên cần SẴN CÓ của kỳ.
+//
+// Không tạo/xoá/đổi tên nhóm ở đây: tạo nhóm mới là sinh thêm một dòng chỉ tiêu KPI cho mọi
+// thành viên, phải đặt đúng chỉ tiêu và trọng số — việc đó làm ở tab KPI.
+// ─────────────────────────────────────────────────────────────────────────────
+function ManPhanNhom({ ky, kpiRows, dsNguoi, nhomCuaNguoi, loi, onDoiNhom, onBack }) {
+  // Nhóm chọn được = các nhóm có dòng BO_PHAN trong kỳ. Sắp theo nhãn cho ổn định.
+  const dsNhom = useMemo(() => {
+    const { nhan } = docNhomTuKpi(kpiRows);
+    return Array.from(nhan.entries())
+      .map(([khoa, ten]) => ({ khoa, ten }))
+      .sort((a, b) => a.ten.localeCompare(b.ten, 'vi'));
+  }, [kpiRows]);
+
+  return (
+    <div style={{ width: '100%' }}>
+      <button onClick={onBack} style={nutQuayLai}>
+        <ChevronLeft size={14} /> Bảng chấm công
+      </button>
+
+      <div style={{ background: '#fff', borderRadius: 14, padding: '1rem', border: '1px solid #e2e8f0', marginBottom: 12 }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Phân nhóm chuyên cần</div>
+        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Kỳ {ky} · {dsNguoi.length} nhân viên · {dsNhom.length} nhóm</div>
+      </div>
+
+      {loi && (
+        <div style={{
+          padding: '0.6rem 0.7rem', borderRadius: 10, background: '#fef2f2', color: '#b91c1c',
+          fontSize: '0.78rem', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <AlertTriangle size={14} /> {loi}
+        </div>
+      )}
+
+      <div style={{
+        padding: '0.6rem 0.7rem', borderRadius: 10, background: '#fffbeb', color: '#b45309',
+        fontSize: '0.78rem', marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 6,
+      }}>
+        <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span>
+          Đổi nhóm sẽ làm điểm KPI <b>Chuyên cần bộ phận</b> của <b>cả nhóm cũ lẫn nhóm mới</b> tính
+          lại ngay, vì điểm tính trên trung bình đầu người. Áp dụng cho <b>kỳ {ky}</b>; các kỳ tạo
+          sau sẽ tự chép nhóm này.
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
+        {dsNguoi.map(nv => (
+          <div key={nv.id} style={{
+            background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10,
+            padding: '0.6rem 0.7rem',
+          }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 600, marginBottom: 6 }}>{nv.ten}</div>
+            {nv.coDong ? (
+              <select
+                value={nhomCuaNguoi.get(nv.id) || ''}
+                onChange={e => onDoiNhom(nv.id, e.target.value)}
+                style={{ ...oInput, width: '100%' }}
+              >
+                {!nhomCuaNguoi.get(nv.id) && <option value="">— chưa chọn —</option>}
+                {dsNhom.map(n => <option key={n.khoa} value={n.khoa}>{n.ten}</option>)}
+              </select>
+            ) : (
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                Chưa có chỉ tiêu Chuyên cần bộ phận trong kỳ này — thêm ở tab KPI trước.
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Style
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -497,4 +829,48 @@ const nutHuy = {
 const nutLuu = {
   border: 'none', background: '#2563eb', color: '#fff',
   fontSize: '0.78rem', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontWeight: 600,
+};
+
+const nutPhanNhom = {
+  display: 'inline-flex', alignItems: 'center', gap: 4,
+  border: '1px solid #bfdbfe', background: '#eff6ff', color: '#2563eb',
+  fontSize: '0.78rem', borderRadius: 8, padding: '0.4rem 0.7rem', cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+
+const thTK = {
+  left: {
+    background: '#f8fafc', textAlign: 'left', padding: '8px 10px', fontSize: '0.68rem',
+    textTransform: 'uppercase', letterSpacing: '0.03em', color: '#64748b',
+    borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap',
+  },
+  num: {
+    background: '#f8fafc', textAlign: 'right', padding: '8px 10px', fontSize: '0.68rem',
+    textTransform: 'uppercase', letterSpacing: '0.03em', color: '#64748b',
+    borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap',
+  },
+};
+const tdTK = {
+  left: { padding: '7px 10px', borderBottom: '1px solid #eef2f7', fontSize: '0.78rem', whiteSpace: 'nowrap' },
+  num: {
+    padding: '7px 10px', borderBottom: '1px solid #eef2f7', fontSize: '0.78rem',
+    textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+  },
+};
+const nutTenTK = {
+  border: 'none', background: 'none', cursor: 'pointer', padding: 0,
+  font: 'inherit', fontSize: '0.78rem', color: '#0f172a', textAlign: 'left',
+};
+
+const chip = {
+  border: '1px solid #e2e8f0', background: '#fff', color: '#475569',
+  fontSize: '0.74rem', borderRadius: 999, padding: '0.3rem 0.7rem', cursor: 'pointer',
+  whiteSpace: 'nowrap', font: 'inherit', fontWeight: 400, lineHeight: 1.4,
+};
+const chipChon = {
+  ...chip, borderColor: '#2563eb', background: '#eff6ff', color: '#1d4ed8', fontWeight: 600,
+};
+const nutBoLoc = {
+  border: 'none', background: 'none', color: '#64748b', fontSize: '0.74rem',
+  cursor: 'pointer', padding: '0.3rem 0.2rem', whiteSpace: 'nowrap',
 };

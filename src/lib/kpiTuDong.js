@@ -252,7 +252,7 @@ const NGUONG_NGHI = [[4, 10], [1, 5]];              // số ngày nghỉ VƯỢT
 // tổng ngày nghỉ − 1, không phải đếm riêng loại nghỉ nào. Đây là chỗ ảnh hưởng mạnh nhất tới
 // điểm chuyên cần: nghỉ 5 ngày là trừ 12 điểm, quá cả mức chỉ tiêu, trong khi muộn 200 phút
 // cả tháng chỉ trừ 6. Đổi con số này là đổi thứ hạng của cả bảng.
-const NGAY_PHEP_THANG = 1;
+export const NGAY_PHEP_THANG = 1;
 
 const truTheoNguong = (v, bang) => (bang.find(([m]) => v >= m) || [0, 0])[1];
 
