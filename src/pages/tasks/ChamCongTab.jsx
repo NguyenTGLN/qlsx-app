@@ -165,6 +165,26 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     }
   }, [me, taiDuLieu]);
 
+  // Đổi nhóm chuyên cần của MỘT người trong kỳ đang xem.
+  //
+  // ⚠ Đây là lệnh ghi vào kpi_chi_tieu — cùng bảng quyết định điểm KPI. Điểm chuyên cần bộ
+  // phận của CẢ nhóm cũ lẫn nhóm mới sẽ đổi ngay lần mở tab KPI kế tiếp, vì điểm tính trên
+  // trung bình đầu người. Chủ app chọn có chủ đích (01/08/2026).
+  //
+  // `.select()` + loiGhiKpi là BẮT BUỘC: PostgREST trả 204 với error === null khi RLS lọc sạch
+  // dòng, nên chỉ kiểm `if (error)` là báo "đã lưu" cho một thao tác không chạm được dòng nào.
+  const doiNhom = useCallback(async (nvId, khoaMoi) => {
+    setLoi('');
+    const { data, error } = await supabase.from('kpi_chi_tieu')
+      .update({ lien_ket_bo_phan: khoaMoi })
+      .eq('ky', ky).eq('ma', MA_CHI_TIEU_NHOM)
+      .eq('cap_do', 'CA_NHAN').eq('nhan_vien_id', nvId)
+      .select();
+    const loiGhi = loiGhiKpi(error, data);
+    if (loiGhi) { setLoi(loiGhi); return; }
+    await taiDuLieu();
+  }, [ky, taiDuLieu]);
+
   const tongTheoNguoi = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
@@ -233,6 +253,15 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
       Đang tải chấm công…
     </div>
   );
+
+  if (manPhanNhom) {
+    return (
+      <ManPhanNhom
+        ky={ky} kpiRows={kpiRows} dsNhanVien={dsNhanVien} nhomCuaNguoi={nhomCuaNguoi}
+        loi={loi} onDoiNhom={doiNhom} onBack={() => setManPhanNhom(false)}
+      />
+    );
+  }
 
   if (chon) {
     const nv = dsNhanVien.find(x => x.id === chon) || { id: chon, ten: chon };
@@ -613,6 +642,87 @@ const ChevronDownNho = () => (
 const TIP_PHEP = 'Ngày nghỉ đã đánh dấu Đặc biệt (có giải trình) + tối đa 1 ngày phép trong tháng.';
 const TIP_QUA = 'Số ngày nghỉ CHƯA đánh dấu Đặc biệt, trừ đi 1 ngày phép. Đây đúng là con số KPI dùng để trừ điểm chuyên cần.';
 const TIP_PHUT = 'Đã bỏ các ngày được đánh dấu Đặc biệt — nên có thể lệch với cột tổng của bảng lịch bên dưới (số thô).';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Xếp từng nhân viên vào một trong các nhóm chuyên cần SẴN CÓ của kỳ.
+//
+// Không tạo/xoá/đổi tên nhóm ở đây: tạo nhóm mới là sinh thêm một dòng chỉ tiêu KPI cho mọi
+// thành viên, phải đặt đúng chỉ tiêu và trọng số — việc đó làm ở tab KPI.
+// ─────────────────────────────────────────────────────────────────────────────
+function ManPhanNhom({ ky, kpiRows, dsNhanVien, nhomCuaNguoi, loi, onDoiNhom, onBack }) {
+  // Nhóm chọn được = các nhóm có dòng BO_PHAN trong kỳ. Sắp theo nhãn cho ổn định.
+  const dsNhom = useMemo(() => {
+    const { nhan } = docNhomTuKpi(kpiRows);
+    return Array.from(nhan.entries())
+      .map(([khoa, ten]) => ({ khoa, ten }))
+      .sort((a, b) => a.ten.localeCompare(b.ten, 'vi'));
+  }, [kpiRows]);
+
+  // Ai CÓ dòng chỉ tiêu nhóm trong kỳ này. Người không có thì ô chọn phải khoá — tự insert là
+  // tự thêm một chỉ tiêu KPI vào bảng điểm của họ mà không ai yêu cầu.
+  const coDong = useMemo(() => new Set(
+    kpiRows.filter(r => r.ma === MA_CHI_TIEU_NHOM && r.cap_do === 'CA_NHAN' && r.nhan_vien_id)
+      .map(r => r.nhan_vien_id)), [kpiRows]);
+
+  return (
+    <div style={{ width: '100%' }}>
+      <button onClick={onBack} style={nutQuayLai}>
+        <ChevronLeft size={14} /> Bảng chấm công
+      </button>
+
+      <div style={{ background: '#fff', borderRadius: 14, padding: '1rem', border: '1px solid #e2e8f0', marginBottom: 12 }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Phân nhóm chuyên cần</div>
+        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>Kỳ {ky} · {dsNhanVien.length} nhân viên · {dsNhom.length} nhóm</div>
+      </div>
+
+      {loi && (
+        <div style={{
+          padding: '0.6rem 0.7rem', borderRadius: 10, background: '#fef2f2', color: '#b91c1c',
+          fontSize: '0.78rem', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <AlertTriangle size={14} /> {loi}
+        </div>
+      )}
+
+      <div style={{
+        padding: '0.6rem 0.7rem', borderRadius: 10, background: '#fffbeb', color: '#b45309',
+        fontSize: '0.78rem', marginBottom: 12, display: 'flex', alignItems: 'flex-start', gap: 6,
+      }}>
+        <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span>
+          Đổi nhóm sẽ làm điểm KPI <b>Chuyên cần bộ phận</b> của <b>cả nhóm cũ lẫn nhóm mới</b> tính
+          lại ngay, vì điểm tính trên trung bình đầu người. Áp dụng cho <b>kỳ {ky}</b>; các kỳ tạo
+          sau sẽ tự chép nhóm này.
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
+        {dsNhanVien.map(nv => (
+          <div key={nv.id} style={{
+            background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10,
+            padding: '0.6rem 0.7rem',
+          }}>
+            <div style={{ fontSize: '0.78rem', fontWeight: 600, marginBottom: 6 }}>{nv.ten}</div>
+            {coDong.has(nv.id) ? (
+              <select
+                value={nhomCuaNguoi.get(nv.id) || ''}
+                onChange={e => onDoiNhom(nv.id, e.target.value)}
+                style={{ ...oInput, width: '100%' }}
+              >
+                {!nhomCuaNguoi.get(nv.id) && <option value="">— chưa chọn —</option>}
+                {dsNhom.map(n => <option key={n.khoa} value={n.khoa}>{n.ten}</option>)}
+              </select>
+            ) : (
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                Chưa có chỉ tiêu Chuyên cần bộ phận trong kỳ này — thêm ở tab KPI trước.
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Style
