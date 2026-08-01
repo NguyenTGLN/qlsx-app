@@ -303,6 +303,18 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
       )}
 
       {rows.length > 0 && (
+        <KhoiThongKe
+          dsNhom={dsThongKeLoc} bung={bung}
+          onBung={khoa => setBung(s => {
+            const m = new Set(s);
+            if (m.has(khoa)) m.delete(khoa); else m.add(khoa);
+            return m;
+          })}
+          onChonNguoi={setChon}
+        />
+      )}
+
+      {rows.length > 0 && (
         <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12 }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', background: '#fff' }}>
             <thead>
@@ -509,6 +521,100 @@ function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, canEdit, onDoiNg
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Khối thống kê hai cấp: dòng nhóm bấm được để bung ra từng nhân viên.
+//
+// Con số ở đây ĐÃ TRỪ ngày đánh dấu Đặc biệt, nên sẽ lệch với 3 cột tổng của lưới lịch bên
+// dưới (số thô). Cố ý: đổi ý nghĩa cột cũ là cách chắc nhất để người quen đọc nó đọc sai.
+// ─────────────────────────────────────────────────────────────────────────────
+function KhoiThongKe({ dsNhom, bung, onBung, onChonNguoi }) {
+  const tong = useMemo(() => tongTatCa(dsNhom), [dsNhom]);
+  if (!dsNhom.length) return null;
+
+  return (
+    <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 12, marginBottom: 12 }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 640, background: '#fff' }}>
+        <thead>
+          <tr>
+            <th style={thTK.left}>Nhóm / Nhân viên</th>
+            <th style={thTK.num}>Người</th>
+            <th style={thTK.num}>Tổng nghỉ</th>
+            <th style={thTK.num} title={TIP_PHEP}>Nghỉ phép</th>
+            <th style={thTK.num} title={TIP_QUA}>Quá quy định</th>
+            <th style={thTK.num} title={TIP_PHUT}>Muộn (phút)</th>
+            <th style={thTK.num} title={TIP_PHUT}>Về sớm (phút)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {dsNhom.map(n => {
+            const khoa = n.khoa == null ? 'KHONG_NHOM' : n.khoa;
+            const mo = bung.has(khoa);
+            return (
+              <React.Fragment key={khoa}>
+                <tr style={{ background: '#f8fafc', cursor: 'pointer' }} onClick={() => onBung(khoa)}>
+                  <td style={{ ...tdTK.left, fontWeight: 700 }}>
+                    {mo ? <ChevronDownNho /> : <ChevronRight size={13} style={{ verticalAlign: -2 }} />}
+                    {' '}{n.nhan}
+                  </td>
+                  <td style={tdTK.num}>{n.soNguoi}</td>
+                  <SoTK v={n.tongNghi} dam />
+                  <SoTK v={n.nghiPhep} dam />
+                  <SoTK v={n.nghiQuaQuyDinh} dam canhBao />
+                  <SoTK v={n.phutMuon} dam canhBao />
+                  <SoTK v={n.phutVeSom} dam canhBao />
+                </tr>
+                {mo && n.thanhVien.map(x => (
+                  <tr key={x.id}>
+                    <td style={{ ...tdTK.left, paddingLeft: 30 }}>
+                      <button onClick={() => onChonNguoi(x.id)} style={nutTenTK}>{x.ten}</button>
+                    </td>
+                    <td style={tdTK.num} />
+                    <SoTK v={x.tongNghi} />
+                    <SoTK v={x.nghiPhep} />
+                    <SoTK v={x.nghiQuaQuyDinh} canhBao />
+                    <SoTK v={x.phutMuon} canhBao />
+                    <SoTK v={x.phutVeSom} canhBao />
+                  </tr>
+                ))}
+              </React.Fragment>
+            );
+          })}
+          <tr style={{ background: '#f1f5f9', borderTop: '2px solid #e2e8f0' }}>
+            <td style={{ ...tdTK.left, fontWeight: 700 }}>TỔNG</td>
+            <td style={{ ...tdTK.num, fontWeight: 700 }}>{tong.soNguoi}</td>
+            <SoTK v={tong.tongNghi} dam />
+            <SoTK v={tong.nghiPhep} dam />
+            <SoTK v={tong.nghiQuaQuyDinh} dam canhBao />
+            <SoTK v={tong.phutMuon} dam canhBao />
+            <SoTK v={tong.phutVeSom} dam canhBao />
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Số 0 để mờ — bắt mắt đọc một cột đầy số 0 là làm người ta bỏ sót con số thật sự khác 0.
+// `canhBao` = cột mà khác 0 là chuyện xấu (quá quy định, muộn, về sớm) → tô đỏ.
+function SoTK({ v, dam, canhBao }) {
+  const khac0 = Number(v) > 0;
+  return (
+    <td style={{
+      ...tdTK.num,
+      fontWeight: dam ? 700 : 400,
+      color: !khac0 ? '#cbd5e1' : (canhBao ? '#b91c1c' : '#0f172a'),
+    }}>{v}</td>
+  );
+}
+
+const ChevronDownNho = () => (
+  <ChevronRight size={13} style={{ verticalAlign: -2, transform: 'rotate(90deg)' }} />
+);
+
+const TIP_PHEP = 'Ngày nghỉ đã đánh dấu Đặc biệt (có giải trình) + tối đa 1 ngày phép trong tháng.';
+const TIP_QUA = 'Số ngày nghỉ CHƯA đánh dấu Đặc biệt, trừ đi 1 ngày phép. Đây đúng là con số KPI dùng để trừ điểm chuyên cần.';
+const TIP_PHUT = 'Đã bỏ các ngày được đánh dấu Đặc biệt — nên có thể lệch với cột tổng của bảng lịch bên dưới (số thô).';
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Style
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -585,4 +691,28 @@ const nutPhanNhom = {
   border: '1px solid #bfdbfe', background: '#eff6ff', color: '#2563eb',
   fontSize: '0.78rem', borderRadius: 8, padding: '0.4rem 0.7rem', cursor: 'pointer',
   whiteSpace: 'nowrap',
+};
+
+const thTK = {
+  left: {
+    background: '#f8fafc', textAlign: 'left', padding: '8px 10px', fontSize: '0.68rem',
+    textTransform: 'uppercase', letterSpacing: '0.03em', color: '#64748b',
+    borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap',
+  },
+  num: {
+    background: '#f8fafc', textAlign: 'right', padding: '8px 10px', fontSize: '0.68rem',
+    textTransform: 'uppercase', letterSpacing: '0.03em', color: '#64748b',
+    borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap',
+  },
+};
+const tdTK = {
+  left: { padding: '7px 10px', borderBottom: '1px solid #eef2f7', fontSize: '0.78rem', whiteSpace: 'nowrap' },
+  num: {
+    padding: '7px 10px', borderBottom: '1px solid #eef2f7', fontSize: '0.78rem',
+    textAlign: 'right', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
+  },
+};
+const nutTenTK = {
+  border: 'none', background: 'none', cursor: 'pointer', padding: 0,
+  font: 'inherit', fontSize: '0.78rem', color: '#0f172a', textAlign: 'left',
 };
