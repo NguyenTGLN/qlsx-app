@@ -290,10 +290,10 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
             // ở trên phụ thuộc taiDuLieu — cùng cơ chế ô <input type="month"> đang dùng),
             // không cần gọi thêm taiDuLieu() ở nhánh đó.
             //
-            // NapChamCong.jsx HIỆN TẠI gọi onXong?.() KHÔNG kèm đối số nên kyDaNap luôn là
-            // undefined, luôn rơi vào nhánh else — hành vi giống hệt bản trước. Nhánh if chỉ
-            // phát huy tác dụng SAU NÀY nếu NapChamCong.jsx được sửa để truyền kèm kỳ vừa
-            // nạp (việc đó KHÔNG nằm trong tệp này); viết sẵn để không phải sửa lại chỗ này.
+            // NapChamCong.jsx truyền kèm kỳ vừa nạp (onXong?.(ketQua.ky)). Nhánh else vẫn giữ
+            // để phòng nơi gọi khác không truyền gì, và cho trường hợp kỳ vừa nạp TRÙNG kỳ đang
+            // chọn — lúc đó setKy là lệnh rỗng (React bỏ qua giá trị nguyên thuỷ không đổi) nên
+            // không có gì kích hoạt tải lại, phải gọi taiDuLieu() tay.
             if (kyDaNap && kyDaNap !== ky) setKy(kyDaNap);
             else taiDuLieu();
           }}

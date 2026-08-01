@@ -55,9 +55,17 @@ nghỉ trọn**. Luật chuyên cần trừ 3 điểm mỗi ngày vượt phép,
 
 Chuyện này **có từ trước**, không phải mới sinh ra — script cũ cũng gộp như vậy.
 
-Tôi đã cho **giữ nguyên văn chữ đó vào dữ liệu** (trường `nghiText`) nhưng **không đổi cách tính**.
-Đổi cách tính là đổi điểm của người thật, và đó là quyết định của bác. Muốn sửa thì nói, tôi làm
-riêng — chỗ sửa nằm ở luật đếm ngày nghỉ, cân nhắc tính nửa ngày thành 0,5.
+**⚠ ĐÍNH CHÍNH — tôi đã nói sai chỗ này trong bản trước.** Tôi viết là "đã giữ nguyên văn chữ đó
+vào dữ liệu". **Không đúng.** Hàm đọc tệp có giữ chữ đó (trường `nghiText`), nhưng nó chỉ nằm
+trong bộ nhớ trình duyệt lúc nạp rồi **bị bỏ trước khi ghi xuống CSDL** — bảng `cham_cong` không
+có cột nào chứa nó.
+
+Hệ quả thật: nếu sau này bác quyết `Nghỉ sáng` chỉ tính 0,5 ngày thì **8 buổi nửa ngày của tháng 7
+không lấy lại được từ CSDL** — phải nạp lại từ tệp Excel gốc. Tệp gốc vẫn còn ở
+`Desktop/3. Cải tiến/12. Wepapp/Xử lý bảng chấm công/`, nên không mất hẳn, nhưng đừng xoá nó.
+
+Cách tính **không đổi**. Đổi là đổi điểm của người thật, và đó là quyết định của bác. Muốn sửa thì
+nói — việc cần làm là thêm một cột vào `cham_cong` để lưu chữ đó, rồi sửa luật đếm ngày nghỉ.
 
 ---
 
@@ -71,12 +79,30 @@ Tab **Chấm công** có thêm nút **"Nạp từ Excel"** (chỉ người có q
    ai tăng, đỏ ai giảm. Đây là phần đáng giá nhất: thấy trước khi ghi.
 4. **Xác nhận** — ghi bằng một lệnh duy nhất.
 
-Script cũ `scripts/import-cham-cong.mjs` **vẫn còn**, dùng được như trước.
+### ⚠️ Nên dùng nút trong app, ĐỪNG dùng script cũ nữa
+
+Script `scripts/import-cham-cong.mjs` **vẫn chạy được**, nhưng nó giữ bản sao riêng của phần đọc
+tệp và hai bản **đã lệch nhau**. Từ cùng một tệp, script cho kết quả **sai** ở bốn chỗ mà app đã
+sửa:
+
+| Tình huống | Nút trong app | Script cũ |
+|---|---|---|
+| Cả ngày chỉ có ca chiều | tính đúng | **vứt bỏ cả ngày của 13 người** |
+| Ô "Đi muộn" ghi dạng `1:27` | 87 phút | **0 phút** — lợi cho nhân viên |
+| Số phút âm | về 0 kèm cảnh báo | **ghi thẳng số âm** — làm điểm tăng lên |
+| Thuê người mới | app hỏi rồi tự nhớ | **phải sửa mã và chạy lại** |
+
+Trên tệp tháng 7 thật thì hai bên ra kết quả **y hệt nhau** — các khác biệt trên chỉ nổ ở tệp có
+dữ liệu bất thường. Nhưng đó đúng là lúc bác cần công cụ đúng nhất.
 
 ### Thuê người mới thì làm gì
 
-Cứ nạp bình thường. App gặp tên lạ sẽ hỏi "đây là ai", bác chọn một lần là xong — không cần gọi
-tôi, không cần sửa mã, không cần deploy.
+Cứ nạp bình thường bằng nút trong app. Gặp tên lạ nó sẽ hỏi "đây là ai", bác chọn một lần là xong —
+không cần gọi tôi, không cần sửa mã, không cần deploy.
+
+**⚠ Chọn kỹ ngay lần đầu.** Lựa chọn đó được nhớ cho mọi tháng sau, và **hiện không có màn hình nào
+sửa lại được** — chọn nhầm là chấm công của người này chảy sang người khác mỗi tháng, âm thầm, và
+phải nhờ sửa thẳng trong CSDL mới gỡ được.
 
 ---
 
@@ -99,7 +125,19 @@ con số mà màn hình KPI sau đó từ chối hiển thị. Hiện chưa dòn
 có người chốt tay. Đã sửa: dòng nào đã chốt tay thì hiện xám kèm "đã chốt tay bởi X".
 
 **d) Ngày cắt tính sai nếu cả ngày chỉ có ca chiều.** Cũ chỉ nhìn cột "Giờ in sáng", nên một ngày
-mà mọi người chỉ quét buổi chiều sẽ bị vứt bỏ cả ngày. Đã đổi sang nhìn cả ba cột giờ.
+mà mọi người chỉ quét buổi chiều sẽ bị vứt bỏ cả ngày. Đã đổi sang nhìn cả ba cột giờ — **nhưng
+chỉ ở màn hình trong app**, script cũ vẫn còn lỗi này (xem mục 5 dưới).
+
+**e) Suýt làm hỏng màn hình Phân quyền.** Cột `ten_cham_cong` mới có ràng buộc "không hai người
+trùng nhau". Luồng **đổi mã nhân viên** lại sao chép cả dòng cũ sang mã mới **trong khi dòng cũ
+còn đó** — nên nó đâm vào ràng buộc và chết ngay bước đầu. Đúng loại lỗi đã xảy ra ngày 28/07:
+sửa một chỗ, hỏng một màn hình không ai đang mở nên không ai biết. Đã sửa.
+
+Sửa cái đó lại lòi ra một lỗi **có sẵn từ trước, nặng hơn**: xoá một nhân viên sẽ cascade xoá theo
+**4 bảng** (`kpi_chi_tieu`, `cham_cong`, `chuyen_can_ngoai_le`, `cai_tien`), nhưng luồng đổi mã chỉ
+chuyển **một** bảng, và chú thích trong mã ghi rằng đó là "FK cascade DUY NHẤT". Nghĩa là đổi mã một
+nhân viên sẽ **xoá sạch toàn bộ chấm công, miễn trừ và cải tiến của họ**, không báo lỗi, giao diện
+vẫn hiện "Đã cập nhật nhân viên!". Đã chuyển đủ cả 4 bảng và sửa chú thích.
 
 ---
 
@@ -155,8 +193,15 @@ nào đó đang sai.
 
 ### Bước 3 — kiểm luồng cũ không hỏng
 
-Vẫn trong tab Chấm công: bảng xem, ô chọn tháng, phần **miễn trừ có giải trình** phải hoạt động
-y như trước. Đây là thứ tôi lo nhất và không tự kiểm được.
+**Quan trọng nhất: Phân quyền → sửa một nhân viên → ĐỔI MÃ NHÂN VIÊN.** Đây là luồng nhánh này đã
+làm hỏng và tôi đã sửa, nhưng chưa ai bấm thử. Đổi thử mã một người **không quan trọng** (ví dụ
+`test`), rồi kiểm: đổi xong họ vẫn còn nguyên chấm công, KPI, cải tiến. Nếu báo lỗi trùng khoá thì
+dừng lại báo tôi.
+
+Sau đó, trong tab Chấm công: bảng xem, ô chọn tháng, phần **miễn trừ có giải trình** phải hoạt động
+y như trước.
+
+Cả hai đều là thứ tôi lo nhất và không tự kiểm được — tôi vướng màn hình đăng nhập.
 
 ---
 
