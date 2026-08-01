@@ -86,8 +86,8 @@ describe('suyRaKyVaNgayCat', () => {
 describe('suyRaKyVaNgayCat — gọi trực tiếp (không qua docDongChamCong)', () => {
   it('trường hợp bình thường: một tháng, nhiều ngày', () => {
     const kq = suyRaKyVaNgayCat([
-      { ngay: '2026-07-01', coGioVao: true },
-      { ngay: '2026-07-15', coGioVao: true },
+      { ngay: '2026-07-01', coGioLam: true },
+      { ngay: '2026-07-15', coGioLam: true },
     ]);
     expect(kq.ky).toBe('2026-07');
     expect(kq.denNgay).toBe('2026-07-15');
@@ -96,15 +96,15 @@ describe('suyRaKyVaNgayCat — gọi trực tiếp (không qua docDongChamCong)'
 
   it('lẫn nhiều tháng thì ném lỗi', () => {
     expect(() => suyRaKyVaNgayCat([
-      { ngay: '2026-06-30', coGioVao: true },
-      { ngay: '2026-07-01', coGioVao: true },
+      { ngay: '2026-06-30', coGioLam: true },
+      { ngay: '2026-07-01', coGioLam: true },
     ])).toThrow(/lẫn nhiều tháng/i);
   });
 
-  it('không dòng nào coGioVao thì ném lỗi', () => {
+  it('không dòng nào coGioLam thì ném lỗi', () => {
     expect(() => suyRaKyVaNgayCat([
-      { ngay: '2026-07-01', coGioVao: false },
-      { ngay: '2026-07-02', coGioVao: false },
+      { ngay: '2026-07-01', coGioLam: false },
+      { ngay: '2026-07-02', coGioLam: false },
     ])).toThrow(/giờ vào/i);
   });
 
@@ -181,43 +181,73 @@ describe('docDongChamCong', () => {
 });
 
 describe('Đi muộn / Về sớm / Tăng ca — giá trị lạ KHÔNG được lặng lẽ thành 0 hay null', () => {
-  it('cột Đi muộn dạng h:mm (hình dạng máy vẫn ghi ở cột Tăng ca): cảnh báo, tính 0', () => {
+  it('cột Đi muộn dạng h:mm (hình dạng máy vẫn ghi ở cột Tăng ca) ĐỌC LẠI ĐƯỢC — không bịa 0 khi biết rõ giá trị thật', () => {
+    // 0 luôn có lợi cho nhân viên (chuyên cần trông tốt hơn thật) — bịa 0 khi '1:27' đọc được
+    // là 87 phút thật là một lựa chọn CÓ HƯỚNG, không trung lập. Vẫn cảnh báo dù đọc thành
+    // công: cột này đáng lẽ không có h:mm, một lần đổi định dạng phải hiện ra chứ không nuốt êm.
     const kq = docDongChamCong(raw(
       d('A', '01/07/2026', '08:00', '13:30', '17:30', '', '1:27')));
-    expect(kq.dong[0].diMuon).toBe(0);
-    expect(kq.canhBao).toHaveLength(1);
-    expect(kq.canhBao[0]).toMatch(/Đi muộn/);
-    expect(kq.canhBao[0]).toMatch(/1:27/);
+    expect(kq.dong[0].diMuon).toBe(87);
+    expect(kq.canhBaoCot['Đi muộn'].phucHoi).toBe(1);
+    expect(kq.canhBaoCot['Đi muộn'].macDinh).toBe(0);
+    expect(kq.canhBao.some(c => c.includes('Đi muộn'))).toBe(true);
+    expect(kq.canhBao.some(c => c.includes('1:27') && c.includes('87'))).toBe(true);
   });
 
-  it('cột Đi muộn rác không phải số: cảnh báo, tính 0', () => {
+  it('cột Đi muộn rác không phải số (không phải h:mm, không phải số thường): cảnh báo, tính 0 — số THẬT SỰ mất', () => {
     const kq = docDongChamCong(raw(
       d('A', '01/07/2026', '08:00', '13:30', '17:30', '', 'abc')));
     expect(kq.dong[0].diMuon).toBe(0);
-    expect(kq.canhBao).toHaveLength(1);
-    expect(kq.canhBao[0]).toMatch(/Đi muộn/);
+    expect(kq.canhBaoCot['Đi muộn'].macDinh).toBe(1);
+    expect(kq.canhBaoCot['Đi muộn'].phucHoi).toBe(0);
+    expect(kq.canhBao.some(c => c.includes('Đi muộn'))).toBe(true);
   });
 
   it('cột Về sớm số âm: KHÔNG được lọt thẳng qua như trước, phải cảnh báo và tính 0', () => {
     const kq = docDongChamCong(raw(
       d('A', '01/07/2026', '08:00', '13:30', '17:30', '', '0', '-30')));
     expect(kq.dong[0].veSom).toBe(0);
-    expect(kq.canhBao).toHaveLength(1);
-    expect(kq.canhBao[0]).toMatch(/Về sớm/);
-    expect(kq.canhBao[0]).toMatch(/-30/);
+    expect(kq.canhBaoCot['Về sớm'].macDinh).toBe(1);
+    expect(kq.canhBao.some(c => c.includes('Về sớm'))).toBe(true);
+    expect(kq.canhBao.some(c => c.includes('-30'))).toBe(true);
   });
 
   it('cột Tăng ca rác không phải số cũng phải cảnh báo, không lặng lẽ thành null giống ô rỗng', () => {
     const kq = docDongChamCong(raw(
       d('A', '01/07/2026', '08:00', '13:30', '17:30', 'abc')));
     expect(kq.dong[0].tangCa).toBeNull();
-    expect(kq.canhBao).toHaveLength(1);
-    expect(kq.canhBao[0]).toMatch(/Tăng ca/);
+    expect(kq.canhBaoCot['Tăng ca'].macDinh).toBe(1);
+    expect(kq.canhBao.some(c => c.includes('Tăng ca'))).toBe(true);
   });
 
   it('ba cột đều rỗng thì không cảnh báo gì — rỗng khác rác', () => {
     const kq = docDongChamCong(raw(d('A', '01/07/2026')));
     expect(kq.canhBao).toHaveLength(0);
+    expect(kq.canhBaoCot['Đi muộn'].macDinh).toBe(0);
+    expect(kq.canhBaoCot['Đi muộn'].phucHoi).toBe(0);
+  });
+});
+
+describe('canhBao theo cột — MỘT dòng tóm tắt dẫn đầu, không một dòng cho mỗi ô lỗi', () => {
+  it('nhiều dòng cùng lỗi ở một cột: canhBao gộp thành MỘT tóm tắt (+ vài ví dụ), không phải N dòng', () => {
+    // Mô phỏng "cả cột Đi muộn bị hỏng": 6 dòng cùng có Đi muộn là rác không đọc được. Trước
+    // Fix 3, đây sẽ ra 6 dòng cảnh báo gần giống hệt nhau. Sau Fix 3: một dòng tóm tắt dẫn
+    // đầu ("X/6 ô có vấn đề"), cộng tối đa vài dòng ví dụ — KHÔNG phải 6 dòng ngang hàng.
+    const ten = ['A', 'B', 'C', 'D', 'E', 'F'];
+    const kq = docDongChamCong(raw(
+      ...ten.map(t => d(t, '01/07/2026', '08:00', '13:30', '17:30', '', 'rac'))));
+
+    expect(kq.dong).toHaveLength(6);
+    kq.dong.forEach(r => expect(r.diMuon).toBe(0));
+    expect(kq.canhBaoCot['Đi muộn'].tong).toBe(6);
+    expect(kq.canhBaoCot['Đi muộn'].macDinh).toBe(6);
+
+    // canhBao KHÔNG được có 6 dòng ngang hàng cho 6 ô lỗi — đúng MỘT dòng tóm tắt dẫn đầu,
+    // và tổng số dòng liên quan tới Đi muộn phải nhỏ hơn hẳn 6 (tóm tắt + tối đa vài ví dụ).
+    const dongDiMuon = kq.canhBao.filter(c => c.includes('Đi muộn') || c.trim().startsWith('-'));
+    expect(dongDiMuon.length).toBeLessThan(6);
+    expect(kq.canhBao[0]).toContain('cột Đi muộn');
+    expect(kq.canhBao[0]).toMatch(/6\/6/);
   });
 });
 
@@ -332,7 +362,10 @@ describe('noiTenNhanVien — chuẩn hoá Unicode/khoảng trắng trước khi 
     expect(kq.dongDaNoi[0].nhanVienId).toBe('dvx');
   });
 
-  it('hai nhân viên cùng khai một ten_cham_cong thì ném lỗi, không lặng lẽ lấy người cuối', () => {
+  it('trùng ten_cham_cong VÀ tệp đang nạp có dòng của đúng tên đó: ném lỗi, không lặng lẽ lấy người cuối', () => {
+    // Đây là nhánh "CÓ liên quan" của Fix 1: tệp đang nạp tham chiếu đúng cái tên bị trùng,
+    // nên không thể biết nối vào ai — bắt buộc phải chặn hẳn. Nhánh "KHÔNG liên quan" (trùng
+    // tồn tại nhưng tệp không đụng tới) được test riêng bên dưới — không được chặn.
     const trung = [
       { id: 'a1', ten_cham_cong: 'Trùng Tên' },
       { id: 'a2', ten_cham_cong: 'Trùng Tên' },
@@ -347,5 +380,58 @@ describe('noiTenNhanVien — chuẩn hoá Unicode/khoảng trắng trước khi 
     expect(loi.message).toContain('a1');
     expect(loi.message).toContain('a2');
     expect(loi.message).toContain('Trùng Tên');
+  });
+});
+
+describe('noiTenNhanVien — trùng ten_cham_cong CHỈ chặn khi tệp đang nạp có liên quan (Fix 1)', () => {
+  it('trùng tồn tại trong danh sách nhân viên NHƯNG tệp đang nạp không nhắc tới tên đó: KHÔNG chặn, chỉ cảnh báo', () => {
+    // Kịch bản đo được thật: hai bản ghi CŨ (vd người đã nghỉ việc từ lâu) trùng ten_cham_cong
+    // với nhau, nhưng tệp tháng này chỉ có Đỗ Văn Xuân — không hề đụng tới hai người đó. Chặn
+    // cả import vì một cặp trùng NẰM YÊN, không liên quan gì tới tháng đang nạp, là chặn oan.
+    const nhanVien = [
+      { id: 'nghi1', ten_cham_cong: 'Người Đã Nghỉ Việc' },
+      { id: 'nghi2', ten_cham_cong: 'Người Đã Nghỉ Việc' },
+      { id: 'dvx', ten_cham_cong: 'Đỗ Văn Xuân' },
+    ];
+    const kq = noiTenNhanVien([{ tenExcel: 'Đỗ Văn Xuân' }], nhanVien);
+    expect(kq.dongDaNoi[0].nhanVienId).toBe('dvx');
+    expect(kq.canhBao).toHaveLength(1);
+    expect(kq.canhBao[0]).toContain('nghi1');
+    expect(kq.canhBao[0]).toContain('nghi2');
+    expect(kq.canhBao[0]).toContain('Người Đã Nghỉ Việc');
+  });
+
+  it('trùng CHỈ SAU KHI chuẩn hoá (hai dấu cách) — DB coi là 2 dòng hợp lệ khác nhau, module này vẫn phải phát hiện khi tệp có liên quan', () => {
+    // Task 2 chỉ đặt được unique index trên giá trị RAW của ten_cham_cong, nên 'Lê Văn Bích'
+    // và 'Lê  Văn Bích' (hai dấu cách) là hai dòng HỢP LỆ trong DB dù chuanHoaTen() gộp chúng
+    // làm một — DB không chặn được cặp này, nên module này phải là nơi phát hiện ra.
+    const trung = [
+      { id: 'lvb', ten_cham_cong: 'Lê Văn Bích' },
+      { id: 'lvb2', ten_cham_cong: 'Lê  Văn Bích' },
+    ];
+    let loi = null;
+    try {
+      noiTenNhanVien([{ tenExcel: 'Lê Văn Bích' }], trung);
+    } catch (e) {
+      loi = e;
+    }
+    expect(loi).not.toBeNull();
+    expect(loi.message).toContain('lvb');
+    expect(loi.message).toContain('lvb2');
+    expect(loi.message).toContain('Lê Văn Bích');
+  });
+
+  it('trùng chỉ-sau-chuẩn-hoá nhưng tệp KHÔNG có dòng nào của tên đó: không chặn', () => {
+    const trung = [
+      { id: 'lvb', ten_cham_cong: 'Lê Văn Bích' },
+      { id: 'lvb2', ten_cham_cong: 'Lê  Văn Bích' },
+    ];
+    const kq = noiTenNhanVien(
+      [{ tenExcel: 'Đỗ Văn Xuân' }],
+      [...trung, { id: 'dvx', ten_cham_cong: 'Đỗ Văn Xuân' }]);
+    expect(kq.dongDaNoi[0].nhanVienId).toBe('dvx');
+    expect(kq.canhBao).toHaveLength(1);
+    expect(kq.canhBao[0]).toContain('lvb');
+    expect(kq.canhBao[0]).toContain('lvb2');
   });
 });
