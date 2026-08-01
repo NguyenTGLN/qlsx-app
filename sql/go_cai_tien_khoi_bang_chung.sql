@@ -50,7 +50,10 @@ where ky = '2026-07' and cham_chung and cap_do = 'CA_NHAN'
 group by ma, cach_cham order by ma;
 
 -- ════════════════════════════════════════════════════════════════════════════
--- HOÀN TÁC — dán chạy được ngay
+-- HOÀN TÁC — bỏ dấu `--` ở 4 dòng cuối rồi chạy
+--
+-- Để nguyên dạng chú thích có chủ đích: dán cả file để chạy phần kiểm tra thì
+-- không được vô tình hoàn tác luôn thứ vừa làm.
 --
 -- Phải ghi RÕ KỲ, không hoàn tác toàn bộ. Lệnh trên gỡ ở mọi kỳ, nhưng chỉ kỳ
 -- 2026-07 vốn có cham_chung = true (đo 31/07/2026: kỳ 2026-06 vốn đã false).
