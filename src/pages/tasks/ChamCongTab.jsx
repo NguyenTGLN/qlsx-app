@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
-import { ChevronLeft, AlertTriangle, Loader2 } from 'lucide-react';
+import { gomThongKe, tongTatCa, docNhomTuKpi, MA_CHI_TIEU_NHOM } from '../../lib/chamCongThongKe';
+import { loiGhiKpi } from '../../lib/kpiWriteGuard';
+import { ChevronLeft, AlertTriangle, Loader2, ChevronRight, Users } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Màn hình CHỈ ĐỌC: xem bảng chấm công gốc (dữ liệu máy chấm công) — căn cứ của 2 chỉ
@@ -57,6 +59,10 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
   const [chon, setChon] = useState(null); // nhan_vien_id đang xem chi tiết, null = bảng tổng quan
+  const [kpiRows, setKpiRows] = useState([]);       // dòng chỉ tiêu chở khoá nhóm
+  const [locNhom, setLocNhom] = useState('');       // '' = tất cả; 'KHONG_NHOM' = chưa phân nhóm
+  const [bung, setBung] = useState(() => new Set()); // khoá nhóm đang bung trong khối thống kê
+  const [manPhanNhom, setManPhanNhom] = useState(false);
 
   const taiDuLieu = useCallback(async () => {
     setLoading(true);
@@ -79,10 +85,24 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
       } catch {
         setNgoaiLe([]);
       }
+      // Nhóm tải RIÊNG và MỀM, cùng lý do như miễn trừ: hỏng chỗ này (mất mạng, RLS đổi) KHÔNG
+      // được xoá bảng chấm công đang hiển thị. Mất nhóm thì tab lui về đúng hành vi cũ — một
+      // danh sách phẳng, không lọc được — vẫn dùng được.
+      try {
+        const { data: kp, error: loiKp } = await fetchAllRows(() =>
+          supabase.from('kpi_chi_tieu')
+            .select('id, ky, cap_do, nhan_vien_id, lien_ket_bo_phan, ten, ma')
+            .eq('ky', ky).eq('ma', MA_CHI_TIEU_NHOM).order('id'));
+        if (loiKp) throw loiKp;
+        setKpiRows(kp || []);
+      } catch {
+        setKpiRows([]);
+      }
     } catch (err) {
       setLoi(err?.message || String(err));
       setRows([]);
       setNgoaiLe([]);
+      setKpiRows([]);
     } finally {
       setLoading(false);
     }
@@ -159,6 +179,54 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
 
   const soDongNghiVan = useMemo(() => rows.filter(r => r.nghi_van).length, [rows]);
 
+  const dsThongKe = useMemo(
+    () => gomThongKe({ rows, ngoaiLe, kpiRows, users }),
+    [rows, ngoaiLe, kpiRows, users]);
+
+  const nhomCuaNguoi = useMemo(() => docNhomTuKpi(kpiRows).theoNguoi, [kpiRows]);
+
+  // Danh sách nhóm cho ô lọc — chỉ nhóm THẬT SỰ có người trong kỳ, không liệt kê nhóm rỗng.
+  const dsNhomLoc = useMemo(
+    () => dsThongKe.map(n => ({ gia: n.khoa == null ? 'KHONG_NHOM' : n.khoa, nhan: n.nhan })),
+    [dsThongKe]);
+
+  const dsThongKeLoc = useMemo(() => {
+    if (!locNhom) return dsThongKe;
+    return dsThongKe.filter(n => (n.khoa == null ? 'KHONG_NHOM' : n.khoa) === locNhom);
+  }, [dsThongKe, locNhom]);
+
+  const idsHienThi = useMemo(
+    () => new Set(dsThongKeLoc.flatMap(n => n.thanhVien.map(x => x.id))),
+    [dsThongKeLoc]);
+
+  // Lưới lịch lọc theo NGƯỜI, KHÔNG lọc theo ngày: bỏ bớt cột ngày khi lọc nhóm sẽ làm người
+  // đọc tưởng những ngày đó cả công ty nghỉ.
+  const dsNhanVienLoc = useMemo(
+    () => dsNhanVien.filter(nv => idsHienThi.has(nv.id)), [dsNhanVien, idsHienThi]);
+
+  const soNgayCongLoc = useMemo(
+    () => rows.filter(r => idsHienThi.has(r.nhan_vien_id)).length, [rows, idsHienThi]);
+
+  const soNghiVanLoc = useMemo(
+    () => rows.filter(r => r.nghi_van && idsHienThi.has(r.nhan_vien_id)).length,
+    [rows, idsHienThi]);
+
+  const tenNhomDangLoc = useMemo(
+    () => dsNhomLoc.find(n => n.gia === locNhom)?.nhan || '', [dsNhomLoc, locNhom]);
+
+  // Lọc một nhóm thì bung sẵn nhóm đó — người dùng vừa nói rõ họ quan tâm nhóm nào.
+  useEffect(() => {
+    if (locNhom) setBung(new Set([locNhom]));
+  }, [locNhom]);
+
+  // Bộ lọc TỰ GỠ khi nhóm đang chọn không còn tồn tại. Bắt buộc phải có: đang lọc SẢN XUẤT ở
+  // kỳ 2026-07 rồi chuyển sang kỳ 2026-06 (kỳ đó cả công ty chung MỘT nhóm, không có
+  // CHUYEN_CAN_SX) thì không có nhóm nào khớp — màn hình trắng trơn và người dùng không hiểu
+  // vì sao, vì ô lọc lúc đó cũng đã biến mất.
+  useEffect(() => {
+    if (locNhom && !dsNhomLoc.some(n => n.gia === locNhom)) setLocNhom('');
+  }, [dsNhomLoc, locNhom]);
+
   if (loading) return (
     <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>
       <Loader2 size={18} className="spin" style={{ verticalAlign: 'middle', marginRight: 6 }} />
@@ -185,9 +253,22 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
           type="month" value={ky} onChange={e => setKy(e.target.value || kyHienTai())}
           style={{ ...oInput, width: 'auto' }}
         />
+        {dsNhomLoc.length > 1 && (
+          <select value={locNhom} onChange={e => setLocNhom(e.target.value)}
+            style={{ ...oInput, width: 'auto' }}>
+            <option value="">Tất cả nhóm</option>
+            {dsNhomLoc.map(n => <option key={n.gia} value={n.gia}>{n.nhan}</option>)}
+          </select>
+        )}
+        {canEdit && kpiRows.length > 0 && (
+          <button onClick={() => setManPhanNhom(true)} style={nutPhanNhom}>
+            <Users size={13} /> Phân nhóm
+          </button>
+        )}
         {rows.length > 0 && (
           <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-            {dsNhanVien.length} nhân viên · {rows.length} ngày công · {soDongNghiVan} dòng dữ liệu đáng ngờ
+            {dsNhanVienLoc.length} nhân viên · {soNgayCongLoc} ngày công · {soNghiVanLoc} dòng dữ liệu đáng ngờ
+            {locNhom ? ` (lọc theo ${tenNhomDangLoc})` : ''}
           </span>
         )}
       </div>
@@ -239,7 +320,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
               </tr>
             </thead>
             <tbody>
-              {dsNhanVien.map(nv => {
+              {dsNhanVienLoc.map(nv => {
                 const tong = tongTheoNguoi.get(nv.id) || { muon: 0, somSom: 0, nghi: 0 };
                 return (
                   <tr key={nv.id}>
@@ -497,4 +578,11 @@ const nutHuy = {
 const nutLuu = {
   border: 'none', background: '#2563eb', color: '#fff',
   fontSize: '0.78rem', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontWeight: 600,
+};
+
+const nutPhanNhom = {
+  display: 'inline-flex', alignItems: 'center', gap: 4,
+  border: '1px solid #bfdbfe', background: '#eff6ff', color: '#2563eb',
+  fontSize: '0.78rem', borderRadius: 8, padding: '0.4rem 0.7rem', cursor: 'pointer',
+  whiteSpace: 'nowrap',
 };
