@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, fetchAllRows } from '../../lib/supabase';
-import { ChevronLeft, AlertTriangle, Loader2 } from 'lucide-react';
+import NapChamCong from './NapChamCong';
+import { ChevronLeft, AlertTriangle, Loader2, Upload } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Màn hình CHỈ ĐỌC: xem bảng chấm công gốc (dữ liệu máy chấm công) — căn cứ của 2 chỉ
-// tiêu chuyên cần trong KPI. Chủ app trước đây phải vào Supabase mới xem được, nhân
-// viên không có chỗ nào để tự tra vì sao mình bị trừ điểm. Không có nút sửa/xoá/nhập gì
-// cả — dữ liệu vào bằng scripts/import-cham-cong.mjs.
+// Xem bảng chấm công gốc (dữ liệu máy chấm công) — căn cứ của 2 chỉ tiêu chuyên cần
+// trong KPI. Chủ app trước đây phải vào Supabase mới xem được, nhân viên không có chỗ
+// nào để tự tra vì sao mình bị trừ điểm. Từng Ô vẫn KHÔNG sửa được — dữ liệu chỉ vào
+// theo CẢ KỲ một lượt, qua nút "Nạp từ Excel" ngay trong màn hình này (NapChamCong.jsx)
+// hoặc qua scripts/import-cham-cong.mjs chạy tay. Cả hai ĐÁNG LẼ đọc tệp qua chung một
+// bộ hàm thuần ở src/lib/chamCongExcel.js — đó là Ý ĐỊNH, nhưng CHƯA THÀNH HIỆN THỰC:
+// script vẫn giữ bản sao riêng của nó (xem đầu chamCongExcel.js).
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Kỳ mặc định = tháng hiện tại, dạng 'YYYY-MM'. Copy nguyên từ KpiTab.jsx cho đồng bộ.
@@ -57,6 +61,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
   const [chon, setChon] = useState(null); // nhan_vien_id đang xem chi tiết, null = bảng tổng quan
+  const [moNap, setMoNap] = useState(false); // true = đang mở modal "Nạp từ Excel" (NapChamCong.jsx)
 
   const taiDuLieu = useCallback(async () => {
     setLoading(true);
@@ -185,6 +190,11 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
           type="month" value={ky} onChange={e => setKy(e.target.value || kyHienTai())}
           style={{ ...oInput, width: 'auto' }}
         />
+        {canEdit && (
+          <button onClick={() => setMoNap(true)} style={nutNapExcel}>
+            <Upload size={13} /> Nạp từ Excel
+          </button>
+        )}
         {rows.length > 0 && (
           <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
             {dsNhanVien.length} nhân viên · {rows.length} ngày công · {soDongNghiVan} dòng dữ liệu đáng ngờ
@@ -265,6 +275,10 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {moNap && (
+        <NapChamCong users={users} onXong={taiDuLieu} onDong={() => setMoNap(false)} />
       )}
     </div>
   );
@@ -439,6 +453,12 @@ const nutQuayLai = {
 const nutTen = {
   width: '100%', textAlign: 'left', border: 'none', background: 'none', cursor: 'pointer',
   padding: '8px 10px', font: 'inherit', fontWeight: 600, fontSize: '0.78rem', color: '#0f172a',
+};
+
+const nutNapExcel = {
+  display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', borderRadius: 8,
+  background: '#2563eb', color: '#fff', fontSize: '0.8rem', fontWeight: 600,
+  padding: '0.4rem 0.7rem', cursor: 'pointer', whiteSpace: 'nowrap',
 };
 
 // Cột trái ghim cứng: cuộn ngang qua vài chục cột ngày mà mất tên dòng thì không biết
