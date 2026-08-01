@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { nhanNhomGon, docNhomTuKpi, thongKeMotNguoi } from './chamCongThongKe';
+import {
+  nhanNhomGon, docNhomTuKpi, thongKeMotNguoi, thongKeNhom, gomThongKe, tongTatCa,
+} from './chamCongThongKe';
 import { apDungChamTuDong } from './kpiTuDong';
 
 describe('nhanNhomGon', () => {
@@ -181,5 +183,110 @@ describe('khoá với KPI — nghiQuaQuyDinh phải bằng vuotPhep mà kpiTuDon
     const tk = thongKeMotNguoi(cc, () => true);
     expect(tk.nghiQuaQuyDinh).toBe(0);
     expect(tk.nghiQuaQuyDinh).toBe(vuotPhepTheoKpi(cc, ngoaiLe));
+  });
+});
+
+describe('gomThongKe', () => {
+  const cc = (nv, ngay, o = {}) => ({
+    nhan_vien_id: nv, ky: '2026-07', ngay,
+    di_muon_phut: 0, ve_som_phut: 0, nghi: false, ...o,
+  });
+  const caNhan = (nv, khoa) => ({
+    ma: 'CHUYEN_CAN_BO_PHAN', cap_do: 'CA_NHAN',
+    nhan_vien_id: nv, lien_ket_bo_phan: khoa,
+  });
+  const boPhan = (khoa, ten) => ({
+    ma: 'CHUYEN_CAN_BO_PHAN', cap_do: 'BO_PHAN',
+    nhan_vien_id: null, lien_ket_bo_phan: khoa, ten,
+  });
+
+  const kpiRows = [
+    boPhan('CHUYEN_CAN_SX', 'CHUYÊN CẦN BỘ PHẬN — SẢN XUẤT'),
+    boPhan('CHUYEN_CAN_CSKH', 'CHUYÊN CẦN BỘ PHẬN — CSKH'),
+    caNhan('dvx', 'CHUYEN_CAN_SX'), caNhan('vta', 'CHUYEN_CAN_SX'),
+    caNhan('hhx', 'CHUYEN_CAN_CSKH'),
+  ];
+  const users = [
+    { id: 'dvx', name: 'Xuân' }, { id: 'vta', name: 'Tuấn' }, { id: 'hhx', name: 'Xuyên' },
+  ];
+  const rows = [
+    cc('dvx', '2026-07-01', { nghi: true }), cc('dvx', '2026-07-02', { di_muon_phut: 20 }),
+    cc('vta', '2026-07-01', { nghi: true }), cc('vta', '2026-07-02', { nghi: true }),
+    cc('hhx', '2026-07-01', { di_muon_phut: 5 }),
+  ];
+
+  it('gom đúng nhóm, cộng đúng số, kèm danh sách thành viên', () => {
+    const ds = gomThongKe({ rows, ngoaiLe: [], kpiRows, users });
+    const sx = ds.find(n => n.khoa === 'CHUYEN_CAN_SX');
+    expect(sx.nhan).toBe('SẢN XUẤT');
+    expect(sx.soNguoi).toBe(2);
+    expect(sx.tongNghi).toBe(3);
+    expect(sx.nghiPhep).toBe(2);
+    expect(sx.nghiQuaQuyDinh).toBe(1);
+    expect(sx.phutMuon).toBe(20);
+    expect(sx.thanhVien.map(x => x.ten)).toEqual(['Tuấn', 'Xuân']);
+  });
+
+  it('sắp nhóm theo số người giảm dần', () => {
+    const ds = gomThongKe({ rows, ngoaiLe: [], kpiRows, users });
+    expect(ds.map(n => n.khoa)).toEqual(['CHUYEN_CAN_SX', 'CHUYEN_CAN_CSKH']);
+  });
+
+  it('người có chấm công mà không có dòng KPI → nhóm "Chưa phân nhóm", luôn xếp CUỐI', () => {
+    const ds = gomThongKe({
+      rows: [...rows, cc('moi', '2026-07-01', { nghi: true })],
+      ngoaiLe: [], kpiRows, users,
+    });
+    const cuoi = ds[ds.length - 1];
+    expect(cuoi.khoa).toBeNull();
+    expect(cuoi.nhan).toBe('Chưa phân nhóm');
+    expect(cuoi.soNguoi).toBe(1);
+    expect(cuoi.thanhVien[0].ten).toBe('moi');
+  });
+
+  it('ngoaiLe áp đúng người đúng ngày, không lẫn sang người khác', () => {
+    const ds = gomThongKe({
+      rows, kpiRows, users,
+      ngoaiLe: [{ nhan_vien_id: 'vta', ngay: '2026-07-01', ly_do: 'ốm' }],
+    });
+    const sx = ds.find(n => n.khoa === 'CHUYEN_CAN_SX');
+    const tuan = sx.thanhVien.find(x => x.ten === 'Tuấn');
+    const xuan = sx.thanhVien.find(x => x.ten === 'Xuân');
+    expect(tuan.nghiQuaQuyDinh).toBe(0);
+    expect(xuan.tongNghi).toBe(1);
+    expect(xuan.soNgayMien).toBe(0);
+  });
+
+  it('kpiRows rỗng (không đọc được KPI) → tất cả dồn vào một nhóm "Chưa phân nhóm"', () => {
+    const ds = gomThongKe({ rows, ngoaiLe: [], kpiRows: [], users });
+    expect(ds).toHaveLength(1);
+    expect(ds[0].khoa).toBeNull();
+    expect(ds[0].soNguoi).toBe(3);
+  });
+
+  it('không có dòng chấm công nào → mảng rỗng', () => {
+    expect(gomThongKe({ rows: [], ngoaiLe: [], kpiRows, users })).toEqual([]);
+  });
+});
+
+describe('tongTatCa', () => {
+  it('cộng mọi thành viên của mọi nhóm, đếm đúng số người', () => {
+    const ds = [
+      { soNguoi: 2, thanhVien: [
+        { tongNghi: 1, nghiPhep: 1, nghiQuaQuyDinh: 0, phutMuon: 20, phutVeSom: 0, soNgayMien: 0 },
+        { tongNghi: 2, nghiPhep: 1, nghiQuaQuyDinh: 1, phutMuon: 0, phutVeSom: 5, soNgayMien: 0 },
+      ] },
+      { soNguoi: 1, thanhVien: [
+        { tongNghi: 0, nghiPhep: 0, nghiQuaQuyDinh: 0, phutMuon: 3, phutVeSom: 0, soNgayMien: 1 },
+      ] },
+    ];
+    expect(tongTatCa(ds)).toEqual({
+      soNguoi: 3, tongNghi: 3, nghiPhep: 2, nghiQuaQuyDinh: 1,
+      phutMuon: 23, phutVeSom: 5, soNgayMien: 1,
+    });
+  });
+
+  it('mảng rỗng → tất cả 0', () => {
+    expect(tongTatCa([]).soNguoi).toBe(0);
   });
 });

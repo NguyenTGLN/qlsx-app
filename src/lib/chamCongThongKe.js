@@ -68,3 +68,73 @@ export function thongKeMotNguoi(rows = [], laMien = () => false) {
     phutMuon, phutVeSom, soNgayMien,
   };
 }
+
+const CHUA_PHAN_NHOM = 'Chưa phân nhóm';
+
+// Cộng 5 chỉ số của một danh sách người đã tính. KHÔNG tính trung bình ở đây — trung bình đầu
+// người là chuyện của điểm KPI bộ phận, bảng này chỉ trình bày con số cộng dồn.
+export function thongKeNhom(dsCaNhan = []) {
+  const t = {
+    soNguoi: (dsCaNhan || []).length,
+    tongNghi: 0, nghiPhep: 0, nghiQuaQuyDinh: 0, phutMuon: 0, phutVeSom: 0, soNgayMien: 0,
+  };
+  for (const x of dsCaNhan || []) {
+    t.tongNghi += so(x.tongNghi);
+    t.nghiPhep += so(x.nghiPhep);
+    t.nghiQuaQuyDinh += so(x.nghiQuaQuyDinh);
+    t.phutMuon += so(x.phutMuon);
+    t.phutVeSom += so(x.phutVeSom);
+    t.soNgayMien += so(x.soNgayMien);
+  }
+  return t;
+}
+
+// Hàm DUY NHẤT giao diện gọi. Trả mảng nhóm, mỗi nhóm đã có sẵn số tổng + thành viên đã tính.
+export function gomThongKe({ rows = [], ngoaiLe = [], kpiRows = [], users = [] } = {}) {
+  const { theoNguoi, nhan } = docNhomTuKpi(kpiRows);
+  const mienSet = new Set((ngoaiLe || []).map(x => `${x.nhan_vien_id}|${x.ngay}`));
+
+  // Người có trong cham_cong mà KHÔNG có trong users vẫn phải hiện — lấy id làm tên. Lặng lẽ
+  // bỏ dòng là giấu mất một người khỏi bảng thống kê chuyên cần.
+  const tenCua = id => (users || []).find(u => u.id === id)?.name || id;
+
+  const dongTheoNguoi = new Map();
+  for (const r of rows || []) {
+    const a = dongTheoNguoi.get(r.nhan_vien_id) || [];
+    a.push(r);
+    dongTheoNguoi.set(r.nhan_vien_id, a);
+  }
+
+  const theoNhom = new Map();     // khoá (string | null) → thành viên đã tính
+  for (const [id, ds] of dongTheoNguoi) {
+    const khoa = theoNguoi.get(id) ?? null;
+    const tk = thongKeMotNguoi(ds, ngay => mienSet.has(`${id}|${ngay}`));
+    const a = theoNhom.get(khoa) || [];
+    a.push({ id, ten: tenCua(id), ...tk });
+    theoNhom.set(khoa, a);
+  }
+
+  const ds = [];
+  for (const [khoa, thanhVien] of theoNhom) {
+    thanhVien.sort((a, b) => a.ten.localeCompare(b.ten, 'vi'));
+    ds.push({
+      khoa,
+      nhan: khoa == null ? CHUA_PHAN_NHOM : (nhan.get(khoa) || khoa),
+      ...thongKeNhom(thanhVien),
+      thanhVien,
+    });
+  }
+
+  ds.sort((a, b) => {
+    if ((a.khoa == null) !== (b.khoa == null)) return a.khoa == null ? 1 : -1;  // chưa nhóm xuống cuối
+    if (b.soNguoi !== a.soNguoi) return b.soNguoi - a.soNguoi;
+    return a.nhan.localeCompare(b.nhan, 'vi');
+  });
+  return ds;
+}
+
+// Dòng TỔNG của bảng thống kê. Cộng lại từ thành viên chứ không cộng số nhóm — hai đường phải
+// ra cùng kết quả, và cộng từ gốc thì không sai khi sau này thêm cột.
+export function tongTatCa(dsNhom = []) {
+  return thongKeNhom((dsNhom || []).flatMap(n => n.thanhVien || []));
+}
