@@ -789,16 +789,97 @@ npm run build        # Output → dist/
 ## 13. Lưu Ý Quan Trọng
 
 > [!WARNING]
-> - App dùng **custom auth** (không phải Supabase Auth) — mật khẩu lưu plain-text trong DB
-> - RLS policy mở toàn quyền (`USING (true)`) — chỉ phù hợp cho ứng dụng nội bộ
-> - Bảng `so_luong_ban` có **730,000+ rows** — đã tạo View `view_thong_ke_ban_hang` để giảm tải
-> - 2 Supabase client instances: `supabase` (main) và `taskDb` (tasks) — cùng kết nối đến 1 project
+> - App dùng **custom auth** (không phải Supabase Auth). Mật khẩu **KHÔNG còn lưu thô** — nằm ở
+>   bảng `nhan_vien_secret`, ghi/đọc qua RPC `dat_mat_khau` / `dang_nhap` (vá 28/07/2026).
+> - **RLS đã siết, KHÔNG còn `USING (true)`.** Đo 01/08/2026 bằng chính khoá công khai: mọi bảng
+>   trả 0 dòng; sửa/xoá trả `[]`; chèn trả `42501`. Đừng tin các tài liệu cũ nói ngược lại.
+> - Bảng `so_luong_ban` có **730,000+ rows** — đã tạo View `view_thong_ke_ban_hang` để giảm tải.
+> - 2 Supabase client instances: `supabase` (main) và `taskDb` (tasks) — cùng kết nối 1 project.
 
 > [!CAUTION]
-> - File `.env` chứa Supabase Anon Key — đây là key public, nhưng kết hợp RLS mở nên cần cẩn thận
-> - Các utility scripts `.cjs` ở root chứa Supabase keys hardcoded
-> - Không có TypeScript — toàn bộ là JavaScript + JSX
+> - `.env` chứa khoá **publishable** (`sb_publishable_…`). Khoá JWT legacy **đã bị vô hiệu hoá** —
+>   mọi thư mục build cũ (`deploy-moi`, `dist-SAO-LUU-*`, `deploy-netlify`) nhúng khoá chết, kéo
+>   nhầm lên Netlify là app hỏng ngay.
+> - Lớp bảo vệ là **RLS**, không phải khoá. Đổi khoá không giấu được gì — khoá mới nằm đúng chỗ cũ
+>   trong mã nguồn, Ctrl+U là thấy.
+> - **Hàm RPC mới: thu quyền phải từ `PUBLIC`, không chỉ từ `anon`.** Đo 01/08/2026: chạy
+>   `revoke … from anon` xong mà `has_function_privilege('anon', …)` VẪN trả `true` — Postgres cấp
+>   quyền cho `PUBLIC` và `anon` thừa hưởng qua đó. Suýt để lại một hàm ai cũng gọi được.
+> - **Xoá một `nhan_vien` sẽ cascade xoá 4 bảng**: `kpi_chi_tieu`, `cham_cong`,
+>   `chuyen_can_ngoai_le`, `cai_tien` (+ `nhan_vien_secret`). Luồng đổi mã NV ở `TaskApp.jsx` phải
+>   chuyển đủ cả 4 TRƯỚC khi xoá dòng cũ — thiếu một bảng là mất sạch lịch sử, không báo lỗi.
+> - Các utility scripts `.cjs` ở root chứa Supabase keys hardcoded.
+> - Không có TypeScript — toàn bộ là JavaScript + JSX.
 
 ---
 
-*Tài liệu được tạo tự động ngày 01/06/2026. Cập nhật khi có thay đổi cấu trúc dự án.*
+## 14. Phân hệ Chấm công & KPI — trạng thái 01/08/2026
+
+### 14.1 Nạp chấm công
+
+Dữ liệu chấm công vào **trọn kỳ một lượt**, không sửa từng ô. Hai đường:
+
+| Đường | Tệp | Trạng thái |
+|---|---|---|
+| **Nút "Nạp từ Excel"** trong tab Chấm công | `src/pages/tasks/NapChamCong.jsx` | **Nên dùng cái này** |
+| Script chạy tay | `scripts/import-cham-cong.mjs` | Còn chạy được nhưng **đã lệch 4 hành vi** |
+
+**Hai bản đọc tệp đã trôi khỏi nhau.** `src/lib/chamCongExcel.js` là bản đúng; script giữ bản sao
+riêng và sai ở: ngày chỉ có ca chiều (script vứt cả ngày) · ô `1:27` ở cột Đi muộn (script ra 0
+phút) · số phút âm (script ghi thẳng, làm điểm tăng) · người mới (script phải sửa `MAP_NV` trong
+mã). Trên tệp bình thường hai bên ra kết quả y hệt — lệch chỉ nổ ở dữ liệu bất thường.
+**Việc còn nợ: cho script import từ `chamCongExcel.js` rồi xoá bản sao của nó.**
+
+**Ghi xuống CSDL qua RPC `nap_cham_cong(p_ky, p_dong)`** — `delete` + `insert` trong **cùng một
+transaction**. Trình duyệt không mở được transaction qua PostgREST; gọi rời hai lệnh mà rớt mạng
+là cả kỳ trống rỗng. Hàm **KHÔNG được là `security definer`** (bỏ qua RLS ⇒ người ngoài xoá sạch
+bảng). Bẫy đã đo: `jsonb_to_recordset(null)` và `('[]')` đều trả 0 dòng **không báo lỗi**, nên hàm
+phải từ chối payload rỗng TRƯỚC lệnh xoá, nếu không một lần gọi lỗi là xoá trọn kỳ mà vẫn báo
+thành công.
+
+**Nối tên**: cột `nhan_vien.ten_cham_cong` (họ tên đầy đủ trong tệp máy chấm công) — `nhan_vien.name`
+chỉ là tên gọi tắt. **Không đoán bằng quy tắc**: "lấy chữ cuối" sai ở `Vương Tuấn Anh`, và
+`Nguyễn Xuân Thiện` chứa chữ "Xuân" trùng tên gọi người khác. Có chỉ mục duy nhất trên cột này.
+⚠ Chọn nhầm ở bước nối tên **không có màn hình nào sửa lại được** — phải vào thẳng CSDL.
+
+**Ngày cắt tự suy ra** = ngày cuối cùng có người quét vân tay (cả 3 cột giờ). Máy xuất trọn tháng
+kể cả ngày chưa tới; để nguyên thì mỗi ngày đó thành ngày NGHỈ của cả 13 người.
+
+### 14.2 Nợ kỹ thuật đã biết — chưa xử lý
+
+- **Nghỉ nửa ngày tính thành cả ngày.** Cột Nghỉ có 4 giá trị (`Nghỉ`, `Nghỉ sáng`, `Nghỉ chiều`,
+  `Nghỉ tết`) nhưng `cham_cong.nghi` là boolean. T7/2026 có 7 buổi `Nghỉ sáng` + 1 `Nghỉ chiều` bị
+  tính thành 8 ngày nghỉ trọn; hai buổi nửa ngày đủ mất 5 điểm chuyên cần. `chamCongExcel.js` giữ
+  chữ gốc ở trường `nghiText` nhưng **KHÔNG ghi xuống CSDL** — muốn sửa phải thêm cột trước.
+  Chờ chủ app quyết vì đổi cách tính là đổi điểm người thật.
+- **Bản xuất T7 mới không ghi cột "Về sớm"** (toàn 0, bản cũ có). Chuyên cần bộ phận có tính về
+  sớm nên đang nhẹ đi. Nghi là thiết lập xuất của máy bị đổi.
+
+### 14.3 KPI — những chỗ dễ hiểu nhầm
+
+- **Điểm tính SỐNG, không đóng băng.** Mở màn hình là tính lại từ dữ liệu hiện tại. Nên sửa dữ liệu
+  quá khứ là điểm quá khứ đổi theo, và một `due_date` tương lai sẽ **tự thành quá hạn** khi ngày đó
+  trôi qua, kéo điểm tụt lại.
+- **`CHUYEN_CAN_CA_NHAN` nhường điểm cho người chấm tay** (`nhuongChamTay: true`): quản lý đã chốt
+  thì điểm tự động không đè lên được. Mọi chỗ dự báo điểm phải tôn trọng luật này, nếu không sẽ
+  hiện một con số mà màn hình KPI từ chối hiển thị.
+- **`DONG_GOP_CAI_TIEN` lấy điểm từ bài cải tiến ĐÃ DUYỆT** (mốc `reviewed_at`, tối thiểu 2
+  bài/tháng), đã gỡ khỏi Bảng chấm chung ở mọi kỳ. Mọi chỉ tiêu `cach_cham='TU_DONG'` đều bị khoá
+  ô nhập ở Bảng chấm chung và không hiện trong popup "＋ Thêm chỉ tiêu".
+- **Điểm app tự tính không còn ghi công cho người chốt tay.** `apDungChamTuDong` xoá
+  `chot_boi`/`chot_luc` và gắn cờ `__tuDong`; `giaiThich` in "App tự tính: X/Y" thay vì "Quản lý
+  chốt tay bởi …". Trước đó bản in KPI mà nhân viên ký ghi sai người.
+
+### 14.4 Sửa hạn công việc tháng 7 (01/08/2026)
+
+Tháng 7 là tháng đầu triển khai nên chủ app cho sửa hạn để mọi việc thành đúng hạn:
+- **100 việc đã xong nhưng trễ** (61 báo cáo cuối ngày + 39 việc khác): `due_date = completed_date`.
+- **10 việc chưa xong**: đẩy `due_date` sang `2026-12-31`, **giữ nguyên `IN_PROGRESS`** — không bịa
+  là đã hoàn thành.
+- Kết quả: `HT_CONG_VIEC_DUNG_HAN` và `BC_KET_QUA_CONG_VIEC` đều **100%** cho cả 13 người.
+- ⚠ **Sau 31/12/2026, nếu 10 việc kia vẫn chưa xong thì điểm tháng 7 tụt trở lại** (xem 14.3).
+- Hạn cũ **không sao lưu** — chủ app chọn không cần.
+
+---
+
+*Tạo 01/06/2026 · cập nhật 01/08/2026 (mục 13 sửa lại cho đúng thực tế, thêm mục 14).*
