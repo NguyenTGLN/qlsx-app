@@ -227,7 +227,8 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
 
       {!loi && rows.length === 0 && (
         <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
-          Chưa có dữ liệu chấm công cho kỳ này. Dữ liệu nạp bằng scripts/import-cham-cong.mjs.
+          Chưa có dữ liệu chấm công cho kỳ này. Nạp bằng nút “Nạp từ Excel” ở trên (cần quyền
+          chỉnh sửa), hoặc chạy scripts/import-cham-cong.mjs.
         </div>
       )}
 
@@ -278,7 +279,26 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
       )}
 
       {moNap && (
-        <NapChamCong users={users} onXong={taiDuLieu} onDong={() => setMoNap(false)} />
+        <NapChamCong
+          users={users}
+          onXong={kyDaNap => {
+            // Kỳ của NapChamCong suy từ NỘI DUNG tệp Excel; kỳ của tab này là ô chọn tháng
+            // — hai thứ độc lập. Nạp tệp tháng 8 trong khi ô đang chọn tháng 7 mà chỉ gọi
+            // taiDuLieu() thì nó tải lại đúng tháng 7, màn hình không đổi gì, chủ app
+            // tưởng nạp hỏng rồi bấm nạp lại — lần hai vẫn im lặng y hệt. Đổi ky sang đúng
+            // kỳ vừa nạp thì tự tải lại (taiDuLieu là useCallback phụ thuộc [ky], useEffect
+            // ở trên phụ thuộc taiDuLieu — cùng cơ chế ô <input type="month"> đang dùng),
+            // không cần gọi thêm taiDuLieu() ở nhánh đó.
+            //
+            // NapChamCong.jsx HIỆN TẠI gọi onXong?.() KHÔNG kèm đối số nên kyDaNap luôn là
+            // undefined, luôn rơi vào nhánh else — hành vi giống hệt bản trước. Nhánh if chỉ
+            // phát huy tác dụng SAU NÀY nếu NapChamCong.jsx được sửa để truyền kèm kỳ vừa
+            // nạp (việc đó KHÔNG nằm trong tệp này); viết sẵn để không phải sửa lại chỗ này.
+            if (kyDaNap && kyDaNap !== ky) setKy(kyDaNap);
+            else taiDuLieu();
+          }}
+          onDong={() => setMoNap(false)}
+        />
       )}
     </div>
   );
