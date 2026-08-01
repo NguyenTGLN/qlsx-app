@@ -78,6 +78,20 @@ begin
     when foreign_key_violation then
       return jsonb_build_object('loi',
         'Có mã nhân viên không tồn tại trong bảng nhân viên. KHÔNG đổi gì cả. Chi tiết: ' || sqlerrm);
+    -- `cham_cong` có ràng buộc unique (nhan_vien_id, ngay) — xem sql/create_cham_cong.sql.
+    -- Hai đường đâm vào nó, và không đường nào đọc ra được từ câu lỗi gốc:
+    --   1) tệp Excel có CÙNG một người hai lần trong CÙNG một ngày (máy chấm công xuất trùng
+    --      dòng, hoặc hai họ tên khác nhau trong tệp cùng trỏ về một nhân viên);
+    --   2) còn sót dòng của đúng ngày đó nhưng nằm dưới `ky` khác — `delete ... where ky = p_ky`
+    --      ở trên KHÔNG dọn được, nên dòng cũ vẫn nằm đấy chặn dòng mới.
+    -- Không có nhánh này thì cả hai rơi vào `when others` và người dùng chỉ nhận được
+    -- 'Nạp hỏng giữa chừng… duplicate key value violates…' — đúng chữ nhưng không chỉ được
+    -- phải sửa gì trong tệp.
+    when unique_violation then
+      return jsonb_build_object('loi',
+        'Trùng dòng chấm công: một người bị ghi hai lần trong cùng một ngày (hoặc ngày đó đã có '
+        || 'dòng cũ nằm dưới kỳ khác). KHÔNG đổi gì cả — kiểm lại tệp Excel xem có ai bị lặp '
+        || 'ngày không rồi nạp lại. Chi tiết: ' || sqlerrm);
     when others then
       return jsonb_build_object('loi',
         'Nạp hỏng giữa chừng, KHÔNG đổi gì cả. Chi tiết: ' || sqlerrm);

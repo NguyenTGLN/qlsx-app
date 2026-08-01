@@ -255,7 +255,12 @@ export default function NapChamCong({ users = [], onXong, onDong }) {
       }
       setKetThuc(data);
       setBuoc('xong');
-      onXong?.();
+      // PHẢI kèm kỳ vừa nạp. Kỳ ở đây suy từ NỘI DUNG tệp Excel, còn tab Chấm công có ô chọn
+      // tháng riêng — hai thứ độc lập. Gọi onXong() tay không thì tab chỉ tải lại đúng tháng
+      // đang chọn: nạp tệp tháng 8 trong khi ô đang để tháng 7 là màn hình không đổi gì, chủ
+      // app tưởng nạp hỏng rồi bấm nạp lại. `ketQua.ky` chính là `p_ky` vừa gửi cho RPC ngay
+      // phía trên, và RPC đã nhận nên nó chắc chắn đúng dạng 'YYYY-MM' mà tab chờ.
+      onXong?.(ketQua.ky);
     } catch (err) {
       // Quay lại bước xem trước để bấm lại được: hàm nạp hoặc ăn cả hoặc không đổi gì, nên
       // nạp lại sau khi sửa là an toàn.
@@ -302,9 +307,17 @@ export default function NapChamCong({ users = [], onXong, onDong }) {
 
         {buoc === 'noiTen' && (
           <div>
+            {/* Nói thẳng cái giá của một lần chọn nhầm, vì lựa chọn ở đây là VĨNH VIỄN đối với
+                người dùng: nó được ghi xuống nhan_vien.ten_cham_cong và mọi lần nạp sau đều
+                dùng lại. KHÔNG được hứa "sửa ở màn hình X": rà cả src/ thì không màn hình nào
+                đọc hay sửa cột ten_cham_cong — chỉ mỗi màn hình này ghi vào nó, và chỉ ghi cho
+                người CHƯA có. Chỉ đường sai còn tệ hơn không chỉ đường. */}
             <div style={{ fontSize: '0.8rem', color: '#b45309', marginBottom: 10 }}>
               Có {chuaBiet.length} họ tên trong tệp mà app chưa biết là ai. Chọn giúp — app ghi lại
-              vào hồ sơ nhân viên nên lần sau tự nhận.
+              vào hồ sơ nhân viên nên lần sau tự nhận, và <b>các tháng sau cũng dùng lại đúng lựa
+              chọn này</b>. Chọn nhầm thì chấm công của người này chạy sang người kia đều đặn hằng
+              tháng mà không có cảnh báo nào, và <b>app hiện chưa có màn hình nào sửa lại được</b> —
+              phải nhờ quản trị sửa thẳng trong cơ sở dữ liệu. Soát kỹ ngay bây giờ là rẻ nhất.
             </div>
             {chuaBiet.map(ten => (
               <div key={ten} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
@@ -326,8 +339,9 @@ export default function NapChamCong({ users = [], onXong, onDong }) {
             {nhanVien.filter(nv => !nv.ten_cham_cong).length === 0 && (
               <div style={khungCanhBao}>
                 Mọi nhân viên trong hệ thống đều đã có họ tên chấm công, nên không còn ai để chọn.
-                Nghĩa là tệp có tên của người chưa được tạo hồ sơ, hoặc một hồ sơ đang ghi sai họ tên
-                chấm công — sửa ở màn hình Nhân viên rồi nạp lại.
+                Nghĩa là tệp có tên của người chưa được tạo hồ sơ nhân viên, hoặc một hồ sơ đang ghi
+                sai họ tên chấm công. Trường hợp sau phải nhờ quản trị sửa thẳng trong cơ sở dữ liệu
+                — app chưa có màn hình nào sửa được họ tên chấm công — rồi nạp lại.
               </div>
             )}
             <button

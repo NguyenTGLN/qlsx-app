@@ -1477,7 +1477,13 @@ import { useNavigate } from 'react-router-dom';
           if (idChanged) {
             const {data:oldRow, error:fetchErr} = await db.from('nhan_vien').select('*').eq('id', originalId).single();
             if (fetchErr) throw new Error('Không tìm thấy NV: ' + fetchErr.message);
-            const { password:_omit, ...oldNoPw } = oldRow;          // không mang cột password (sẽ bị bỏ)
+            // `ten_cham_cong` PHẢI bị tách khỏi bản sao, không phải dọn dẹp cho gọn: chỉ mục
+            // duy nhất `nhan_vien_ten_cham_cong_uniq` (sql/them_ten_cham_cong.sql) cấm hai
+            // dòng cùng họ tên chấm công. Ở thời điểm insert này dòng mã CŨ vẫn còn trong
+            // bảng, nên bê nguyên cột đó sang dòng mới là đụng chỉ mục → insert hỏng ngay
+            // câu đầu tiên và cả luồng đổi mã chết với lỗi trùng khoá của Postgres. Giá trị
+            // được đặt lại SAU khi xoá dòng cũ (xem cuối khối), lúc đó nó chỉ còn một chủ.
+            const { password:_omit, ten_cham_cong:_omitTenChamCong, ...oldNoPw } = oldRow; // không mang cột password (sẽ bị bỏ)
             const newUser = {...oldNoPw, ...data, id: form.id};
             const {error:insErr} = await db.from('nhan_vien').insert(newUser);
             if (insErr) throw new Error('Lỗi tạo ID: ' + insErr.message);
@@ -1494,15 +1500,42 @@ import { useNavigate } from 'react-router-dom';
             if (renErr) throw new Error('Lỗi chuyển việc sang mã mới: ' + renErr.message);
             await db.from('cong_viec_duoc_giao').update({updated_by: form.id}).eq('updated_by', originalId);
             await db.from('tien_do').update({updated_by_id: form.id}).eq('updated_by_id', originalId);
-            // BẮT BUỘC trước khi xoá mã cũ: kpi_chi_tieu.nhan_vien_id là FK
-            // `on delete cascade` (sql/create_kpi_module.sql) — đây là FK cascade DUY NHẤT
-            // trỏ vào nhan_vien. Xoá bản ghi mã cũ mà chưa chuyển thì cascade nuốt sạch
-            // kpi_chi_tieu của MỌI KỲ, rồi cascade tiếp nuốt kpi_nhat_ky (bằng chứng chấm
-            // điểm). Không cảnh báo, không phục hồi được, mà KPI gắn thẳng với lương thưởng.
+            // BẮT BUỘC trước khi xoá mã cũ. BỐN bảng dưới đây đều có FK `on delete cascade`
+            // trỏ vào nhan_vien — không phải một bảng như chú thích cũ ghi nhầm. Xoá dòng mã
+            // cũ mà chưa chuyển thì cascade nuốt sạch dữ liệu của MỌI KỲ: không cảnh báo,
+            // không phục hồi được. Đủ bốn dòng update mới an toàn, thiếu một dòng là mất im
+            // lặng đúng bảng đó:
+            //   kpi_chi_tieu        (sql/create_kpi_module.sql)        — mất luôn kpi_nhat_ky
+            //                       theo cascade tầng hai (bằng chứng chấm điểm); KPI gắn
+            //                       thẳng với lương thưởng.
+            //   cham_cong          (sql/create_cham_cong.sql)          — mất trọn lịch sử
+            //                       chấm công, hai chỉ tiêu chuyên cần mất căn cứ.
+            //   chuyen_can_ngoai_le (sql/create_chuyen_can_ngoai_le.sql) — mất các ngày đã
+            //                       miễn trừ, người đó bị trừ điểm chuyên cần oan.
+            //   cai_tien           (sql/create_cai_tien.sql)           — mất mọi sáng kiến đã
+            //                       gửi cùng số tiền thưởng đã tính.
+            // Hai bảng cascade/khoá ngoại còn lại đã được lo ở trên, KHÔNG cần update ở đây:
+            // nhan_vien_secret (rpc sao_chep_secret) và cong_viec_duoc_giao / tien_do
+            // (rpc doi_ma_nv_trong_viec + hai lệnh update updated_by).
             const {error:kpiErr} = await db.from('kpi_chi_tieu').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
             if (kpiErr) throw new Error('Lỗi chuyển KPI sang mã mới: ' + kpiErr.message);
+            const {error:ccErr} = await db.from('cham_cong').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
+            if (ccErr) throw new Error('Lỗi chuyển chấm công sang mã mới: ' + ccErr.message);
+            const {error:nlErr} = await db.from('chuyen_can_ngoai_le').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
+            if (nlErr) throw new Error('Lỗi chuyển ngày chuyên cần ngoại lệ sang mã mới: ' + nlErr.message);
+            const {error:ctErr} = await db.from('cai_tien').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
+            if (ctErr) throw new Error('Lỗi chuyển cải tiến sang mã mới: ' + ctErr.message);
             const {error:delErr} = await db.from('nhan_vien').delete().eq('id', originalId);
             if (delErr) throw new Error('Lỗi xóa ID cũ: ' + delErr.message);
+            // Trả `ten_cham_cong` lại cho dòng mã mới, NGAY SAU khi dòng mã cũ đã biến mất —
+            // giá trị lúc này chỉ còn một chủ nên không đụng chỉ mục duy nhất
+            // `nhan_vien_ten_cham_cong_uniq` nữa (xem lý do tách cột ở đầu khối). Bỏ bước này
+            // là mất ánh xạ họ tên máy chấm công: lần nạp Excel sau app không nhận ra người
+            // này nữa mà hỏi lại, và một lần chọn nhầm là chấm công chạy sang người khác.
+            if (oldRow.ten_cham_cong != null) {
+              const {error:tccErr} = await db.from('nhan_vien').update({ten_cham_cong: oldRow.ten_cham_cong}).eq('id', form.id);
+              if (tccErr) throw new Error('Lỗi chuyển họ tên chấm công sang mã mới: ' + tccErr.message);
+            }
             const newUsers = users.map(u => u.id === originalId ? {...u, ...data, id: form.id} : u);
             setUsers(newUsers);
             const um = new Map(newUsers.map(u=>[u.id,u]));
