@@ -11,15 +11,16 @@ import { writeFileSync } from 'node:fs';
 
 // Mặc định là file canonical trên Desktop; truyền đường dẫn khác qua tham số dòng lệnh
 // khi cần nạp một bản xuất mới, vd:
-//   node scripts/import-cham-cong.mjs "C:/Users/PC/Downloads/Thống kê chấm công T7.2026_2.xlsx"
+//   node scripts/import-cham-cong.mjs "C:/Users/PC/Downloads/Thống kê chấm công T8.2026.xlsx"
 const FILE = process.argv[2] || 'C:/Users/PC/Desktop/3. Cải tiến/12. Wepapp/Xử lý bảng chấm công/Thống kê chấm công T7.2026.xlsx';
 const SHEET = 'CHI TIẾT THEO NGÀY';
-const KY = '2026-07';
-const OUT = 'sql/seed_cham_cong_2026_07.sql';
 
-// Cắt dữ liệu tới hết ngày này. Máy chấm công xuất cả tháng nhưng những ngày CHƯA TỚI thì
-// không có ai đi làm — để nguyên sẽ thành "cả công ty nghỉ 8 ngày cuối tháng".
-const DEN_NGAY = '2026-07-23';
+// KỲ và NGÀY CẮT đều SUY RA TỪ CHÍNH FILE, không gõ tay (xem suyRaKyVaNgayCat ở dưới).
+//
+// Trước đây hai giá trị này gõ cứng ở đây. Hệ quả: nạp file tháng 8 mà quên sửa thì SQL
+// sinh ra sẽ `delete from cham_cong where ky = '2026-07'` rồi nạp dữ liệu tháng 8 vào đó —
+// xoá sạch tháng 7 và gán nhầm kỳ cho tháng 8, không có lỗi nào báo. Suy ra từ file thì
+// không còn cách nào gõ sai.
 
 // Họ tên trong file chấm công → id trong bảng nhan_vien. Lấy từ `select id, name from nhan_vien`.
 // Tên nào không có trong bảng này thì script DỪNG chứ không bỏ qua: bỏ qua im lặng nghĩa là
@@ -71,6 +72,44 @@ const raw = XLSX.utils.sheet_to_json(wb.Sheets[SHEET], { header: 1, raw: false, 
 // ở đầu, cắt cứng thì lệch một dòng là mất bản ghi đầu tiên mà không báo gì.
 const hdr = raw.findIndex(r => String(r[0]).trim() === 'Tên nhân viên');
 if (hdr < 0) throw new Error('Không tìm thấy dòng tiêu đề "Tên nhân viên" — file có đúng định dạng không?');
+
+// Suy ra KỲ và NGÀY CẮT từ chính dữ liệu, quét một lượt trước khi xử lý.
+//
+// NGÀY CẮT = ngày CUỐI CÙNG có ít nhất một người quét vân tay (cột "Giờ in sáng").
+// Máy chấm công xuất trọn tháng kể cả ngày chưa tới; những ngày đó không ai có giờ vào.
+// Để nguyên thì mỗi ngày như vậy thành một ngày NGHỈ của cả 13 người, mà luật chuyên cần
+// trừ 3 điểm mỗi ngày nghỉ vượt phép — nạp nhầm một file xuất giữa tháng là xoá sổ điểm
+// chuyên cần của cả công ty.
+//
+// Quy tắc này tự đúng cho cả hai trường hợp, nên không cần ai nhớ chỉnh:
+//   - file xuất giữa tháng  → cắt ở ngày cuối thực sự có người đi làm
+//   - file xuất hết tháng   → mọi ngày đều có người đi làm, lấy trọn tháng
+function suyRaKyVaNgayCat() {
+  const thang = new Map();          // 'YYYY-MM' → số dòng
+  let denNgay = null;
+  for (let i = hdr + 1; i < raw.length; i++) {
+    const r = raw[i];
+    if (!String(r[0] || '').trim()) continue;
+    const ngay = ngayISO(r[1]);
+    if (!ngay) continue;            // dòng ngày hỏng để vòng chính báo lỗi, ở đây bỏ qua
+    const k = ngay.slice(0, 7);
+    thang.set(k, (thang.get(k) || 0) + 1);
+    if (String(r[3] || '').trim() && (denNgay === null || ngay > denNgay)) denNgay = ngay;
+  }
+  if (!thang.size) throw new Error('File không có dòng dữ liệu nào đọc được.');
+  if (!denNgay) throw new Error('Không dòng nào có giờ vào — file rỗng hay sai cột?');
+
+  // Nhiều tháng trong một file là chuyện bất thường (máy xuất lẫn, hoặc chọn sai khoảng).
+  // DỪNG chứ không tự chọn tháng nhiều dòng nhất: đoán ở đây là xoá nhầm cả một kỳ.
+  if (thang.size > 1) {
+    const ds = [...thang.entries()].map(([k, v]) => `${k} (${v} dòng)`).join(', ');
+    throw new Error(`File lẫn nhiều tháng: ${ds}. Xuất lại đúng MỘT tháng rồi chạy lại.`);
+  }
+  return { ky: [...thang.keys()][0], denNgay };
+}
+
+const { ky: KY, denNgay: DEN_NGAY } = suyRaKyVaNgayCat();
+const OUT = `sql/seed_cham_cong_${KY.replace('-', '_')}.sql`;
 
 const dong = [];
 const canhBao = [];
