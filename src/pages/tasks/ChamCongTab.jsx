@@ -245,11 +245,18 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     () => dsNhomLoc.filter(n => locNhom.has(n.gia)).map(n => n.nhan).join(', '),
     [dsNhomLoc, locNhom]);
 
-  // Chọn ĐÚNG một nhóm thì bung sẵn nhóm đó — người dùng vừa nói rõ họ quan tâm nhóm nào.
-  // Từ 2 nhóm trở lên thì KHÔNG bung: các dòng nhân viên chen giữa các dòng nhóm làm mất khả
-  // năng so sánh nhóm với nhau, mà so sánh mới là lý do người ta chọn nhiều nhóm.
+  // Mỗi lần ĐỔI bộ lọc thì đặt lại phần bung theo bộ lọc: chọn đúng một nhóm thì bung sẵn nhóm
+  // đó (người dùng vừa nói rõ họ quan tâm nhóm nào), còn lại thì thu hết.
+  //
+  // Phải THU khi có từ 2 nhóm, không chỉ "không bung thêm": người ta chọn nhiều nhóm bằng cách
+  // bấm lần lượt, nên nhóm bấm đầu tiên đã tự bung lúc nó còn một mình. Để nguyên thì màn hình
+  // thành một nhóm xổ hết người chen trên một nhóm thu gọn — đúng cái bố cục làm mất khả năng
+  // so sánh hai nhóm với nhau, mà so sánh mới là lý do người ta chọn nhiều nhóm.
+  //
+  // Không sợ đè lên thao tác tay: effect chỉ chạy khi `locNhom` đổi, còn tự bung/thu một nhóm
+  // chỉ đụng `bung` — bấm bung xong vẫn giữ nguyên cho tới khi đổi bộ lọc.
   useEffect(() => {
-    if (locNhom.size === 1) setBung(new Set(locNhom));
+    setBung(locNhom.size === 1 ? new Set(locNhom) : new Set());
   }, [locNhom]);
 
   // Bộ lọc TỰ GỠ những nhóm không còn tồn tại, giữ lại các nhóm vẫn còn. Bắt buộc phải có:
