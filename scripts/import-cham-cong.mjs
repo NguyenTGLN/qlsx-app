@@ -142,13 +142,20 @@ for (let i = hdr + 1; i < raw.length; i++) {
     nghiVan = 'GIO_OUT_TRUOC_GIO_IN_CHIEU';
   }
 
+  // Chữ GỐC của cột Nghỉ ('Nghỉ' / 'Nghỉ sáng' / 'Nghỉ chiều'), cùng nguồn r[9] dùng để tính
+  // cờ `nghi` ngay dưới — tách biến ra để không đọc/trim hai lần. Giữ lại chữ gốc để
+  // trongSoNgayNghi() (src/lib/kpiTuDong.js) quy đúng ra 0,5 hay 1 ngày, thay vì luôn tròn 1
+  // ngày như cờ boolean `nghi`.
+  const nghiRaw = String(r[9] || '').trim();
+
   dong.push({
     nvId, ngay, thu: r[2] || null,
     inSang: r[3] || null, inChieu: r[4] || null, out: r[5] || null,
     tangCa: phut(r[6]),
     diMuon: Number(r[7]) || 0,
     veSom,
-    nghi: String(r[9] || '').trim() !== '',
+    nghi: nghiRaw !== '',
+    nghiText: nghiRaw || null,
     nghiVan,
   });
 }
@@ -174,14 +181,15 @@ sql.push('');
 for (const d of dong) {
   sql.push(
     'insert into cham_cong (ky, nhan_vien_id, ngay, thu, gio_in_sang, gio_in_chieu, gio_out, '
-    + 'tang_ca_phut, di_muon_phut, ve_som_phut, nghi, nghi_van) values ('
+    + 'tang_ca_phut, di_muon_phut, ve_som_phut, nghi, nghi_text, nghi_van) values ('
     + `'${KY}', ${q(d.nvId)}, '${d.ngay}', ${q(d.thu)}, ${q(d.inSang)}, ${q(d.inChieu)}, ${q(d.out)}, `
-    + `${n(d.tangCa)}, ${d.diMuon}, ${d.veSom}, ${d.nghi}, ${q(d.nghiVan)})`
+    + `${n(d.tangCa)}, ${d.diMuon}, ${d.veSom}, ${d.nghi}, ${q(d.nghiText)}, ${q(d.nghiVan)})`
     + ' on conflict (nhan_vien_id, ngay) do update set '
     + 'ky = excluded.ky, thu = excluded.thu, gio_in_sang = excluded.gio_in_sang, '
     + 'gio_in_chieu = excluded.gio_in_chieu, gio_out = excluded.gio_out, '
     + 'tang_ca_phut = excluded.tang_ca_phut, di_muon_phut = excluded.di_muon_phut, '
-    + 've_som_phut = excluded.ve_som_phut, nghi = excluded.nghi, nghi_van = excluded.nghi_van;'
+    + 've_som_phut = excluded.ve_som_phut, nghi = excluded.nghi, nghi_text = excluded.nghi_text, '
+    + 'nghi_van = excluded.nghi_van;'
   );
 }
 

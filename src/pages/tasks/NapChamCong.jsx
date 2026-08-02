@@ -247,13 +247,18 @@ export default function NapChamCong({ users = [], onXong, onDong }) {
         throw new Error(`Còn ${lac.length} dòng chưa biết là ai (${ten}) — dừng lại để không ghi nhầm người.`);
       }
 
-      // ĐÚNG 11 cột mà jsonb_to_recordset trong hàm nap_cham_cong khai báo. `nghiText` và
-      // `tenExcel` KHÔNG nằm trong danh sách đó nên không gửi.
+      // `nghi_text` gửi kèm từ đây (Task 5) dù RPC HIỆN TẠI (sql/rpc_nap_cham_cong.sql) mới
+      // khai báo 11 cột trong jsonb_to_recordset — cột thứ 12 này chỉ thật sự được LƯU sau
+      // khi sql/them_nghi_text_cham_cong.sql (Task 1, người điều phối chạy tay trên Supabase)
+      // chạy xong. Trước đó, jsonb_to_recordset() lặng lẽ bỏ qua khoá JSON nào nó không khai
+      // báo — gửi thừa không lỗi, chỉ là chưa có tác dụng. Nhờ vậy màn hình này không phải
+      // sửa lại lần hai khi Task 1 chạy xong. `tenExcel` vẫn KHÔNG gửi — nó không phải và sẽ
+      // không bao giờ là một cột của bảng.
       const p_dong = dongDaNoi.map(d => ({
         nhan_vien_id: d.nhanVienId, ngay: d.ngay, thu: d.thu,
         gio_in_sang: d.inSang, gio_in_chieu: d.inChieu, gio_out: d.out,
         tang_ca_phut: d.tangCa, di_muon_phut: d.diMuon, ve_som_phut: d.veSom,
-        nghi: d.nghi, nghi_van: d.nghiVan,
+        nghi: d.nghi, nghi_text: d.nghiText ?? null, nghi_van: d.nghiVan,
       }));
 
       const { data, error } = await supabase.rpc('nap_cham_cong', { p_ky: ketQua.ky, p_dong });
