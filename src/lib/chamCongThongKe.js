@@ -6,7 +6,7 @@
 // bộ phận. Cố ý vậy: chủ app muốn đổi nhóm là điểm KPI đổi theo, không có hai nơi lệch nhau.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { NGAY_PHEP_THANG } from './kpiTuDong';
+import { NGAY_PHEP_THANG, trongSoNgayNghi } from './kpiTuDong';
 
 // `ma` của dòng chỉ tiêu mang khoá nhóm. Dòng chỉ tiêu khác cũng có cột lien_ket_bo_phan
 // nhưng nghĩa khác — lọc theo `ma` chứ không quét bừa.
@@ -53,8 +53,11 @@ export function thongKeMotNguoi(rows = [], laMien = () => false) {
     const mien = !!laMien(r.ngay);
     if (mien) soNgayMien += 1;
     if (r.nghi) {
-      if (mien) nghiCoDau += 1;
-      else nghiChuaDau += 1;
+      // Cộng TRỌNG SỐ chứ không đếm dòng — dùng CHUNG hàm với kpiTuDong.js để con số người
+      // xem thấy và con số bị trừ điểm không thể lệch nhau.
+      const w = trongSoNgayNghi(r.nghi_text);
+      if (mien) nghiCoDau += w;
+      else nghiChuaDau += w;
     }
     if (!mien) {
       phutMuon += so(r.di_muon_phut);

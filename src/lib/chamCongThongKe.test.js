@@ -346,3 +346,44 @@ describe('dsNguoiPhanNhom', () => {
     expect(dsNguoiPhanNhom({ kpiRows: [], dsNhanVien: [], users: [] })).toEqual([]);
   });
 });
+
+describe('thongKeMotNguoi với nghỉ nửa buổi', () => {
+  const d = (ngay, o = {}) => ({ nhan_vien_id: 'a', ky: '2026-07', ngay, di_muon_phut: 0, ve_som_phut: 0, nghi: false, ...o });
+
+  it('2 buổi sáng = 1 ngày → đúng phép, không quá quy định (ca của Phong kỳ 7)', () => {
+    const tk = thongKeMotNguoi([
+      d('2026-07-13', { nghi: true, nghi_text: 'Nghỉ sáng' }),
+      d('2026-07-22', { nghi: true, nghi_text: 'Nghỉ sáng' }),
+    ], () => false);
+    expect(tk.tongNghi).toBe(1);
+    expect(tk.nghiPhep).toBe(1);
+    expect(tk.nghiQuaQuyDinh).toBe(0);
+  });
+
+  it('1 ngày + 1 buổi = 1,5 ngày → quá 0,5', () => {
+    const tk = thongKeMotNguoi([
+      d('2026-07-01', { nghi: true, nghi_text: 'Nghỉ' }),
+      d('2026-07-02', { nghi: true, nghi_text: 'Nghỉ chiều' }),
+    ], () => false);
+    expect(tk.tongNghi).toBe(1.5);
+    expect(tk.nghiQuaQuyDinh).toBe(0.5);
+  });
+
+  it('dữ liệu cũ không có nghi_text vẫn tính tròn 1 ngày', () => {
+    const tk = thongKeMotNguoi([
+      d('2026-07-01', { nghi: true }), d('2026-07-02', { nghi: true }),
+    ], () => false);
+    expect(tk.tongNghi).toBe(2);
+    expect(tk.nghiQuaQuyDinh).toBe(1);
+  });
+
+  it('ngày nửa buổi ĐƯỢC MIỄN cũng chỉ tính 0,5 vào phần nghỉ phép', () => {
+    const tk = thongKeMotNguoi([
+      d('2026-07-01', { nghi: true, nghi_text: 'Nghỉ sáng' }),
+      d('2026-07-02', { nghi: true, nghi_text: 'Nghỉ' }),
+    ], ngay => ngay === '2026-07-01');
+    expect(tk.tongNghi).toBe(1.5);
+    expect(tk.nghiPhep).toBe(1.5);        // 0,5 có dấu + 1 trong hạn mức
+    expect(tk.nghiQuaQuyDinh).toBe(0);
+  });
+});
