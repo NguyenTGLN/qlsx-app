@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase, fetchAllRows } from '../../lib/supabase';
 import { docDongChamCong, noiTenNhanVien } from '../../lib/chamCongExcel';
+import { dongMauChamCong, TEN_SHEET_MAU, TEN_TEP_MAU } from '../../lib/chamCongMauExcel';
 import { soSanhDiemChuyenCan } from '../../lib/chamCongPreview';
-import { X, Upload, AlertTriangle, Check, Loader2 } from 'lucide-react';
+import { X, Upload, AlertTriangle, Check, Loader2, Download } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Nạp chấm công từ tệp Excel của máy chấm công. Bốn bước MỘT CHIỀU:
@@ -90,6 +91,17 @@ export default function NapChamCong({ users = [], onXong, onDong }) {
       throw new Error('Không đọc được danh sách nhân viên: ' + (error.message || String(error)));
     }
     return data || [];
+  }
+
+  // Sinh và tải tệp mẫu ngay trên trình duyệt, không qua mạng — để người dùng đối chiếu đúng
+  // thứ tự cột trước khi xuất tệp thật từ máy chấm công. dongMauChamCong() có test tự kiểm
+  // bằng chính docDongChamCong() ở src/lib/chamCongMauExcel.test.js, nên mẫu không thể trôi
+  // khỏi bộ đọc mà không ai biết.
+  function taiFileMau() {
+    const ws = XLSX.utils.aoa_to_sheet(dongMauChamCong());
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, TEN_SHEET_MAU);
+    XLSX.writeFile(wb, TEN_TEP_MAU);
   }
 
   // ── Bước 1: chọn tệp ───────────────────────────────────────────────────────
@@ -293,10 +305,21 @@ export default function NapChamCong({ users = [], onXong, onDong }) {
               Chọn tệp Excel xuất từ máy chấm công (sheet “{SHEET}”). App tự nhận ra kỳ và tự bỏ
               những ngày chưa ai đi làm — không phải gõ tay tháng nào.
             </div>
-            <input
-              type="file" accept=".xlsx,.xls" onChange={chonTep} disabled={dangXuLy}
-              style={{ fontSize: '0.8rem' }}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <input
+                type="file" accept=".xlsx,.xls" onChange={chonTep} disabled={dangXuLy}
+                style={{ fontSize: '0.8rem' }}
+              />
+              <button
+                onClick={taiFileMau}
+                style={{ ...nutPhu, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Download size={13} /> Tải file mẫu
+              </button>
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 6 }}>
+              Tệp nạp phải là bản xuất từ máy chấm công, sheet “{SHEET}” — tải mẫu để đối chiếu thứ tự cột.
+            </div>
             {dangXuLy && (
               <div style={{ ...dongCho, marginTop: 10 }}>
                 <Loader2 size={14} className="spin" /> Đang đọc tệp và tải dữ liệu để so sánh…
