@@ -254,6 +254,21 @@ const NGUONG_NGHI = [[4, 10], [1, 5]];              // số ngày nghỉ VƯỢT
 // cả tháng chỉ trừ 6. Đổi con số này là đổi thứ hạng của cả bảng.
 export const NGAY_PHEP_THANG = 1;
 
+// Chữ gốc cột Nghỉ của máy chấm công → số NGÀY nghỉ.
+//
+// Đặt ở đây chứ không ở module thống kê: đây là LUẬT chấm điểm, mà mọi luật chấm điểm đều
+// nằm trong tệp này. Bảng thống kê chấm công gọi chung hàm này, nên con số người xem thấy và
+// con số bị trừ điểm không thể lệch nhau.
+//
+// Chữ LẠ trả 1 chứ không phải 0.5: máy chấm công có thể xuất ra chữ chưa lường trước ('Nghỉ
+// tết', 'Nghỉ bù'…). Đoán thấp là âm thầm cho không ngày phép; đoán cao thì người bị trừ oan
+// sẽ khiếu nại và ta sửa được. Trong hai kiểu sai, chỉ kiểu sau tự lộ ra.
+const NGHI_NUA_BUOI = new Set(['nghỉ sáng', 'nghỉ chiều']);
+
+export function trongSoNgayNghi(nghiText) {
+  return NGHI_NUA_BUOI.has(String(nghiText ?? '').trim().toLowerCase()) ? 0.5 : 1;
+}
+
 const truTheoNguong = (v, bang) => (bang.find(([m]) => v >= m) || [0, 0])[1];
 
 // Nhóm "toàn công ty": người phụ trách chung chịu trách nhiệm chuyên cần của TẤT CẢ nhân

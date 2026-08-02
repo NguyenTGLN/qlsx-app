@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { viecTrongThang, sanXuatTrongThang, caiTienTrongThang, LUAT_TU_DONG, apDungChamTuDong, NGUON_TU_DONG } from './kpiTuDong';
+import { viecTrongThang, sanXuatTrongThang, caiTienTrongThang, LUAT_TU_DONG, apDungChamTuDong, NGUON_TU_DONG, trongSoNgayNghi } from './kpiTuDong';
 
 // Việc mẫu: mặc định tạo tháng 7/2026, giao cho 'a', đã xong đúng hạn.
 const viec = (o = {}) => ({
@@ -719,5 +719,31 @@ describe('apDungChamTuDong — nguồn cai_tien', () => {
     const daChot = { ...r, diem_chot: 1.5 };
     const kq = apDungChamTuDong([daChot], [], [], '2026-07', '2026-07-24', [], [], []);
     expect(kq.rows[0].diem_chot).toBe(1.5);
+  });
+});
+
+describe('trongSoNgayNghi', () => {
+  it('nghỉ nửa buổi tính 0,5 ngày', () => {
+    expect(trongSoNgayNghi('Nghỉ sáng')).toBe(0.5);
+    expect(trongSoNgayNghi('Nghỉ chiều')).toBe(0.5);
+  });
+
+  it('nghỉ cả ngày tính 1 ngày', () => {
+    expect(trongSoNgayNghi('Nghỉ')).toBe(1);
+  });
+
+  it('chữ lạ tính TRÒN 1 ngày — thà tính thừa còn hơn bỏ sót ngày nghỉ', () => {
+    expect(trongSoNgayNghi('Nghỉ tết')).toBe(1);
+    expect(trongSoNgayNghi('nghỉ ốm')).toBe(1);
+  });
+
+  it('null/rỗng (dữ liệu nạp TRƯỚC khi có cột nghi_text) tính 1 ngày như hành vi cũ', () => {
+    expect(trongSoNgayNghi(null)).toBe(1);
+    expect(trongSoNgayNghi(undefined)).toBe(1);
+    expect(trongSoNgayNghi('')).toBe(1);
+  });
+
+  it('không phân biệt hoa thường và khoảng trắng thừa', () => {
+    expect(trongSoNgayNghi('  NGHỈ SÁNG  ')).toBe(0.5);
   });
 });
