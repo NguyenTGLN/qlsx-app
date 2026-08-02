@@ -709,9 +709,16 @@ function SoTK({ v, dam, canhBao }) {
       ...tdTK.num,
       fontWeight: dam ? 700 : 400,
       color: !khac0 ? '#cbd5e1' : (canhBao ? '#b91c1c' : '#0f172a'),
-    }}>{v}</td>
+    }}>{soGon(v)}</td>
   );
 }
+
+// 3.5 → '3,5'; 15 → '15'. Từ khi nghỉ nửa buổi tính 0,5 ngày, các cột ngày ra số lẻ — để
+// JavaScript tự vẽ thì ra '3.5' với dấu chấm, lạc lõng trong một màn hình toàn tiếng Việt.
+// `toFixed(2)` rồi bỏ số 0 thừa: vừa cắt đuôi dấu phẩy động, vừa không hiện '15,00' cho cột
+// phút vốn luôn là số nguyên. Bản song sinh của hàm này là `soNgayGon` trong kpiTuDong.js,
+// dùng cho chuỗi ghi chú KPI — hai nơi chỉ khác chỗ dùng, cùng một quy tắc hiển thị.
+const soGon = v => String(Number(Number(v || 0).toFixed(2))).replace('.', ',');
 
 const ChevronDownNho = () => (
   <ChevronRight size={13} style={{ verticalAlign: -2, transform: 'rotate(90deg)' }} />
