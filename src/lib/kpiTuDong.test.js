@@ -747,3 +747,38 @@ describe('trongSoNgayNghi', () => {
     expect(trongSoNgayNghi('  NGHỈ SÁNG  ')).toBe(0.5);
   });
 });
+
+describe('chuyên cần tính nghỉ nửa buổi là 0,5 ngày', () => {
+  const cc = (o = {}) => ({ nhan_vien_id: 'a', ky: '2026-07', di_muon_phut: 0, ve_som_phut: 0, nghi: false, ...o });
+
+  it('CÁ NHÂN: 2 buổi sáng = 1 ngày = đúng phép, KHÔNG trừ điểm (ca của Phong kỳ 7)', () => {
+    const kq = LUAT_TU_DONG.CHUYEN_CAN_CA_NHAN({ chi_tieu: 10 }, [], [], [
+      cc({ nghi: true, nghi_text: 'Nghỉ sáng', ngay: '2026-07-13' }),
+      cc({ nghi: true, nghi_text: 'Nghỉ sáng', ngay: '2026-07-22' }),
+    ]);
+    expect(kq.tiLe).toBe(1);
+  });
+
+  it('CÁ NHÂN: 3 buổi = 1,5 ngày → vượt 0,5 phép → trừ 1,5 điểm', () => {
+    const kq = LUAT_TU_DONG.CHUYEN_CAN_CA_NHAN({ chi_tieu: 10 }, [], [], [
+      cc({ nghi: true, nghi_text: 'Nghỉ sáng', ngay: '2026-07-01' }),
+      cc({ nghi: true, nghi_text: 'Nghỉ chiều', ngay: '2026-07-02' }),
+      cc({ nghi: true, nghi_text: 'Nghỉ sáng', ngay: '2026-07-03' }),
+    ]);
+    expect(kq.tiLe).toBeCloseTo(0.85, 5);
+  });
+
+  it('CÁ NHÂN: dữ liệu CŨ không có nghi_text vẫn tính tròn 1 ngày như trước', () => {
+    const kq = LUAT_TU_DONG.CHUYEN_CAN_CA_NHAN({ chi_tieu: 10 }, [], [], [
+      cc({ nghi: true, ngay: '2026-07-01' }), cc({ nghi: true, ngay: '2026-07-02' }),
+    ]);
+    expect(kq.tiLe).toBe(0.7);
+  });
+
+  it('BỘ PHẬN: cộng theo trọng số rồi mới chia đầu người', () => {
+    const kq = LUAT_TU_DONG.CHUYEN_CAN_BO_PHAN({ chi_tieu: 10 }, [], [], [
+      cc({ nghi: true, nghi_text: 'Nghỉ sáng' }), cc({ nghi: true, nghi_text: 'Nghỉ chiều' }),
+    ], ['a', 'b']);
+    expect(kq.tiLe).toBe(1);
+  });
+});

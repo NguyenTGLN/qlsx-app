@@ -241,6 +241,10 @@ const noiNgay = ds => {
   return ds.length > MAX_NGAY ? `${ten} …+${ds.length - MAX_NGAY}` : ten;
 };
 
+// 1.5 → '1,5'; 2 → '2'. Dấu phẩy thập phân cho đúng lối viết tiếng Việt, và bỏ '.0' thừa để
+// người đọc không phải phân vân "2,0 ngày" là gì.
+const soNgayGon = n => String(Number(Number(n).toFixed(2))).replace('.', ',');
+
 // Ngưỡng chép nguyên từ mô tả chỉ tiêu trong file KPI gốc. Đọc từ nặng xuống nhẹ, lấy mức
 // đầu tiên khớp.
 const NGUONG_PHUT = [[91, 10], [61, 3], [30, 1]];   // phút đi muộn + về sớm cộng dồn
@@ -310,7 +314,7 @@ function luatChuyenCanBoPhan(ct, viec, sanXuat, chamCong = [], thanhVien = []) {
 
   const phut = ccTru.reduce(
     (s, c) => s + (Number(c.di_muon_phut) || 0) + (Number(c.ve_som_phut) || 0), 0);
-  const nghi = ccTru.filter(c => c.nghi).length;
+  const nghi = ccTru.reduce((s, c) => s + (c.nghi ? trongSoNgayNghi(c.nghi_text) : 0), 0);
   const phutTB = phut / soNguoi;
   const nghiTB = nghi / soNguoi;
   const vuotPhep = Math.max(0, nghiTB - NGAY_PHEP_THANG);
@@ -322,7 +326,7 @@ function luatChuyenCanBoPhan(ct, viec, sanXuat, chamCong = [], thanhVien = []) {
   const ghiChu = `Tự động: ${soNguoi} người — trung bình ${Math.round(phutTB)} phút muộn/về sớm`
     + ` (−${truPhut}) và ${nghiTB.toFixed(1)} ngày nghỉ mỗi người, vượt ${vuotPhep.toFixed(1)}`
     + ` ngày so với ${NGAY_PHEP_THANG} ngày phép (−${truNghi}).`
-    + ` Cả nhóm: ${phut} phút, ${nghi} ngày nghỉ${phanMien}.`;
+    + ` Cả nhóm: ${phut} phút, ${soNgayGon(nghi)} ngày nghỉ${phanMien}.`;
 
   return tuDiemTru(ct, truPhut + truNghi, ghiChu);
 }
@@ -347,7 +351,8 @@ function luatChuyenCanCaNhan(ct, viec, sanXuat, chamCong = []) {
   const nhe = ccTru.filter(c => { const p = Number(c.di_muon_phut) || 0; return p > 5 && p <= 15; }).length;
 
   const nghiNgay = ccTru.filter(c => c.nghi).slice().sort(theoNgay);
-  const nghi = nghiNgay.length;
+  // Cộng TRỌNG SỐ chứ không đếm dòng: nghỉ nửa buổi là 0,5 ngày (xem trongSoNgayNghi).
+  const nghi = nghiNgay.reduce((s, c) => s + trongSoNgayNghi(c.nghi_text), 0);
   const vuotPhep = Math.max(0, nghi - NGAY_PHEP_THANG);
   const truMuon = nang * 5 + nhe * 1;
   const truNghi = vuotPhep * 3;
@@ -363,8 +368,8 @@ function luatChuyenCanCaNhan(ct, viec, sanXuat, chamCong = []) {
   if (nghi) {
     const ds = nghiNgay.map(c => ngayDM(c.ngay));
     phan.push(vuotPhep > 0
-      ? `Nghỉ ${nghi} ngày, quá ${vuotPhep} phép (−${truNghi}): ${noiNgay(ds)}.`
-      : `Nghỉ ${nghi} ngày (trong phép): ${noiNgay(ds)}.`);
+      ? `Nghỉ ${soNgayGon(nghi)} ngày, quá ${soNgayGon(vuotPhep)} phép (−${truNghi}): ${noiNgay(ds)}.`
+      : `Nghỉ ${soNgayGon(nghi)} ngày (trong phép): ${noiNgay(ds)}.`);
   }
   if (mienNgay.length) {
     phan.push(`Miễn ${mienNgay.length} ngày có giải trình (không trừ): ${noiNgay(mienNgay.map(c => ngayDM(c.ngay)))}.`);
