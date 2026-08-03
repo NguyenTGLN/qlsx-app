@@ -950,43 +950,6 @@ export default function SoanThaoTab({
                     );
                   })}
 
-                  {/* Núm chỉnh chỗ bẻ — chỉ trên đường ĐANG CHỌN, chỉ khi sửa được.
-                      Vẽ SAU mọi đường nên nó nằm trên vệt bắt sự kiện của chúng.
-                      Không có núm khi đường thẳng tuột (routeEdge trả keo = null). */}
-                  {coSua && numLech && (
-                    <g data-lech={numLech.huong}>
-                      <line
-                        x1={numLech.tu[0]} y1={numLech.tu[1]}
-                        x2={numLech.den[0]} y2={numLech.den[1]}
-                        stroke={mau} strokeWidth={2.4} strokeLinecap="round" opacity={0.35}
-                        pointerEvents="none" />
-                      {/* Dời cả nhóm tới chỗ routeEdge chỉ, rồi vẽ núm quanh gốc 0,0:
-                          hai gạch chỉ hướng kéo là hằng số, không phải phép tính. */}
-                      <g transform={`translate(${numLech.x} ${numLech.y})`}>
-                        <circle r={9.5} fill="#fff" stroke={mau} strokeWidth={2}
-                          style={{
-                            pointerEvents: 'all', touchAction: 'none',
-                            cursor: numLech.huong === 'doc' ? 'ew-resize' : 'ns-resize',
-                          }}
-                          onPointerDown={(ev) => nenLech(ev, numLech.huong)}
-                          onPointerMove={dichLech}
-                          onPointerUp={thaLech}
-                          onPointerCancel={huyLech}>
-                          <title>
-                            {numLech.huong === 'doc'
-                              ? 'Kéo trái/phải để dời nhánh dọc — tách đường này khỏi đường đang chồng lên nó'
-                              : 'Kéo lên/xuống để dời chỗ bẻ — tách đường này khỏi đường đang chồng lên nó'}
-                          </title>
-                        </circle>
-                        <path
-                          d={numLech.huong === 'doc'
-                            ? 'M-3 -4V4M3 -4V4'
-                            : 'M-4 -3H4M-4 3H4'}
-                          stroke={mau} strokeWidth={1.6} strokeLinecap="round" pointerEvents="none" />
-                      </g>
-                    </g>
-                  )}
-
                   {/* Đường nối đang kéo — chỉ là hình vẽ tạm, chưa có trong sơ đồ */}
                   {neoKeoNoi && (
                     <g pointerEvents="none">
@@ -1068,6 +1031,52 @@ export default function SoanThaoTab({
                     </div>
                   );
                 })}
+
+                {/* ── Núm chỉnh chỗ bẻ đường nối ────────────────────
+                    LỚP PHỦ RIÊNG, đặt SAU lớp khối và z-index cao hơn núm ＋/⤳.
+                    Để trong <svg> đường nối thì khối (vẽ sau) đè lên mất: lưu đồ
+                    càng dày thì càng dễ có khối nằm đúng chỗ bẻ — mà dày chính là
+                    lúc người dùng cần tách đường nhất. Núm phải với tới được ở
+                    đúng lúc đó.
+                    Cả lớp phủ pointer-events:none nên KHÔNG chắn chuột của khối
+                    bên dưới; chỉ riêng cái núm bật lại pointer-events.
+                    Nằm chung khung giấy với lớp khối nên cùng hệ toạ độ — không
+                    phải trừ GUT/HEAD_H hay tính lại điểm nào.
+                    Chỉ hiện khi ĐANG CHỌN một đường và sửa được; đường thẳng tuột
+                    thì routeEdge trả keo = null nên không có núm. */}
+                {coSua && numLech && (
+                  <svg className="qe-lechlop" data-lech={numLech.huong}
+                    width={drawW(soDoHien)} height={drawH(soDoHien)}>
+                    <line
+                      x1={numLech.tu[0]} y1={numLech.tu[1]}
+                      x2={numLech.den[0]} y2={numLech.den[1]}
+                      stroke={mau} strokeWidth={2.4} strokeLinecap="round" opacity={0.35} />
+                    {/* Dời cả nhóm tới chỗ routeEdge chỉ, rồi vẽ núm quanh gốc 0,0:
+                        hai gạch chỉ hướng kéo là hằng số, không phải phép tính. */}
+                    <g transform={`translate(${numLech.x} ${numLech.y})`}>
+                      <circle r={9.5} fill="#fff" stroke={mau} strokeWidth={2}
+                        style={{
+                          pointerEvents: 'all', touchAction: 'none',
+                          cursor: numLech.huong === 'doc' ? 'ew-resize' : 'ns-resize',
+                        }}
+                        onPointerDown={(ev) => nenLech(ev, numLech.huong)}
+                        onPointerMove={dichLech}
+                        onPointerUp={thaLech}
+                        onPointerCancel={huyLech}>
+                        <title>
+                          {numLech.huong === 'doc'
+                            ? 'Kéo trái/phải để dời nhánh dọc — tách đường này khỏi đường đang chồng lên nó'
+                            : 'Kéo lên/xuống để dời chỗ bẻ — tách đường này khỏi đường đang chồng lên nó'}
+                        </title>
+                      </circle>
+                      <path
+                        d={numLech.huong === 'doc'
+                          ? 'M-3 -4V4M3 -4V4'
+                          : 'M-4 -3H4M-4 3H4'}
+                        stroke={mau} strokeWidth={1.6} strokeLinecap="round" />
+                    </g>
+                  </svg>
+                )}
               </div>
             </div>
           </div>
@@ -1444,6 +1453,11 @@ const CSS = `
   border-top:1px solid ${C.giayVien}; background:${C.giayBang}; }
 .qe-phaselbl[data-sel] { outline:2px solid ${C.chu2}; outline-offset:-2px; }
 .qe-edges { position:absolute; inset:0; overflow:visible; pointer-events:none; }
+/* Núm chỉnh chỗ bẻ phải nổi TRÊN lớp khối — khối vẽ sau lớp đường nối nên nằm
+   đè lên nó, và núm ＋/⤳ đã chiếm z-index 5, nên lấy 6. Cả lớp KHÔNG ăn chuột,
+   chỉ riêng cái núm bên trong bật lại pointer-events, vì vậy khối nằm dưới lớp
+   phủ vẫn bấm chọn và kéo được y như khi không có núm nào. */
+.qe-lechlop { position:absolute; inset:0; overflow:visible; pointer-events:none; z-index:6; }
 
 .qe-node { position:absolute; user-select:none; touch-action:none; }
 .qe-shape { position:absolute; inset:0; }
