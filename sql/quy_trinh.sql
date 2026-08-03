@@ -67,6 +67,15 @@ create policy qtpb_ins on quy_trinh_phien_ban for insert to authenticated with c
 create policy qtpb_upd on quy_trinh_phien_ban for update to authenticated using (true) with check (true);
 create policy qtpb_del on quy_trinh_phien_ban for delete to authenticated using (trang_thai = 'draft');
 
+-- ── Cấp quyền TƯỜNG MINH cho người đã đăng nhập ──
+--    KHÔNG trông chờ quyền mặc định của Supabase: file security_3_rls_lockdown.sql
+--    chạy `grant all on all tables` từ TRƯỚC, lúc hai bảng này chưa tồn tại, nên nó
+--    không cấp gì cho chúng. Thiếu dòng này thì mọi lời gọi trả "permission denied
+--    for table quy_trinh" ngay sau khi chạy file — hỏng cả phân hệ.
+--    Cố ý KHÔNG cấp `update` ở đây: quyền ghi theo cột nằm ngay bên dưới.
+grant select, insert, delete on quy_trinh           to authenticated;
+grant select, insert, delete on quy_trinh_phien_ban to authenticated;
+
 -- ── Chặn thật: cột trạng thái KHÔNG nằm trong quyền ghi của người dùng thường ──
 revoke update on quy_trinh           from authenticated;
 revoke update on quy_trinh_phien_ban from authenticated;
