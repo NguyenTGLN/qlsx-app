@@ -262,4 +262,55 @@ commit;
 --     → chỉ được có draft / wait / published. Ra 'expired' nghĩa là có đường ghi
 --       nào đó lọt qua RPC; ra 'draft' cho quy trình đang chờ duyệt nghĩa là một
 --       RPC quên cập nhật đầu bảng — màn hình danh mục sẽ hiện sai trạng thái.
+--
+--   Kiểm kê ĐỦ loại đối tượng, không chỉ bảng — view bỏ qua RLS nếu thiếu
+--   security_invoker, materialized view thì không hỗ trợ nó:
+--   select c.relname, c.relkind,
+--          coalesce(c.reloptions::text,'') like '%security_invoker=true%' as co_si
+--     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+--    where n.nspname='public' and c.relkind in ('r','v','m','p')
+--      and c.relname like 'quy_trinh%';
+--     → kỳ vọng đúng 2 dòng, cả hai relkind='r'. Có 'v' hoặc 'm' nghĩa là ai đó
+--       thêm view lên hai bảng này — phải đặt security_invoker=true ngay.
+--
+--   select p.proname, has_function_privilege('anon', p.oid, 'EXECUTE') as anon_goi_duoc
+--     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+--    where n.nspname='public' and p.proname like 'qt_%' or p.proname like 'rpc_qt_%';
+--     → cả 4 hàm phải là false.
 -- ------------------------------------------------------------
+
+-- ============================================================
+-- HOÀN TÁC — dán chạy được ngay. Đang để dưới dạng chú thích để chạy cả file
+-- không lỡ tay xoá mất gì; bỏ dấu -- ở khối cần dùng.
+--
+-- ⚠ ĐỌC TRƯỚC KHI CHẠY: phần B XOÁ BẢNG, tức là MẤT TOÀN BỘ quy trình đã soạn,
+--   kể cả bản đã ban hành. Muốn tắt phân hệ mà GIỮ dữ liệu thì chỉ chạy phần A.
+-- ============================================================
+
+-- ── A) TẮT PHÂN HỆ, GIỮ NGUYÊN DỮ LIỆU ──
+--   Người dùng mất quyền đọc/ghi, màn hình báo lỗi, nhưng không mất dòng nào.
+--   Chạy được lúc nào cũng được, đảo lại bằng cách chạy lại file này từ đầu.
+-- begin;
+-- revoke all on quy_trinh           from authenticated;
+-- revoke all on quy_trinh_phien_ban from authenticated;
+-- revoke execute on function rpc_qt_gui_duyet(uuid)     from authenticated;
+-- revoke execute on function rpc_qt_tra_lai(uuid, text) from authenticated;
+-- revoke execute on function rpc_qt_ban_hanh(uuid)      from authenticated;
+-- revoke execute on function qt_lam_chu(uuid)           from authenticated;
+-- commit;
+
+-- ── B) XOÁ HẲN — MẤT DỮ LIỆU, KHÔNG LẤY LẠI ĐƯỢC ──
+--   Chỉ dùng khi muốn gỡ sạch phân hệ. Sao lưu trước nếu còn tiếc:
+--     create table quy_trinh_backup           as select * from quy_trinh;
+--     create table quy_trinh_phien_ban_backup as select * from quy_trinh_phien_ban;
+-- begin;
+-- drop trigger  if exists qt_pb_tg_trang_thai on quy_trinh_phien_ban;
+-- drop trigger  if exists qt_tg_trang_thai    on quy_trinh;
+-- drop function if exists qt_canh_trang_thai() cascade;
+-- drop function if exists rpc_qt_ban_hanh(uuid);
+-- drop function if exists rpc_qt_tra_lai(uuid, text);
+-- drop function if exists rpc_qt_gui_duyet(uuid);
+-- drop table    if exists quy_trinh_phien_ban;   -- xoá trước: có khoá ngoại trỏ sang quy_trinh
+-- drop function if exists qt_lam_chu(uuid);      -- xoá sau policy, vì policy có gọi hàm này
+-- drop table    if exists quy_trinh;
+-- commit;
