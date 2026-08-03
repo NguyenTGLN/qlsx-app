@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { LANE_W, LOAI_KHOI, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi } from './quyTrinhSoDo';
 import { routeEdge } from './quyTrinhSoDo';
+import { themBuoc, xoaKhoi, doiCot, thuTuBuoc } from './quyTrinhSoDo';
 
 const soDo = {
   lanes: [
@@ -101,5 +102,107 @@ describe('định tuyến đường nối', () => {
   test('thiếu khối đầu hoặc cuối → trả null thay vì ném lỗi', () => {
     const s = mk([nn('a', 0, 100)], { id: 'e', a: 'a', b: 'khong-co', k: 'n', lbl: '' });
     expect(routeEdge(s, s.edges[0])).toBeNull();
+  });
+});
+
+describe('thêm bước bằng nút ＋', () => {
+  const base = () => ({
+    lanes: [
+      { name: 'Kế hoạch', owner: 'NV Kế hoạch', color: '#7c3aed' },
+      { name: 'Kho',      owner: 'Thủ kho',     color: '#0d9488' },
+      { name: 'QC',       owner: 'NV QC',       color: '#16a34a' },
+    ],
+    phases: [{ name: 'G1', h: 600 }],
+    nodes: [
+      { id: 'n1', t: 'step', lane: 1, y: 100, dx: 0, w: 164, h: 56, tx: 'Xuất kho', desc: 'x', form: '—', time: '—' },
+      { id: 'n2', t: 'dec',  lane: 1, y: 220, dx: 0, w: 150, h: 86, tx: 'Đạt?',     desc: 'x', form: '—', time: '—' },
+    ],
+    edges: [{ id: 'e1', a: 'n1', b: 'n2', lbl: '', k: 'n' }],
+  });
+
+  test('bước mới nằm DƯỚI khối nguồn và được nối tự động', () => {
+    const s = themBuoc(base(), { tuId: 'n1', nhanh: '', loai: 'check', cot: 2, ten: 'Kiểm QC' });
+    const moi = s.nodes.find(n => n.tx === 'Kiểm QC');
+    expect(moi).toBeTruthy();
+    expect(moi.t).toBe('check');
+    expect(moi.lane).toBe(2);
+    expect(moi.y).toBe(100 + 56 + 46);
+    expect(s.edges.some(e => e.a === 'n1' && e.b === moi.id && e.k === 'n')).toBe(true);
+  });
+
+  test('nhánh NG rẽ NGANG cùng tầm cao và mang nhãn NG', () => {
+    const s = themBuoc(base(), { tuId: 'n2', nhanh: 'ng', loai: 'step', cot: 0, ten: 'Tái chế' });
+    const moi = s.nodes.find(n => n.tx === 'Tái chế');
+    expect(moi.y).toBe(220 + Math.round((86 - 56) / 2));
+    const e = s.edges.find(x => x.b === moi.id);
+    expect(e.k).toBe('ng');
+    expect(e.lbl).toBe('NG');
+  });
+
+  test('nhánh OK mang nhãn OK', () => {
+    const s = themBuoc(base(), { tuId: 'n2', nhanh: 'ok', loai: 'doc', cot: 1, ten: 'Nhập kho' });
+    expect(s.edges.find(x => x.b === s.nodes.at(-1).id).lbl).toBe('OK');
+  });
+
+  test('khối đang chắn chỗ trong cùng cột bị đẩy xuống', () => {
+    const s = themBuoc(base(), { tuId: 'n1', nhanh: '', loai: 'step', cot: 1, ten: 'Chèn giữa' });
+    const n2 = s.nodes.find(n => n.id === 'n2');
+    expect(n2.y).toBeGreaterThan(220);
+  });
+
+  test('không có tên thì dùng "Bước mới", và luôn có sẵn ô diễn giải', () => {
+    const s = themBuoc(base(), { tuId: 'n1', nhanh: '', loai: 'step', cot: 1, ten: '' });
+    const moi = s.nodes.at(-1);
+    expect(moi.tx).toBe('Bước mới');
+    expect(typeof moi.desc).toBe('string');
+  });
+
+  test('nới chiều cao hàng cuối khi lưu đồ dài ra', () => {
+    let s = base(); s.phases = [{ name: 'G1', h: 180 }];
+    s = themBuoc(s, { tuId: 'n1', nhanh: '', loai: 'step', cot: 1, ten: 'Dài ra' });
+    expect(drawH(s)).toBeGreaterThan(180);
+  });
+
+  test('BẤT BIẾN — sơ đồ gốc không bị sửa', () => {
+    const goc = base();
+    const truoc = JSON.stringify(goc);
+    themBuoc(goc, { tuId: 'n1', nhanh: '', loai: 'step', cot: 1, ten: 'X' });
+    expect(JSON.stringify(goc)).toBe(truoc);
+  });
+
+  test('nguồn không tồn tại → ném lỗi rõ ràng', () => {
+    expect(() => themBuoc(base(), { tuId: 'zzz', nhanh: '', loai: 'step', cot: 0, ten: 'X' }))
+      .toThrow(/không tìm thấy khối nguồn/i);
+  });
+});
+
+describe('xoá khối & đổi cột', () => {
+  const base = () => ({
+    lanes: [{ name: 'A', owner: 'Người A', color: '#111111' }, { name: 'B', owner: 'Người B', color: '#222222' }],
+    phases: [{ name: 'G1', h: 400 }],
+    nodes: [
+      { id: 'n1', t: 'step', lane: 0, y: 40,  dx: 12, w: 164, h: 56, tx: 'A', desc: '', form: '—', time: '—' },
+      { id: 'n2', t: 'step', lane: 0, y: 160, dx: 0,  w: 164, h: 56, tx: 'B', desc: '', form: '—', time: '—' },
+    ],
+    edges: [{ id: 'e1', a: 'n1', b: 'n2', lbl: '', k: 'n' }],
+  });
+
+  test('xoá khối kéo theo mọi đường nối của nó', () => {
+    const s = xoaKhoi(base(), 'n2');
+    expect(s.nodes).toHaveLength(1);
+    expect(s.edges).toHaveLength(0);
+  });
+
+  test('đổi cột thì reset dx để khối căn giữa cột mới', () => {
+    const s = doiCot(base(), 'n1', 1);
+    const n1 = s.nodes.find(n => n.id === 'n1');
+    expect(n1.lane).toBe(1);
+    expect(n1.dx).toBe(0);
+  });
+
+  test('thuTuBuoc bỏ Bắt đầu/Kết thúc, xếp trên→dưới rồi trái→phải', () => {
+    const s = base();
+    s.nodes.push({ id: 'n0', t: 'start', lane: 0, y: 0, dx: 0, w: 164, h: 48, tx: 'Bắt đầu' });
+    expect(thuTuBuoc(s)).toEqual(['n1', 'n2']);
   });
 });

@@ -96,3 +96,75 @@ export function routeEdge(soDo, e) {
   }
   return { d, nhan: [(pts[best][0] + pts[best + 1][0]) / 2, (pts[best][1] + pts[best + 1][1]) / 2] };
 }
+
+const KHOANG_DOC = 46;   // khoảng hở dọc giữa hai bước nối tiếp
+
+const sao = soDo => ({
+  lanes:  soDo.lanes.map(l => ({ ...l })),
+  phases: soDo.phases.map(p => ({ ...p })),
+  nodes:  soDo.nodes.map(n => ({ ...n })),
+  edges:  soDo.edges.map(e => ({ ...e })),
+});
+
+let dem = 0;
+const idMoi = tien => `${tien}${Date.now().toString(36)}${(dem++).toString(36)}`;
+
+/** Thứ tự đánh số bước: trên xuống dưới, trái sang phải. Bỏ Bắt đầu/Kết thúc. */
+export function thuTuBuoc(soDo) {
+  return soDo.nodes
+    .filter(n => n.t !== 'start' && n.t !== 'end')
+    .slice()
+    .sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)))
+    .map(n => n.id);
+}
+
+/** Thêm bước nối tiếp từ một khối. Tự đặt chỗ, tự nối, tự đẩy khối chắn chỗ.
+ *  nhanh: '' | 'ok' | 'ng'  — 'ng' rẽ ngang cùng tầm, còn lại xuống dưới. */
+export function themBuoc(soDo, { tuId, nhanh = '', loai, cot, ten }) {
+  const nguon = timKhoi(soDo, tuId);
+  if (!nguon) throw new Error('Không tìm thấy khối nguồn khi thêm bước: ' + tuId);
+  const T = LOAI_KHOI[loai];
+  if (!T) throw new Error('Loại khối không hợp lệ: ' + loai);
+
+  const s = sao(soDo);
+  const y = nhanh === 'ng'
+    ? nguon.y + Math.round((nguon.h - T.h) / 2)
+    : nguon.y + nguon.h + KHOANG_DOC;
+
+  // Đẩy khối đang chắn chỗ trong cùng cột xuống dưới
+  for (const n of s.nodes) {
+    if (n.lane === cot && n.y + n.h > y - 12 && n.y < y + T.h + 12) n.y += T.h + KHOANG_DOC;
+  }
+
+  const id = idMoi('n');
+  s.nodes.push({
+    id, t: loai, lane: cot, y, dx: 0, w: T.w, h: T.h,
+    tx: (ten || '').trim() || 'Bước mới',
+    desc: '', form: '—', time: '—', color: null,
+  });
+  s.edges.push({
+    id: idMoi('e'), a: tuId, b: id,
+    lbl: nhanh === 'ok' ? 'OK' : nhanh === 'ng' ? 'NG' : '',
+    k: nhanh || 'n',
+  });
+
+  // Nới hàng cuối nếu lưu đồ dài ra
+  const can = Math.max(...s.nodes.map(n => n.y + n.h)) + 34;
+  if (can > drawH(s)) s.phases[s.phases.length - 1].h += can - drawH(s);
+  return s;
+}
+
+export function xoaKhoi(soDo, id) {
+  const s = sao(soDo);
+  s.nodes = s.nodes.filter(n => n.id !== id);
+  s.edges = s.edges.filter(e => e.a !== id && e.b !== id);
+  return s;
+}
+
+/** Đổi cột = đổi bộ phận phụ trách = đổi người thực hiện ở bảng diễn giải. */
+export function doiCot(soDo, id, cot) {
+  const s = sao(soDo);
+  const n = s.nodes.find(x => x.id === id);
+  if (n) { n.lane = cot; n.dx = 0; }
+  return s;
+}
