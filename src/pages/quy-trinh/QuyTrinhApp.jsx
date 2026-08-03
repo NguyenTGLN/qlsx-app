@@ -28,9 +28,13 @@ export default function QuyTrinhApp() {
   const [loading, setLoading] = useState(true);
   const [ds, setDs] = useState([]);
   const [mo, setMo] = useState(null);        // { quyTrinh, phienBan, dsPhienBan }
-  const [soDo, setSoDo] = useState(null);
-  const [truoc, setTruoc] = useState([]);    // ngăn xếp hoàn tác
-  const [sau, setSau] = useState([]);
+
+  // Sơ đồ + hai ngăn xếp giữ CHUNG một state: mỗi lần đổi là một hàm cập nhật
+  // duy nhất, nên giữ Ctrl+Z cho phím tự lặp cũng không làm lệch ngăn xếp.
+  // Tách ba useState thì hai lần gọi trong cùng một batch React sẽ đọc phải giá
+  // trị cũ, mất một bước và nhân đôi một bước khác.
+  const [ls, setLs] = useState({ soDo: null, truoc: [], sau: [] });
+  const soDo = ls.soDo;
 
   const nap = useCallback(async () => {
     setLoading(true);
@@ -44,32 +48,31 @@ export default function QuyTrinhApp() {
     const dsPb = await api.taiPhienBan(qt.id);
     const pb = api.banDangLam(dsPb);
     setMo({ quyTrinh: qt, phienBan: pb, dsPhienBan: dsPb });
-    setSoDo(pb?.so_do || null);
-    setTruoc([]); setSau([]);
+    setLs({ soDo: pb?.so_do || null, truoc: [], sau: [] });
     setTab('soan_thao');
   };
 
   // Mọi thay đổi sơ đồ đi qua đây ⇒ hoàn tác là đẩy/rút ngăn xếp.
-  const doiSoDo = (moi) => {
-    setTruoc(t => [...t.slice(-39), soDo]);
-    setSau([]);
-    setSoDo(moi);
-  };
-  const hoanTac = () => {
-    if (!truoc.length) return;
-    setSau(s => [...s, soDo]);
-    setSoDo(truoc.at(-1));
-    setTruoc(t => t.slice(0, -1));
-  };
-  const lamLai = () => {
-    if (!sau.length) return;
-    setTruoc(t => [...t, soDo]);
-    setSoDo(sau.at(-1));
-    setSau(s => s.slice(0, -1));
-  };
+  const doiSoDo = (moi) => setLs(s => ({
+    soDo: moi,
+    truoc: [...s.truoc.slice(-39), s.soDo],
+    sau: [],
+  }));
+
+  const hoanTac = () => setLs(s => s.truoc.length ? ({
+    soDo: s.truoc[s.truoc.length - 1],
+    truoc: s.truoc.slice(0, -1),
+    sau: [...s.sau, s.soDo],
+  }) : s);
+
+  const lamLai = () => setLs(s => s.sau.length ? ({
+    soDo: s.sau[s.sau.length - 1],
+    truoc: [...s.truoc, s.soDo],
+    sau: s.sau.slice(0, -1),
+  }) : s);
 
   const chung = { user, isAdmin, mo, setMo, soDo, doiSoDo, hoanTac, lamLai,
-    coHoanTac: truoc.length > 0, coLamLai: sau.length > 0,
+    coHoanTac: ls.truoc.length > 0, coLamLai: ls.sau.length > 0,
     pDanhMuc, pSoanThao, napLai: nap, mau: MAU };
 
   return (
