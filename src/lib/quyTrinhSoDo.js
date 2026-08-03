@@ -178,6 +178,7 @@ export function doiCot(soDo, id, cot) {
 /** Căn giữa khối theo cột và giãn đều trong từng giai đoạn.
  *  CỐ Ý không đảo thứ tự: người dùng phải đoán được kết quả trước khi bấm. */
 export function tuXepLai(soDo) {
+  if (!soDo?.phases?.length) return sao(soDo);   // không có hàng nào thì không xếp gì
   const s = sao(soDo);
   const HO = 44, LE = 28;
   const nhom = s.phases.map(() => []);
@@ -187,7 +188,12 @@ export function tuXepLai(soDo) {
     g.sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)));
     const tang = [];
     for (const n of g) {
-      const t = tang.find(t => Math.abs(t.y - n.y) < HO);
+      // Cùng một cột thì KHÔNG bao giờ chung tầng: một tầng nghĩa là "nằm cạnh
+      // nhau trên một hàng", hai khối cùng cột không thể cạnh nhau. Bỏ điều kiện
+      // này thì hai khối cùng cột cách nhau <44px sẽ trùng khít pixel và một
+      // bước biến mất khỏi bản in.
+      const t = tang.find(t => Math.abs(t.y - n.y) < HO
+                            && !t.items.some(m => m.lane === n.lane));
       if (t) t.items.push(n); else tang.push({ y: n.y, items: [n] });
     }
     let cur = LE;

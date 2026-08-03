@@ -281,4 +281,42 @@ describe('tự xếp lại', () => {
     tuXepLai(g);
     expect(JSON.stringify(g)).toBe(truoc);
   });
+
+  test('hai khối CÙNG CỘT không bao giờ chung tầng — không có bước nào biến mất', () => {
+    const g = base();
+    g.nodes = [
+      { id: 'x', t: 'step', lane: 0, y: 100, dx: 0, w: 164, h: 56, tx: 'X', desc: '', form: '—', time: '—' },
+      { id: 'y', t: 'step', lane: 0, y: 130, dx: 0, w: 164, h: 56, tx: 'Y', desc: '', form: '—', time: '—' },
+    ];
+    const s = tuXepLai(g);
+    const a = s.nodes.find(n => n.id === 'x'), b = s.nodes.find(n => n.id === 'y');
+    expect(a.y).not.toBe(b.y);
+    expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(Math.min(a.h, b.h));
+  });
+
+  test('khối cùng cột chồng nhau được GỠ ra, không phải bị giấu đi', () => {
+    const g = base();
+    g.nodes = [
+      { id: 'd', t: 'dec',  lane: 0, y: 100, dx: 0, w: 150, h: 86, tx: 'Đạt?',   desc: '', form: '—', time: '—' },
+      { id: 'r', t: 'step', lane: 0, y: 115, dx: 0, w: 164, h: 56, tx: 'Tái chế', desc: '', form: '—', time: '—' },
+    ];
+    const s = tuXepLai(g);
+    const A = rectOf(s.nodes.find(n => n.id === 'd'));
+    const B = rectOf(s.nodes.find(n => n.id === 'r'));
+    const chong = A.x < B.x + B.w && B.x < A.x + A.w && A.y < B.y + B.h && B.y < A.y + A.h;
+    expect(chong).toBe(false);
+  });
+
+  test('khác cột thì VẪN gộp chung tầng như cũ', () => {
+    const g = base();
+    g.nodes[1].y = 34;                    // n1 lane 0 y=30, n2 lane 1 y=34
+    const s = tuXepLai(g);
+    expect(s.nodes.find(n => n.id === 'n1').y).toBe(s.nodes.find(n => n.id === 'n2').y);
+  });
+
+  test('sơ đồ không có hàng nào thì trả bản sao, không nổ', () => {
+    const g = { lanes: [{ name: 'A', owner: 'a', color: '#111111' }], phases: [], nodes: [], edges: [] };
+    expect(() => tuXepLai(g)).not.toThrow();
+    expect(tuXepLai(g).phases).toEqual([]);
+  });
 });
