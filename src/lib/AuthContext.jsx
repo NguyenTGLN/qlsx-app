@@ -16,6 +16,7 @@ export const MODULE_PERMS = {
   access_cskh:        'Truy cập CSKH',
   access_warehouse:   'Truy cập Kho Hàng',
   access_quality:     'Truy cập Chất Lượng SP',
+  access_quytrinh:    'Truy cập Quy Trình',
 };
 
 // Quyền tính năng chi tiết (Feature-level) — kế thừa từ TaskApp

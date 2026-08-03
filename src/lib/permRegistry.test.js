@@ -157,3 +157,44 @@ describe('tab KPI', () => {
     expect(getTabPerm(u, 'tasks', 'kpi').edit).toBe(false);
   });
 });
+
+describe('phân hệ Quy trình', () => {
+  const qt = () => PERM_REGISTRY.find(m => m.module === 'quy_trinh');
+
+  test('có mặt trong registry với legacyAccess riêng', () => {
+    expect(qt()).toBeTruthy();
+    expect(qt().legacyAccess).toBe('access_quytrinh');
+    expect(qt().label).toBe('Quy Trình');
+  });
+
+  test('có đúng 2 tab: danh mục và soạn thảo', () => {
+    expect(qt().tabs.map(t => t.id)).toEqual(['danh_muc', 'soan_thao']);
+  });
+
+  test('KHÔNG có cap nào cho ban hành — quyền đó cứng theo vai trò ADMIN', () => {
+    for (const t of qt().tabs) {
+      expect(t.caps).not.toContain('approve');
+      expect(t.caps).not.toContain('publish');
+      expect(t.caps).not.toContain('banHanh');
+    }
+  });
+
+  test('admin thấy được phân hệ', () => {
+    expect(canSeeModule({ role: 'ADMIN' }, 'quy_trinh')).toBe(true);
+  });
+
+  test('nhân viên chưa được cấp quyền thì KHÔNG thấy', () => {
+    expect(canSeeModule({ role: 'AGENT', permissions: {} }, 'quy_trinh')).toBe(false);
+  });
+
+  test('nhân viên được cấp view 1 tab thì thấy phân hệ', () => {
+    const u = { role: 'AGENT', permissions: { 'tab.quy_trinh.danh_muc.view': true } };
+    expect(canSeeModule(u, 'quy_trinh')).toBe(true);
+    expect(canSeeTab(u, 'quy_trinh', 'soan_thao')).toBe(false);
+  });
+
+  test('người dùng CŨ không tự nhiên có quyền sau khi di trú', () => {
+    const cu = migrateLegacyToTabPerms({ access_warehouse: true, kho_edit: true });
+    expect(cu['tab.quy_trinh.danh_muc.view']).toBeUndefined();
+  });
+});

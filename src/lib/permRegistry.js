@@ -71,6 +71,16 @@ export const PERM_REGISTRY = [
     ],
   },
   {
+    module: 'quy_trinh', label: 'Quy Trình', icon: '🔀', legacyAccess: 'access_quytrinh',
+    tabs: [
+      // io = xuất PNG / in PDF / tải Word — một người hoặc được xuất tài liệu, hoặc không.
+      { id: 'danh_muc',  label: 'Danh mục quy trình', caps: ['view', 'create', 'delete', 'io'] },
+      { id: 'soan_thao', label: 'Soạn thảo lưu đồ',   caps: ['view', 'edit'] },
+    ],
+    // KHÔNG khai cap ban hành: quyền đó cứng theo role === 'ADMIN', xem
+    // docs/superpowers/specs/2026-08-03-phan-he-quy-trinh-design.md mục C.
+  },
+  {
     module: 'production', label: 'Nhập Liệu Sản Xuất', icon: '🏭', legacyAccess: 'access_production',
     tabs: [
       { id: 'main', label: 'Nhập liệu sản xuất', caps: ['view', 'create', 'edit', 'delete'] },
