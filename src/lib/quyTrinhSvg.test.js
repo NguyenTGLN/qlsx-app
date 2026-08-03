@@ -133,4 +133,27 @@ describe('soDoSangSvg', () => {
     expect(out).not.toContain('onload="x');
     expect(out).toContain('&quot;');
   });
+
+  /* thoatXml chỉ lo phần CHỮ. Toạ độ trước đây nội suy thẳng vì mặc định là số —
+     mà so_do là jsonb, không ràng buộc kiểu. Chuỗi lọt vào đó thoát ra khỏi
+     thuộc tính và chèn được thẻ THẬT. Vô hại khi SVG nạp qua <img> blob (trình
+     duyệt không chạy script trong ảnh), nhưng XemTruocTab nhúng thẳng chuỗi này
+     vào trang bằng dangerouslySetInnerHTML — chỗ đó thì chạy. */
+  test('toạ độ độc hại bị ép về SỐ, không chèn được thẻ vào SVG', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].y = '0"><script>alert(1)</script><rect x="0';
+    s.nodes[1].h = '"><img src=x onerror=alert(1)>';
+    s.phases[0].h = '"><foreignObject>';
+    const out = soDoSangSvg(s);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('onerror');
+    expect(out).not.toContain('<foreignObject');
+    expect(out).not.toContain('NaN');
+  });
+
+  test('toạ độ hợp lệ dạng chuỗi số vẫn dùng được', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].y = '160';
+    expect(soDoSangSvg(s)).toContain('160');
+  });
 });

@@ -20,6 +20,41 @@ export function thoatXml(v) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+/** Toạ độ đưa vào SVG phải là SỐ. Chuỗi lọt vào đây là chèn được thẻ vào ảnh —
+ *  vô hại khi ảnh nạp qua <img> blob, nhưng chết người khi SVG được nhúng thẳng
+ *  vào trang bằng dangerouslySetInnerHTML (màn hình Xem trước làm đúng thế).
+ *  Giá trị hỏng thành 0 thay vì NaN: khối lệch chỗ còn sửa được, tệp vỡ thì không.
+ *
+ *  Vì sao cần: thoatXml lo phần CHỮ (tên bước, tên cột, màu, nhãn đường), còn
+ *  toạ độ thì trước đây nội suy thẳng vì mặc định là số. so_do là jsonb, không
+ *  có ràng buộc kiểu — nhét chuỗi vào n.y / n.h / n.dx / phases[].h là thoát ra
+ *  khỏi thuộc tính. Đã đo được <script>, <img onerror>, <foreignObject> lọt vào. */
+const so = v => (Number.isFinite(+v) ? +v : 0);
+
+/** Bản sao sơ đồ với mọi ô HÌNH HỌC đã ép về số, dùng cho toàn bộ hàm dựng SVG.
+ *
+ *  Ép ở NƠI NỘI SUY thôi là KHÔNG ĐỦ — đã đo. Đường nối lấy `d` từ routeEdge,
+ *  mà routeEdge dựng chuỗi đó từ chính n.y/n.h của khối; chuỗi độc nằm trong
+ *  khối chảy thẳng vào thuộc tính d="…" và so() ở chỗ khác không với tới:
+ *      <path d="M106 20 L106 0"><script>alert(1)</script><rect x="0" …/>
+ *  Cùng lý do, drawH/phaseTop cộng dồn phases[].h nên đẻ ra cả NaN.
+ *  Làm sạch ĐẦU VÀO thì mọi thứ dẫn xuất phía sau đều là số.
+ *
+ *  Chỉ đụng năm ô toạ độ của khối và chiều cao giai đoạn; chữ, màu, id giữ
+ *  nguyên để thoatXml lo. Mảng hỏng vẫn ném lỗi y như trước, không nuốt. */
+function soDoSach(soDo) {
+  const la = o => (o && typeof o === 'object' && !Array.isArray(o));
+  return {
+    ...soDo,
+    phases: soDo.phases.map(p => (la(p) ? { ...p, h: so(p.h) } : p)),
+    nodes: Array.isArray(soDo.nodes)
+      ? soDo.nodes.map(n => (la(n)
+        ? { ...n, y: so(n.y), w: so(n.w), h: so(n.h), dx: so(n.dx), lane: so(n.lane) }
+        : n))
+      : soDo.nodes,
+  };
+}
+
 /** Cắt chữ thành nhiều dòng vừa bề ngang khối (ước lượng 6.4px/ký tự ở cỡ 11.5). */
 function catDong(text, beNgang, coChu = 11.5) {
   const max = Math.max(6, Math.floor(beNgang / (coChu * 0.56)));
@@ -52,7 +87,14 @@ function catDong(text, beNgang, coChu = 11.5) {
 
 function khoiSvg(n) {
   const T = LOAI_KHOI[n.t], mau = thoatXml(n.color || T.mau);
-  const r = rectOf(n);
+  // Ép cả sáu ô toạ độ NGAY tại đây. Mọi phép tính phía dưới — điểm của polygon,
+  // rect, bán kính bo, vị trí từng tspan — đều dẫn xuất từ r, nên sạch ở đây là
+  // sạch toàn bộ khối. Sửa chỗ khác mà quên chỗ này là hở lại.
+  const r0 = rectOf(n);
+  const r = {
+    x: so(r0.x), y: so(r0.y), w: so(r0.w), h: so(r0.h),
+    cx: so(r0.cx), cy: so(r0.cy),
+  };
   let hinh;
   if (n.t === 'dec') {
     const p = `${r.cx},${r.y} ${r.x + r.w},${r.cy} ${r.cx},${r.y + r.h} ${r.x},${r.cy}`;
@@ -81,8 +123,11 @@ function khoiSvg(n) {
     + ` font-size="11.5" font-weight="600" fill="#0f172a">${chu}</text></g>`;
 }
 
-export function soDoSangSvg(soDo, { tyLe = 1 } = {}) {
-  const W = GUT + drawW(soDo), H = HEAD_H + drawH(soDo);
+export function soDoSangSvg(soDoVao, { tyLe = 1 } = {}) {
+  // Ép toạ độ NGAY ở cửa vào — xem chú thích soDoSach. Mọi chỗ dưới đây, kể cả
+  // routeEdge, chỉ còn thấy số.
+  const soDo = soDoSach(soDoVao);
+  const W = so(GUT + drawW(soDo)), H = so(HEAD_H + drawH(soDo));
   const p = [];
 
   p.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`);
@@ -102,10 +147,11 @@ export function soDoSangSvg(soDo, { tyLe = 1 } = {}) {
 
   // Nhãn giai đoạn + vạch ngăn
   soDo.phases.forEach((ph, i) => {
-    const y = HEAD_H + phaseTop(soDo, i);
-    p.push(`<rect x="0" y="${y}" width="${GUT}" height="${ph.h}" fill="#f7f9fc" stroke="#dfe6ef"/>`);
+    const y = so(HEAD_H + phaseTop(soDo, i));
+    const phH = so(ph.h);
+    p.push(`<rect x="0" y="${y}" width="${GUT}" height="${phH}" fill="#f7f9fc" stroke="#dfe6ef"/>`);
     catDong(ph.name, GUT - 12, 11.5).forEach((d, k, arr) => {
-      const cy = y + ph.h / 2 - ((arr.length - 1) * 13) / 2 + k * 13;
+      const cy = so(y + phH / 2 - ((arr.length - 1) * 13) / 2 + k * 13);
       p.push(`<text x="${GUT / 2}" y="${cy}" text-anchor="middle" dominant-baseline="middle"`
         + ` font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="11.5" font-weight="700" fill="#475569">${thoatXml(d)}</text>`);
     });
@@ -133,7 +179,7 @@ export function soDoSangSvg(soDo, { tyLe = 1 } = {}) {
       + `<path d="${r.d}" fill="none" stroke="${c}" stroke-width="1.7" stroke-linejoin="round"`
       + `${e.k === 'ng' ? ' stroke-dasharray="6 4"' : ''} marker-end="url(#ar-${thoatXml(e.k)})"/>`
       + (e.lbl
-        ? `<text x="${r.nhan[0]}" y="${r.nhan[1]}" text-anchor="middle" dominant-baseline="middle"`
+        ? `<text x="${so(r.nhan[0])}" y="${so(r.nhan[1])}" text-anchor="middle" dominant-baseline="middle"`
           + ` font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="10.5" font-weight="700" fill="${c}"`
           + ` paint-order="stroke" stroke="#fff" stroke-width="4">${thoatXml(e.lbl)}</text>`
         : '')
@@ -141,7 +187,9 @@ export function soDoSangSvg(soDo, { tyLe = 1 } = {}) {
   }
   for (const n of soDo.nodes || []) trong.push(khoiSvg(n));
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(W * tyLe)}" height="${Math.round(H * tyLe)}"`
+  // so() cả ở đây để tyLe hỏng cũng không đẻ ra width="NaN" — Word/trình duyệt
+  // gặp NaN trong thuộc tính là bỏ luôn cả ảnh.
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${so(Math.round(W * tyLe))}" height="${so(Math.round(H * tyLe))}"`
     + ` viewBox="0 0 ${W} ${H}"><defs>${marker}</defs>${p.join('')}`
     + `<g transform="translate(${GUT},${HEAD_H})">${trong.join('')}</g></svg>`;
 }
