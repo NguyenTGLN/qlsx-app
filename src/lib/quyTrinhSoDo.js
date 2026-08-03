@@ -47,3 +47,52 @@ export function phaseOf(soDo, n) {
   }
   return soDo.phases.length - 1;
 }
+
+/** Đường nối gấp khúc vuông góc, bo góc 9px — kiểu lưu đồ ISO.
+ *  Trả { d, nhan:[x,y] }, hoặc null nếu thiếu khối đầu/cuối. */
+export function routeEdge(soDo, e) {
+  const A0 = timKhoi(soDo, e.a), B0 = timKhoi(soDo, e.b);
+  if (!A0 || !B0) return null;
+  const A = rectOf(A0), B = rectOf(B0);
+  const dx = B.cx - A.cx, dy = B.cy - A.cy;
+  let pts;
+
+  if (Math.abs(dy) < 46) {                       // cùng tầm cao → đi ngang
+    const phai = dx > 0;
+    pts = [[phai ? A.x + A.w : A.x, A.cy], [phai ? B.x : B.x + B.w, B.cy]];
+  } else if (dy > 0) {                           // đi xuống
+    if (Math.abs(dx) < 24) {
+      pts = [[A.cx, A.y + A.h], [B.cx, B.y]];
+    } else {
+      const giua = Math.max(A.y + A.h + 18, (A.y + A.h + B.y) / 2);
+      pts = [[A.cx, A.y + A.h], [A.cx, giua], [B.cx, giua], [B.cx, B.y]];
+    }
+  } else {                                       // vòng ngược lên
+    if (Math.abs(dx) < 24) {
+      pts = [[A.cx, A.y], [B.cx, B.y + B.h]];
+    } else {
+      const phai = dx > 0;
+      pts = [[A.cx, A.y], [A.cx, B.cy], [phai ? B.x : B.x + B.w, B.cy]];
+    }
+  }
+
+  let d = `M${pts[0][0]} ${pts[0][1]}`;
+  const R = 9;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i - 1], [cx, cy] = pts[i], [nx, ny] = pts[i + 1];
+    const l1 = Math.hypot(cx - px, cy - py) || 1, l2 = Math.hypot(nx - cx, ny - cy) || 1;
+    const r = Math.min(R, l1 / 2, l2 / 2);
+    d += ` L${cx + (px - cx) / l1 * r} ${cy + (py - cy) / l1 * r}`;
+    d += ` Q${cx} ${cy} ${cx + (nx - cx) / l2 * r} ${cy + (ny - cy) / l2 * r}`;
+  }
+  const cuoi = pts[pts.length - 1];
+  d += ` L${cuoi[0]} ${cuoi[1]}`;
+
+  // Nhãn đặt giữa đoạn dài nhất
+  let best = 0, bl = -1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    if (len > bl) { bl = len; best = i; }
+  }
+  return { d, nhan: [(pts[best][0] + pts[best + 1][0]) / 2, (pts[best][1] + pts[best + 1][1]) / 2] };
+}

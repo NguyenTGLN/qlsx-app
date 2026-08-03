@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { LANE_W, LOAI_KHOI, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi } from './quyTrinhSoDo';
+import { routeEdge } from './quyTrinhSoDo';
 
 const soDo = {
   lanes: [
@@ -53,5 +54,52 @@ describe('hình học', () => {
       expect(LOAI_KHOI[k].w).toBeGreaterThan(0);
       expect(LOAI_KHOI[k].h).toBeGreaterThan(0);
     }
+  });
+});
+
+// Đếm số đoạn thẳng trong path để biết đường bẻ mấy góc.
+const soDoan = d => (d.match(/L/g) || []).length;
+
+describe('định tuyến đường nối', () => {
+  const nn = (id, lane, y, w = 164, h = 56) => ({ id, t: 'step', lane, y, dx: 0, w, h, tx: id });
+  const mk = (nodes, edge) => ({ lanes: [{}, {}, {}], phases: [{ name: 'x', h: 900 }], nodes, edges: [edge] });
+
+  test('cùng tầm cao → đi ngang, không bẻ góc', () => {
+    const s = mk([nn('a', 0, 100), nn('b', 2, 100)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    const { d } = routeEdge(s, s.edges[0]);
+    expect(soDoan(d)).toBe(1);
+  });
+
+  test('đích ở dưới, thẳng cột → đi thẳng xuống', () => {
+    const s = mk([nn('a', 1, 100), nn('b', 1, 300)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    const { d } = routeEdge(s, s.edges[0]);
+    expect(soDoan(d)).toBe(1);
+    expect(d.startsWith('M318 156')).toBe(true); // ra cạnh dưới khối a
+  });
+
+  test('đích ở dưới và lệch cột → bẻ 2 góc (xuống, ngang, xuống)', () => {
+    const s = mk([nn('a', 0, 100), nn('b', 2, 300)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    const { d } = routeEdge(s, s.edges[0]);
+    expect(d).toContain('Q');           // có bo góc
+    expect(soDoan(d)).toBeGreaterThan(1);
+  });
+
+  test('đích ở trên → vòng ngược lên rồi đâm vào cạnh bên', () => {
+    const s = mk([nn('a', 0, 400), nn('b', 2, 100)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    const { d } = routeEdge(s, s.edges[0]);
+    expect(d).toContain('Q');
+  });
+
+  test('trả toạ độ nhãn nằm trên đường', () => {
+    const s = mk([nn('a', 0, 100), nn('b', 2, 100)], { id: 'e', a: 'a', b: 'b', k: 'ok', lbl: 'OK' });
+    const { nhan } = routeEdge(s, s.edges[0]);
+    expect(nhan).toHaveLength(2);
+    expect(Number.isFinite(nhan[0])).toBe(true);
+    expect(Number.isFinite(nhan[1])).toBe(true);
+  });
+
+  test('thiếu khối đầu hoặc cuối → trả null thay vì ném lỗi', () => {
+    const s = mk([nn('a', 0, 100)], { id: 'e', a: 'a', b: 'khong-co', k: 'n', lbl: '' });
+    expect(routeEdge(s, s.edges[0])).toBeNull();
   });
 });
