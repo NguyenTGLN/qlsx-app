@@ -26,6 +26,15 @@ create table if not exists quy_trinh (
   updated_at    timestamptz not null default now()
 );
 
+-- quy_trinh.trang_thai LÀ BẢN SAO trạng thái của phiên bản MỚI NHẤT, giữ ở đây để
+-- màn hình danh mục lọc được mà không phải nối bảng phiên bản cho từng thẻ.
+-- Chỉ nhận 3 giá trị: 'draft' → 'wait' → 'published'. Cả ba RPC bên dưới đều phải
+-- cập nhật cột này, quên một cái là danh mục hiện sai trạng thái mà không ai báo lỗi.
+-- KHÔNG bao giờ mang giá trị 'expired': hết hiệu lực là chuyện của một PHIÊN BẢN,
+-- và lúc một bản cũ hết hiệu lực thì đã có bản mới ban hành ⇒ quy trình vẫn 'published'.
+comment on column quy_trinh.trang_thai is
+  'Trạng thái của phiên bản mới nhất: draft | wait | published. Không bao giờ là expired.';
+
 create table if not exists quy_trinh_phien_ban (
   id              uuid primary key default gen_random_uuid(),
   quy_trinh_id    uuid not null references quy_trinh(id) on delete cascade,
@@ -163,20 +172,28 @@ begin
   update quy_trinh_phien_ban set trang_thai = 'wait'
    where id = p_phien_ban_id and trang_thai = 'draft';
   if not found then raise exception 'Chỉ gửi duyệt được bản đang ở trạng thái nháp'; end if;
+  -- Đầu bảng quy trình bám theo trạng thái của bản MỚI NHẤT, nếu không thì
+  -- màn hình danh mục vẫn hiện "Bản nháp" cho quy trình đang chờ Admin duyệt.
+  update quy_trinh set trang_thai = 'wait', updated_at = now() where id = v_qt;
 end $$;
 
 -- ── RPC 2: trả lại (CHỈ ADMIN) ──
 create or replace function rpc_qt_tra_lai(p_phien_ban_id uuid, p_ly_do text)
 returns void language plpgsql security definer set search_path = public as $$
+declare v_qt uuid;
 begin
   if coalesce(auth.jwt()->>'nv_role','') <> 'ADMIN' then
     raise exception 'Chỉ Admin được duyệt và ban hành quy trình';
   end if;
+  select quy_trinh_id into v_qt from quy_trinh_phien_ban
+   where id = p_phien_ban_id and trang_thai = 'wait';
+  if v_qt is null then raise exception 'Chỉ trả lại được bản đang chờ duyệt'; end if;
   perform set_config('qt.cho_phep', '1', true);
   update quy_trinh_phien_ban
      set trang_thai = 'draft', ghi_chu_sua_doi = coalesce(p_ly_do, ghi_chu_sua_doi)
-   where id = p_phien_ban_id and trang_thai = 'wait';
-  if not found then raise exception 'Chỉ trả lại được bản đang chờ duyệt'; end if;
+   where id = p_phien_ban_id;
+  -- Trả lại thì đầu bảng phải lùi về nháp cùng bản, xem chú thích ở cột trang_thai.
+  update quy_trinh set trang_thai = 'draft', updated_at = now() where id = v_qt;
 end $$;
 
 -- ── RPC 3: ban hành (CHỈ ADMIN) — một giao dịch ──
@@ -241,4 +258,8 @@ commit;
 --     → kỳ vọng 2 dòng qt_tg_trang_thai, qt_pb_tg_trang_thai
 --   select policyname from pg_policies where tablename in ('quy_trinh','quy_trinh_phien_ban');
 --     → kỳ vọng 8 dòng qt_*/qtpb_*, TUYỆT ĐỐI không có `auth_all`.
+--   select distinct trang_thai from quy_trinh;
+--     → chỉ được có draft / wait / published. Ra 'expired' nghĩa là có đường ghi
+--       nào đó lọt qua RPC; ra 'draft' cho quy trình đang chờ duyệt nghĩa là một
+--       RPC quên cập nhật đầu bảng — màn hình danh mục sẽ hiện sai trạng thái.
 -- ------------------------------------------------------------

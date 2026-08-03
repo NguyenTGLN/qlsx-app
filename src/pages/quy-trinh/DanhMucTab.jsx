@@ -19,16 +19,21 @@ const C = {
 };
 const MONO = "'Cascadia Mono',Consolas,'SF Mono',ui-monospace,monospace";
 
-// Bốn giá trị này phải khớp cột trang_thai trong sql/quy_trinh.sql
-// (mặc định 'draft'; rpc_qt_gui_duyet → 'wait'; rpc_qt_ban_hanh → 'published'
-// và đẩy bản cũ về 'expired'). Mockup gọi là ok/dead, DB gọi published/expired.
+// Nhãn + màu pill, khớp cột trang_thai trong sql/quy_trinh.sql.
+// Mockup gọi là ok/dead, DB gọi published/expired.
 const TT = {
   draft:     { ten: 'Bản nháp',     mau: '#64748b' },
   wait:      { ten: 'Chờ duyệt',    mau: '#2563eb' },
   published: { ten: 'Đã ban hành',  mau: '#16a34a' },
   expired:   { ten: 'Hết hiệu lực', mau: '#dc2626' },
 };
-const TT_DS = ['draft', 'wait', 'published', 'expired'];
+
+// Rail CHỈ lọc ba trạng thái mà cột quy_trinh.trang_thai thật sự nhận.
+// 'expired' cố ý không có mặt: hết hiệu lực là trạng thái của một PHIÊN BẢN, và
+// khi một bản hết hiệu lực thì đã có bản mới ban hành ⇒ đầu bảng vẫn 'published'.
+// Một ô lọc không bao giờ khớp dòng nào còn tệ hơn là không có ô lọc.
+// Nhãn 'expired' vẫn giữ trong TT vì bảng theo dõi sửa đổi có hiện phiên bản cũ.
+const TT_DS = ['draft', 'wait', 'published'];
 
 const ngayVn = (iso) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));

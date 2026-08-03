@@ -83,8 +83,12 @@ export async function banHanh(phienBanId) {
 }
 
 export async function xoaQuyTrinh(id) {
-  const { error } = await supabase.from('quy_trinh').delete().eq('id', id);
-  nem(error, 'Không xoá được quy trình (chỉ xoá được bản nháp)');
+  const { data, error } = await supabase.from('quy_trinh').delete().eq('id', id).select('id');
+  nem(error, 'Không xoá được quy trình');
+  // RLS chặn xoá bằng cách LỌC dòng đi, nên PostgREST trả 204 không kèm lỗi.
+  // Không kiểm ở đây thì người dùng bấm xoá, không thấy gì xảy ra, và tưởng hỏng app.
+  if (!data || !data.length)
+    throw new Error('Không xoá được: chỉ người soạn hoặc Admin mới xoá được, và chỉ xoá được bản nháp.');
 }
 
 /** Mục 8 "Theo dõi sửa đổi" = chính danh sách phiên bản, không cần bảng riêng. */
