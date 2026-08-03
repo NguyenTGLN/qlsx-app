@@ -36,6 +36,22 @@ export default function QuyTrinhApp() {
   const [ls, setLs] = useState({ soDo: null, truoc: [], sau: [] });
   const soDo = ls.soDo;
 
+  // Màn hình có thay đổi CHƯA ghi xuống máy chủ hay không.
+  //
+  // Vì sao phải có cờ này: Ban hành và Trả lại gọi lamMoiMo() — nạp lại phiên
+  // bản TỪ DB. RPC ban hành cũng đóng dấu vào bản ĐÃ LƯU. Nên nếu Admin nhìn
+  // lưu đồ trên màn hình, thấy đúng, rồi bấm Ban hành trong khi còn thay đổi
+  // chưa lưu, thì TÀI LIỆU ĐƯỢC BAN HÀNH KHÁC VỚI TÀI LIỆU HỌ VỪA DUYỆT — và
+  // không có gì báo cho họ biết. Với tài liệu ISO đem in và đem đi đánh giá,
+  // đó là kiểu hỏng nặng nhất của phân hệ này.
+  //
+  // Cờ nằm ở ĐÂY chứ không ở từng tab, vì có hai đường sửa khác nhau: tab Trình
+  // vẽ và tab Diễn giải sửa sơ đồ qua doiSoDo, còn tab Thông tin sửa tai_lieu
+  // qua setMo. Mỗi tab giữ cờ riêng thì tab này không thấy tab kia bẩn.
+  const [chuaLuu, setChuaLuu] = useState(false);
+  const danhDauDaLuu = useCallback(() => setChuaLuu(false), []);
+  const danhDauChuaLuu = useCallback(() => setChuaLuu(true), []);
+
   const nap = useCallback(async () => {
     setLoading(true);
     try { setDs(await api.dsQuyTrinh()); }
@@ -49,30 +65,46 @@ export default function QuyTrinhApp() {
     const pb = api.banDangLam(dsPb);
     setMo({ quyTrinh: qt, phienBan: pb, dsPhienBan: dsPb });
     setLs({ soDo: pb?.so_do || null, truoc: [], sau: [] });
+    setChuaLuu(false);          // vừa nạp từ DB ⇒ màn hình khớp máy chủ
     setTab('soan_thao');
   };
 
   // Mọi thay đổi sơ đồ đi qua đây ⇒ hoàn tác là đẩy/rút ngăn xếp.
-  const doiSoDo = (moi) => setLs(s => ({
-    soDo: moi,
-    truoc: [...s.truoc.slice(-39), s.soDo],
-    sau: [],
-  }));
+  const doiSoDo = (moi) => {
+    setChuaLuu(true);
+    setLs(s => ({
+      soDo: moi,
+      truoc: [...s.truoc.slice(-39), s.soDo],
+      sau: [],
+    }));
+  };
 
-  const hoanTac = () => setLs(s => s.truoc.length ? ({
-    soDo: s.truoc[s.truoc.length - 1],
-    truoc: s.truoc.slice(0, -1),
-    sau: [...s.sau, s.soDo],
-  }) : s);
+  // Hoàn tác/làm lại cũng tính là CHƯA LƯU. Hoàn tác đúng về bản đã lưu thì cờ
+  // này báo thừa, nhưng đó là chiều sai an toàn: báo thừa chỉ tốn một cú bấm
+  // Lưu nháp, còn báo thiếu là ban hành nhầm tài liệu.
+  // Kiểm độ dài ngăn xếp Ở NGOÀI: updater của setLs phải thuần, gọi setState
+  // lồng trong đó sẽ chạy hai lần ở StrictMode.
+  const hoanTac = () => {
+    if (ls.truoc.length) setChuaLuu(true);
+    setLs(s => s.truoc.length ? ({
+      soDo: s.truoc[s.truoc.length - 1],
+      truoc: s.truoc.slice(0, -1),
+      sau: [...s.sau, s.soDo],
+    }) : s);
+  };
 
-  const lamLai = () => setLs(s => s.sau.length ? ({
-    soDo: s.sau[s.sau.length - 1],
-    truoc: [...s.truoc, s.soDo],
-    sau: s.sau.slice(0, -1),
-  }) : s);
+  const lamLai = () => {
+    if (ls.sau.length) setChuaLuu(true);
+    setLs(s => s.sau.length ? ({
+      soDo: s.sau[s.sau.length - 1],
+      truoc: [...s.truoc, s.soDo],
+      sau: s.sau.slice(0, -1),
+    }) : s);
+  };
 
   const chung = { user, isAdmin, mo, setMo, soDo, doiSoDo, hoanTac, lamLai,
     coHoanTac: ls.truoc.length > 0, coLamLai: ls.sau.length > 0,
+    chuaLuu, danhDauDaLuu, danhDauChuaLuu,
     pDanhMuc, pSoanThao, napLai: nap, mau: MAU };
 
   return (

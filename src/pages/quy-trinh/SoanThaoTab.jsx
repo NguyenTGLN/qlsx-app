@@ -83,6 +83,13 @@ function themKhoiRoi(soDo, loai, tuId, cot) {
 
 const rong = v => !String(v ?? '').trim() || String(v).trim() === '—';
 
+// Ban hành / Trả lại đều nạp lại phiên bản TỪ DB, và RPC ban hành đóng dấu lên
+// bản ĐÃ LƯU. Bấm khi còn thay đổi chưa lưu ⇒ bản ban hành khác bản trên màn
+// hình. KHÔNG tự lưu hộ: ban hành là hành vi có chủ đích lên một bản cụ thể,
+// âm thầm gộp thêm phần đang sửa là duyệt luôn thứ chưa ai chọn để duyệt.
+const CANH_BAO_CHUA_LUU = 'Còn thay đổi chưa lưu. Hãy bấm "Lưu nháp" trước — '
+  + 'nếu không, bản được ban hành sẽ KHÁC với bản đang hiện trên màn hình.';
+
 /* ── Ô nhập ghi khi RỜI Ô, không phải mỗi lần gõ ────────────────
    Gõ một câu 40 ký tự mà mỗi ký tự đẩy một bản vào ngăn xếp hoàn tác
    thì Ctrl+Z trở nên vô dụng. Không kiểm soát giá trị (defaultValue) +
@@ -118,7 +125,7 @@ function Rong({ tieuDe, phu }) {
 
 export default function SoanThaoTab({
   isAdmin, mo, setMo, soDo, doiSoDo, hoanTac, lamLai, coHoanTac, coLamLai,
-  pSoanThao, napLai, mau = '#ea580c',
+  pSoanThao, napLai, mau = '#ea580c', chuaLuu = false, danhDauDaLuu = () => {},
 }) {
   const [chon, setChon] = useState(null);        // { loai:'node'|'edge'|'lane'|'phase', id }
   const [cheDo, setCheDo] = useState('chon');    // 'chon' | 'noi'
@@ -369,6 +376,7 @@ export default function SoanThaoTab({
     await api.luuNhap(pb.id, {
       so_do: soDo, tai_lieu: pb.tai_lieu, ghi_chu_sua_doi: pb.ghi_chu_sua_doi,
     });
+    danhDauDaLuu();
     setMo(m => ({ ...m, phienBan: { ...m.phienBan, so_do: soDo } }));
     toast(`Đã lưu bản nháp v${pb.phien_ban}.`);
   });
@@ -379,18 +387,26 @@ export default function SoanThaoTab({
     await api.luuNhap(pb.id, {
       so_do: soDo, tai_lieu: pb.tai_lieu, ghi_chu_sua_doi: pb.ghi_chu_sua_doi,
     });
+    danhDauDaLuu();
     await api.guiDuyet(pb.id);
     await lamMoiMo();
     toast(`Đã lưu và gửi duyệt bản v${pb.phien_ban}. Chờ Admin ban hành.`);
   });
 
-  const banHanh = () => chay('ban', async () => {
-    await api.banHanh(pb.id);
-    await lamMoiMo();
-    toast(`Đã ban hành v${pb.phien_ban}. Bản đang hiệu lực trước đó chuyển sang hết hiệu lực.`);
-  });
+  const banHanh = () => {
+    // Chặn ở đây chứ không chỉ ở nút: nút có thể bấm được trong một nhịp render
+    // cũ, và đây là thao tác không lùi lại được.
+    if (chuaLuu) { alert(CANH_BAO_CHUA_LUU); return; }
+    chay('ban', async () => {
+      await api.banHanh(pb.id);
+      await lamMoiMo();
+      toast(`Đã ban hành v${pb.phien_ban}. Bản đang hiệu lực trước đó chuyển sang hết hiệu lực.`);
+    });
+  };
 
   const traLai = () => {
+    // Hỏi lý do TRƯỚC rồi mới chặn là bắt người ta gõ xong một đoạn để vứt đi.
+    if (chuaLuu) { alert(CANH_BAO_CHUA_LUU); return; }
     const lyDo = window.prompt('Lý do trả lại bản này về nháp:', '');
     if (lyDo === null) return;
     if (!lyDo.trim()) { alert('Phải ghi lý do trả lại để người soạn biết cần sửa gì.'); return; }
@@ -423,11 +439,14 @@ export default function SoanThaoTab({
   const W = GUT + drawW(soDoHien);
   const H = HEAD_H + drawH(soDoHien);
 
-  const banHanhDuoc = isAdmin && tt === 'wait' && loi.length === 0;
+  const banHanhDuoc = isAdmin && tt === 'wait' && loi.length === 0 && !chuaLuu;
+  // "Chưa lưu" đứng TRƯỚC danh sách lỗi trong thứ tự báo: lỗi đã hiện sẵn ở
+  // thanh đỏ phía trên, còn "chưa lưu" thì không nhìn thấy ở đâu khác.
   const lyDoKhoaBanHanh = !isAdmin ? 'Chỉ Admin mới được duyệt và ban hành.'
     : tt !== 'wait' ? 'Chỉ ban hành được bản đang chờ duyệt.'
-      : loi.length ? `Còn ${loi.length} lỗi phải sửa trước khi ban hành.`
-        : 'Ban hành bản này';
+      : chuaLuu ? CANH_BAO_CHUA_LUU
+        : loi.length ? `Còn ${loi.length} lỗi phải sửa trước khi ban hành.`
+          : 'Ban hành bản này';
 
   const nut = (props) => {
     const { on, ...rest } = props;
@@ -522,6 +541,11 @@ export default function SoanThaoTab({
 
         <span style={{ flex: 1 }} />
 
+        {chuaLuu && !banKhoa && (
+          <span style={S.chuaLuu} title="Thay đổi mới chỉ nằm trên màn hình, chưa xuống máy chủ.">
+            <span style={S.chuaLuuCham} />Chưa lưu
+          </span>
+        )}
         {pSoanThao?.edit && !banKhoa && (
           <button type="button" className="qe-btn" style={S.btn}
             onClick={luuNhap} disabled={!!dangChay} title="Ghi bản nháp xuống máy chủ">
@@ -536,7 +560,8 @@ export default function SoanThaoTab({
         )}
         {isAdmin && tt === 'wait' && (
           <button type="button" className="qe-btn" style={S.btn}
-            onClick={traLai} disabled={!!dangChay} title="Trả bản này về nháp kèm lý do">
+            onClick={traLai} disabled={!!dangChay || chuaLuu}
+            title={chuaLuu ? CANH_BAO_CHUA_LUU : 'Trả bản này về nháp kèm lý do'}>
             {dangChay === 'tra' ? <Loader2 size={14} className="qe-spin" /> : <RotateCcw size={14} />} Trả lại
           </button>
         )}
@@ -1163,6 +1188,14 @@ const S = {
     padding: '3px 8px', borderRadius: 999, whiteSpace: 'nowrap', flexShrink: 0,
   },
   dot: { width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 },
+  chuaLuu: {
+    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700,
+    color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a',
+    padding: '4px 9px', borderRadius: 999, whiteSpace: 'nowrap', flexShrink: 0,
+  },
+  chuaLuuCham: {
+    width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0,
+  },
   zoomV: {
     fontSize: 11.5, fontWeight: 700, color: C.chu2, minWidth: 40, textAlign: 'center',
     fontVariantNumeric: 'tabular-nums', alignSelf: 'center',

@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
-import { GitBranch } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { GitBranch, Save, Loader2 } from 'lucide-react';
 import { LOAI_KHOI, timKhoi } from '../../lib/quyTrinhSoDo';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
+import * as api from '../../lib/quyTrinhApi';
 
 /* ═══════════════════════════════════════════════════════════════
    BẢNG DIỄN GIẢI — mục 6 của bản in ISO.
@@ -67,7 +68,12 @@ function Rong({ tieuDe, phu }) {
   );
 }
 
-export default function DienGiaiTab({ mo, soDo, doiSoDo, pSoanThao, mau = '#ea580c' }) {
+export default function DienGiaiTab({
+  mo, setMo, soDo, doiSoDo, pSoanThao, mau = '#ea580c',
+  chuaLuu = false, danhDauDaLuu = () => {},
+}) {
+  const [dangLuu, setDangLuu] = useState(false);
+  const pb = mo?.phienBan || null;
   const tt = mo?.phienBan?.trang_thai || 'draft';
   const ttNhan = TT[tt] || { ten: tt, mau: C.chu3 };
 
@@ -87,6 +93,26 @@ export default function DienGiaiTab({ mo, soDo, doiSoDo, pSoanThao, mau = '#ea58
       ...soDo,
       nodes: soDo.nodes.map(n => (n.id === khoiId ? { ...n, [k]: v } : n)),
     });
+  };
+
+  /** Lưu nháp — GIỐNG HỆT nút cùng tên ở SoanThaoTab, kể cả việc đọc
+   *  tai_lieu nguyên văn từ mo.phienBan (nguồn sự thật dùng chung với
+   *  ThongTinTab). Có mặt ở đây vì người sửa hai mươi ô diễn giải rồi đóng
+   *  trình duyệt sẽ mất sạch nếu buộc phải sang tab khác mới lưu được. */
+  const luuNhap = async () => {
+    if (!coSua || !pb?.id || dangLuu) return;
+    setDangLuu(true);
+    try {
+      await api.luuNhap(pb.id, {
+        so_do: soDo, tai_lieu: pb.tai_lieu, ghi_chu_sua_doi: pb.ghi_chu_sua_doi,
+      });
+      danhDauDaLuu();
+      setMo?.(m => (m?.phienBan ? { ...m, phienBan: { ...m.phienBan, so_do: soDo } } : m));
+    } catch (e) {
+      alert(e?.message || 'Không lưu được bản nháp.');
+    } finally {
+      setDangLuu(false);
+    }
   };
 
   // ── Rỗng: chưa mở quy trình nào ───────────────────────────────
@@ -132,6 +158,17 @@ export default function DienGiaiTab({ mo, soDo, doiSoDo, pSoanThao, mau = '#ea58
         </div>
         <span style={{ flex: 1 }} />
         <span style={S.dem}>{dong.length} bước</span>
+        {chuaLuu && !banKhoa && (
+          <span style={S.chuaLuu} title="Thay đổi mới chỉ nằm trên màn hình, chưa xuống máy chủ.">
+            <span style={S.chuaLuuCham} />Chưa lưu
+          </span>
+        )}
+        {coSua && (
+          <button type="button" className="qd-btn" style={S.btn}
+            onClick={luuNhap} disabled={dangLuu} title="Ghi bản nháp xuống máy chủ">
+            {dangLuu ? <Loader2 size={14} className="qd-spin" /> : <Save size={14} />} Lưu nháp
+          </button>
+        )}
       </div>
 
       {lyDoKhoa && <div className="qd-khoa">{lyDoKhoa}</div>}
@@ -143,8 +180,8 @@ export default function DienGiaiTab({ mo, soDo, doiSoDo, pSoanThao, mau = '#ea58
             Bảng này sinh thẳng từ lưu đồ — thêm một khối ở tab <b>Trình vẽ lưu đồ</b> là
             có ngay một dòng ở đây, và số thứ tự bước chạy theo vị trí khối trên trang.
             {coSua && (
-              <> Sửa ở bảng ghi ngược vào chính khối đó; bấm <b>Lưu nháp</b> bên
-                tab Trình vẽ để ghi xuống máy chủ.</>
+              <> Sửa ở bảng ghi ngược vào chính khối đó — bấm <b>Lưu nháp</b> ở
+                thanh trên để ghi xuống máy chủ.</>
             )}
           </p>
         </div>
@@ -273,6 +310,11 @@ const CSS = `
   background:${C.mat}; border-bottom:1px solid ${C.vien}; }
 .qd-khoa { padding:8px 12px; background:${C.mat2}; border-bottom:1px solid ${C.vien};
   font-size:11.5px; font-weight:600; color:${C.chu2}; line-height:1.45; }
+.qd-btn { transition:filter .15s; }
+.qd-btn:hover:not(:disabled) { filter:brightness(.96); }
+.qd-btn:disabled { opacity:.45; cursor:not-allowed; }
+.qd-spin { animation:qd-rot 1s linear infinite; }
+@keyframes qd-rot { to { transform:rotate(360deg); } }
 
 .qd-body { flex:1; overflow:auto; background:${C.nen}; padding:16px 18px 40px; }
 .qd-dau { margin-bottom:13px; }
@@ -320,6 +362,19 @@ const S = {
   dem: {
     fontFamily: MONO, fontSize: 11, fontWeight: 700, color: C.chu2,
     background: C.mat2, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap',
+  },
+  chuaLuu: {
+    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700,
+    color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a',
+    padding: '4px 9px', borderRadius: 999, whiteSpace: 'nowrap', flexShrink: 0,
+  },
+  chuaLuuCham: {
+    width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0,
+  },
+  btn: {
+    display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9,
+    fontSize: 12.5, fontWeight: 600, border: `1px solid ${C.vien}`, background: C.mat,
+    color: C.chu2, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
   },
 
   h2: { margin: '0 0 3px', fontSize: 18, fontWeight: 800, letterSpacing: '-.02em', color: C.chu },

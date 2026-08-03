@@ -153,7 +153,10 @@ function Rong({ tieuDe, phu }) {
   );
 }
 
-export default function ThongTinTab({ mo, setMo, soDo, pSoanThao, mau = '#ea580c' }) {
+export default function ThongTinTab({
+  mo, setMo, soDo, pSoanThao, mau = '#ea580c',
+  chuaLuu = false, danhDauDaLuu = () => {}, danhDauChuaLuu = () => {},
+}) {
   const [dangLuu, setDangLuu] = useState(false);
   const [bao, setBao] = useState(null);      // { id, tx }
 
@@ -184,12 +187,16 @@ export default function ThongTinTab({ mo, setMo, soDo, pSoanThao, mau = '#ea580c
    *  Nhận HÀM để hai lần vá trong cùng một batch React vẫn đọc bản mới nhất
    *  (thêm hai dòng liên tiếp mà đọc `tl` của render cũ là mất một dòng). */
   const sua = useCallback((fn) => {
+    // Tab này sửa tai_lieu qua setMo, KHÔNG qua doiSoDo, nên phải tự bật cờ
+    // "chưa lưu". Thiếu dòng này thì Admin sang tab Trình vẽ bấm Ban hành mà
+    // không có gì cản, và mục 1–4 vừa gõ không nằm trong bản được ban hành.
+    danhDauChuaLuu();
     setMo((m) => {
       if (!m?.phienBan) return m;
       const cu = chuanHoa(m.phienBan.tai_lieu);
       return { ...m, phienBan: { ...m.phienBan, tai_lieu: { ...cu, ...fn(cu) } } };
     });
-  }, [setMo]);
+  }, [setMo, danhDauChuaLuu]);
 
   // Bấm nút trong thanh công cụ ⇒ ép ô đang gõ rời tiêu điểm TRƯỚC, để lần gõ
   // cuối cùng kịp ghi vào mo. Safari không tự focus <button> khi bấm chuột.
@@ -233,6 +240,7 @@ export default function ThongTinTab({ mo, setMo, soDo, pSoanThao, mau = '#ea580c
       await api.luuNhap(pb.id, {
         so_do: soDoLuu, tai_lieu: taiLieu, ghi_chu_sua_doi: pb.ghi_chu_sua_doi,
       });
+      danhDauDaLuu();
       setMo(m => (m?.phienBan
         ? { ...m, phienBan: { ...m.phienBan, so_do: soDoLuu, tai_lieu: taiLieu } }
         : m));
@@ -289,6 +297,11 @@ export default function ThongTinTab({ mo, setMo, soDo, pSoanThao, mau = '#ea580c
 
         <span style={{ flex: 1 }} />
 
+        {chuaLuu && !banKhoa && (
+          <span style={S.chuaLuu} title="Thay đổi mới chỉ nằm trên màn hình, chưa xuống máy chủ.">
+            <span style={S.chuaLuuCham} />Chưa lưu
+          </span>
+        )}
         {coSua && (
           <button type="button" className="qt-btn" style={S.btn} onClick={napMau}
             title="Điền lại mục 1–4 và 7 bằng mẫu sẵn của nhóm bộ phận">
@@ -568,6 +581,14 @@ const S = {
     padding: '3px 8px', borderRadius: 999, whiteSpace: 'nowrap', flexShrink: 0,
   },
   dot: { width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0 },
+  chuaLuu: {
+    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700,
+    color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a',
+    padding: '4px 9px', borderRadius: 999, whiteSpace: 'nowrap', flexShrink: 0,
+  },
+  chuaLuuCham: {
+    width: 6, height: 6, borderRadius: '50%', background: 'currentColor', flexShrink: 0,
+  },
 
   btn: {
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9,
