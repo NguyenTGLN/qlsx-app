@@ -182,3 +182,23 @@ export function docRelsXml(coAnh) {
       : '')
     + `</Relationships>`;
 }
+
+/** Gói toàn bộ thành tệp .docx. pngBuffer là ArrayBuffer ảnh lưu đồ (có thể null).
+ *  Cần jszip nên KHÔNG test đơn vị — kiểm chứng bằng cách mở tệp bằng Word thật. */
+export async function taoDocx(duLieu, pngBuffer, kichThuocAnh) {
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+  const coAnh = !!pngBuffer && !!kichThuocAnh;
+
+  zip.file('[Content_Types].xml', contentTypesXml());
+  zip.folder('_rels').file('.rels', relsXml());
+  const w = zip.folder('word');
+  w.file('document.xml', documentXml(duLieu, coAnh ? 'rId10' : null, kichThuocAnh));
+  w.folder('_rels').file('document.xml.rels', docRelsXml(coAnh));
+  if (coAnh) w.folder('media').file('image1.png', pngBuffer);
+
+  return zip.generateAsync({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+}
