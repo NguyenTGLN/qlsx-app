@@ -4,6 +4,16 @@
 -- CHẠY TAY trong Supabase SQL Editor. Chạy lại được nhiều lần.
 -- ============================================================
 
+-- ⚠ NHẮC LẠI: sql/security_3_rls_lockdown.sql quét MỌI bảng public, xoá hết policy,
+--   tạo `auth_all using(true)` VÀ chạy `grant all on all tables ... to authenticated`
+--   (dòng 39 và 50). Chạy lại file đó SAU file này sẽ xoá quyền-theo-cột bên dưới
+--   → nhân viên thường ghi thẳng được cột trang_thai qua REST API và tự ban hành.
+--   PHẢI chạy lại file này ngay sau đó.
+--   Trigger qt_canh_trang_thai KHÔNG bị file lockdown đụng tới, nên vẫn chặn được
+--   ngay cả khi quên chạy lại — nhưng đừng dựa vào mỗi nó, hãy chạy lại cho đủ.
+
+begin;
+
 create table if not exists quy_trinh (
   id            uuid primary key default gen_random_uuid(),
   ma_so         text not null unique,
@@ -63,10 +73,50 @@ revoke update on quy_trinh_phien_ban from authenticated;
 grant  update (ten, nhom, updated_at)            on quy_trinh           to authenticated;
 grant  update (so_do, tai_lieu, ghi_chu_sua_doi) on quy_trinh_phien_ban to authenticated;
 
+-- ── CHỐT CHẶN THẬT: trigger. Sống sót qua security_3_rls_lockdown.sql, thứ
+--    xoá sạch policy và cấp lại `grant all` cho authenticated. Quyền theo cột
+--    ở trên chỉ còn là lớp phòng thủ thứ hai.
+create or replace function qt_canh_trang_thai()
+returns trigger language plpgsql as $$
+begin
+  -- RPC security definer bật cờ này; client không gọi được set_config qua PostgREST.
+  if coalesce(current_setting('qt.cho_phep', true), '') = '1' then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    if new.trang_thai is distinct from 'draft' then
+      raise exception 'Bản ghi mới phải ở trạng thái nháp. Ban hành phải qua RPC.';
+    end if;
+    return new;
+  end if;
+
+  if new.trang_thai is distinct from old.trang_thai then
+    raise exception 'Chỉ đổi được trạng thái qua RPC gửi duyệt / trả lại / ban hành.';
+  end if;
+
+  -- Nội dung bản đã ban hành là tài liệu ISO đang có hiệu lực: khoá lại.
+  -- Chỉ áp cho bảng phiên bản; bảng quy_trinh vẫn đổi tên được khi đã ban hành.
+  if tg_table_name = 'quy_trinh_phien_ban'
+     and old.trang_thai in ('published', 'expired') then
+    raise exception 'Không sửa được nội dung bản đã ban hành. Hãy tạo phiên bản mới.';
+  end if;
+
+  return new;
+end $$;
+
+drop trigger if exists qt_tg_trang_thai    on quy_trinh;
+drop trigger if exists qt_pb_tg_trang_thai on quy_trinh_phien_ban;
+create trigger qt_tg_trang_thai    before insert or update on quy_trinh
+  for each row execute function qt_canh_trang_thai();
+create trigger qt_pb_tg_trang_thai before insert or update on quy_trinh_phien_ban
+  for each row execute function qt_canh_trang_thai();
+
 -- ── RPC 1: gửi duyệt (ai đăng nhập cũng gọi được) ──
 create or replace function rpc_qt_gui_duyet(p_phien_ban_id uuid)
 returns void language plpgsql security definer set search_path = public as $$
 begin
+  perform set_config('qt.cho_phep', '1', true);
   update quy_trinh_phien_ban set trang_thai = 'wait'
    where id = p_phien_ban_id and trang_thai = 'draft';
   if not found then raise exception 'Chỉ gửi duyệt được bản đang ở trạng thái nháp'; end if;
@@ -79,6 +129,7 @@ begin
   if coalesce(auth.jwt()->>'nv_role','') <> 'ADMIN' then
     raise exception 'Chỉ Admin được duyệt và ban hành quy trình';
   end if;
+  perform set_config('qt.cho_phep', '1', true);
   update quy_trinh_phien_ban
      set trang_thai = 'draft', ghi_chu_sua_doi = coalesce(p_ly_do, ghi_chu_sua_doi)
    where id = p_phien_ban_id and trang_thai = 'wait';
@@ -93,6 +144,7 @@ begin
   if coalesce(auth.jwt()->>'nv_role','') <> 'ADMIN' then
     raise exception 'Chỉ Admin được duyệt và ban hành quy trình';
   end if;
+  perform set_config('qt.cho_phep', '1', true);
 
   select quy_trinh_id, so_do into v_qt, v_so_do from quy_trinh_phien_ban
    where id = p_phien_ban_id and trang_thai = 'wait';
@@ -129,3 +181,15 @@ revoke all on function rpc_qt_ban_hanh(uuid)       from public, anon;
 grant execute on function rpc_qt_gui_duyet(uuid)     to authenticated;
 grant execute on function rpc_qt_tra_lai(uuid, text) to authenticated;
 grant execute on function rpc_qt_ban_hanh(uuid)      to authenticated;
+
+commit;
+
+-- ------------------------------------------------------------
+-- KIỂM CHỨNG (chạy riêng sau khi Run)
+--   select has_column_privilege('authenticated','quy_trinh_phien_ban','trang_thai','update');
+--     → kỳ vọng false. Nếu true: file lockdown đã chạy đè, phải chạy lại file này.
+--   select tgname from pg_trigger where tgrelid in ('quy_trinh'::regclass,'quy_trinh_phien_ban'::regclass) and not tgisinternal;
+--     → kỳ vọng 2 dòng qt_tg_trang_thai, qt_pb_tg_trang_thai
+--   select policyname from pg_policies where tablename in ('quy_trinh','quy_trinh_phien_ban');
+--     → kỳ vọng 8 dòng qt_*/qtpb_*, TUYỆT ĐỐI không có `auth_all`.
+-- ------------------------------------------------------------
