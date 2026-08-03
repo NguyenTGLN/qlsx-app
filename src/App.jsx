@@ -15,6 +15,7 @@ const WarrantyApp     = lazy(() => import('./pages/warranty/WarrantyApp'));
 const CskhApp         = lazy(() => import('./pages/cskh/CskhApp'));
 const KhoHangApp      = lazy(() => import('./pages/kho/KhoHangApp'));
 const QualityApp      = lazy(() => import('./pages/quality/QualityApp'));
+const QuyTrinhApp     = lazy(() => import('./pages/quy-trinh/QuyTrinhApp'));
 
 // Màn hình chờ trong lúc tải gói của phân hệ
 function ModuleLoader() {
@@ -59,6 +60,7 @@ function App() {
         <Route path="/cskh/*" element={<ProtectedRoute requiredModule="access_cskh"><CskhApp /></ProtectedRoute>} />
         <Route path="/kho/*" element={<ProtectedRoute requiredModule="access_warehouse"><KhoHangApp /></ProtectedRoute>} />
         <Route path="/quality/*" element={<ProtectedRoute requiredModule="access_quality"><QualityApp /></ProtectedRoute>} />
+        <Route path="/quy-trinh/*" element={<ProtectedRoute requiredModule="access_quytrinh"><QuyTrinhApp /></ProtectedRoute>} />
       </Routes>
     </Suspense>
   );

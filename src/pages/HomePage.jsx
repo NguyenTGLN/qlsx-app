@@ -4,10 +4,10 @@ import { useAuth, canSeeModule } from '../lib/AuthContext';
 import {
   BarChart2, ClipboardList, Package, ShieldAlert,
   HeadphonesIcon, Warehouse, ShieldCheck, MonitorPlay,
-  LogOut, ArrowRight, Factory
+  LogOut, ArrowRight, Factory, GitBranch
 } from 'lucide-react';
 
-// ── Cấu hình 8 Phân hệ ──
+// ── Cấu hình 9 Phân hệ ──
 // Thứ tự hiển thị theo ưu tiên vận hành: Kho → Sản xuất → Chất lượng → Bảo hành → CSKH → Công việc → (Tổng quan, TV)
 const MODULES = [
   {
@@ -39,6 +39,16 @@ const MODULES = [
     color: '#16a34a',
     permKey: 'access_quality',
     regModule: 'quality',
+  },
+  {
+    id: 'quy_trinh',
+    label: 'Quy Trình',
+    subtitle: 'Lưu đồ & tài liệu ISO',
+    icon: GitBranch,
+    path: '/quy-trinh',
+    color: '#ea580c',
+    permKey: 'access_quytrinh',
+    regModule: 'quy_trinh',
   },
   {
     id: 'warranty',
