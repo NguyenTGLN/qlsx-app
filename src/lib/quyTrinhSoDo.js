@@ -174,3 +174,32 @@ export function doiCot(soDo, id, cot) {
   if (n) { n.lane = cot; n.dx = 0; }
   return s;
 }
+
+/** Căn giữa khối theo cột và giãn đều trong từng giai đoạn.
+ *  CỐ Ý không đảo thứ tự: người dùng phải đoán được kết quả trước khi bấm. */
+export function tuXepLai(soDo) {
+  const s = sao(soDo);
+  const HO = 44, LE = 28;
+  const nhom = s.phases.map(() => []);
+  for (const n of s.nodes) nhom[phaseOf(soDo, n)].push(n);
+
+  nhom.forEach((g, i) => {
+    g.sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)));
+    const tang = [];
+    for (const n of g) {
+      const t = tang.find(t => Math.abs(t.y - n.y) < HO);
+      if (t) t.items.push(n); else tang.push({ y: n.y, items: [n] });
+    }
+    let cur = LE;
+    for (const t of tang) {
+      const hMax = Math.max(...t.items.map(n => n.h));
+      for (const n of t.items) {
+        n.dx = 0;
+        n.y = phaseTop(s, i) + cur + Math.round((hMax - n.h) / 2);
+      }
+      cur += hMax + HO;
+    }
+    s.phases[i].h = Math.max(s.phases[i].h, cur - HO + LE);
+  });
+  return s;
+}

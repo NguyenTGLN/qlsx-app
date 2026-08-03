@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import { LANE_W, LOAI_KHOI, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi } from './quyTrinhSoDo';
 import { routeEdge } from './quyTrinhSoDo';
 import { themBuoc, xoaKhoi, doiCot, thuTuBuoc } from './quyTrinhSoDo';
+import { tuXepLai } from './quyTrinhSoDo';
 
 const soDo = {
   lanes: [
@@ -231,5 +232,53 @@ describe('xoá khối & đổi cột', () => {
     const s = base();
     s.nodes.push({ id: 'n0', t: 'start', lane: 0, y: 0, dx: 0, w: 164, h: 48, tx: 'Bắt đầu' });
     expect(thuTuBuoc(s)).toEqual(['n1', 'n2']);
+  });
+});
+
+describe('tự xếp lại', () => {
+  const base = () => ({
+    lanes: [{ name: 'A', owner: 'a', color: '#111111' }, { name: 'B', owner: 'b', color: '#222222' }],
+    phases: [{ name: 'G1', h: 300 }, { name: 'G2', h: 300 }],
+    nodes: [
+      { id: 'n1', t: 'step', lane: 0, y: 30,  dx: 37, w: 164, h: 56, tx: 'một',  desc: '', form: '—', time: '—' },
+      { id: 'n2', t: 'step', lane: 1, y: 150, dx: -9, w: 164, h: 56, tx: 'hai',  desc: '', form: '—', time: '—' },
+      { id: 'n3', t: 'step', lane: 0, y: 380, dx: 21, w: 164, h: 56, tx: 'ba',   desc: '', form: '—', time: '—' },
+    ],
+    edges: [],
+  });
+
+  test('mọi khối căn giữa cột — dx về 0', () => {
+    const s = tuXepLai(base());
+    expect(s.nodes.every(n => n.dx === 0)).toBe(true);
+  });
+
+  test('KHÔNG đảo thứ tự trên-dưới đã dựng', () => {
+    const s = tuXepLai(base());
+    const y = id => s.nodes.find(n => n.id === id).y;
+    expect(y('n1')).toBeLessThan(y('n2'));
+    expect(y('n2')).toBeLessThan(y('n3'));
+  });
+
+  test('khối vẫn nằm đúng giai đoạn cũ', () => {
+    const goc = base();
+    const s = tuXepLai(goc);
+    for (const n of s.nodes) {
+      const cu = goc.nodes.find(x => x.id === n.id);
+      expect(phaseOf(s, n)).toBe(phaseOf(goc, cu));
+    }
+  });
+
+  test('hai khối cùng tầm cao được giữ chung một tầng', () => {
+    const g = base();
+    g.nodes[1].y = 34;
+    const s = tuXepLai(g);
+    const n1 = s.nodes.find(n => n.id === 'n1'), n2 = s.nodes.find(n => n.id === 'n2');
+    expect(n1.y).toBe(n2.y);
+  });
+
+  test('BẤT BIẾN — sơ đồ gốc không bị sửa', () => {
+    const g = base(), truoc = JSON.stringify(g);
+    tuXepLai(g);
+    expect(JSON.stringify(g)).toBe(truoc);
   });
 });
