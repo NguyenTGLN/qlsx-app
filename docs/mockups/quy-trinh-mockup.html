@@ -1,0 +1,1656 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phân hệ Quy trình — QLSX v3.0</title>
+
+<style>
+/* ═══════════════════════════════════════════════════════════
+   Token — bám theo hệ màu QLSX hiện có, thêm accent riêng
+   cho phân hệ Quy trình (#ea580c, chưa phân hệ nào dùng).
+   Nền tối làm ấm nhẹ về phía accent thay vì xám trung tính.
+   GIẤY (canvas + bản in) luôn trắng ở cả 2 chế độ — đúng như
+   một tờ tài liệu thật.
+   ═══════════════════════════════════════════════════════════ */
+:root{
+  --ground:#f6f8fb; --surface:#ffffff; --surface-2:#f1f5f9; --surface-3:#e9eef5;
+  --line:#e2e8f0; --line-2:#cbd5e1;
+  --ink:#0f172a; --ink-2:#475569; --ink-3:#748094;
+  --accent:#ea580c; --accent-2:#c2410c; --accent-soft:#fff1e7;
+  --paper:#ffffff; --paper-ink:#0f172a; --paper-line:#dfe6ef; --paper-band:#f7f9fc;
+  --ok:#16a34a; --wait:#2563eb; --draft:#64748b; --dead:#dc2626;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.06);
+  --shadow-md:0 6px 20px -8px rgba(15,23,42,.18);
+  --shadow-lg:0 18px 48px -16px rgba(15,23,42,.32);
+  --font:'Be Vietnam Pro','Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;
+  --mono:'Cascadia Mono',Consolas,'SF Mono',ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#16130f; --surface:#1e1a16; --surface-2:#262019; --surface-3:#2f2820;
+    --line:#352c23; --line-2:#4a3d31;
+    --ink:#f6eee6; --ink-2:#c8b8a7; --ink-3:#9c8b7a;
+    --accent:#fb923c; --accent-2:#fdba74; --accent-soft:#2c1d12;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+    --shadow-md:0 6px 20px -8px rgba(0,0,0,.6);
+    --shadow-lg:0 18px 48px -16px rgba(0,0,0,.75);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#16130f; --surface:#1e1a16; --surface-2:#262019; --surface-3:#2f2820;
+  --line:#352c23; --line-2:#4a3d31;
+  --ink:#f6eee6; --ink-2:#c8b8a7; --ink-3:#9c8b7a;
+  --accent:#fb923c; --accent-2:#fdba74; --accent-soft:#2c1d12;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow-md:0 6px 20px -8px rgba(0,0,0,.6);
+  --shadow-lg:0 18px 48px -16px rgba(0,0,0,.75);
+}
+:root[data-theme="light"]{
+  --ground:#f6f8fb; --surface:#ffffff; --surface-2:#f1f5f9; --surface-3:#e9eef5;
+  --line:#e2e8f0; --line-2:#cbd5e1;
+  --ink:#0f172a; --ink-2:#475569; --ink-3:#748094;
+  --accent:#ea580c; --accent-2:#c2410c; --accent-soft:#fff1e7;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.06);
+  --shadow-md:0 6px 20px -8px rgba(15,23,42,.18);
+  --shadow-lg:0 18px 48px -16px rgba(15,23,42,.32);
+}
+
+*{box-sizing:border-box}
+body{margin:0}
+.app{
+  min-height:100dvh; background:var(--ground); color:var(--ink);
+  font-family:var(--font); font-size:14px; line-height:1.5;
+  display:flex; flex-direction:column;
+}
+button{font-family:inherit; cursor:pointer}
+input,select,textarea{font-family:inherit; font-size:13px; color:var(--ink)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+/* ── Header (sao lại ModuleShell) ─────────────────────────── */
+.head{
+  position:sticky; top:0; z-index:60; background:var(--surface);
+  border-bottom:1px solid var(--line);
+}
+.head-row{
+  display:flex; justify-content:space-between; align-items:center;
+  gap:8px; padding:7px 12px; min-height:48px;
+}
+.head-l,.head-r{display:flex; align-items:center; gap:7px; min-width:0}
+.ghost{
+  display:flex; align-items:center; gap:5px; border:1px solid transparent;
+  background:var(--surface-2); color:var(--ink-2); font-weight:600; font-size:12.5px;
+  padding:6px 9px; border-radius:9px; white-space:nowrap; flex-shrink:0;
+  transition:background .15s,color .15s;
+}
+.ghost:hover{background:var(--surface-3); color:var(--ink)}
+.sep{width:1px; height:20px; background:var(--line); flex-shrink:0}
+.mod-ico{
+  width:27px; height:27px; border-radius:8px; background:var(--accent);
+  display:grid; place-items:center; flex-shrink:0;
+  box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 45%,transparent);
+}
+.mod-ico svg{width:15px; height:15px; stroke:#fff; fill:none; stroke-width:2.2}
+.head h1{margin:0; font-size:14.5px; font-weight:700; letter-spacing:-.01em; white-space:nowrap}
+.badge-mockup{
+  font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--accent); background:var(--accent-soft);
+  border:1px dashed color-mix(in srgb,var(--accent) 45%,transparent);
+  padding:3px 7px; border-radius:6px; flex-shrink:0;
+}
+.avatar{
+  width:29px; height:29px; border-radius:50%; flex-shrink:0;
+  background:linear-gradient(135deg,#2563eb,#0891b2); color:#fff;
+  display:grid; place-items:center; font-weight:700; font-size:12px;
+}
+.tabbar{display:flex; align-items:center; gap:2px; padding:0 10px; overflow-x:auto; scrollbar-width:none}
+.tabbar::-webkit-scrollbar{display:none}
+.tab{
+  padding:9px 12px 10px; background:none; border:none; border-radius:8px 8px 0 0;
+  font-size:12.5px; font-weight:500; color:var(--ink-3);
+  display:flex; align-items:center; gap:6px; flex-shrink:0; white-space:nowrap;
+  transition:color .15s,background .15s;
+}
+.tab:hover{background:var(--surface-2); color:var(--ink-2)}
+.tab.on{color:var(--accent); font-weight:700; background:var(--accent-soft); box-shadow:inset 0 -2px 0 var(--accent)}
+.tab .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+
+/* ── Chung ────────────────────────────────────────────────── */
+main{flex:1; min-height:0; display:flex; flex-direction:column}
+.view{display:none; flex:1; min-height:0; flex-direction:column}
+.view.on{display:flex}
+.pill{
+  display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700;
+  padding:3px 8px; border-radius:999px; white-space:nowrap; letter-spacing:.01em;
+}
+.pill::before{content:''; width:6px; height:6px; border-radius:50%; background:currentColor}
+.pill.ok{color:var(--ok); background:color-mix(in srgb,var(--ok) 13%,transparent)}
+.pill.wait{color:var(--wait); background:color-mix(in srgb,var(--wait) 13%,transparent)}
+.pill.draft{color:var(--draft); background:color-mix(in srgb,var(--draft) 15%,transparent)}
+.pill.dead{color:var(--dead); background:color-mix(in srgb,var(--dead) 12%,transparent)}
+.code{font-family:var(--mono); font-size:11.5px; font-weight:600; letter-spacing:.01em; font-variant-numeric:tabular-nums}
+.btn{
+  display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:9px;
+  font-size:12.5px; font-weight:600; border:1px solid var(--line);
+  background:var(--surface); color:var(--ink-2); transition:all .15s;
+}
+.btn:hover{background:var(--surface-2); color:var(--ink); border-color:var(--line-2)}
+.btn.primary{
+  border:none; background:var(--accent); color:#fff;
+  box-shadow:0 2px 10px color-mix(in srgb,var(--accent) 40%,transparent);
+}
+.btn.primary:hover{background:var(--accent-2); color:#fff}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.btn.sm{padding:5px 9px; font-size:11.5px; border-radius:7px}
+.btn.sm svg{width:12px;height:12px}
+
+/* ── 1. Danh mục quy trình ────────────────────────────────── */
+.list-wrap{flex:1; display:grid; grid-template-columns:224px 1fr; min-height:0}
+.rail{
+  border-right:1px solid var(--line); background:var(--surface);
+  padding:14px 10px; overflow-y:auto;
+}
+.rail h3{
+  margin:0 0 8px 6px; font-size:10.5px; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--ink-3);
+}
+.rail-item{
+  width:100%; display:flex; align-items:center; gap:9px; padding:8px 9px; margin-bottom:2px;
+  border:none; background:none; border-radius:9px; text-align:left;
+  font-size:13px; font-weight:600; color:var(--ink-2); transition:background .15s,color .15s;
+}
+.rail-item:hover{background:var(--surface-2); color:var(--ink)}
+.rail-item.on{background:var(--accent-soft); color:var(--accent)}
+.rail-item .swatch{width:9px; height:9px; border-radius:3px; flex-shrink:0}
+.rail-item .n{margin-left:auto; font-size:11.5px; font-weight:700; color:var(--ink-3); font-variant-numeric:tabular-nums}
+.rail-item.on .n{color:var(--accent)}
+.rail-sub{margin:16px 0 8px 6px}
+
+.list-main{overflow-y:auto; padding:16px 18px 28px}
+.list-top{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px}
+.list-top h2{margin:0; font-size:19px; font-weight:800; letter-spacing:-.02em}
+.list-sub{margin:0 0 16px; font-size:12.5px; color:var(--ink-3)}
+.search{
+  display:flex; align-items:center; gap:7px; padding:7px 11px; border-radius:9px;
+  border:1px solid var(--line); background:var(--surface); min-width:240px; flex:1; max-width:360px;
+}
+.search input{border:none; background:none; outline:none; width:100%; font-size:13px}
+.search svg{width:14px;height:14px;stroke:var(--ink-3);fill:none;stroke-width:2}
+.grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:11px}
+.card{
+  background:var(--surface); border:1px solid var(--line); border-radius:13px;
+  padding:13px 14px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; gap:9px;
+  transition:border-color .18s,box-shadow .18s,transform .18s; cursor:pointer; text-align:left;
+  border-left:3px solid var(--gc,var(--line));
+}
+.card:hover{border-color:var(--line-2); border-left-color:var(--gc); box-shadow:var(--shadow-md); transform:translateY(-2px)}
+.card-top{display:flex; align-items:center; gap:8px; justify-content:space-between}
+.card h4{margin:0; font-size:13.5px; font-weight:700; line-height:1.35; letter-spacing:-.005em}
+.card-meta{display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:11.5px; color:var(--ink-3); font-weight:500}
+.card-meta b{color:var(--ink-2); font-weight:600}
+.card-foot{
+  display:flex; align-items:center; gap:6px; padding-top:9px;
+  border-top:1px solid var(--line); margin-top:1px;
+}
+.ver{
+  font-family:var(--mono); font-size:11px; font-weight:700; color:var(--ink-2);
+  background:var(--surface-2); padding:2px 6px; border-radius:5px;
+}
+
+/* ── 2. Trình vẽ ──────────────────────────────────────────── */
+.ed{flex:1; display:grid; grid-template-columns:184px 1fr 264px; min-height:0}
+.ed-bar{
+  grid-column:1/-1; display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:8px 12px; background:var(--surface); border-bottom:1px solid var(--line);
+}
+.ed-title{display:flex; align-items:center; gap:9px; min-width:0; margin-right:auto}
+.ed-title .code{color:var(--accent); background:var(--accent-soft); padding:3px 7px; border-radius:6px}
+.ed-title strong{font-size:13.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.tgroup{display:flex; gap:2px; padding:2px; background:var(--surface-2); border-radius:9px}
+.tool{
+  display:flex; align-items:center; gap:5px; padding:5px 9px; border:none; background:none;
+  border-radius:7px; font-size:12px; font-weight:600; color:var(--ink-2); transition:all .14s;
+}
+.tool:hover{background:var(--surface); color:var(--ink)}
+.tool.on{background:var(--accent); color:#fff; box-shadow:var(--shadow-sm)}
+.tool svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tool:disabled{opacity:.35; cursor:not-allowed}
+.tool:disabled:hover{background:none; color:var(--ink-2)}
+.zoomv{font-size:11.5px; font-weight:700; color:var(--ink-2); min-width:40px; text-align:center; font-variant-numeric:tabular-nums}
+
+.palette{border-right:1px solid var(--line); background:var(--surface); overflow-y:auto; padding:12px 10px}
+.palette h3{
+  margin:0 0 8px 4px; font-size:10.5px; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--ink-3);
+}
+.palette h3+h3{margin-top:18px}
+.shp{
+  width:100%; display:flex; align-items:center; gap:9px; padding:7px 8px; margin-bottom:3px;
+  border:1px solid transparent; background:none; border-radius:9px; text-align:left;
+  font-size:12.5px; font-weight:600; color:var(--ink-2); transition:all .14s;
+}
+.shp:hover{background:var(--surface-2); border-color:var(--line); color:var(--ink)}
+.shp:active{transform:scale(.98)}
+.shp .g{width:30px; height:22px; flex-shrink:0; display:grid; place-items:center}
+.shp .g i{display:block; width:26px; height:16px; background:var(--sc); position:relative}
+.shp .g i::after{content:''; position:absolute; inset:1.5px; background:var(--surface)}
+.hintbox{
+  margin-top:16px; padding:9px 10px; border-radius:9px; background:var(--surface-2);
+  font-size:11.5px; line-height:1.55; color:var(--ink-3);
+}
+.hintbox b{color:var(--ink-2)}
+kbd{
+  font-family:var(--mono); font-size:10.5px; background:var(--surface); color:var(--ink-2);
+  border:1px solid var(--line-2); border-bottom-width:2px; border-radius:4px; padding:1px 4px;
+}
+
+.cv-scroll{overflow:auto; background:var(--surface-2); position:relative}
+.cv-zoom{transform-origin:0 0; padding:20px; width:max-content}
+.cv{
+  position:relative; background:var(--paper); color:var(--paper-ink);
+  border:1px solid var(--paper-line); border-radius:6px; box-shadow:var(--shadow-md);
+}
+.lane-head{
+  position:absolute; top:0; height:46px; display:grid; place-items:center; padding:0 8px;
+  font-size:12px; font-weight:700; text-align:center; line-height:1.25;
+  border-left:1px solid var(--paper-line); border-bottom:2px solid currentColor;
+  background:color-mix(in srgb,currentColor 8%,#fff);
+}
+.gut-head{
+  position:absolute; left:0; top:0; height:46px; display:grid; place-items:center;
+  font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+  color:#94a3b8; border-bottom:2px solid var(--paper-line); background:var(--paper-band);
+}
+.phase-lbl{
+  position:absolute; left:0; display:grid; place-items:center; padding:0 8px;
+  font-size:11.5px; font-weight:700; color:#475569; text-align:center; line-height:1.3;
+  border-top:1px solid var(--paper-line); background:var(--paper-band);
+}
+.lane-band{position:absolute; top:0; bottom:0; border-left:1px solid var(--paper-line)}
+.lane-band.alt{background:rgba(148,163,184,.045)}
+.phase-line{position:absolute; left:0; right:0; border-top:1px dashed #d6dee9}
+.draw{position:absolute}
+.edges{position:absolute; inset:0; overflow:visible; pointer-events:none}
+.edges path.hit{stroke:transparent; stroke-width:14; fill:none; pointer-events:stroke; cursor:pointer}
+.edges path.wire{fill:none; stroke-width:1.7; stroke-linejoin:round; stroke-linecap:round}
+.edges .elbl{
+  font:700 10.5px var(--font); text-anchor:middle; dominant-baseline:middle;
+  paint-order:stroke; stroke:#fff; stroke-width:4px; stroke-linejoin:round;
+}
+.edges g.sel path.wire{stroke-width:3}
+
+.node{position:absolute; user-select:none; touch-action:none}
+.node .shape{position:absolute; inset:0; background:var(--c)}
+.node .shape-in{position:absolute; inset:2px; background:var(--paper); display:grid; place-items:center; padding:5px 8px}
+.node .tx{
+  font-size:11.5px; font-weight:600; text-align:center; line-height:1.3; color:#0f172a;
+  overflow:hidden; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+}
+.node[data-t="start"] .shape,.node[data-t="start"] .shape-in,
+.node[data-t="end"] .shape,.node[data-t="end"] .shape-in{border-radius:999px}
+.node[data-t="step"] .shape,.node[data-t="check"] .shape{border-radius:9px}
+.node[data-t="step"] .shape-in,.node[data-t="check"] .shape-in{border-radius:7px}
+.node[data-t="dec"] .shape,.node[data-t="dec"] .shape-in{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.node[data-t="dec"] .shape-in{inset:3px}
+.node[data-t="doc"] .shape,.node[data-t="doc"] .shape-in{clip-path:polygon(0 0,100% 0,100% 84%,50% 100%,0 84%)}
+.node[data-t="data"] .shape,.node[data-t="data"] .shape-in{clip-path:polygon(11% 0,100% 0,89% 100%,0 100%)}
+.node .num{
+  position:absolute; left:-8px; top:-8px; width:19px; height:19px; border-radius:50%;
+  background:var(--c); color:#fff; font:800 10.5px var(--mono); display:grid; place-items:center;
+  box-shadow:0 1px 4px rgba(15,23,42,.28); z-index:2;
+}
+.node[data-t="start"] .num,.node[data-t="end"] .num{display:none}
+.node .selbox{
+  position:absolute; inset:-7px; border:1.5px dashed var(--accent); border-radius:4px; display:none;
+}
+.node.sel .selbox{display:block}
+.node .selbox s{position:absolute; width:7px; height:7px; background:#fff; border:1.5px solid var(--accent)}
+.node .selbox s:nth-child(1){left:-4px; top:-4px}
+.node .selbox s:nth-child(2){right:-4px; top:-4px}
+.node .selbox s:nth-child(3){left:-4px; bottom:-4px}
+.node .selbox s:nth-child(4){right:-4px; bottom:-4px}
+.cv.link-mode .node{cursor:crosshair}
+.cv.link-mode .node:hover .shape{background:var(--accent)}
+.node.link-src .shape{background:var(--accent)}
+.node.link-src .shape-in{background:var(--accent-soft)}
+
+/* Tay cầm "+" — cách thêm bước chính, không phải kéo thả từ bảng khối hình */
+.node .addh{
+  position:absolute; width:23px; height:23px; border-radius:50%; padding:0; z-index:5;
+  border:1.5px solid var(--hc,#ea580c); background:#fff; color:var(--hc,#ea580c);
+  font:800 15px/1 var(--font); display:none; place-items:center; box-shadow:0 2px 6px rgba(15,23,42,.2);
+}
+.node.sel .addh{display:grid}
+.node .addh:hover{background:var(--hc,#ea580c); color:#fff; transform:scale(1.12)}
+.node .addh.down{left:50%; margin-left:-11.5px; bottom:-32px}
+.node .addh.left{top:50%; margin-top:-11.5px; left:-32px}
+.node .addh b{
+  position:absolute; font:800 9px var(--font); white-space:nowrap; color:var(--hc,#ea580c);
+  letter-spacing:.04em; pointer-events:none;
+}
+.node .addh.down b{top:25px; left:50%; transform:translateX(-50%)}
+.node .addh.left b{top:25px; left:50%; transform:translateX(-50%)}
+.cv.link-mode .node .addh{display:none}
+
+.pop{
+  position:fixed; z-index:400; width:252px; background:var(--surface); border:1px solid var(--line);
+  border-radius:13px; box-shadow:var(--shadow-lg); padding:12px; display:none;
+}
+.pop.on{display:block}
+.pop h4{margin:0 0 2px; font-size:12.5px; font-weight:800}
+.pop .from{margin:0 0 10px; font-size:11px; color:var(--ink-3); line-height:1.4}
+.pop .fld{margin-bottom:9px}
+.pop .row{display:flex; gap:7px; justify-content:flex-end; margin-top:11px}
+.pop .kinds{display:grid; grid-template-columns:repeat(5,1fr); gap:4px}
+.pop .kinds button{
+  padding:7px 0 5px; border:1px solid var(--line); background:var(--ground); border-radius:8px;
+  display:grid; place-items:center; gap:3px; font-size:8.5px; font-weight:700; color:var(--ink-3);
+}
+.pop .kinds button:hover{border-color:var(--line-2)}
+.pop .kinds button.on{border-color:var(--kc); background:color-mix(in srgb,var(--kc) 12%,transparent); color:var(--kc)}
+.pop .kinds i{display:block; width:19px; height:12px; background:var(--kc)}
+.pop .kinds i::after{content:''; display:block; position:relative; inset:1.5px; width:16px; height:9px; background:var(--ground)}
+
+/* Thanh vai trò + trạng thái ban hành */
+.rolebar{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:7px 12px;
+  background:var(--accent-soft); border-bottom:1px solid var(--line); font-size:12px;
+}
+.rolebar .who{font-weight:700; color:var(--accent)}
+.rolebar .seg{display:flex; gap:2px; padding:2px; background:var(--surface); border-radius:8px; border:1px solid var(--line)}
+.rolebar .seg button{
+  padding:4px 10px; border:none; background:none; border-radius:6px;
+  font-size:11.5px; font-weight:700; color:var(--ink-3);
+}
+.rolebar .seg button.on{background:var(--accent); color:#fff}
+.rolebar .note{color:var(--ink-3); font-size:11.5px}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn:disabled:hover{background:var(--surface); color:var(--ink-2); border-color:var(--line)}
+
+/* Các mục chuẩn ISO trên bản in */
+.iso-grid{display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid #94a3b8; border-bottom:none}
+.iso-grid>div{padding:8px 11px; border-bottom:1px solid #94a3b8; font-size:11px; line-height:1.55; color:#1e293b}
+.iso-grid>div:nth-child(odd){border-right:1px solid #94a3b8}
+.iso-grid b{display:block; font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#475569; margin-bottom:3px}
+.iso-grid ul{margin:0; padding-left:16px}
+.iso-grid li{margin-bottom:1px}
+
+.insp{border-left:1px solid var(--line); background:var(--surface); overflow-y:auto; padding:13px 12px}
+.insp h3{
+  margin:0 0 3px; font-size:10.5px; font-weight:800; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--ink-3);
+}
+.insp .kind{font-size:12px; color:var(--ink-3); margin:0 0 13px}
+.fld{margin-bottom:11px}
+.fld label{display:block; font-size:11px; font-weight:700; color:var(--ink-2); margin-bottom:4px}
+.fld input,.fld select,.fld textarea{
+  width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:8px;
+  background:var(--ground); outline:none; transition:border-color .15s,background .15s;
+}
+.fld input:focus,.fld select:focus,.fld textarea:focus{border-color:var(--accent); background:var(--surface)}
+.fld textarea{resize:vertical; min-height:64px; line-height:1.5}
+.fld .note{font-size:10.5px; color:var(--ink-3); margin-top:4px; line-height:1.45}
+.empty{
+  padding:26px 14px; text-align:center; color:var(--ink-3); font-size:12.5px; line-height:1.6;
+}
+.empty svg{width:34px;height:34px;stroke:var(--line-2);fill:none;stroke-width:1.5; margin-bottom:8px}
+.swatches{display:flex; gap:5px; flex-wrap:wrap}
+.swatches button{width:22px; height:22px; border-radius:6px; border:2px solid transparent; padding:0}
+.swatches button.on{border-color:var(--ink)}
+
+/* ── 3. Bảng diễn giải ────────────────────────────────────── */
+.tbl-wrap{flex:1; overflow:auto; padding:16px 18px 28px}
+.tbl-head{display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:13px}
+.tbl-head h2{margin:0 0 3px; font-size:18px; font-weight:800; letter-spacing:-.02em}
+.tbl-head p{margin:0; font-size:12.5px; color:var(--ink-3); max-width:62ch}
+.tblbox{
+  background:var(--surface); border:1px solid var(--line); border-radius:12px;
+  overflow:auto; box-shadow:var(--shadow-sm);
+}
+table{border-collapse:collapse; width:100%; min-width:900px; font-size:12.5px}
+thead th{
+  position:sticky; top:0; background:var(--surface-2); z-index:1;
+  text-align:left; font-size:10.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+  color:var(--ink-3); padding:10px; border-bottom:1px solid var(--line); white-space:nowrap;
+}
+tbody td{padding:10px; border-bottom:1px solid var(--line); vertical-align:top; line-height:1.55}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--surface-2)}
+td.step{white-space:nowrap; font-weight:700}
+td.step .sq{
+  display:inline-grid; place-items:center; width:20px; height:20px; border-radius:5px;
+  background:var(--c); color:#fff; font:800 10.5px var(--mono); margin-right:7px; vertical-align:-4px;
+}
+td.who{white-space:nowrap; font-weight:600; color:var(--ink-2)}
+td.form{font-size:11.5px; color:var(--ink-2)}
+td.form span{
+  display:inline-block; background:var(--surface-2); border:1px solid var(--line);
+  border-radius:5px; padding:2px 6px; margin:1px 3px 1px 0; font-family:var(--mono); font-size:10.5px;
+}
+tr.br-ok td.step{box-shadow:inset 3px 0 0 var(--ok)}
+tr.br-ng td.step{box-shadow:inset 3px 0 0 var(--dead)}
+.brtag{font-size:10px; font-weight:800; padding:1px 5px; border-radius:4px; margin-left:6px}
+.brtag.ok{color:var(--ok); background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.brtag.ng{color:var(--dead); background:color-mix(in srgb,var(--dead) 12%,transparent)}
+
+/* ── 4. Xem trước & Xuất ──────────────────────────────────── */
+.pv-wrap{flex:1; overflow:auto; background:var(--surface-2); padding:18px}
+.pv-bar{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 auto 16px; max-width:1240px;
+  padding:10px 12px; background:var(--surface); border:1px solid var(--line);
+  border-radius:11px; box-shadow:var(--shadow-sm);
+}
+.pv-bar .lbl{font-size:12.5px; font-weight:700; margin-right:auto}
+.pv-bar .lbl small{display:block; font-weight:500; font-size:11px; color:var(--ink-3)}
+.paper{
+  width:1240px; margin:0 auto; background:var(--paper); color:var(--paper-ink);
+  border:1px solid var(--paper-line); border-radius:4px; box-shadow:var(--shadow-lg);
+  padding:26px 30px 30px;
+}
+.doc-ctl{display:grid; grid-template-columns:150px 1fr 250px; border:1.5px solid #334155}
+.doc-ctl>div{padding:8px 11px; border-right:1px solid #334155}
+.doc-ctl>div:last-child{border-right:none}
+.doc-brand{display:flex; flex-direction:column; justify-content:center; gap:2px; text-align:center}
+.doc-brand b{font-size:15px; font-weight:800; letter-spacing:.02em; color:#0f172a}
+.doc-brand span{font-size:9.5px; color:#64748b; font-weight:600; letter-spacing:.03em}
+.doc-name{display:flex; flex-direction:column; justify-content:center; align-items:center; gap:4px; text-align:center}
+.doc-name b{font-size:16px; font-weight:800; letter-spacing:.01em; text-transform:uppercase}
+.doc-name span{font-size:11px; color:#475569; font-weight:600}
+.doc-fields{display:grid; grid-template-columns:1fr 1fr; gap:0 8px; font-size:10.5px; padding:0!important}
+.doc-fields div{padding:4px 9px; border-bottom:1px solid #cbd5e1; display:flex; justify-content:space-between; gap:6px}
+.doc-fields div:nth-child(odd){border-right:1px solid #cbd5e1}
+.doc-fields div:nth-last-child(-n+2){border-bottom:none}
+.doc-fields b{font-family:var(--mono); font-weight:700; font-variant-numeric:tabular-nums}
+.doc-sign{display:grid; grid-template-columns:repeat(3,1fr); border:1.5px solid #334155; border-top:none}
+.doc-sign>div{padding:7px 11px 30px; border-right:1px solid #334155; text-align:center}
+.doc-sign>div:last-child{border-right:none}
+.doc-sign b{display:block; font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#475569}
+.doc-sign span{display:block; font-size:11.5px; font-weight:600; margin-top:2px}
+.sec-h{
+  margin:20px 0 11px; font-size:13px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+  color:#0f172a; padding-bottom:5px; border-bottom:2px solid #334155;
+}
+.pv-flow{overflow:hidden; display:flex; justify-content:center}
+.pv-flow .cv{box-shadow:none; border:none; border-radius:0}
+.ptbl{width:100%; border-collapse:collapse; font-size:11px; min-width:0}
+.ptbl th{
+  background:#eef2f7; color:#334155; text-align:left; padding:6px 8px;
+  border:1px solid #94a3b8; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+}
+.ptbl td{padding:6px 8px; border:1px solid #cbd5e1; vertical-align:top; line-height:1.5; color:#1e293b}
+.ptbl td.c{text-align:center; font-weight:700; font-family:var(--mono)}
+.ptbl tr.br-ok td.c{background:#eafaf0}
+.ptbl tr.br-ng td.c{background:#fdeeee}
+
+/* ── Modal ────────────────────────────────────────────────── */
+.mask{
+  position:fixed; inset:0; z-index:200; background:rgba(15,23,42,.45);
+  backdrop-filter:blur(3px); display:none; place-items:center; padding:18px;
+}
+.mask.on{display:grid}
+.modal{
+  width:min(560px,100%); max-height:88dvh; overflow-y:auto; background:var(--surface);
+  border-radius:16px; box-shadow:var(--shadow-lg); border:1px solid var(--line);
+}
+.modal-h{display:flex; align-items:center; gap:10px; padding:15px 17px; border-bottom:1px solid var(--line)}
+.modal-h h2{margin:0; font-size:15.5px; font-weight:800; letter-spacing:-.01em}
+.modal-h p{margin:2px 0 0; font-size:12px; color:var(--ink-3)}
+.modal-b{padding:15px 17px}
+.modal-f{display:flex; justify-content:flex-end; gap:8px; padding:13px 17px; border-top:1px solid var(--line)}
+.x{margin-left:auto; border:none; background:var(--surface-2); color:var(--ink-2); width:28px; height:28px; border-radius:8px; display:grid; place-items:center; font-size:16px; line-height:1}
+.x:hover{background:var(--surface-3); color:var(--ink)}
+.row2{display:grid; grid-template-columns:1fr 1fr; gap:11px}
+.startpick{display:grid; gap:7px}
+.startpick label{
+  display:flex; gap:10px; align-items:flex-start; padding:10px 11px; border:1px solid var(--line);
+  border-radius:10px; background:var(--ground); transition:all .15s;
+}
+.startpick label:hover{border-color:var(--line-2)}
+.startpick label:has(input:checked){border-color:var(--accent); background:var(--accent-soft)}
+.startpick input{margin:2px 0 0; accent-color:var(--accent)}
+.startpick b{display:block; font-size:12.5px; font-weight:700}
+.startpick small{display:block; font-size:11px; color:var(--ink-3); line-height:1.45; margin-top:1px}
+
+/* ── Toast ────────────────────────────────────────────────── */
+.toasts{position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:300; display:flex; flex-direction:column; gap:7px; align-items:center; pointer-events:none}
+.toast{
+  background:var(--ink); color:var(--ground); font-size:12.5px; font-weight:600;
+  padding:9px 14px; border-radius:10px; box-shadow:var(--shadow-lg);
+  animation:tin .22s ease-out; max-width:min(440px,90vw); line-height:1.45;
+}
+@keyframes tin{from{opacity:0; transform:translateY(8px)}}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important; animation:none!important}
+  .card:hover{transform:none}
+}
+@media (max-width:1180px){
+  .ed{grid-template-columns:160px 1fr 240px}
+}
+@media (max-width:900px){
+  .list-wrap{grid-template-columns:1fr}
+  .rail{display:none}
+  .ed{grid-template-columns:1fr}
+  .palette,.insp{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ═══════ Header ═══════ -->
+  <header class="head">
+    <div class="head-row">
+      <div class="head-l">
+        <button class="ghost" title="Trang chủ ứng dụng">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 22V12h6v10"/></svg>
+        </button>
+        <div class="sep"></div>
+        <div class="mod-ico">
+          <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="5" rx="1"/><rect x="14" y="16" width="7" height="5" rx="1"/><path d="M6.5 8v6a2 2 0 002 2h5.5"/><path d="M17.5 16v-3a2 2 0 00-2-2H10"/></svg>
+        </div>
+        <h1>Quy Trình</h1>
+        <span class="badge-mockup">Mockup</span>
+      </div>
+      <div class="head-r">
+        <button class="ghost" id="themeBtn" title="Đổi nền sáng/tối">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <div class="avatar">N</div>
+      </div>
+    </div>
+    <nav class="tabbar">
+      <button class="tab on" data-view="list"><span class="dot"></span>Danh mục quy trình</button>
+      <button class="tab" data-view="editor"><span class="dot"></span>Trình vẽ lưu đồ</button>
+      <button class="tab" data-view="table"><span class="dot"></span>Bảng diễn giải</button>
+      <button class="tab" data-view="print"><span class="dot"></span>Xem trước &amp; Xuất</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ═══════ 1. DANH MỤC ═══════ -->
+    <section class="view on" id="v-list">
+      <div class="list-wrap">
+        <aside class="rail">
+          <h3>Nhóm bộ phận</h3>
+          <div id="railGroups"></div>
+          <h3 class="rail-sub">Trạng thái</h3>
+          <div id="railStatus"></div>
+        </aside>
+        <div class="list-main">
+          <div class="list-top">
+            <h2 id="listTitle">Tất cả quy trình</h2>
+            <span class="pill draft" id="listCount">15 quy trình</span>
+          </div>
+          <p class="list-sub">Quy trình đã ban hành là bản có hiệu lực để in và dán tại nơi làm việc. Bản nháp và bản chờ duyệt không xuất được tài liệu chính thức.</p>
+          <div class="list-top" style="margin-bottom:14px">
+            <div class="search">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input type="text" id="q" placeholder="Tìm theo tên hoặc mã quy trình…">
+            </div>
+            <button class="btn sm"><svg viewBox="0 0 24 24"><path d="M3 6h18M7 12h10M11 18h2"/></svg>Sắp xếp</button>
+            <button class="btn primary" id="btnNew">
+              <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Tạo quy trình mới
+            </button>
+          </div>
+          <div class="grid" id="grid"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ 2. TRÌNH VẼ ═══════ -->
+    <section class="view" id="v-editor">
+      <div class="rolebar">
+        <span>Đang xem với vai trò</span>
+        <span class="seg" id="roleSeg">
+          <button data-role="admin" class="on">Admin</button>
+          <button data-role="staff">Nhân viên</button>
+        </span>
+        <span class="note" id="roleNote">Admin là người duy nhất được duyệt và ban hành.</span>
+      </div>
+      <div class="ed">
+        <div class="ed-bar">
+          <div class="ed-title">
+            <span class="code">QT-SX-01</span>
+            <strong>Sản xuất &amp; kiểm soát chất lượng máy lọc nước RO</strong>
+            <span class="ver" id="edVer">v2.2</span>
+            <span class="pill draft" id="edStatus">Bản nháp</span>
+          </div>
+          <div class="tgroup">
+            <button class="tool on" id="tSelect"><svg viewBox="0 0 24 24"><path d="M4 3l7 17 2.5-6.5L20 11z"/></svg>Chọn</button>
+            <button class="tool" id="tLink"><svg viewBox="0 0 24 24"><path d="M5 5v8a3 3 0 003 3h9"/><path d="M14 13l3 3-3 3"/></svg>Nối</button>
+          </div>
+          <div class="tgroup">
+            <button class="tool" id="tCol"><svg viewBox="0 0 24 24"><path d="M4 4v16M12 4v16M20 9v6"/><path d="M17 12h6"/></svg>Thêm cột</button>
+            <button class="tool" id="tRow"><svg viewBox="0 0 24 24"><path d="M4 4h16M4 12h16M9 20h6"/><path d="M12 17v6"/></svg>Thêm hàng</button>
+            <button class="tool" id="tTidy"><svg viewBox="0 0 24 24"><path d="M4 6h7M4 12h11M4 18h7"/><path d="M18 4v16M15 17l3 3 3-3"/></svg>Tự xếp lại</button>
+          </div>
+          <div class="tgroup">
+            <button class="tool" id="tUndo"><svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5"/><path d="M4 12h11a5 5 0 010 10h-3"/></svg>Hoàn tác</button>
+            <button class="tool" id="tRedo"><svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5"/><path d="M20 12H9a5 5 0 000 10h3"/></svg>Làm lại</button>
+            <button class="tool" id="tDel"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>Xóa</button>
+          </div>
+          <div class="tgroup">
+            <button class="tool" id="tOut"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+            <span class="zoomv" id="zoomV">100%</span>
+            <button class="tool" id="tIn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          </div>
+          <button class="btn" id="btnSave">
+            <svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>Lưu nháp
+          </button>
+          <button class="btn" id="btnSubmit">
+            <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>Gửi duyệt
+          </button>
+          <button class="btn primary" id="btnPublish">
+            <svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>Ban hành
+          </button>
+        </div>
+
+        <aside class="palette">
+          <h3>Cách vẽ</h3>
+          <div class="hintbox" style="border-left:3px solid var(--accent)">
+            Bấm một khối → hiện nút <b>＋</b> ngay dưới nó → chọn loại khối và cột.<br><br>
+            Bước mới <b>tự đặt đúng chỗ và tự nối</b> vào khối cũ. Không phải kéo, không phải canh hàng.<br><br>
+            Khối <b>Quyết định</b> có hai nút ＋: nhánh <b style="color:#16a34a">OK</b> đi xuống, nhánh <b style="color:#dc2626">NG</b> rẽ trái.
+          </div>
+          <h3>Thêm khối rời</h3>
+          <div id="shapes"></div>
+          <div class="hintbox">
+            Chỉ dùng khi cần một khối <b>không nối tiếp</b> khối nào. Bình thường hãy dùng nút <b>＋</b>.
+          </div>
+          <h3>Vòng lặp quay lại</h3>
+          <div class="hintbox">
+            Bấm <b>Nối</b> → chọn khối nguồn → chọn khối đích, dùng cho mũi tên <b>quay ngược lên</b> (làm lại, bổ sung).
+          </div>
+          <h3>Phím tắt</h3>
+          <div class="hintbox">
+            <kbd>Del</kbd> xóa khối đang chọn<br>
+            <kbd>Ctrl</kbd>+<kbd>Z</kbd> hoàn tác<br>
+            <kbd>Esc</kbd> bỏ chọn / đóng bảng chọn<br>
+            Kéo khối sang cột khác → <b>Người thực hiện tự đổi theo cột</b>.
+          </div>
+        </aside>
+
+        <div class="cv-scroll" id="cvScroll">
+          <div class="cv-zoom" id="cvZoom"><div class="cv" id="cv"></div></div>
+        </div>
+
+        <aside class="insp" id="insp"></aside>
+      </div>
+    </section>
+
+    <!-- ═══════ 3. BẢNG DIỄN GIẢI ═══════ -->
+    <section class="view" id="v-table">
+      <div class="tbl-wrap">
+        <div class="tbl-head">
+          <div style="flex:1; min-width:280px">
+            <h2>II. Diễn giải lưu đồ</h2>
+            <p>Bảng này sinh thẳng từ lưu đồ — thêm một khối ở trình vẽ là có ngay một dòng ở đây. Sửa ở bảng cũng ghi ngược lại vào khối tương ứng.</p>
+          </div>
+          <button class="btn sm" id="btnGoEdit"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>Mở trình vẽ</button>
+        </div>
+        <div class="tblbox">
+          <table>
+            <thead><tr>
+              <th style="width:190px">Bước</th>
+              <th style="width:130px">Người thực hiện</th>
+              <th>Diễn giải chi tiết</th>
+              <th style="width:180px">Hồ sơ / Biểu mẫu</th>
+              <th style="width:78px">Thời gian</th>
+            </tr></thead>
+            <tbody id="tblBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════ 4. XEM TRƯỚC & XUẤT ═══════ -->
+    <section class="view" id="v-print">
+      <div class="pv-wrap">
+        <div class="pv-bar">
+          <span class="lbl">Bản in khổ A3 ngang<small>Lưu đồ + bảng diễn giải + khối kiểm soát tài liệu ISO</small></span>
+          <button class="btn sm" data-export="PNG"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>Xuất PNG dán xưởng</button>
+          <button class="btn sm" data-export="PDF"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>Xuất PDF A3</button>
+          <button class="btn sm" data-export="Word"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>Xuất Word A3</button>
+          <button class="btn primary sm" data-export="in"><svg viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 18H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/></svg>In ngay</button>
+        </div>
+
+        <div class="paper">
+          <div class="doc-ctl">
+            <div class="doc-brand">
+              <b>EUROMADE</b>
+              <span>CÔNG TY TNHH EUROMADE VIỆT NAM</span>
+            </div>
+            <div class="doc-name">
+              <b>Quy trình sản xuất &amp; kiểm soát chất lượng máy lọc nước RO</b>
+              <span>Process for RO water purifier production &amp; quality control</span>
+            </div>
+            <div class="doc-fields">
+              <div>Mã số: <b>QT-SX-01</b></div>
+              <div>Lần ban hành: <b>02</b></div>
+              <div>Ngày hiệu lực: <b>01/03/2026</b></div>
+              <div>Phiên bản: <b>2.1</b></div>
+              <div>Trang: <b>1/1</b></div>
+              <div>Khổ giấy: <b>A3</b></div>
+            </div>
+          </div>
+          <div class="doc-sign">
+            <div><b>Người lập</b><span>Đỗ Hương Nguyên</span></div>
+            <div><b>Người kiểm tra</b><span>Trưởng phòng QA</span></div>
+            <div><b>Người duyệt</b><span>Giám đốc Nhà máy</span></div>
+          </div>
+
+          <h3 class="sec-h">1–4. Mục đích · Phạm vi · Tài liệu viện dẫn · Định nghĩa</h3>
+          <div class="iso-grid">
+            <div><b>1. Mục đích</b>Quy định trình tự và trách nhiệm trong việc sản xuất và kiểm soát chất lượng máy lọc nước RO, nhằm bảo đảm sản phẩm xuất xưởng đạt yêu cầu kỹ thuật và truy xuất được khi có khiếu nại bảo hành.</div>
+            <div><b>2. Phạm vi áp dụng</b>Áp dụng cho toàn bộ hoạt động sản xuất máy lọc nước RO tại nhà máy, từ khi tiếp nhận đơn hàng đến khi nhập kho thành phẩm. Áp dụng cho các bộ phận: Kinh doanh, Kế hoạch SX, Kho, Sản xuất, QC.</div>
+            <div><b>3. Tài liệu viện dẫn</b>
+              <ul>
+                <li>ISO 9001:2015 — điều khoản 8.5 Sản xuất và cung cấp dịch vụ</li>
+                <li>QT-CL-01 — Kiểm tra QC đầu vào nguyên vật liệu</li>
+                <li>QT-KH-02 — Xuất kho theo phiếu lệnh sản xuất</li>
+                <li>Bảng tiêu chuẩn thao tác (TCTT) từng công đoạn</li>
+              </ul></div>
+            <div><b>4. Định nghĩa &amp; từ viết tắt</b>
+              <ul>
+                <li><b style="display:inline">BOM</b> — Định mức nguyên vật liệu cho một sản phẩm</li>
+                <li><b style="display:inline">DKSX</b> — Đăng ký nhu cầu sản xuất</li>
+                <li><b style="display:inline">PSX</b> — Phiếu lệnh sản xuất</li>
+                <li><b style="display:inline">TCTT</b> — Bảng tiêu chuẩn thao tác</li>
+                <li><b style="display:inline">NG</b> — Sản phẩm không đạt yêu cầu (No Good)</li>
+              </ul></div>
+          </div>
+
+          <h3 class="sec-h">5. Lưu đồ quy trình</h3>
+          <div class="pv-flow"><div id="pvZoom" style="transform-origin:0 0"><div class="cv" id="pvCv"></div></div></div>
+
+          <h3 class="sec-h">6. Diễn giải lưu đồ</h3>
+          <table class="ptbl">
+            <thead><tr>
+              <th style="width:34px">Bước</th>
+              <th style="width:210px">Nội dung</th>
+              <th style="width:110px">Người thực hiện</th>
+              <th>Diễn giải chi tiết</th>
+              <th style="width:160px">Hồ sơ / Biểu mẫu</th>
+            </tr></thead>
+            <tbody id="pvBody"></tbody>
+          </table>
+
+          <h3 class="sec-h">7. Hồ sơ lưu</h3>
+          <table class="ptbl">
+            <thead><tr>
+              <th style="width:34px">TT</th><th style="width:230px">Tên hồ sơ</th>
+              <th style="width:130px">Bộ phận lưu</th><th style="width:120px">Thời gian lưu</th><th>Hình thức lưu</th>
+            </tr></thead>
+            <tbody>
+              <tr><td class="c">1</td><td>Đăng ký nhu cầu sản xuất (DKSX)</td><td>P. Kế hoạch</td><td>24 tháng</td><td>Bản mềm trên phần mềm QLSX</td></tr>
+              <tr><td class="c">2</td><td>Phiếu lệnh sản xuất (PSX)</td><td>Kho</td><td>24 tháng</td><td>Bản cứng có ký giao nhận + bản mềm</td></tr>
+              <tr><td class="c">3</td><td>Biên bản kiểm tra QC cuối chuyền</td><td>P. QA</td><td>24 tháng</td><td>Bản mềm kèm ảnh chụp</td></tr>
+              <tr><td class="c">4</td><td>Phiếu xử lý hàng NG</td><td>P. QA</td><td>24 tháng</td><td>Bản mềm trên phân hệ Chất lượng SP</td></tr>
+              <tr><td class="c">5</td><td>Phiếu nhập kho thành phẩm</td><td>Kho</td><td>24 tháng</td><td>Bản cứng + bản mềm</td></tr>
+            </tbody>
+          </table>
+
+          <h3 class="sec-h">8. Theo dõi sửa đổi tài liệu</h3>
+          <table class="ptbl">
+            <thead><tr>
+              <th style="width:60px">Lần sửa</th><th style="width:90px">Ngày</th>
+              <th style="width:80px">Phiên bản</th><th>Nội dung sửa đổi</th><th style="width:130px">Người sửa</th>
+            </tr></thead>
+            <tbody>
+              <tr><td class="c">00</td><td class="c">10/06/2025</td><td class="c">1.0</td><td>Ban hành lần đầu.</td><td>Đỗ Hương Nguyên</td></tr>
+              <tr><td class="c">01</td><td class="c">05/11/2025</td><td class="c">2.0</td><td>Bổ sung nhánh xử lý hàng NG và vòng quay lại bước lắp ráp. Tách bước kiểm tra tồn nguyên vật liệu thành bước riêng.</td><td>Trưởng phòng QA</td></tr>
+              <tr><td class="c">02</td><td class="c">01/03/2026</td><td class="c">2.1</td><td>Thêm bước đề xuất đặt hàng khi thiếu vật tư. Cập nhật thời gian chuẩn của bước kiểm tra QC cuối chuyền từ 15 phút xuống 10 phút/máy.</td><td>Đỗ Hương Nguyên</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ═══════ Modal: Tạo quy trình mới ═══════ -->
+<div class="mask" id="mask">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="modal-h">
+      <div>
+        <h2 id="mTitle">Tạo quy trình mới</h2>
+        <p>Mã số sinh tự động theo nhóm bộ phận bạn chọn.</p>
+      </div>
+      <button class="x" id="mX" aria-label="Đóng">×</button>
+    </div>
+    <div class="modal-b">
+      <div class="fld">
+        <label for="mName">Tên quy trình</label>
+        <input id="mName" type="text" placeholder="VD: Quy trình kiểm tra QC đầu vào nguyên vật liệu">
+      </div>
+      <div class="row2">
+        <div class="fld">
+          <label for="mGroup">Nhóm bộ phận</label>
+          <select id="mGroup">
+            <option value="SX">Sản xuất</option>
+            <option value="CL">Chất lượng</option>
+            <option value="KH">Kho hàng</option>
+            <option value="CS">CSKH</option>
+            <option value="BH">Bảo hành</option>
+            <option value="HC">Nhân sự – Hành chính</option>
+          </select>
+        </div>
+        <div class="fld">
+          <label for="mCode">Mã số</label>
+          <input id="mCode" type="text" value="QT-SX-05" readonly style="font-family:var(--mono); font-weight:700">
+        </div>
+      </div>
+      <div class="fld">
+        <label>Bắt đầu từ</label>
+        <div class="startpick">
+          <label><input type="radio" name="st" checked><span><b>Mẫu swimlane chuẩn ISO</b><small>Sẵn 5 cột bộ phận, 4 hàng giai đoạn, khối Bắt đầu – Kết thúc. Vẽ tiếp là xong.</small></span></label>
+          <label><input type="radio" name="st"><span><b>Trang trắng</b><small>Tự dựng cột, hàng và khối từ đầu.</small></span></label>
+          <label><input type="radio" name="st"><span><b>Nhân bản quy trình có sẵn</b><small>Sao chép toàn bộ lưu đồ và bảng diễn giải của một quy trình khác rồi sửa lại.</small></span></label>
+        </div>
+      </div>
+      <div class="fld" style="margin-bottom:0">
+        <label for="mOwner">Người soạn</label>
+        <input id="mOwner" type="text" value="Đỗ Hương Nguyên" readonly>
+        <p class="note">Quy trình mới luôn ở trạng thái <b>Bản nháp</b>. Chỉ khi người có quyền duyệt bấm ban hành thì bản in mới mang dấu hiệu lực.</p>
+      </div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" id="mCancel">Hủy</button>
+      <button class="btn primary" id="mOk">Tạo &amp; mở trình vẽ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ Bảng chọn khi bấm nút ＋ ═══════ -->
+<div class="pop" id="pop" role="dialog" aria-label="Thêm bước tiếp theo">
+  <h4 id="popTitle">Thêm bước tiếp theo</h4>
+  <p class="from" id="popFrom"></p>
+  <div class="fld">
+    <label for="popName" style="display:block;font-size:11px;font-weight:700;color:var(--ink-2);margin-bottom:4px">Tên bước</label>
+    <input id="popName" type="text" placeholder="VD: Kiểm tra kích thước vỏ máy"
+      style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--ground);outline:none">
+  </div>
+  <div class="fld">
+    <label style="display:block;font-size:11px;font-weight:700;color:var(--ink-2);margin-bottom:4px">Loại khối</label>
+    <div class="kinds" id="popKinds"></div>
+  </div>
+  <div class="fld">
+    <label for="popLane" style="display:block;font-size:11px;font-weight:700;color:var(--ink-2);margin-bottom:4px">Cột — bộ phận làm bước này</label>
+    <select id="popLane" style="width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--ground);outline:none"></select>
+  </div>
+  <div class="row">
+    <button class="btn sm" id="popCancel">Hủy</button>
+    <button class="btn primary sm" id="popAdd">Thêm bước</button>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ══════════════════════════════════════════════════════════════
+   MÔ HÌNH DỮ LIỆU
+   lanes  = cột  (bộ phận)   phases = hàng (giai đoạn)
+   nodes  = khối bước        edges  = đường nối
+   ══════════════════════════════════════════════════════════════ */
+const GUT = 112, LANE_W = 212, HEAD_H = 46;
+
+const S = {
+  lanes: [
+    { name:'Kinh doanh',    owner:'NV Kinh doanh', color:'#2563eb' },
+    { name:'Kế hoạch SX',   owner:'NV Kế hoạch',   color:'#7c3aed' },
+    { name:'Kho',           owner:'Thủ kho',       color:'#0d9488' },
+    { name:'Sản xuất',      owner:'Tổ trưởng SX',  color:'#0891b2' },
+    { name:'QC',            owner:'NV QC',         color:'#16a34a' },
+  ],
+  phases: [
+    { name:'Tiếp nhận đơn hàng', h:130 },
+    { name:'Chuẩn bị vật tư',    h:290 },
+    { name:'Sản xuất & kiểm soát', h:300 },
+    { name:'Hoàn tất & lưu hồ sơ', h:200 },
+  ],
+  nodes: [
+    { id:'n1',  t:'start', lane:0, y:38,  w:164, h:48, tx:'Nhận đơn hàng',
+      desc:'Tiếp nhận đơn đặt hàng của khách, xác nhận model, số lượng và ngày giao.', form:'Đơn đặt hàng', time:'—' },
+    { id:'n2',  t:'step',  lane:1, y:34,  w:164, h:56, tx:'Lập kế hoạch sản xuất (DKSX)',
+      desc:'Cân đối đơn hàng với năng lực sản xuất, lên DKSX theo tuần và chốt ngày vào chuyền.', form:'DKSX', time:'0,5 ngày' },
+    { id:'n3',  t:'step',  lane:2, y:160, w:164, h:56, tx:'Kiểm tra tồn nguyên vật liệu',
+      desc:'Đối chiếu định mức BOM với tồn kho thực tế theo từng vị trí, kể cả hàng đang trên đường về.', form:'BOM · Tồn kho theo vị trí', time:'2 giờ' },
+    { id:'n4',  t:'dec',   lane:2, y:250, w:150, h:86, tx:'Đủ vật tư?',
+      desc:'Đủ toàn bộ mã trong BOM thì cho xuất kho. Thiếu bất kỳ mã nào cũng phải quay lại bước đề xuất đặt hàng.', form:'—', time:'—' },
+    { id:'n5',  t:'step',  lane:1, y:265, w:164, h:56, tx:'Đề xuất đặt hàng (DLK)',
+      desc:'Lập đề xuất mua cho phần thiếu, ghi rõ ngày cần về để không trễ ngày vào chuyền.', form:'Đề xuất đặt hàng', time:'0,5 ngày' },
+    { id:'n6',  t:'step',  lane:2, y:346, w:164, h:56, tx:'Xuất kho theo BOM (PSX)',
+      desc:'In phiếu lệnh sản xuất, soạn hàng theo đúng vị trí, ký giao nhận với tổ sản xuất.', form:'Phiếu lệnh SX (PSX)', time:'3 giờ' },
+    { id:'n7',  t:'step',  lane:3, y:468, w:164, h:56, tx:'Lắp ráp theo TCTT',
+      desc:'Lắp ráp đúng bảng tiêu chuẩn thao tác dán tại trạm. Ghi nhận sản lượng từng công đoạn vào app.', form:'TCTT · Nhật ký SX', time:'Theo lệnh' },
+    { id:'n8',  t:'check', lane:4, y:468, w:164, h:56, tx:'Kiểm tra QC cuối chuyền',
+      desc:'Kiểm áp, kiểm rò rỉ, đo TDS nước sau lọc, kiểm ngoại quan và tem nhãn.', form:'Biên bản QC', time:'10 phút/máy' },
+    { id:'n9',  t:'dec',   lane:4, y:564, w:150, h:86, tx:'Đạt?',
+      desc:'Đạt toàn bộ hạng mục QC thì cho nhập kho thành phẩm. Không đạt thì chuyển lại sản xuất xử lý.', form:'—', time:'—' },
+    { id:'n10', t:'step',  lane:3, y:579, w:164, h:56, tx:'Xử lý / tái chế hàng NG',
+      desc:'Xác định nguyên nhân, sửa lại và ghi nhận lỗi vào phân hệ Chất lượng SP để theo dõi tái diễn.', form:'Phiếu xử lý NG', time:'Tùy lỗi' },
+    { id:'n11', t:'doc',   lane:2, y:748, w:164, h:56, tx:'Nhập kho thành phẩm',
+      desc:'Nhập kho theo vị trí, dán tem truy xuất, cập nhật tồn kho thành phẩm trên app.', form:'Phiếu nhập kho', time:'1 giờ' },
+    { id:'n12', t:'end',   lane:2, y:838, w:164, h:48, tx:'Kết thúc — lưu hồ sơ',
+      desc:'Lưu toàn bộ hồ sơ lô sản xuất tối thiểu 24 tháng phục vụ truy xuất bảo hành.', form:'Hồ sơ lô SX', time:'—' },
+  ],
+  edges: [
+    { id:'e1',  a:'n1', b:'n2',  lbl:'',        k:'n' },
+    { id:'e2',  a:'n2', b:'n3',  lbl:'',        k:'n' },
+    { id:'e3',  a:'n3', b:'n4',  lbl:'',        k:'n' },
+    { id:'e4',  a:'n4', b:'n5',  lbl:'Thiếu',   k:'ng' },
+    { id:'e5',  a:'n5', b:'n3',  lbl:'Bổ sung', k:'ng' },
+    { id:'e6',  a:'n4', b:'n6',  lbl:'Đủ',      k:'ok' },
+    { id:'e7',  a:'n6', b:'n7',  lbl:'',        k:'n' },
+    { id:'e8',  a:'n7', b:'n8',  lbl:'',        k:'n' },
+    { id:'e9',  a:'n8', b:'n9',  lbl:'',        k:'n' },
+    { id:'e10', a:'n9', b:'n10', lbl:'NG',      k:'ng' },
+    { id:'e11', a:'n10',b:'n7',  lbl:'Làm lại', k:'ng' },
+    { id:'e12', a:'n9', b:'n11', lbl:'OK',      k:'ok' },
+    { id:'e13', a:'n11',b:'n12', lbl:'',        k:'n' },
+  ],
+};
+
+const TYPES = {
+  start: { label:'Bắt đầu',   color:'#16a34a', w:164, h:48 },
+  end:   { label:'Kết thúc',  color:'#475569', w:164, h:48 },
+  step:  { label:'Thao tác',  color:'#2563eb', w:164, h:56 },
+  dec:   { label:'Quyết định',color:'#d97706', w:150, h:86 },
+  check: { label:'Kiểm tra',  color:'#0891b2', w:164, h:56 },
+  doc:   { label:'Tài liệu',  color:'#7c3aed', w:164, h:56 },
+  data:  { label:'Dữ liệu',   color:'#db2777', w:164, h:56 },
+};
+const WIRE = { n:'#64748b', ok:'#16a34a', ng:'#dc2626' };
+
+/* ══════════════════════════════════════════════════════════════
+   HÌNH HỌC
+   ══════════════════════════════════════════════════════════════ */
+const laneX  = i => i * LANE_W;
+const drawW  = () => S.lanes.length * LANE_W;
+const drawH  = () => S.phases.reduce((s, p) => s + p.h, 0);
+const nodeX  = n => laneX(n.lane) + LANE_W / 2 - n.w / 2 + (n.dx || 0);
+const rectOf = n => ({ x:nodeX(n), y:n.y, w:n.w, h:n.h, cx:nodeX(n) + n.w / 2, cy:n.y + n.h / 2 });
+const byId   = id => S.nodes.find(n => n.id === id);
+const phaseTop = i => S.phases.slice(0, i).reduce((s, p) => s + p.h, 0);
+
+/** Định tuyến đường nối kiểu vuông góc — giống Visio: ra khỏi cạnh khối,
+ *  bẻ góc vuông, đâm vào cạnh khối đích. */
+function routeEdge(e) {
+  const A = rectOf(byId(e.a)), B = rectOf(byId(e.b));
+  const dx = B.cx - A.cx, dy = B.cy - A.cy;
+  let pts;
+
+  if (Math.abs(dy) < 46) {                          // cùng hàng → đi ngang
+    const right = dx > 0;
+    pts = [[right ? A.x + A.w : A.x, A.cy], [right ? B.x : B.x + B.w, B.cy]];
+  } else if (dy > 0) {                              // đi xuống
+    if (Math.abs(dx) < 24) {
+      pts = [[A.cx, A.y + A.h], [B.cx, B.y]];
+    } else {
+      const mid = Math.max(A.y + A.h + 18, (A.y + A.h + B.y) / 2);
+      pts = [[A.cx, A.y + A.h], [A.cx, mid], [B.cx, mid], [B.cx, B.y]];
+    }
+  } else {                                          // quay ngược lên (vòng lặp)
+    if (Math.abs(dx) < 24) {
+      pts = [[A.cx, A.y], [B.cx, B.y + B.h]];
+    } else {
+      const right = dx > 0;
+      pts = [[A.cx, A.y], [A.cx, B.cy], [right ? B.x : B.x + B.w, B.cy]];
+    }
+  }
+
+  // Bo góc nhẹ cho mềm mắt
+  let d = `M${pts[0][0]} ${pts[0][1]}`;
+  const R = 9;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i - 1], [cx, cy] = pts[i], [nx, ny] = pts[i + 1];
+    const l1 = Math.hypot(cx - px, cy - py), l2 = Math.hypot(nx - cx, ny - cy);
+    const r = Math.min(R, l1 / 2, l2 / 2);
+    d += ` L${cx + (px - cx) / l1 * r} ${cy + (py - cy) / l1 * r}`;
+    d += ` Q${cx} ${cy} ${cx + (nx - cx) / l2 * r} ${cy + (ny - cy) / l2 * r}`;
+  }
+  const last = pts[pts.length - 1];
+  d += ` L${last[0]} ${last[1]}`;
+
+  // Nhãn đặt ở giữa đoạn dài nhất
+  let best = 0, bl = -1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    if (len > bl) { bl = len; best = i; }
+  }
+  const lp = [(pts[best][0] + pts[best + 1][0]) / 2, (pts[best][1] + pts[best + 1][1]) / 2];
+  return { d, lp };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VẼ CANVAS
+   ══════════════════════════════════════════════════════════════ */
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+function canvasHTML({ interactive = true } = {}) {
+  const W = GUT + drawW(), H = HEAD_H + drawH();
+  let h = '';
+
+  h += `<div class="gut-head" style="width:${GUT}px">Giai đoạn</div>`;
+  S.lanes.forEach((l, i) => {
+    h += `<div class="lane-head" style="left:${GUT + laneX(i)}px;width:${LANE_W}px;color:${l.color}">${esc(l.name)}</div>`;
+  });
+  S.phases.forEach((p, i) => {
+    h += `<div class="phase-lbl" style="top:${HEAD_H + phaseTop(i)}px;height:${p.h}px;width:${GUT}px">${esc(p.name)}</div>`;
+  });
+
+  h += `<div class="draw" style="left:${GUT}px;top:${HEAD_H}px;width:${drawW()}px;height:${drawH()}px">`;
+  S.lanes.forEach((l, i) => {
+    h += `<div class="lane-band${i % 2 ? ' alt' : ''}" style="left:${laneX(i)}px;width:${LANE_W}px"></div>`;
+  });
+  S.phases.forEach((p, i) => {
+    if (i) h += `<div class="phase-line" style="top:${phaseTop(i)}px"></div>`;
+  });
+
+  // Đường nối
+  h += `<svg class="edges" width="${drawW()}" height="${drawH()}"><defs>`;
+  for (const k in WIRE) {
+    h += `<marker id="ar-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="${WIRE[k]}"/></marker>`;
+  }
+  h += `</defs>`;
+  S.edges.forEach(e => {
+    if (!byId(e.a) || !byId(e.b)) return;
+    const { d, lp } = routeEdge(e);
+    const c = WIRE[e.k];
+    h += `<g data-edge="${e.id}" class="${sel.type === 'edge' && sel.id === e.id ? 'sel' : ''}">`;
+    h += `<path class="wire" d="${d}" stroke="${c}" marker-end="url(#ar-${e.k})"${e.k === 'ng' ? ' stroke-dasharray="6 4"' : ''}/>`;
+    if (interactive) h += `<path class="hit" d="${d}"/>`;
+    if (e.lbl) h += `<text class="elbl" x="${lp[0]}" y="${lp[1]}" fill="${c}">${esc(e.lbl)}</text>`;
+    h += `</g>`;
+  });
+  h += `</svg>`;
+
+  // Khối
+  const order = stepOrder();
+  S.nodes.forEach(n => {
+    const T = TYPES[n.t], num = order.indexOf(n.id) + 1;
+
+    // Tay cầm ＋ — cách thêm bước chính. Khối Quyết định có 2 nhánh OK / NG.
+    let hd = '';
+    if (interactive && n.t !== 'end') {
+      hd = n.t === 'dec'
+        ? `<button class="addh down" data-addfrom="${n.id}" data-branch="ok" style="--hc:#16a34a" title="Thêm bước cho nhánh OK">+<b>OK</b></button>`
+        + `<button class="addh left" data-addfrom="${n.id}" data-branch="ng" style="--hc:#dc2626" title="Thêm bước cho nhánh NG">+<b>NG</b></button>`
+        : `<button class="addh down" data-addfrom="${n.id}" data-branch="" title="Thêm bước tiếp theo">+</button>`;
+    }
+
+    h += `<div class="node${sel.type === 'node' && sel.id === n.id ? ' sel' : ''}${linkSrc === n.id ? ' link-src' : ''}" data-node="${n.id}" data-t="${n.t}"`
+      +  ` style="left:${nodeX(n)}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--c:${n.color || T.color}">`
+      +  `<div class="shape"><div class="shape-in"><span class="tx">${esc(n.tx)}</span></div></div>`
+      +  (n.t !== 'start' && n.t !== 'end' ? `<span class="num">${num}</span>` : '')
+      +  `<div class="selbox"><s></s><s></s><s></s><s></s></div>${hd}</div>`;
+  });
+
+  h += `</div>`;
+  return { html:h, W, H };
+}
+
+/** Thứ tự bước để đánh số & dựng bảng: trên xuống dưới, trái sang phải. */
+function stepOrder() {
+  return S.nodes
+    .filter(n => n.t !== 'start' && n.t !== 'end')
+    .slice()
+    .sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)))
+    .map(n => n.id);
+}
+
+let zoom = 1;
+const $ = s => document.querySelector(s);
+
+function paintCanvas() {
+  const { html, W, H } = canvasHTML();
+  const cv = $('#cv');
+  cv.innerHTML = html;
+  cv.style.width = W + 'px';
+  cv.style.height = H + 'px';
+  cv.classList.toggle('link-mode', mode === 'link');
+  $('#cvZoom').style.transform = `scale(${zoom})`;
+  $('#cvZoom').style.width = (W + 40) * zoom + 'px';
+  $('#cvZoom').style.height = (H + 40) * zoom + 'px';
+  $('#zoomV').textContent = Math.round(zoom * 100) + '%';
+  $('#tUndo').disabled = !past.length;
+  $('#tRedo').disabled = !future.length;
+  $('#tDel').disabled = sel.type !== 'node';
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BẢNG DIỄN GIẢI + BẢN IN
+   ══════════════════════════════════════════════════════════════ */
+function branchOf(id) {
+  const inc = S.edges.filter(e => e.b === id);
+  if (inc.some(e => e.k === 'ok')) return 'ok';
+  if (inc.some(e => e.k === 'ng')) return 'ng';
+  return '';
+}
+
+function paintTable() {
+  const order = stepOrder();
+  $('#tblBody').innerHTML = order.map((id, i) => {
+    const n = byId(id), T = TYPES[n.t], br = branchOf(id);
+    const tag = br === 'ok' ? '<span class="brtag ok">Nhánh OK</span>'
+              : br === 'ng' ? '<span class="brtag ng">Nhánh NG</span>' : '';
+    return `<tr class="${br ? 'br-' + br : ''}">
+      <td class="step" style="--c:${n.color || T.color}"><span class="sq">${i + 1}</span>${esc(n.tx)}${tag}</td>
+      <td class="who">${esc(S.lanes[n.lane]?.owner || '—')}</td>
+      <td>${esc(n.desc)}</td>
+      <td class="form">${n.form && n.form !== '—' ? n.form.split('·').map(f => `<span>${esc(f.trim())}</span>`).join('') : '—'}</td>
+      <td style="white-space:nowrap;color:var(--ink-2)">${esc(n.time)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function paintPrint() {
+  const { html, W, H } = canvasHTML({ interactive:false });
+  const pv = $('#pvCv');
+  pv.innerHTML = html; pv.style.width = W + 'px'; pv.style.height = H + 'px';
+  const k = Math.min(1, 1180 / W);
+  $('#pvZoom').style.transform = `scale(${k})`;
+  $('#pvZoom').style.width = W * k + 'px';
+  $('#pvZoom').style.height = H * k + 'px';
+
+  const order = stepOrder();
+  $('#pvBody').innerHTML = order.map((id, i) => {
+    const n = byId(id), br = branchOf(id);
+    return `<tr class="${br ? 'br-' + br : ''}">
+      <td class="c">${i + 1}</td><td><b>${esc(n.tx)}</b></td>
+      <td>${esc(S.lanes[n.lane]?.owner || '—')}</td>
+      <td>${esc(n.desc)}</td><td>${esc(n.form)}</td></tr>`;
+  }).join('');
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BẢNG THUỘC TÍNH (bên phải)
+   ══════════════════════════════════════════════════════════════ */
+const PAL = ['#2563eb','#0891b2','#16a34a','#d97706','#dc2626','#7c3aed','#db2777','#475569'];
+
+function paintInsp() {
+  const el = $('#insp');
+  if (sel.type === 'node') {
+    const n = byId(sel.id); if (!n) { sel = {}; return paintInsp(); }
+    const T = TYPES[n.t];
+    el.innerHTML = `
+      <h3>Thuộc tính bước</h3>
+      <p class="kind">${T.label} · cột <b style="color:${S.lanes[n.lane]?.color}">${esc(S.lanes[n.lane]?.name || '—')}</b></p>
+      <div class="fld"><label for="fTx">Tên bước</label><input id="fTx" type="text" value="${esc(n.tx)}"></div>
+      <div class="fld"><label for="fLane">Cột — bộ phận phụ trách</label>
+        <select id="fLane">${S.lanes.map((l, i) => `<option value="${i}"${i === n.lane ? ' selected' : ''}>${esc(l.name)}</option>`).join('')}</select>
+        <p class="note">Đổi cột là đổi luôn người thực hiện trong bảng diễn giải.</p></div>
+      <div class="fld"><label>Người thực hiện</label><input type="text" value="${esc(S.lanes[n.lane]?.owner || '')}" readonly></div>
+      <div class="fld"><label for="fDesc">Diễn giải chi tiết</label><textarea id="fDesc">${esc(n.desc)}</textarea></div>
+      <div class="fld"><label for="fForm">Hồ sơ / Biểu mẫu</label><input id="fForm" type="text" value="${esc(n.form)}"
+        placeholder="Ngăn cách bằng dấu ·"></div>
+      <div class="fld"><label for="fTime">Thời gian chuẩn</label><input id="fTime" type="text" value="${esc(n.time)}"></div>
+      <div class="fld"><label>Màu khối</label><div class="swatches" id="fCol">
+        ${PAL.map(c => `<button data-c="${c}" style="background:${c}" class="${(n.color || T.color) === c ? 'on' : ''}" aria-label="Màu ${c}"></button>`).join('')}
+      </div></div>`;
+
+    const bind = (id, k, after) => {
+      const inp = el.querySelector(id); if (!inp) return;
+      inp.addEventListener('input', () => { n[k] = inp.value; if (after) after(); paintCanvas(); });
+      inp.addEventListener('focus', snap, { once:true });
+    };
+    bind('#fTx', 'tx'); bind('#fDesc', 'desc'); bind('#fForm', 'form'); bind('#fTime', 'time');
+    el.querySelector('#fLane').addEventListener('change', ev => {
+      snap(); n.lane = +ev.target.value; n.dx = 0; paintAll(); paintInsp();
+      toast(`Đã chuyển bước sang cột <b>${S.lanes[n.lane].name}</b> — người thực hiện thành <b>${S.lanes[n.lane].owner}</b>.`);
+    });
+    el.querySelector('#fCol').addEventListener('click', ev => {
+      const b = ev.target.closest('[data-c]'); if (!b) return;
+      snap(); n.color = b.dataset.c; paintAll(); paintInsp();
+    });
+
+  } else if (sel.type === 'edge') {
+    const e = S.edges.find(x => x.id === sel.id); if (!e) { sel = {}; return paintInsp(); }
+    el.innerHTML = `
+      <h3>Thuộc tính đường nối</h3>
+      <p class="kind">${esc(byId(e.a).tx)} → ${esc(byId(e.b).tx)}</p>
+      <div class="fld"><label for="fLbl">Nhãn trên đường</label><input id="fLbl" type="text" value="${esc(e.lbl)}" placeholder="VD: OK, NG, Đủ, Thiếu"></div>
+      <div class="fld"><label for="fK">Loại nhánh</label>
+        <select id="fK">
+          <option value="n"${e.k === 'n' ? ' selected' : ''}>Thường (xám, nét liền)</option>
+          <option value="ok"${e.k === 'ok' ? ' selected' : ''}>Nhánh OK (xanh, nét liền)</option>
+          <option value="ng"${e.k === 'ng' ? ' selected' : ''}>Nhánh NG (đỏ, nét đứt)</option>
+        </select>
+        <p class="note">Nhánh OK / NG được tô màu tương ứng ở bảng diễn giải và bản in.</p></div>
+      <div class="fld"><button class="btn sm" id="fDelE" style="color:var(--dead)">Xóa đường nối này</button></div>`;
+    el.querySelector('#fLbl').addEventListener('input', ev => { e.lbl = ev.target.value; paintCanvas(); });
+    el.querySelector('#fK').addEventListener('change', ev => { snap(); e.k = ev.target.value; paintAll(); });
+    el.querySelector('#fDelE').addEventListener('click', () => {
+      snap(); S.edges = S.edges.filter(x => x.id !== e.id); sel = {}; paintAll(); paintInsp(); toast('Đã xóa đường nối.');
+    });
+
+  } else {
+    el.innerHTML = `<div class="empty">
+      <svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="5" rx="1"/><rect x="14" y="16" width="7" height="5" rx="1"/><path d="M6.5 8v6a2 2 0 002 2h5.5"/></svg>
+      <div><b>Chưa chọn khối nào</b><br>Bấm một khối trên lưu đồ để sửa tên, người thực hiện, diễn giải và biểu mẫu đi kèm.</div>
+    </div>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   TƯƠNG TÁC
+   ══════════════════════════════════════════════════════════════ */
+let sel = {}, mode = 'select', linkSrc = null, past = [], future = [], uid = 100;
+
+const clone = () => JSON.parse(JSON.stringify({ lanes:S.lanes, phases:S.phases, nodes:S.nodes, edges:S.edges }));
+function snap() { past.push(clone()); if (past.length > 40) past.shift(); future = []; }
+function restore(o) { S.lanes = o.lanes; S.phases = o.phases; S.nodes = o.nodes; S.edges = o.edges; }
+
+function paintAll() { paintCanvas(); paintTable(); paintPrint(); }
+
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.innerHTML = msg;
+  $('#toasts').appendChild(t);
+  setTimeout(() => t.remove(), 3400);
+}
+
+/* ── Thêm bước bằng nút ＋ : tự đặt chỗ, tự nối, tự đẩy khối bên dưới ── */
+function phaseOf(n) {
+  let acc = 0;
+  for (let i = 0; i < S.phases.length; i++) { acc += S.phases[i].h; if (n.y + n.h / 2 < acc) return i; }
+  return S.phases.length - 1;
+}
+
+function addNext(fromId, branch, kind, laneIdx, name) {
+  snap();
+  const from = byId(fromId), T = TYPES[kind], id = 'n' + (++uid);
+  // Nhánh NG rẽ ngang cùng tầm; còn lại nối tiếp xuống dưới.
+  const y = branch === 'ng'
+    ? from.y + Math.round((from.h - T.h) / 2)
+    : from.y + from.h + 46;
+
+  // Đẩy khối nào đang chắn chỗ trong cùng cột xuống dưới
+  S.nodes.filter(n => n.lane === laneIdx && n.y + n.h > y - 12 && n.y < y + T.h + 12)
+         .forEach(n => { n.y += T.h + 46; });
+
+  S.nodes.push({ id, t:kind, lane:laneIdx, y, w:T.w, h:T.h, tx:name || 'Bước mới',
+    desc:'Mô tả cách làm, tiêu chuẩn đạt và cách xử lý khi không đạt.', form:'—', time:'—' });
+  S.edges.push({ id:'e' + (++uid), a:fromId, b:id,
+    lbl: branch === 'ok' ? 'OK' : branch === 'ng' ? 'NG' : '', k: branch || 'n' });
+
+  // Nới hàng cuối nếu lưu đồ dài ra
+  const need = Math.max(...S.nodes.map(n => n.y + n.h)) + 34;
+  if (need > drawH()) S.phases[S.phases.length - 1].h += need - drawH();
+
+  sel = { type:'node', id };
+  paintAll(); paintInsp();
+  return byId(id);
+}
+
+/** Tự xếp lại: giữ nguyên thứ tự người dùng đã dựng, chỉ canh cho thẳng hàng
+ *  và giãn đều trong từng giai đoạn. Cột thì căn giữa theo bộ phận. */
+function tidy() {
+  snap();
+  const GAP = 44, PAD = 28;
+  const groups = S.phases.map(() => []);
+  S.nodes.forEach(n => groups[phaseOf(n)].push(n));
+
+  groups.forEach((g, i) => {
+    g.sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)));
+    const rows = [];
+    g.forEach(n => {
+      const r = rows.find(r => Math.abs(r.y - n.y) < 44);
+      if (r) { r.items.push(n); } else rows.push({ y:n.y, items:[n] });
+    });
+    let cur = PAD;
+    rows.forEach(r => {
+      const hMax = Math.max(...r.items.map(n => n.h));
+      r.items.forEach(n => { n.dx = 0; n.y = phaseTop(i) + cur + Math.round((hMax - n.h) / 2); });
+      cur += hMax + GAP;
+    });
+    S.phases[i].h = Math.max(S.phases[i].h, cur - GAP + PAD);
+  });
+  paintAll(); paintInsp();
+  toast('Đã xếp lại lưu đồ: các khối căn giữa cột và giãn đều theo giai đoạn.');
+}
+
+/* ── Bảng chọn của nút ＋ ── */
+let popCtx = null, popKind = 'step';
+const POP_KINDS = ['step', 'check', 'dec', 'doc', 'end'];
+
+function openPop(btn) {
+  const from = byId(btn.dataset.addfrom), branch = btn.dataset.branch || '';
+  popCtx = { fromId:from.id, branch }; popKind = 'step';
+  $('#popTitle').textContent = branch === 'ok' ? 'Thêm bước cho nhánh OK'
+    : branch === 'ng' ? 'Thêm bước cho nhánh NG' : 'Thêm bước tiếp theo';
+  $('#popFrom').innerHTML = `Nối tiếp từ <b>${esc(from.tx)}</b>`;
+  $('#popName').value = '';
+  $('#popKinds').innerHTML = POP_KINDS.map(k =>
+    `<button data-k="${k}" class="${k === popKind ? 'on' : ''}" style="--kc:${TYPES[k].color}"><i></i>${TYPES[k].label}</button>`).join('');
+  const defLane = branch === 'ng'
+    ? (from.lane > 0 ? from.lane - 1 : Math.min(1, S.lanes.length - 1))
+    : from.lane;
+  $('#popLane').innerHTML = S.lanes.map((l, i) =>
+    `<option value="${i}"${i === defLane ? ' selected' : ''}>${esc(l.name)}</option>`).join('');
+
+  const p = $('#pop'); p.classList.add('on');
+  const r = btn.getBoundingClientRect(), pw = 252, ph = p.offsetHeight;
+  let left = r.left + r.width / 2 - pw / 2, top = r.bottom + 8;
+  left = Math.max(8, Math.min(left, innerWidth - pw - 8));
+  if (top + ph > innerHeight - 8) top = Math.max(8, r.top - ph - 8);
+  p.style.left = left + 'px'; p.style.top = top + 'px';
+  $('#popName').focus();
+}
+const closePop = () => { $('#pop').classList.remove('on'); popCtx = null; };
+
+$('#popKinds').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-k]'); if (!b) return;
+  popKind = b.dataset.k;
+  $('#popKinds').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.k === popKind));
+});
+$('#popCancel').onclick = closePop;
+$('#popAdd').onclick = () => {
+  if (!popCtx) return;
+  const { fromId, branch } = popCtx, lane = +$('#popLane').value, name = $('#popName').value.trim();
+  closePop();
+  addNext(fromId, branch, popKind, lane, name);
+  toast(`Đã thêm <b>${esc(name || 'Bước mới')}</b> vào cột <b>${S.lanes[lane].name}</b> và nối tự động.`);
+};
+$('#popName').addEventListener('keydown', ev => { if (ev.key === 'Enter') $('#popAdd').click(); });
+document.addEventListener('pointerdown', ev => {
+  if ($('#pop').classList.contains('on') && !ev.target.closest('#pop') && !ev.target.closest('.addh')) closePop();
+}, true);
+
+// ── Chọn / kéo khối ──
+let drag = null;
+$('#cv').addEventListener('pointerdown', ev => {
+  const aEl = ev.target.closest('.addh');
+  if (aEl) { ev.stopPropagation(); openPop(aEl); return; }
+  const nEl = ev.target.closest('[data-node]');
+  const eEl = ev.target.closest('[data-edge]');
+
+  if (nEl) {
+    const n = byId(nEl.dataset.node);
+    if (mode === 'link') {
+      if (!linkSrc) { linkSrc = n.id; paintCanvas(); toast('Chọn tiếp khối đích để nối.'); }
+      else if (linkSrc !== n.id) {
+        snap();
+        S.edges.push({ id:'e' + (++uid), a:linkSrc, b:n.id, lbl:'', k:'n' });
+        linkSrc = null; mode = 'select'; setTool();
+        sel = { type:'edge', id:'e' + uid }; paintAll(); paintInsp();
+        toast('Đã tạo đường nối. Đặt nhãn OK / NG ở bảng bên phải.');
+      }
+      return;
+    }
+    sel = { type:'node', id:n.id }; paintCanvas(); paintInsp();
+    drag = { n, sx:ev.clientX, sy:ev.clientY, ox:n.dx || 0, oy:n.y, moved:false, lane0:n.lane };
+    nEl.setPointerCapture(ev.pointerId);
+    return;
+  }
+  if (eEl) { sel = { type:'edge', id:eEl.dataset.edge }; paintCanvas(); paintInsp(); return; }
+  sel = {}; linkSrc = null; paintCanvas(); paintInsp();
+});
+
+$('#cv').addEventListener('pointermove', ev => {
+  if (!drag) return;
+  const dx = (ev.clientX - drag.sx) / zoom, dy = (ev.clientY - drag.sy) / zoom;
+  if (!drag.moved) {
+    if (Math.hypot(dx, dy) < 3) return;
+    drag.moved = true; snap();
+  }
+  drag.n.dx = Math.round((drag.ox + dx) / 8) * 8;
+  drag.n.y = Math.max(4, Math.round((drag.oy + dy) / 8) * 8);
+  paintCanvas();
+});
+
+$('#cv').addEventListener('pointerup', () => {
+  if (!drag) return;
+  const n = drag.n;
+  if (drag.moved) {
+    // Rơi vào cột nào thì thuộc cột đó — người thực hiện đổi theo
+    const cx = nodeX(n) + n.w / 2;
+    const li = Math.max(0, Math.min(S.lanes.length - 1, Math.floor(cx / LANE_W)));
+    if (li !== n.lane) {
+      n.lane = li; n.dx = 0;
+      toast(`Đã chuyển sang cột <b>${S.lanes[li].name}</b> — người thực hiện thành <b>${S.lanes[li].owner}</b>.`);
+    }
+    paintAll(); paintInsp();
+  }
+  drag = null;
+});
+
+// ── Bảng khối hình ──
+$('#shapes').innerHTML = Object.entries(TYPES).map(([k, T]) => {
+  const g = k === 'dec' ? 'clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)'
+          : k === 'start' || k === 'end' ? 'border-radius:999px'
+          : k === 'doc' ? 'clip-path:polygon(0 0,100% 0,100% 80%,50% 100%,0 80%)'
+          : k === 'data' ? 'clip-path:polygon(14% 0,100% 0,86% 100%,0 100%)'
+          : 'border-radius:4px';
+  return `<button class="shp" data-add="${k}" style="--sc:${T.color}">
+    <span class="g"><i style="${g}"></i></span>${T.label}</button>`;
+}).join('');
+
+$('#shapes').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-add]'); if (!b) return;
+  const t = b.dataset.add, T = TYPES[t];
+  snap();
+  const id = 'n' + (++uid);
+  const maxY = Math.max(...S.nodes.map(n => n.y + n.h), 0);
+  S.nodes.push({ id, t, lane:Math.min(2, S.lanes.length - 1), y:Math.min(maxY + 30, drawH() - T.h - 10),
+    w:T.w, h:T.h, tx:'Bước mới', desc:'Mô tả cách làm, tiêu chuẩn đạt và cách xử lý khi không đạt.', form:'—', time:'—' });
+  sel = { type:'node', id };
+  paintAll(); paintInsp();
+  $('#insp').querySelector('#fTx')?.select();
+  toast(`Đã thêm khối <b>${T.label}</b>. Kéo để đặt vào đúng cột.`);
+});
+
+// ── Thanh công cụ ──
+function setTool() {
+  $('#tSelect').classList.toggle('on', mode === 'select');
+  $('#tLink').classList.toggle('on', mode === 'link');
+  paintCanvas();
+}
+$('#tSelect').onclick = () => { mode = 'select'; linkSrc = null; setTool(); };
+$('#tLink').onclick    = () => { mode = 'link'; linkSrc = null; setTool(); toast('Chế độ nối: bấm khối nguồn rồi bấm khối đích.'); };
+$('#tCol').onclick = () => {
+  snap();
+  S.lanes.push({ name:'Bộ phận mới', owner:'Chưa gán', color:'#64748b' });
+  paintAll(); toast('Đã thêm một cột. Bấm vào tên cột ở bản thật để đổi tên bộ phận.');
+};
+$('#tRow').onclick = () => {
+  snap(); S.phases.push({ name:'Giai đoạn mới', h:180 }); paintAll(); toast('Đã thêm một hàng giai đoạn.');
+};
+$('#tDel').onclick = () => delSel();
+$('#tUndo').onclick = () => {
+  if (!past.length) return;
+  future.push(clone()); restore(past.pop()); sel = {}; paintAll(); paintInsp();
+};
+$('#tRedo').onclick = () => {
+  if (!future.length) return;
+  past.push(clone()); restore(future.pop()); sel = {}; paintAll(); paintInsp();
+};
+$('#tIn').onclick  = () => { zoom = Math.min(1.5, zoom + .1); paintCanvas(); };
+$('#tOut').onclick = () => { zoom = Math.max(.5, zoom - .1); paintCanvas(); };
+$('#tTidy').onclick = () => tidy();
+
+/* ── Vai trò & vòng duyệt: chỉ Admin được ban hành ── */
+let role = 'admin', docState = 'draft';
+
+function setDocState(s) {
+  docState = s;
+  const el = $('#edStatus');
+  el.className = 'pill ' + (s === 'ok' ? 'ok' : s === 'wait' ? 'wait' : 'draft');
+  el.textContent = s === 'ok' ? 'Đã ban hành' : s === 'wait' ? 'Chờ duyệt' : 'Bản nháp';
+  paintRole();
+}
+
+function paintRole() {
+  const admin = role === 'admin';
+  document.querySelectorAll('#roleSeg button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
+  const pub = $('#btnPublish');
+  pub.disabled = !admin;
+  pub.title = admin ? 'Ban hành bản này' : 'Chỉ Admin mới được duyệt và ban hành';
+  $('#btnSubmit').disabled = docState === 'ok';
+  $('#roleNote').textContent = admin
+    ? 'Admin là người duy nhất được duyệt và ban hành.'
+    : 'Nhân viên chỉ soạn và gửi duyệt — nút Ban hành bị khóa.';
+}
+
+$('#roleSeg').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-role]'); if (!b) return;
+  role = b.dataset.role; paintRole();
+  toast(role === 'admin'
+    ? 'Đang xem với vai trò <b>Admin</b> — ban hành được.'
+    : 'Đang xem với vai trò <b>Nhân viên</b> — nút Ban hành đã khóa.');
+});
+
+$('#btnSave').onclick = () => toast('Đã lưu bản nháp <b>v2.2</b>. Bản đã ban hành v2.1 vẫn giữ nguyên cho tới khi bản mới được duyệt.');
+$('#btnSubmit').onclick = () => { setDocState('wait'); toast('Đã gửi duyệt bản <b>v2.2</b>. Chờ Admin ban hành.'); };
+$('#btnPublish').onclick = () => {
+  if (role !== 'admin') { toast('Chỉ <b>Admin</b> mới được ban hành.'); return; }
+  setDocState('ok');
+  toast('Đã ban hành <b>v2.2</b>, hiệu lực từ hôm nay. Bản v2.1 chuyển sang <b>hết hiệu lực</b> và được ghi vào bảng theo dõi sửa đổi.');
+};
+
+function delSel() {
+  if (sel.type !== 'node') return;
+  snap();
+  S.edges = S.edges.filter(e => e.a !== sel.id && e.b !== sel.id);
+  S.nodes = S.nodes.filter(n => n.id !== sel.id);
+  sel = {}; paintAll(); paintInsp(); toast('Đã xóa khối và các đường nối của nó.');
+}
+
+document.addEventListener('keydown', ev => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
+  if (ev.key === 'Escape') { sel = {}; linkSrc = null; mode = 'select'; setTool(); paintInsp(); closeModal(); closePop(); return; }
+  if (typing) return;
+  if (ev.key === 'Delete' || ev.key === 'Backspace') { ev.preventDefault(); delSel(); }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z') { ev.preventDefault(); ev.shiftKey ? $('#tRedo').click() : $('#tUndo').click(); }
+});
+
+/* ══════════════════════════════════════════════════════════════
+   DANH MỤC QUY TRÌNH
+   ══════════════════════════════════════════════════════════════ */
+const GROUPS = [
+  { k:'SX', name:'Sản xuất',              c:'#0891b2' },
+  { k:'CL', name:'Chất lượng',            c:'#16a34a' },
+  { k:'KH', name:'Kho hàng',              c:'#0d9488' },
+  { k:'CS', name:'CSKH',                  c:'#8b5cf6' },
+  { k:'BH', name:'Bảo hành',              c:'#ef4444' },
+  { k:'HC', name:'Nhân sự – Hành chính',  c:'#64748b' },
+];
+const ST = { ok:'Đã ban hành', wait:'Chờ duyệt', draft:'Bản nháp', dead:'Hết hiệu lực' };
+const DOCS = [
+  { g:'SX', code:'QT-SX-01', name:'Sản xuất & kiểm soát chất lượng máy lọc nước RO', v:'2.1', s:'ok',    steps:12, d:'01/03/2026', by:'Đỗ Hương Nguyên' },
+  { g:'SX', code:'QT-SX-02', name:'Lập kế hoạch sản xuất theo DKSX',                 v:'1.0', s:'ok',    steps:8,  d:'15/01/2026', by:'P. Kế hoạch' },
+  { g:'SX', code:'QT-SX-03', name:'Chuyển sản xuất trước khi thiếu vật tư',          v:'1.2', s:'wait',  steps:9,  d:'—',          by:'Tổ trưởng SX' },
+  { g:'SX', code:'QT-SX-04', name:'Bàn giao ca sản xuất',                            v:'1.0', s:'draft', steps:6,  d:'—',          by:'Tổ trưởng SX' },
+  { g:'CL', code:'QT-CL-01', name:'Kiểm tra QC đầu vào nguyên vật liệu',             v:'3.0', s:'ok',    steps:11, d:'01/02/2026', by:'P. QA' },
+  { g:'CL', code:'QT-CL-02', name:'Xử lý sản phẩm không phù hợp (NG)',               v:'1.4', s:'ok',    steps:10, d:'10/12/2025', by:'P. QA' },
+  { g:'CL', code:'QT-CL-03', name:'Hiệu chuẩn thiết bị đo',                          v:'1.0', s:'wait',  steps:7,  d:'—',          by:'P. QA' },
+  { g:'KH', code:'QT-KH-01', name:'Nhập kho & bốc dỡ hàng hóa',                      v:'2.0', s:'ok',    steps:13, d:'01/11/2025', by:'Thủ kho' },
+  { g:'KH', code:'QT-KH-02', name:'Xuất kho theo phiếu lệnh sản xuất',               v:'1.1', s:'ok',    steps:9,  d:'01/11/2025', by:'Thủ kho' },
+  { g:'KH', code:'QT-KH-03', name:'Kiểm kê tồn kho định kỳ',                         v:'1.0', s:'dead',  steps:8,  d:'Hết 30/06/2026', by:'Thủ kho' },
+  { g:'CS', code:'QT-CS-01', name:'Tiếp nhận & xử lý khiếu nại khách hàng',          v:'1.3', s:'ok',    steps:10, d:'20/02/2026', by:'P. CSKH' },
+  { g:'CS', code:'QT-CS-02', name:'Chăm sóc khách hàng sau lắp đặt (Zalo)',          v:'1.0', s:'draft', steps:7,  d:'—',          by:'P. CSKH' },
+  { g:'BH', code:'QT-BH-01', name:'Tiếp nhận & xử lý phiếu bảo hành',                v:'2.2', s:'ok',    steps:14, d:'01/03/2026', by:'P. Bảo hành' },
+  { g:'BH', code:'QT-BH-02', name:'Đề xuất thanh toán chi phí bảo hành',             v:'1.0', s:'wait',  steps:8,  d:'—',          by:'P. Kế toán' },
+  { g:'BH', code:'QT-BH-03', name:'Thu hồi & xử lý vật tư bảo hành',                 v:'1.0', s:'draft', steps:6,  d:'—',          by:'P. Bảo hành' },
+];
+
+let fGroup = '', fStatus = '', fQ = '';
+
+function paintRail() {
+  $('#railGroups').innerHTML =
+    `<button class="rail-item${fGroup === '' ? ' on' : ''}" data-g=""><span class="swatch" style="background:var(--accent)"></span>Tất cả<span class="n">${DOCS.length}</span></button>` +
+    GROUPS.map(g => `<button class="rail-item${fGroup === g.k ? ' on' : ''}" data-g="${g.k}">
+      <span class="swatch" style="background:${g.c}"></span>${esc(g.name)}<span class="n">${DOCS.filter(d => d.g === g.k).length}</span></button>`).join('');
+  $('#railStatus').innerHTML =
+    `<button class="rail-item${fStatus === '' ? ' on' : ''}" data-s="">Tất cả trạng thái<span class="n">${DOCS.length}</span></button>` +
+    Object.entries(ST).map(([k, v]) => `<button class="rail-item${fStatus === k ? ' on' : ''}" data-s="${k}">
+      ${esc(v)}<span class="n">${DOCS.filter(d => d.s === k).length}</span></button>`).join('');
+}
+
+function paintList() {
+  const q = fQ.trim().toLowerCase();
+  const rows = DOCS.filter(d =>
+    (!fGroup || d.g === fGroup) && (!fStatus || d.s === fStatus) &&
+    (!q || d.name.toLowerCase().includes(q) || d.code.toLowerCase().includes(q)));
+
+  $('#listTitle').textContent = fGroup ? GROUPS.find(g => g.k === fGroup).name : 'Tất cả quy trình';
+  $('#listCount').textContent = rows.length + ' quy trình';
+  $('#grid').innerHTML = rows.length ? rows.map(d => {
+    const g = GROUPS.find(x => x.k === d.g);
+    return `<button class="card" style="--gc:${g.c}" data-open="${d.code}">
+      <div class="card-top"><span class="code" style="color:${g.c}">${d.code}</span><span class="pill ${d.s}">${ST[d.s]}</span></div>
+      <h4>${esc(d.name)}</h4>
+      <div class="card-meta">
+        <span><b>${d.steps}</b> bước</span><span>·</span>
+        <span>Hiệu lực <b>${d.d}</b></span><span>·</span><span>${esc(d.by)}</span>
+      </div>
+      <div class="card-foot">
+        <span class="ver">v${d.v}</span>
+        <span style="margin-left:auto"></span>
+        <span class="btn sm">Xem</span><span class="btn sm">Sửa</span><span class="btn sm">Nhân bản</span>
+      </div></button>`;
+  }).join('') : `<div class="empty" style="grid-column:1/-1">Không có quy trình nào khớp bộ lọc.</div>`;
+}
+
+$('#railGroups').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-g]'); if (!b) return;
+  fGroup = b.dataset.g; paintRail(); paintList();
+});
+$('#railStatus').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-s]'); if (!b) return;
+  fStatus = b.dataset.s; paintRail(); paintList();
+});
+$('#q').addEventListener('input', ev => { fQ = ev.target.value; paintList(); });
+$('#grid').addEventListener('click', ev => {
+  const c = ev.target.closest('[data-open]'); if (!c) return;
+  if (c.dataset.open === 'QT-SX-01') { go('editor'); }
+  else toast(`Ở bản thật, <b>${c.dataset.open}</b> sẽ mở ra lưu đồ riêng của nó. Mockup này chỉ dựng sẵn dữ liệu cho <b>QT-SX-01</b>.`);
+});
+
+/* ══════════════════════════════════════════════════════════════
+   TAB + MODAL + NỀN SÁNG/TỐI
+   ══════════════════════════════════════════════════════════════ */
+function go(v) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.view === v));
+  document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => go(t.dataset.view));
+$('#btnGoEdit').onclick = () => go('editor');
+
+const closeModal = () => $('#mask').classList.remove('on');
+$('#btnNew').onclick = () => { $('#mask').classList.add('on'); $('#mName').focus(); };
+$('#mX').onclick = closeModal;
+$('#mCancel').onclick = closeModal;
+$('#mask').onclick = ev => { if (ev.target === $('#mask')) closeModal(); };
+$('#mGroup').onchange = ev => {
+  const n = DOCS.filter(d => d.g === ev.target.value).length + 1;
+  $('#mCode').value = `QT-${ev.target.value}-${String(n).padStart(2, '0')}`;
+};
+$('#mOk').onclick = () => {
+  const nm = $('#mName').value.trim() || 'Quy trình chưa đặt tên';
+  closeModal(); go('editor');
+  toast(`Đã tạo <b>${$('#mCode').value}</b> — ${esc(nm)} (Bản nháp) và mở trình vẽ.`);
+};
+
+document.querySelectorAll('[data-export]').forEach(b => b.onclick = () => {
+  const k = b.dataset.export;
+  toast(k === 'in' ? 'Bản thật sẽ mở hộp thoại in khổ A3 ngang.'
+    : `Bản thật sẽ tải về <b>QT-SX-01_v2.1.${k.toLowerCase() === 'word' ? 'docx' : k.toLowerCase()}</b> gồm lưu đồ và bảng diễn giải.`);
+});
+
+$('#themeBtn').onclick = () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const dark = cur ? cur === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+};
+
+/* ── Khởi động ── */
+paintRail(); paintList(); paintAll(); paintInsp(); setTool(); setDocState('draft');
+})();
+</script>
+</body>
+</html>
