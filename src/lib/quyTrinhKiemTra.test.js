@@ -107,4 +107,58 @@ describe('kiemTraLuuDo', () => {
     const r = kiemTraLuuDo({ lanes: [], phases: [], nodes: [], edges: [] });
     expect(r.loi.some(x => x.ma === 'THIEU_BAT_DAU')).toBe(true);
   });
+
+  test('đảo hoang — hai khối nối vòng nhau nhưng không tới được từ Bắt đầu → lỗi', () => {
+    const s = sach();
+    s.nodes.push(K('p', 'step', 0, 300), K('q', 'step', 0, 400));
+    s.edges.push({ id: 'ep', a: 'p', b: 'q', lbl: '', k: 'n' },
+                 { id: 'eq', a: 'q', b: 'p', lbl: '', k: 'n' });
+    const r = kiemTraLuuDo(s);
+    expect(r.loi.filter(x => x.ma === 'KHONG_TOI_DUOC').map(x => x.khoiId).sort()).toEqual(['p', 'q']);
+    expect(coTheBanHanh(s)).toBe(false);
+  });
+
+  test('khối tự nối vào chính nó cũng bị bắt', () => {
+    const s = sach();
+    s.nodes.push(K('lp', 'step', 0, 300));
+    s.edges.push({ id: 'el', a: 'lp', b: 'lp', lbl: '', k: 'n' });
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'KHONG_TOI_DUOC' && x.khoiId === 'lp')).toBe(true);
+  });
+
+  test('lưu đồ hợp lệ có VÒNG LẶP quay lại vẫn sạch — không báo nhầm', () => {
+    const s = sach();
+    s.nodes.push(K('b2', 'step', 0, 300));
+    s.edges = [
+      { id: 'e1', a: 's',  b: 'b1', lbl: '', k: 'n' },
+      { id: 'e2', a: 'b1', b: 'b2', lbl: '', k: 'n' },
+      { id: 'e3', a: 'b2', b: 'b1', lbl: 'Làm lại', k: 'ng' },
+      { id: 'e4', a: 'b2', b: 'e',  lbl: '', k: 'n' },
+    ];
+    expect(kiemTraLuuDo(s).loi).toEqual([]);
+  });
+
+  test('đường nối trỏ tới khối đã xoá KHÔNG được tính là đã có đường ra', () => {
+    const s = sach();
+    s.nodes.push(K('cut', 'step', 0, 300));
+    s.edges.push({ id: 'ein', a: 'b1', b: 'cut', lbl: '', k: 'n' },
+                 { id: 'eout', a: 'cut', b: 'khong-con-nua', lbl: '', k: 'n' });
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'KHONG_CO_DUONG_RA' && x.khoiId === 'cut')).toBe(true);
+  });
+
+  test('thiếu Bắt đầu thì KHÔNG đổ thêm một trận lỗi không-tới-được', () => {
+    const s = sach();
+    s.nodes = s.nodes.filter(n => n.t !== 'start');
+    s.edges = s.edges.filter(e => e.a !== 's');
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'KHONG_TOI_DUOC')).toBe(false);
+  });
+
+  test('5 khối chồng nhau chỉ ra tối đa 4 cảnh báo, không phải 10', () => {
+    const s = sach();
+    for (let i = 0; i < 4; i++) {
+      s.nodes.push(K('c' + i, 'step', 0, 100));
+      s.edges.push({ id: 'ci' + i, a: 'b1', b: 'c' + i, lbl: '', k: 'n' },
+                   { id: 'co' + i, a: 'c' + i, b: 'e', lbl: '', k: 'n' });
+    }
+    expect(kiemTraLuuDo(s).canhBao.filter(x => x.ma === 'CHONG_KHOI').length).toBeLessThanOrEqual(4);
+  });
 });
