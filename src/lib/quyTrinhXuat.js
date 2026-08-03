@@ -26,10 +26,12 @@ export async function soDoSangPng(soDo, { tyLe = 2 } = {}) {
     const cv = document.createElement('canvas');
     cv.width = img.naturalWidth; cv.height = img.naturalHeight;
     const ctx = cv.getContext('2d');
+    if (!ctx) throw new Error('Trình duyệt không dựng được ảnh lưu đồ.');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cv.width, cv.height);
     ctx.drawImage(img, 0, 0);
     const blob = await new Promise(ok => cv.toBlob(ok, 'image/png'));
+    if (!blob) throw new Error('Không dựng được ảnh lưu đồ — lưu đồ quá lớn so với giới hạn của trình duyệt. Hãy bớt cột hoặc bớt hàng rồi xuất lại.');
     return { blob, w: cv.width, h: cv.height };
   } finally {
     URL.revokeObjectURL(url);
