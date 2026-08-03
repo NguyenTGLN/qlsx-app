@@ -26,6 +26,8 @@ export function kiemTraLuuDo(soDo) {
 
   if (!nodes.some(n => n.t === 'start')) them(loi, 'THIEU_BAT_DAU', 'Lưu đồ chưa có khối Bắt đầu.');
   if (!nodes.some(n => n.t === 'end'))   them(loi, 'THIEU_KET_THUC', 'Lưu đồ chưa có khối Kết thúc.');
+  if (!nodes.some(n => n.t !== 'start' && n.t !== 'end'))
+    them(loi, 'CHUA_CO_BUOC_NAO', 'Quy trình chưa có bước nào giữa Bắt đầu và Kết thúc.');
 
   // Chỉ tính đường nối mà CẢ hai đầu còn tồn tại. Đường trỏ tới khối đã xoá
   // không được tính là "đã có đường ra" — nếu không nó che mất lỗi thật.

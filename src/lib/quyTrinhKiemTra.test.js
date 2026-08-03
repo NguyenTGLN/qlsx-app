@@ -161,4 +161,12 @@ describe('kiemTraLuuDo', () => {
     }
     expect(kiemTraLuuDo(s).canhBao.filter(x => x.ma === 'CHONG_KHOI').length).toBeLessThanOrEqual(4);
   });
+
+  test('quy trình rỗng giữa Bắt đầu và Kết thúc → không ban hành được', () => {
+    const s = sach();
+    s.nodes = s.nodes.filter(n => n.t === 'start' || n.t === 'end');
+    s.edges = [{ id: 'e1', a: 's', b: 'e', lbl: '', k: 'n' }];
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'CHUA_CO_BUOC_NAO')).toBe(true);
+    expect(coTheBanHanh(s)).toBe(false);
+  });
 });

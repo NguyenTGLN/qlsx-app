@@ -106,13 +106,17 @@ export function mauSoDo(nhom) {
 }
 
 /** 'QT-<nhóm>-<số>' lớn hơn số lớn nhất đang có trong nhóm. KHÔNG lấp lỗ hổng —
- *  mã đã cấp cho một quy trình bị xoá thì không dùng lại, tránh trùng trong hồ sơ giấy. */
+ *  mã đã cấp cho một quy trình bị xoá thì không dùng lại, tránh trùng trong hồ sơ giấy.
+ *  Nhóm phải nằm trong NHOM: thà ném lỗi còn hơn ghi 'QT-undefined-01' vào sổ. */
 export function maSoTiepTheo(nhom, maDaCo = []) {
-  const re = new RegExp(`^QT-${nhom}-(\\d+)$`);
+  const ma = String(nhom ?? '').trim().toUpperCase();
+  if (!NHOM.some(n => n.ma === ma))
+    throw new Error('Nhóm bộ phận không hợp lệ khi sinh mã số: ' + nhom);
+  const re = new RegExp(`^QT-${ma}-(\\d+)$`);
   let max = 0;
-  for (const ma of maDaCo) {
-    const m = re.exec(String(ma || '').trim());
+  for (const x of (maDaCo || [])) {          // truy vấn Supabase lỗi trả null, không phải undefined
+    const m = re.exec(String(x ?? '').trim().toUpperCase());
     if (m) max = Math.max(max, parseInt(m[1], 10));
   }
-  return `QT-${nhom}-${String(max + 1).padStart(2, '0')}`;
+  return `QT-${ma}-${String(max + 1).padStart(2, '0')}`;
 }
