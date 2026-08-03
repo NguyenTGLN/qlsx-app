@@ -4,6 +4,7 @@ import { routeEdge } from './quyTrinhSoDo';
 import { themBuoc, xoaKhoi, doiCot, thuTuBuoc } from './quyTrinhSoDo';
 import { tuXepLai } from './quyTrinhSoDo';
 import { xoaCot, xoaHang } from './quyTrinhSoDo';
+import { hutHang, NGUONG_HUT } from './quyTrinhSoDo';
 
 const soDo = {
   lanes: [
@@ -678,5 +679,91 @@ describe('xoá hàng giai đoạn', () => {
     const s = xoaHang(base(), 0);
     expect(s.nodes).toHaveLength(2);
     expect(s.edges).toEqual([{ id: 'e1', a: 'g2', b: 'g3', lbl: '', k: 'n' }]);
+  });
+});
+
+describe('hút ngang hàng khi kéo khối', () => {
+  // h = 56 là khối Thao tác, h = 86 là khối Quyết định — đúng số ở LOAI_KHOI.
+  const nn = (id, y, h = 56, lane = 0) => ({
+    id, t: h === 86 ? 'dec' : 'step', lane, y, dx: 0, w: 164, h, tx: id,
+  });
+  const mk = (...nodes) => ({
+    lanes: [{ name: 'A' }, { name: 'B' }], phases: [{ name: 'x', h: 600 }], nodes, edges: [],
+  });
+
+  test('tâm gần nhau trong ngưỡng → hút về đúng ngang hàng', () => {
+    // A: y=100, h=56 → tâm 128. Kéo B tới y=104 → tâm 132, lệch 4.
+    const s = mk(nn('A', 100), nn('B', 300));
+    expect(hutHang(s, 'B', 104)).toEqual({ y: 100, mocY: 128 });
+  });
+
+  test('KHỐI CAO THẤP KHÁC NHAU — tâm bằng nhau, ĐỈNH thì không', () => {
+    // Quyết định cao 86 ở y=100 → tâm 143. Thao tác cao 56 kéo tới y=112 → tâm 140.
+    const s = mk(nn('QĐ', 100, 86), nn('TT', 400, 56));
+    const r = hutHang(s, 'TT', 112);
+    expect(r).toEqual({ y: 115, mocY: 143 });
+    // Điều phải ghim: TÂM trùng khít…
+    expect(115 + 56 / 2).toBe(100 + 86 / 2);
+    // …còn ĐỈNH lệch hẳn 15px. Căn đỉnh là hai khối so le trông thấy trên bản in.
+    expect(r.y - 100).toBe(15);
+  });
+
+  test('đúng bằng ngưỡng vẫn hút', () => {
+    const s = mk(nn('A', 100), nn('B', 300));
+    expect(hutHang(s, 'B', 110, 10)).toEqual({ y: 100, mocY: 128 });   // lệch đúng 10
+  });
+
+  test('quá ngưỡng 1px → nhả ra, mocY null và y giữ nguyên', () => {
+    const s = mk(nn('A', 100), nn('B', 300));
+    expect(hutHang(s, 'B', 111, 10)).toEqual({ y: 111, mocY: null });  // lệch 11
+  });
+
+  test('sơ đồ chỉ có một khối → không có gì để hút, mocY null', () => {
+    const s = mk(nn('A', 100));
+    expect(hutHang(s, 'A', 260)).toEqual({ y: 260, mocY: null });
+  });
+
+  test('KHÔNG bao giờ tự hút vào chính nó, kể cả khi y trong sơ đồ đã cũ', () => {
+    // Trong lúc kéo, y lưu ở sơ đồ vẫn là chỗ cũ. Tính cả chính nó thì khối
+    // bị ghim chết tại chỗ xuất phát, kéo đi 4px là bị kéo ngược về.
+    const s = mk(nn('A', 100), nn('B', 500));
+    expect(hutHang(s, 'B', 504)).toEqual({ y: 504, mocY: null });
+  });
+
+  test('id lạ → trả nguyên y, không nổ', () => {
+    const s = mk(nn('A', 100), nn('B', 300));
+    expect(hutHang(s, 'khong-co', 77)).toEqual({ y: 77, mocY: null });
+    expect(hutHang(s, undefined, 77)).toEqual({ y: 77, mocY: null });
+    expect(hutHang(null, 'A', 77)).toEqual({ y: 77, mocY: null });
+  });
+
+  test('nhiều khối trong tầm → chọn khối GẦN NHẤT', () => {
+    // A tâm 128, B tâm 142. Kéo C tới tâm 136: lệch 8 và 6 → B thắng.
+    const s = mk(nn('A', 100), nn('B', 114, 56, 1), nn('C', 400));
+    expect(hutHang(s, 'C', 108)).toEqual({ y: 114, mocY: 142 });
+  });
+
+  test('cách đều hai bên → chọn khối có tâm NHỎ HƠN, không phụ thuộc thứ tự mảng', () => {
+    // A tâm 128, B tâm 148, kéo C tới tâm 138 — lệch 10 cả hai.
+    const nA = nn('A', 100), nB = nn('B', 120, 56, 1), nC = nn('C', 400);
+    expect(hutHang(mk(nA, nB, nC), 'C', 110)).toEqual({ y: 100, mocY: 128 });
+    expect(hutHang(mk(nB, nA, nC), 'C', 110)).toEqual({ y: 100, mocY: 128 });
+  });
+
+  test('ngưỡng truyền vào có tác dụng', () => {
+    const s = mk(nn('A', 100), nn('B', 300));
+    expect(hutHang(s, 'B', 104, 2)).toEqual({ y: 104, mocY: null });   // lệch 4 > 2
+    expect(hutHang(s, 'B', 124, 30)).toEqual({ y: 100, mocY: 128 });   // lệch 24 < 30
+  });
+
+  test('BẤT BIẾN — không sửa sơ đồ gốc, chỉ trả số', () => {
+    const s = mk(nn('A', 100), nn('B', 300));
+    const truoc = JSON.stringify(s);
+    hutHang(s, 'B', 104);
+    expect(JSON.stringify(s)).toBe(truoc);
+  });
+
+  test('NGUONG_HUT là số dương để giao diện chia cho zoom', () => {
+    expect(NGUONG_HUT).toBeGreaterThan(0);
   });
 });

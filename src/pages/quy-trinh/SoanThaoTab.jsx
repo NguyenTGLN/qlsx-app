@@ -4,9 +4,9 @@ import {
   Minus, Plus, Save, Send, BadgeCheck, RotateCcw, Loader2, GitBranch,
 } from 'lucide-react';
 import {
-  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG,
+  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, NGUONG_HUT,
   laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
-  themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang,
+  themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -142,7 +142,7 @@ export default function SoanThaoTab({
   const [cheDo, setCheDo] = useState('chon');    // 'chon' | 'noi'
   const [nguonNoi, setNguonNoi] = useState(null);
   const [zoom, setZoom] = useState(1);
-  const [keo, setKeo] = useState(null);          // vị trí TẠM trong lúc kéo khối
+  const [keo, setKeo] = useState(null);          // { id, dx, y, mocY } — vị trí TẠM lúc kéo khối
   const [noiKeo, setNoiKeo] = useState(null);    // { tuId, x, y } — đường nối đang kéo
   const [keoLech, setKeoLech] = useState(null);  // { id, lech } — chỗ bẻ đang kéo tay
   const [pop, setPop] = useState(null);          // bảng chọn của nút ＋
@@ -202,6 +202,11 @@ export default function SoanThaoTab({
     const e = soDoHien.edges.find(x => x.id === chon.id);
     return (e && routeEdge(soDoHien, e)?.keo) || null;
   })();
+
+  // Mốc đường gióng ngang hàng — chỉ tồn tại trong lúc kéo, và chỉ khi nam châm
+  // đang bắt vào một khối nào đó. hutHang đã trả sẵn con số này lúc kéo nên ở đây
+  // không phải tính lại toạ độ nào. Thả tay ⇒ keo về null ⇒ đường gióng tắt.
+  const mocGiong = keo?.mocY ?? null;
 
   // ── Thao tác trên sơ đồ ───────────────────────────────────────
   const nhayToi = useCallback((id) => {
@@ -341,8 +346,16 @@ export default function SoanThaoTab({
       k.di = true;
     }
     k.dx = Math.round((k.dx0 + dx) / BUOC_LUOI) * BUOC_LUOI;
-    k.y = Math.max(4, Math.round((k.y0 + dy) / BUOC_LUOI) * BUOC_LUOI);
-    setKeo({ id: k.id, dx: k.dx, y: k.y });
+    const oLuoi = Math.max(4, Math.round((k.y0 + dy) / BUOC_LUOI) * BUOC_LUOI);
+    // Nam châm ngang hàng ĐÈ LÊN lưới 8px, không thay nó: lưới chỉ cho ra bội số
+    // của 8, mà khối Quyết định (cao 86) muốn TRÙNG TÂM với khối Thao tác (cao 56)
+    // thì y phải lệch nhau 15 — con số không bao giờ rơi trúng lưới. Canh bằng mắt
+    // trên lưới vẫn lệch 3-4px, và 3-4px đó nhìn thấy rõ trên bản in A3.
+    // Ngưỡng chia cho zoom y như quãng kéo ở trên, để nam châm ở 50% và 150%
+    // cắn cùng một khoảng trên MÀN HÌNH. Phép hút nằm ở hutHang, không ở đây.
+    const hut = hutHang(soDo, k.id, oLuoi, NGUONG_HUT / zoom);
+    k.y = hut.y;
+    setKeo({ id: k.id, dx: k.dx, y: k.y, mocY: hut.mocY });
   };
 
   const thaKhoi = () => {
@@ -785,6 +798,9 @@ export default function SoanThaoTab({
             <br /><br />
             Khối <b>Quyết định</b> có hai nút ＋: nhánh <b style={{ color: C.xanh }}>OK</b> đi xuống,
             nhánh <b style={{ color: C.do }}>NG</b> rẽ trái.
+            <br /><br />
+            Kéo khối tới gần ngang hàng một khối khác thì nó <b>tự hút cho bằng hàng</b>,
+            kèm một <b style={{ color: mau }}>vạch gióng nét đứt</b> chạy suốt trang.
           </div>
 
           <h3 style={{ ...S.h3, marginTop: 18 }}>Thêm khối rời</h3>
@@ -1032,49 +1048,65 @@ export default function SoanThaoTab({
                   );
                 })}
 
-                {/* ── Núm chỉnh chỗ bẻ đường nối ────────────────────
+                {/* ── LỚP PHỦ TRÊN CÙNG: đường gióng ngang hàng + núm chỗ bẻ ──
                     LỚP PHỦ RIÊNG, đặt SAU lớp khối và z-index cao hơn núm ＋/⤳.
                     Để trong <svg> đường nối thì khối (vẽ sau) đè lên mất: lưu đồ
                     càng dày thì càng dễ có khối nằm đúng chỗ bẻ — mà dày chính là
                     lúc người dùng cần tách đường nhất. Núm phải với tới được ở
-                    đúng lúc đó.
+                    đúng lúc đó. Đường gióng cũng vậy: nó phải nhìn thấy được ĐÈ
+                    LÊN khối đang kéo, nếu không thì đúng lúc cần nhất lại bị che.
                     Cả lớp phủ pointer-events:none nên KHÔNG chắn chuột của khối
                     bên dưới; chỉ riêng cái núm bật lại pointer-events.
                     Nằm chung khung giấy với lớp khối nên cùng hệ toạ độ — không
                     phải trừ GUT/HEAD_H hay tính lại điểm nào.
-                    Chỉ hiện khi ĐANG CHỌN một đường và sửa được; đường thẳng tuột
-                    thì routeEdge trả keo = null nên không có núm. */}
-                {coSua && numLech && (
-                  <svg className="qe-lechlop" data-lech={numLech.huong}
+                    Núm chỗ bẻ chỉ hiện khi ĐANG CHỌN một đường; đường thẳng tuột
+                    thì routeEdge trả keo = null nên không có núm. Đường gióng chỉ
+                    hiện khi đang kéo khối VÀ nam châm đang bắt. */}
+                {coSua && (mocGiong != null || numLech) && (
+                  <svg className="qe-lechlop" data-lech={numLech ? numLech.huong : undefined}
                     width={drawW(soDoHien)} height={drawH(soDoHien)}>
-                    <line
-                      x1={numLech.tu[0]} y1={numLech.tu[1]}
-                      x2={numLech.den[0]} y2={numLech.den[1]}
-                      stroke={mau} strokeWidth={2.4} strokeLinecap="round" opacity={0.35} />
-                    {/* Dời cả nhóm tới chỗ routeEdge chỉ, rồi vẽ núm quanh gốc 0,0:
-                        hai gạch chỉ hướng kéo là hằng số, không phải phép tính. */}
-                    <g transform={`translate(${numLech.x} ${numLech.y})`}>
-                      <circle r={9.5} fill="#fff" stroke={mau} strokeWidth={2}
-                        style={{
-                          pointerEvents: 'all', touchAction: 'none',
-                          cursor: numLech.huong === 'doc' ? 'ew-resize' : 'ns-resize',
-                        }}
-                        onPointerDown={(ev) => nenLech(ev, numLech.huong)}
-                        onPointerMove={dichLech}
-                        onPointerUp={thaLech}
-                        onPointerCancel={huyLech}>
-                        <title>
-                          {numLech.huong === 'doc'
-                            ? 'Kéo trái/phải để dời nhánh dọc — tách đường này khỏi đường đang chồng lên nó'
-                            : 'Kéo lên/xuống để dời chỗ bẻ — tách đường này khỏi đường đang chồng lên nó'}
-                        </title>
-                      </circle>
-                      <path
-                        d={numLech.huong === 'doc'
-                          ? 'M-3 -4V4M3 -4V4'
-                          : 'M-4 -3H4M-4 3H4'}
-                        stroke={mau} strokeWidth={1.6} strokeLinecap="round" />
-                    </g>
+
+                    {/* Đường gióng: vạch mảnh nét đứt chạy SUỐT bề ngang trang, không
+                        đầu mũi tên. Đường nối thì luôn đi từ khối này tới khối kia và
+                        có mũi tên — nhìn một cái là biết vạch này không phải đường nối,
+                        chỉ là cái thước tạm. */}
+                    {mocGiong != null && (
+                      <line x1={0} y1={mocGiong} x2={drawW(soDoHien)} y2={mocGiong}
+                        stroke={mau} strokeWidth={1.3} strokeDasharray="4 5" opacity={0.95} />
+                    )}
+
+                    {numLech && (
+                      <>
+                        <line
+                          x1={numLech.tu[0]} y1={numLech.tu[1]}
+                          x2={numLech.den[0]} y2={numLech.den[1]}
+                          stroke={mau} strokeWidth={2.4} strokeLinecap="round" opacity={0.35} />
+                        {/* Dời cả nhóm tới chỗ routeEdge chỉ, rồi vẽ núm quanh gốc 0,0:
+                            hai gạch chỉ hướng kéo là hằng số, không phải phép tính. */}
+                        <g transform={`translate(${numLech.x} ${numLech.y})`}>
+                          <circle r={9.5} fill="#fff" stroke={mau} strokeWidth={2}
+                            style={{
+                              pointerEvents: 'all', touchAction: 'none',
+                              cursor: numLech.huong === 'doc' ? 'ew-resize' : 'ns-resize',
+                            }}
+                            onPointerDown={(ev) => nenLech(ev, numLech.huong)}
+                            onPointerMove={dichLech}
+                            onPointerUp={thaLech}
+                            onPointerCancel={huyLech}>
+                            <title>
+                              {numLech.huong === 'doc'
+                                ? 'Kéo trái/phải để dời nhánh dọc — tách đường này khỏi đường đang chồng lên nó'
+                                : 'Kéo lên/xuống để dời chỗ bẻ — tách đường này khỏi đường đang chồng lên nó'}
+                            </title>
+                          </circle>
+                          <path
+                            d={numLech.huong === 'doc'
+                              ? 'M-3 -4V4M3 -4V4'
+                              : 'M-4 -3H4M-4 3H4'}
+                            stroke={mau} strokeWidth={1.6} strokeLinecap="round" />
+                        </g>
+                      </>
+                    )}
                   </svg>
                 )}
               </div>

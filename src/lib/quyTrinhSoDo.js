@@ -269,6 +269,42 @@ export function xoaHang(soDo, i) {
   return s;
 }
 
+export const NGUONG_HUT = 10;   // tâm cách nhau bao nhiêu px thì nam châm bắt
+
+/** Hút khối đang kéo về ngang hàng với khối khác.
+ *  Trả { y, mocY } — y đã hút (hoặc y gốc nếu không có gì để hút),
+ *  và mocY là toạ độ đường gióng để vẽ, hoặc null nếu không hút vào đâu.
+ *
+ *  So theo TÂM chứ không theo ĐỈNH. Khối Quyết định cao 86, khối Thao tác cao
+ *  56 — căn đỉnh thì hai khối "cùng bước" vẫn so le 15px, nhìn thấy rõ trên bản
+ *  in A3. Ngang hàng theo mắt người là tâm trùng nhau.
+ *
+ *  Khối đang kéo KHÔNG tính chính nó: lúc kéo, y lưu ở sơ đồ vẫn là chỗ cũ, tính
+ *  vào thì nó tự ghim mình tại chỗ xuất phát, nhích 4px là bị kéo ngược về.
+ *
+ *  Chọn khối GẦN NHẤT. Cách đều thì lấy khối có tâm NHỎ HƠN (nằm trên) — luật cố
+ *  định, không phụ thuộc thứ tự khối trong mảng, để cùng một thao tác kéo luôn
+ *  cho cùng một kết quả.
+ *
+ *  Thuần: chỉ đọc soDo và trả về số, không sửa gì. */
+export function hutHang(soDo, id, y, nguong = NGUONG_HUT) {
+  const ds = soDo?.nodes || [];
+  const n = ds.find(m => m.id === id);
+  if (!n) return { y, mocY: null };
+  const tam = y + n.h / 2;
+
+  let gan = null;
+  for (const m of ds) {
+    if (m.id === id) continue;
+    const c = m.y + m.h / 2;
+    const d = Math.abs(c - tam);
+    if (d > nguong) continue;
+    if (!gan || d < gan.d || (d === gan.d && c < gan.c)) gan = { d, c };
+  }
+  if (!gan) return { y, mocY: null };
+  return { y: gan.c - n.h / 2, mocY: gan.c };
+}
+
 /** Căn giữa khối theo cột và giãn đều trong từng giai đoạn.
  *  CỐ Ý không đảo thứ tự: người dùng phải đoán được kết quả trước khi bấm. */
 export function tuXepLai(soDo) {
