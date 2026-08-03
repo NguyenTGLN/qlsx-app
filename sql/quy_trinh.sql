@@ -159,6 +159,12 @@ begin
   or not exists (select 1 from jsonb_array_elements(v_nodes) n where n->>'t' = 'end') then
     raise exception 'Lưu đồ phải có đủ khối Bắt đầu và Kết thúc mới ban hành được';
   end if;
+  -- Mẫu mới tinh chỉ có Bắt đầu → Kết thúc. Tài liệu ISO không có bước nào
+  -- thì không phải quy trình, nên chặn luôn ở đây chứ không chỉ ở giao diện.
+  if not exists (select 1 from jsonb_array_elements(v_nodes) n
+                  where n->>'t' not in ('start', 'end')) then
+    raise exception 'Quy trình chưa có bước nào giữa Bắt đầu và Kết thúc';
+  end if;
 
   -- Bản đang hiệu lực → hết hiệu lực
   update quy_trinh_phien_ban set trang_thai = 'expired'
