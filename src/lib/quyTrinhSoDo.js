@@ -175,6 +175,61 @@ export function doiCot(soDo, id, cot) {
   return s;
 }
 
+/** Xoá một cột. Trả sơ đồ MỚI. Ném lỗi nếu cột còn khối — người dùng phải
+ *  kéo khối đi trước, để họ tự thấy bước của mình đổi bộ phận phụ trách. */
+export function xoaCot(soDo, i) {
+  const lanes = soDo?.lanes || [];
+  if (!Number.isInteger(i) || i < 0 || i >= lanes.length) {
+    throw new Error(`Không có cột số ${Number(i) + 1} để xoá — lưu đồ đang có ${lanes.length} cột.`);
+  }
+  if (lanes.length <= 1) {
+    throw new Error('Lưu đồ phải còn ít nhất một cột bộ phận — không xoá được cột cuối cùng.');
+  }
+  const dung = (soDo.nodes || []).filter(n => n.lane === i);
+  if (dung.length) {
+    throw new Error(
+      `Cột “${lanes[i].name}” còn ${dung.length} khối. Hãy chuyển các khối này sang cột khác `
+      + 'rồi mới xoá cột — đổi cột là đổi người thực hiện, phải do người dùng tự quyết.');
+  }
+
+  const s = sao(soDo);
+  s.lanes.splice(i, 1);
+  // lane là CHỈ SỐ vào lanes. Bỏ một cột thì mọi cột bên phải tụt một bậc; không
+  // dời theo thì khối lặng lẽ nhảy sang bộ phận khác mà không có lỗi nào báo ra.
+  for (const n of s.nodes) if (n.lane > i) n.lane -= 1;
+  return s;
+}
+
+/** Xoá một hàng giai đoạn. Trả sơ đồ MỚI. Ném lỗi nếu hàng còn khối. */
+export function xoaHang(soDo, i) {
+  const phases = soDo?.phases || [];
+  if (!Number.isInteger(i) || i < 0 || i >= phases.length) {
+    throw new Error(`Không có hàng giai đoạn số ${Number(i) + 1} để xoá — lưu đồ đang có ${phases.length} hàng.`);
+  }
+  if (phases.length <= 1) {
+    throw new Error('Lưu đồ phải còn ít nhất một hàng giai đoạn — không xoá được hàng cuối cùng.');
+  }
+  const nodes = soDo.nodes || [];
+  const dung = nodes.filter(n => phaseOf(soDo, n) === i);
+  if (dung.length) {
+    throw new Error(
+      `Hàng “${phases[i].name}” còn ${dung.length} khối. Hãy kéo các khối này sang giai đoạn khác `
+      + 'rồi mới xoá hàng.');
+  }
+
+  // Khối KHÔNG mang chỉ số hàng — nó nằm ở đâu là do y tuyệt đối, phaseOf đọc
+  // ngược ra từ mốc cộng dồn chiều cao. Bỏ một hàng cao h mà không kéo phần dưới
+  // lên đúng h thì mốc dịch còn khối đứng yên: cùng một khối, sang tên giai đoạn
+  // khác, không một dòng lỗi nào báo.
+  const cao = phases[i].h;
+  const s = sao(soDo);
+  s.phases.splice(i, 1);
+  for (let k = 0; k < nodes.length; k++) {
+    if (phaseOf(soDo, nodes[k]) > i) s.nodes[k].y -= cao;
+  }
+  return s;
+}
+
 /** Căn giữa khối theo cột và giãn đều trong từng giai đoạn.
  *  CỐ Ý không đảo thứ tự: người dùng phải đoán được kết quả trước khi bấm. */
 export function tuXepLai(soDo) {

@@ -5,8 +5,8 @@ import {
 } from 'lucide-react';
 import {
   GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG,
-  laneX, nodeX, drawW, drawH, phaseTop, timKhoi, routeEdge, thuTuBuoc,
-  themBuoc, xoaKhoi, doiCot, tuXepLai,
+  laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
+  themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -131,13 +131,16 @@ export default function SoanThaoTab({
   const [cheDo, setCheDo] = useState('chon');    // 'chon' | 'noi'
   const [nguonNoi, setNguonNoi] = useState(null);
   const [zoom, setZoom] = useState(1);
-  const [keo, setKeo] = useState(null);          // vị trí TẠM trong lúc kéo
+  const [keo, setKeo] = useState(null);          // vị trí TẠM trong lúc kéo khối
+  const [noiKeo, setNoiKeo] = useState(null);    // { tuId, x, y } — đường nối đang kéo
   const [pop, setPop] = useState(null);          // bảng chọn của nút ＋
   const [dangChay, setDangChay] = useState('');  // tên hành động đang gọi API
   const [toasts, setToasts] = useState([]);
 
   const keoRef = useRef(null);
+  const noiRef = useRef(null);
   const cvRef = useRef(null);
+  const giayRef = useRef(null);
   const rf = useRef({});
 
   const toast = useCallback((noiDung) => {
@@ -195,6 +198,35 @@ export default function SoanThaoTab({
       g.toast('Đã xoá đường nối.');
     }
   }, []);
+
+  // Xoá cột / hàng — phép tính nằm ở xoaCot/xoaHang, ở đây chỉ hỏi lại và
+  // chuyển lời từ chối của nó ra màn hình. KHÔNG tự đi dời khối hộ người dùng:
+  // dời khối là đổi bộ phận phụ trách, chuyện đó phải do họ nhìn thấy mà quyết.
+  const xoaCotTai = (i) => {
+    if (!coSua) return;
+    const ten = soDo.lanes[i]?.name || `Cột ${i + 1}`;
+    if (!window.confirm(`Xoá cột “${ten}” khỏi lưu đồ?\n\nHoàn tác được bằng Ctrl+Z.`)) return;
+    try {
+      doiSoDo(xoaCot(soDo, i));
+      setChon(null);
+      toast(`Đã xoá cột “${ten}”. Các cột bên phải dịch sang trái một bậc.`);
+    } catch (e) {
+      alert(e?.message || 'Không xoá được cột.');
+    }
+  };
+
+  const xoaHangTai = (i) => {
+    if (!coSua) return;
+    const ten = soDo.phases[i]?.name || `Giai đoạn ${i + 1}`;
+    if (!window.confirm(`Xoá hàng giai đoạn “${ten}”?\n\nHoàn tác được bằng Ctrl+Z.`)) return;
+    try {
+      doiSoDo(xoaHang(soDo, i));
+      setChon(null);
+      toast(`Đã xoá hàng “${ten}”. Các khối phía dưới dịch lên, vẫn ở đúng giai đoạn cũ.`);
+    } catch (e) {
+      alert(e?.message || 'Không xoá được hàng.');
+    }
+  };
 
   const xepLai = () => {
     if (!coSua) return;
@@ -308,6 +340,65 @@ export default function SoanThaoTab({
     }
   };
 
+  // ── Kéo để nối ────────────────────────────────────────────────
+  // HAI cử chỉ kéo trên cùng một khối, tách nhau bằng CHỖ BẤM chứ không bằng
+  // ngưỡng thời gian hay quãng đường — thứ luôn đoán sai một trong hai:
+  //   · bấm vào THÂN khối  → nenKhoi  → dời khối;
+  //   · bấm vào NÚM tròn ⤳ → nenNoi   → kéo ra đường nối.
+  // Núm gọi stopPropagation ở pointerdown nên nenKhoi không bao giờ chạy cùng,
+  // và keoRef vẫn null suốt lúc kéo nối ⇒ dichKhoi/thaKhoi tự thoát ở dòng đầu.
+  const diemGiay = (ev) => {
+    const r = giayRef.current?.getBoundingClientRect();
+    if (!r) return { x: 0, y: 0 };
+    // Chia cho zoom như dichKhoi: khung giấy đang bị scale(), rect trả về là số đo
+    // trên MÀN HÌNH, còn toạ độ khối thì tính trên GIẤY.
+    return { x: (ev.clientX - r.left) / zoom, y: (ev.clientY - r.top) / zoom };
+  };
+
+  const nenNoi = (ev, n) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    if (!coSua) return;
+    noiRef.current = { tuId: n.id };
+    setNoiKeo({ tuId: n.id, ...diemGiay(ev) });
+    try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch { /* trình duyệt không hỗ trợ */ }
+  };
+
+  const dichNoi = (ev) => {
+    if (!noiRef.current) return;
+    ev.stopPropagation();
+    setNoiKeo({ tuId: noiRef.current.tuId, ...diemGiay(ev) });
+  };
+
+  const huyNoi = (ev) => {
+    if (!noiRef.current) return;
+    ev.stopPropagation();
+    noiRef.current = null;
+    setNoiKeo(null);
+  };
+
+  const thaNoi = (ev) => {
+    const k = noiRef.current;
+    if (!k) return;
+    ev.stopPropagation();
+    noiRef.current = null;
+    setNoiKeo(null);
+    if (!coSua || !soDo) return;
+    // Thả xuống đâu thì hỏi thẳng DOM chỗ đó, không dò theo toạ độ: lớp phủ
+    // đường nối đã pointer-events:none nên phép thử này chạm đúng khối.
+    const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    const dich = el?.closest?.('[data-node]')?.getAttribute('data-node');
+    if (!dich) { toast('Đã bỏ nối — thả ra chỗ trống thì không tạo đường nào.'); return; }
+    // Khối tự nối vào chính nó là một LỖI ở kiemTraLuuDo. Chặn ngay ở đây thì
+    // người dùng không phải đi xoá một thứ mà giao diện vừa mời họ tạo ra.
+    if (dich === k.tuId) { toast('Một khối không nối được vào chính nó.'); return; }
+    const s = themCanh(soDo, k.tuId, dich);
+    doiSoDo(s);
+    setChon({ loai: 'edge', id: s.edges[s.edges.length - 1].id });
+    toast('Đã tạo đường nối. Đặt nhãn OK / NG ở bảng bên phải.');
+  };
+
   // ── Phím tắt ──────────────────────────────────────────────────
   // Đọc mọi thứ qua ref: handler gắn MỘT lần, không dựng lại theo từng render,
   // và hoàn toàn không giữ bản sao sơ đồ nào. Ctrl+Z gọi thẳng hoanTac() —
@@ -326,6 +417,7 @@ export default function SoanThaoTab({
       const g = rf.current;
       if (ev.key === 'Escape') {
         setPop(null); setChon(null); setNguonNoi(null);
+        noiRef.current = null; setNoiKeo(null);
         return;
       }
       if (ev.key === 'Delete' || ev.key === 'Del') {
@@ -438,6 +530,11 @@ export default function SoanThaoTab({
   const phases = soDo.phases || [];
   const W = GUT + drawW(soDoHien);
   const H = HEAD_H + drawH(soDoHien);
+
+  // Neo đầu đường nối đang kéo. Toạ độ lấy nguyên từ rectOf — tệp này không
+  // tính lấy một điểm nào trên giấy.
+  const khoiKeoNoi = noiKeo ? timKhoi(soDoHien, noiKeo.tuId) : null;
+  const neoKeoNoi = khoiKeoNoi ? rectOf(khoiKeoNoi) : null;
 
   const banHanhDuoc = isAdmin && tt === 'wait' && loi.length === 0 && !chuaLuu;
   // "Chưa lưu" đứng TRƯỚC danh sách lỗi trong thứ tự báo: lỗi đã hiện sẵn ở
@@ -639,15 +736,32 @@ export default function SoanThaoTab({
 
           <h3 style={{ ...S.h3, marginTop: 18 }}>Vòng lặp quay lại</h3>
           <div style={S.hint}>
-            Bấm <b>Nối</b> → chọn khối nguồn → chọn khối đích, dùng cho mũi tên
-            <b> quay ngược lên</b> (làm lại, hàng NG).
+            Dùng cho mũi tên <b>quay ngược lên</b> (làm lại, hàng NG) — thứ nút ＋ không tạo được.
+            Hai cách, kết quả giống hệt nhau:
+            <br /><br />
+            <b>Kéo:</b> bấm khối nguồn → giữ chuột ở núm tròn
+            <b style={{ color: mau }}> ⤳</b> cạnh phải khối → kéo sang khối đích rồi thả.
+            Đường đứt nét chạy theo con trỏ cho thấy đang nối tới đâu.
+            <br /><br />
+            <b>Bấm:</b> bấm <b>Nối</b> trên thanh công cụ → bấm khối nguồn → bấm khối đích.
+            <br /><br />
+            Thả ra chỗ trống thì <b>không tạo gì</b>. Một khối không nối được vào chính nó.
+          </div>
+
+          <h3 style={{ ...S.h3, marginTop: 18 }}>Sửa cột và hàng</h3>
+          <div style={S.hint}>
+            Bấm <b>tên cột</b> hoặc <b>nhãn giai đoạn</b> → bảng bên phải có chỗ đổi tên
+            và nút <b>xoá</b> cột/hàng đó.
+            <br /><br />
+            Chỉ xoá được cột/hàng <b>đang trống</b>. Còn khối thì phải chuyển đi trước —
+            đổi cột là đổi người thực hiện, máy không quyết hộ.
           </div>
 
           <h3 style={{ ...S.h3, marginTop: 18 }}>Phím tắt</h3>
           <div style={S.hint}>
             <kbd style={S.kbd}>Del</kbd> xoá phần đang chọn<br />
             <kbd style={S.kbd}>Ctrl</kbd>+<kbd style={S.kbd}>Z</kbd> hoàn tác<br />
-            <kbd style={S.kbd}>Esc</kbd> bỏ chọn / đóng bảng chọn<br />
+            <kbd style={S.kbd}>Esc</kbd> bỏ chọn / đóng bảng chọn / huỷ đường đang kéo<br />
             Kéo khối sang cột khác → <b>người thực hiện tự đổi theo cột</b>.
           </div>
         </aside>
@@ -689,7 +803,7 @@ export default function SoanThaoTab({
                 </div>
               ))}
 
-              <div style={{
+              <div ref={giayRef} style={{
                 position: 'absolute', left: GUT, top: HEAD_H,
                 width: drawW(soDoHien), height: drawH(soDoHien),
               }}>
@@ -716,6 +830,10 @@ export default function SoanThaoTab({
                         <path d="M0 0L10 5L0 10z" fill={c} />
                       </marker>
                     ))}
+                    <marker id="qe-ar-keo" viewBox="0 0 10 10" refX="9" refY="5"
+                      markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                      <path d="M0 0L10 5L0 10z" fill={mau} />
+                    </marker>
                   </defs>
                   {(soDoHien.edges || []).map((e) => {
                     const r = routeEdge(soDoHien, e);
@@ -741,6 +859,16 @@ export default function SoanThaoTab({
                       </g>
                     );
                   })}
+
+                  {/* Đường nối đang kéo — chỉ là hình vẽ tạm, chưa có trong sơ đồ */}
+                  {neoKeoNoi && (
+                    <g pointerEvents="none">
+                      <line x1={neoKeoNoi.cx} y1={neoKeoNoi.cy} x2={noiKeo.x} y2={noiKeo.y}
+                        stroke={mau} strokeWidth={2} strokeDasharray="7 5" strokeLinecap="round"
+                        markerEnd="url(#qe-ar-keo)" />
+                      <circle cx={neoKeoNoi.cx} cy={neoKeoNoi.cy} r={4} fill={mau} />
+                    </g>
+                  )}
                 </svg>
 
                 {/* Khối */}
@@ -750,7 +878,10 @@ export default function SoanThaoTab({
                   const so = thuTu.indexOf(n.id) + 1;
                   const daChon = chon?.loai === 'node' && chon.id === n.id;
                   const laDauNoi = nguonNoi === n.id;
-                  const hienPlus = coSua && daChon && cheDo === 'chon' && n.t !== 'end';
+                  // Núm ＋ và núm nối chỉ mọc trên khối ĐANG CHỌN. Khối Kết thúc
+                  // không có núm nào: nó là điểm cuối, không có bước sau và cũng
+                  // không có đường ra. (Cần một ngoại lệ thật thì vẫn còn chế độ Nối.)
+                  const hienNum = coSua && daChon && cheDo === 'chon' && n.t !== 'end';
                   return (
                     <div key={n.id} className="qe-node" data-node={n.id} data-t={n.t}
                       data-sel={daChon ? '1' : undefined} data-src={laDauNoi ? '1' : undefined}
@@ -770,7 +901,7 @@ export default function SoanThaoTab({
                       )}
                       {daChon && <span className="qe-selbox" style={{ borderColor: mau }} />}
 
-                      {hienPlus && (n.t === 'dec' ? (
+                      {hienNum && (n.t === 'dec' ? (
                         <>
                           <button type="button" data-addh className="qe-addh qe-addh-down"
                             style={{ borderColor: C.xanh, color: C.xanh }}
@@ -794,6 +925,19 @@ export default function SoanThaoTab({
                           onPointerDown={(ev) => ev.stopPropagation()}
                           onClick={(ev) => moPop(ev, n, '')}>＋</button>
                       ))}
+
+                      {hienNum && (
+                        <button type="button" className="qe-addh qe-noih"
+                          style={{ borderColor: mau, color: mau }}
+                          aria-label="Kéo sang khối khác để nối"
+                          title="Kéo từ đây thả vào khối khác để tạo đường nối — dùng cả cho mũi tên quay ngược (làm lại, NG)"
+                          onPointerDown={(ev) => nenNoi(ev, n)}
+                          onPointerMove={dichNoi}
+                          onPointerUp={thaNoi}
+                          onPointerCancel={huyNoi}>
+                          <Spline size={12} strokeWidth={2.6} />
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -812,10 +956,10 @@ export default function SoanThaoTab({
               coSua={coSua} onXoa={() => { doiSoDo(boCanh(soDo, canhChon.id)); setChon(null); toast('Đã xoá đường nối.'); }} />
           ) : chon?.loai === 'lane' && lanes[chon.id] ? (
             <CotInsp key={`lane${chon.id}`} i={chon.id} l={lanes[chon.id]} soDo={soDo}
-              doiSoDo={doiSoDo} coSua={coSua} />
+              doiSoDo={doiSoDo} coSua={coSua} onXoa={() => xoaCotTai(chon.id)} />
           ) : chon?.loai === 'phase' && phases[chon.id] ? (
             <HangInsp key={`ph${chon.id}`} i={chon.id} p={phases[chon.id]} soDo={soDo}
-              doiSoDo={doiSoDo} coSua={coSua} />
+              doiSoDo={doiSoDo} coSua={coSua} onXoa={() => xoaHangTai(chon.id)} />
           ) : (
             <Rong
               tieuDe="Chưa chọn gì trên lưu đồ."
@@ -1007,7 +1151,7 @@ function CanhInsp({ e, soDo, doiSoDo, coSua, onXoa }) {
   );
 }
 
-function CotInsp({ i, l, soDo, doiSoDo, coSua }) {
+function CotInsp({ i, l, soDo, doiSoDo, coSua, onXoa }) {
   const va = (k, v) => doiSoDo(vaCot(soDo, i, { [k]: v }));
   const dung = soDo.nodes.filter(n => n.lane === i).length;
   return (
@@ -1033,20 +1177,35 @@ function CotInsp({ i, l, soDo, doiSoDo, coSua }) {
         </div>
       </div>
 
-      {dung > 0 && (
-        <p style={S.note}>
-          Xoá cột chưa mở ở màn hình này — {dung} khối đang nằm trong cột sẽ mất người thực hiện.
-        </p>
+      {coSua && (
+        <>
+          <button type="button" className="qe-btn" disabled={dung > 0 || soDo.lanes.length <= 1}
+            style={{ ...S.btn, ...S.btnNho, color: C.do }} onClick={onXoa}
+            title={dung > 0
+              ? `Cột còn ${dung} khối — chuyển chúng sang cột khác trước đã.`
+              : soDo.lanes.length <= 1 ? 'Lưu đồ phải còn ít nhất một cột.'
+                : 'Xoá cột này khỏi lưu đồ'}>
+            Xoá cột này
+          </button>
+          <p style={S.note}>
+            {dung > 0
+              ? `Còn ${dung} khối trong cột. Hãy kéo chúng sang cột khác trước — đổi cột là đổi
+                 người thực hiện, chỗ này không tự quyết hộ.`
+              : 'Các cột bên phải sẽ dịch sang trái một bậc. Hoàn tác được bằng Ctrl+Z.'}
+          </p>
+        </>
       )}
     </>
   );
 }
 
-function HangInsp({ i, p, soDo, doiSoDo, coSua }) {
+function HangInsp({ i, p, soDo, doiSoDo, coSua, onXoa }) {
+  // Khối không mang chỉ số hàng — hỏi phaseOf mới biết nó rơi vào giai đoạn nào.
+  const dung = soDo.nodes.filter(n => phaseOf(soDo, n) === i).length;
   return (
     <>
       <h3 style={S.h3}>Thuộc tính hàng</h3>
-      <p style={S.kind}>Giai đoạn {i + 1}</p>
+      <p style={S.kind}>Giai đoạn {i + 1} · {dung} khối đang nằm trong hàng này</p>
 
       <ONhap id="qe-f-pname" nhan="Tên giai đoạn" giaTri={p.name} doc={!coSua}
         key={`pn${p.name}`} onLuu={v => doiSoDo(vaHang(soDo, i, { name: v.trim() || 'Giai đoạn mới' }))} />
@@ -1060,6 +1219,25 @@ function HangInsp({ i, p, soDo, doiSoDo, coSua }) {
           doiSoDo(vaHang(soDo, i, { h: s }));
         }}
         ghiChu="Tối thiểu 80. Tự xếp lại sẽ tự nới thêm nếu các khối cần nhiều chỗ hơn." />
+
+      {coSua && (
+        <>
+          <button type="button" className="qe-btn" disabled={dung > 0 || soDo.phases.length <= 1}
+            style={{ ...S.btn, ...S.btnNho, color: C.do }} onClick={onXoa}
+            title={dung > 0
+              ? `Hàng còn ${dung} khối — kéo chúng sang giai đoạn khác trước đã.`
+              : soDo.phases.length <= 1 ? 'Lưu đồ phải còn ít nhất một hàng.'
+                : 'Xoá hàng giai đoạn này khỏi lưu đồ'}>
+            Xoá hàng này
+          </button>
+          <p style={S.note}>
+            {dung > 0
+              ? `Còn ${dung} khối trong hàng. Hãy kéo chúng sang giai đoạn khác trước khi xoá hàng.`
+              : 'Các khối phía dưới dịch lên đúng chiều cao hàng này nên vẫn ở đúng giai đoạn cũ. '
+                + 'Hoàn tác được bằng Ctrl+Z.'}
+          </p>
+        </>
+      )}
     </>
   );
 }
@@ -1152,6 +1330,8 @@ const CSS = `
 .qe-addh:hover { transform:scale(1.14); }
 .qe-addh-down { left:50%; margin-left:-11.5px; bottom:-32px; }
 .qe-addh-left { top:50%; margin-top:-11.5px; left:-32px; }
+/* Núm KÉO ĐỂ NỐI — cạnh phải, chỗ duy nhất chưa bị núm ＋ nào chiếm. */
+.qe-noih { top:50%; margin-top:-11.5px; right:-32px; cursor:crosshair; touch-action:none; }
 .qe-addh-lbl { position:absolute; top:24px; left:50%; transform:translateX(-50%);
   font-size:9px; font-weight:800; letter-spacing:.04em; white-space:nowrap; pointer-events:none; }
 

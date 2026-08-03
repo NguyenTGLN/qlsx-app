@@ -3,6 +3,7 @@ import { LANE_W, LOAI_KHOI, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timK
 import { routeEdge } from './quyTrinhSoDo';
 import { themBuoc, xoaKhoi, doiCot, thuTuBuoc } from './quyTrinhSoDo';
 import { tuXepLai } from './quyTrinhSoDo';
+import { xoaCot, xoaHang } from './quyTrinhSoDo';
 
 const soDo = {
   lanes: [
@@ -318,5 +319,177 @@ describe('tự xếp lại', () => {
     const g = { lanes: [{ name: 'A', owner: 'a', color: '#111111' }], phases: [], nodes: [], edges: [] };
     expect(() => tuXepLai(g)).not.toThrow();
     expect(tuXepLai(g).phases).toEqual([]);
+  });
+});
+
+describe('xoá cột', () => {
+  // Cột 1 (Kế hoạch) CỐ Ý bỏ trống — xoá cột còn khối là bị từ chối, nên bài
+  // kiểm tra dồn chỉ số phải đặt chỗ trống đúng ở cột sắp xoá.
+  const base = () => ({
+    lanes: [
+      { name: 'Kinh doanh', owner: 'NV Kinh doanh', color: '#111111' },
+      { name: 'Kế hoạch',   owner: 'NV Kế hoạch',   color: '#222222' },
+      { name: 'Kho',        owner: 'Thủ kho',       color: '#333333' },
+      { name: 'Sản xuất',   owner: 'Tổ trưởng SX',  color: '#444444' },
+      { name: 'QC',         owner: 'NV QC',         color: '#555555' },
+    ],
+    phases: [{ name: 'G1', h: 400 }],
+    nodes: [
+      { id: 'a', t: 'start', lane: 0, y: 30,  dx: 0, w: 164, h: 48, tx: 'Bắt đầu', desc: '', form: '—', time: '—' },
+      { id: 'c', t: 'step',  lane: 2, y: 110, dx: 0, w: 164, h: 56, tx: 'Xuất kho', desc: '', form: '—', time: '—' },
+      { id: 'd', t: 'step',  lane: 3, y: 190, dx: 0, w: 164, h: 56, tx: 'Lắp ráp',  desc: '', form: '—', time: '—' },
+      { id: 'e', t: 'check', lane: 4, y: 270, dx: 0, w: 164, h: 56, tx: 'Kiểm QC',  desc: '', form: '—', time: '—' },
+    ],
+    edges: [
+      { id: 'e1', a: 'a', b: 'c', lbl: '', k: 'n' },
+      { id: 'e2', a: 'c', b: 'd', lbl: '', k: 'n' },
+      { id: 'e3', a: 'd', b: 'e', lbl: '', k: 'n' },
+    ],
+  });
+
+  const boPhan = (s, id) => s.lanes[s.nodes.find(n => n.id === id).lane].name;
+
+  test('bỏ đúng cột khỏi danh sách, các cột còn lại giữ nguyên thứ tự', () => {
+    const s = xoaCot(base(), 1);
+    expect(s.lanes.map(l => l.name)).toEqual(['Kinh doanh', 'Kho', 'Sản xuất', 'QC']);
+  });
+
+  test('DỒN CHỈ SỐ — mọi khối vẫn thuộc đúng BỘ PHẬN cũ sau khi xoá cột giữa', () => {
+    const g = base();
+    const truoc = g.nodes.map(n => [n.id, g.lanes[n.lane].name]);
+    const s = xoaCot(g, 1);
+    for (const [id, ten] of truoc) expect(boPhan(s, id)).toBe(ten);
+  });
+
+  test('khối ở cột BÊN TRÁI chỗ xoá không bị dời chỉ số', () => {
+    const s = xoaCot(base(), 1);
+    expect(s.nodes.find(n => n.id === 'a').lane).toBe(0);
+    expect(s.nodes.find(n => n.id === 'c').lane).toBe(1);   // 2 → 1
+    expect(s.nodes.find(n => n.id === 'e').lane).toBe(3);   // 4 → 3
+  });
+
+  test('không đụng tới khối và đường nối — chỉ đổi chỉ số cột', () => {
+    const s = xoaCot(base(), 1);
+    expect(s.nodes).toHaveLength(4);
+    expect(s.edges).toHaveLength(3);
+    expect(s.nodes.map(n => n.y)).toEqual([30, 110, 190, 270]);
+  });
+
+  test('TỪ CHỐI xoá cột còn khối, và nói rõ còn mấy khối', () => {
+    const g = base();
+    expect(() => xoaCot(g, 2)).toThrow(/còn 1 khối/i);
+    expect(() => xoaCot(g, 2)).toThrow(/Kho/);
+  });
+
+  test('TỪ CHỐI xoá cột cuối cùng còn lại', () => {
+    const g = { lanes: [{ name: 'A', owner: 'a', color: '#111111' }], phases: [{ name: 'G1', h: 200 }], nodes: [], edges: [] };
+    expect(() => xoaCot(g, 0)).toThrow(/ít nhất một cột/i);
+  });
+
+  test('chỉ số ngoài phạm vi → lỗi tiếng Việt rõ ràng, không nổ ngầm', () => {
+    expect(() => xoaCot(base(), 9)).toThrow(/không có cột/i);
+    expect(() => xoaCot(base(), -1)).toThrow(/không có cột/i);
+    expect(() => xoaCot(base(), 1.5)).toThrow(/không có cột/i);
+  });
+
+  test('BẤT BIẾN — sơ đồ gốc không bị sửa', () => {
+    const g = base(), truoc = JSON.stringify(g);
+    xoaCot(g, 1);
+    expect(JSON.stringify(g)).toBe(truoc);
+  });
+
+  test('bị từ chối thì KHÔNG đổi gì hết', () => {
+    const g = base(), truoc = JSON.stringify(g);
+    expect(() => xoaCot(g, 2)).toThrow();
+    expect(JSON.stringify(g)).toBe(truoc);
+  });
+});
+
+describe('xoá hàng giai đoạn', () => {
+  // Hàng 0 CỐ Ý bỏ trống để xoá được; khối nằm ở hàng 1 và hàng 2.
+  // Mốc hàng: G1 [0,130) · G2 [130,330) · G3 [330,480)
+  const base = () => ({
+    lanes: [
+      { name: 'Kho', owner: 'Thủ kho',      color: '#111111' },
+      { name: 'SX',  owner: 'Tổ trưởng SX', color: '#222222' },
+    ],
+    phases: [{ name: 'Tiếp nhận', h: 130 }, { name: 'Chuẩn bị', h: 200 }, { name: 'Sản xuất', h: 150 }],
+    nodes: [
+      { id: 'g2', t: 'step', lane: 0, y: 150, dx: 0, w: 164, h: 56, tx: 'Soạn hàng', desc: '', form: '—', time: '—' },
+      { id: 'g3', t: 'step', lane: 1, y: 340, dx: 0, w: 164, h: 56, tx: 'Lắp ráp',   desc: '', form: '—', time: '—' },
+    ],
+    edges: [{ id: 'e1', a: 'g2', b: 'g3', lbl: '', k: 'n' }],
+  });
+
+  const giaiDoan = (s, id) => s.phases[phaseOf(s, s.nodes.find(n => n.id === id))].name;
+
+  test('bỏ đúng hàng khỏi danh sách giai đoạn', () => {
+    const s = xoaHang(base(), 0);
+    expect(s.phases.map(p => p.name)).toEqual(['Chuẩn bị', 'Sản xuất']);
+    expect(drawH(s)).toBe(350);
+  });
+
+  test('khối ở HÀNG 3 vẫn nằm ở hàng 2 — cùng một GIAI ĐOẠN, chỉ đổi số', () => {
+    const g = base();
+    expect(phaseOf(g, g.nodes.find(n => n.id === 'g3'))).toBe(2);
+    expect(giaiDoan(g, 'g3')).toBe('Sản xuất');
+
+    const s = xoaHang(g, 0);
+    expect(phaseOf(s, s.nodes.find(n => n.id === 'g3'))).toBe(1);
+    expect(giaiDoan(s, 'g3')).toBe('Sản xuất');
+  });
+
+  test('MỌI khối phía dưới dịch lên đúng bằng chiều cao hàng bị xoá', () => {
+    const s = xoaHang(base(), 0);
+    expect(s.nodes.find(n => n.id === 'g2').y).toBe(150 - 130);
+    expect(s.nodes.find(n => n.id === 'g3').y).toBe(340 - 130);
+  });
+
+  test('khối ở hàng TRÊN chỗ xoá không bị dịch', () => {
+    const g = base();
+    g.nodes = [
+      { id: 'tren', t: 'step', lane: 0, y: 30,  dx: 0, w: 164, h: 56, tx: 'Trên',  desc: '', form: '—', time: '—' },
+      { id: 'duoi', t: 'step', lane: 0, y: 340, dx: 0, w: 164, h: 56, tx: 'Dưới',  desc: '', form: '—', time: '—' },
+    ];
+    g.edges = [];
+    const s = xoaHang(g, 1);                        // xoá hàng GIỮA (đang trống), h = 200
+    expect(s.nodes.find(n => n.id === 'tren').y).toBe(30);
+    expect(s.nodes.find(n => n.id === 'duoi').y).toBe(340 - 200);
+    expect(giaiDoan(s, 'tren')).toBe('Tiếp nhận');
+    expect(giaiDoan(s, 'duoi')).toBe('Sản xuất');
+  });
+
+  test('TỪ CHỐI xoá hàng còn khối, và nói rõ còn mấy khối', () => {
+    const g = base();
+    expect(() => xoaHang(g, 1)).toThrow(/còn 1 khối/i);
+    expect(() => xoaHang(g, 1)).toThrow(/Chuẩn bị/);
+  });
+
+  test('TỪ CHỐI xoá hàng cuối cùng còn lại', () => {
+    const g = { lanes: [{ name: 'A', owner: 'a', color: '#111111' }], phases: [{ name: 'G1', h: 200 }], nodes: [], edges: [] };
+    expect(() => xoaHang(g, 0)).toThrow(/ít nhất một hàng/i);
+  });
+
+  test('chỉ số ngoài phạm vi → lỗi tiếng Việt rõ ràng, không nổ ngầm', () => {
+    expect(() => xoaHang(base(), 7)).toThrow(/không có hàng/i);
+    expect(() => xoaHang(base(), -2)).toThrow(/không có hàng/i);
+  });
+
+  test('BẤT BIẾN — sơ đồ gốc không bị sửa', () => {
+    const g = base(), truoc = JSON.stringify(g);
+    xoaHang(g, 0);
+    expect(JSON.stringify(g)).toBe(truoc);
+  });
+
+  test('bị từ chối thì KHÔNG đổi gì hết', () => {
+    const g = base(), truoc = JSON.stringify(g);
+    expect(() => xoaHang(g, 1)).toThrow();
+    expect(JSON.stringify(g)).toBe(truoc);
+  });
+
+  test('giữ nguyên khối và đường nối — chỉ dịch toạ độ', () => {
+    const s = xoaHang(base(), 0);
+    expect(s.nodes).toHaveLength(2);
+    expect(s.edges).toEqual([{ id: 'e1', a: 'g2', b: 'g3', lbl: '', k: 'n' }]);
   });
 });
