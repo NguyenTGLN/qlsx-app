@@ -58,6 +58,17 @@ const vaCanh = (soDo, id, va) => ({
   ...soDo, edges: soDo.edges.map(e => (e.id === id ? { ...e, ...va } : e)),
 });
 const boCanh = (soDo, id) => ({ ...soDo, edges: soDo.edges.filter(e => e.id !== id) });
+// XOÁ HẲN khoá lech chứ không đặt về 0: đường quay lại đúng dạng của một đường
+// chưa từng bị chỉnh, và bản lưu không đọng lại khoá thừa nào.
+const boLech = (soDo, id) => ({
+  ...soDo,
+  edges: soDo.edges.map((e) => {
+    if (e.id !== id) return e;
+    const con = { ...e };
+    delete con.lech;
+    return con;
+  }),
+});
 const vaCot = (soDo, i, va) => ({
   ...soDo, lanes: soDo.lanes.map((l, k) => (k === i ? { ...l, ...va } : l)),
 });
@@ -133,12 +144,14 @@ export default function SoanThaoTab({
   const [zoom, setZoom] = useState(1);
   const [keo, setKeo] = useState(null);          // vị trí TẠM trong lúc kéo khối
   const [noiKeo, setNoiKeo] = useState(null);    // { tuId, x, y } — đường nối đang kéo
+  const [keoLech, setKeoLech] = useState(null);  // { id, lech } — chỗ bẻ đang kéo tay
   const [pop, setPop] = useState(null);          // bảng chọn của nút ＋
   const [dangChay, setDangChay] = useState('');  // tên hành động đang gọi API
   const [toasts, setToasts] = useState([]);
 
   const keoRef = useRef(null);
   const noiRef = useRef(null);
+  const lechRef = useRef(null);
   const cvRef = useRef(null);
   const giayRef = useRef(null);
   const rf = useRef({});
@@ -160,12 +173,16 @@ export default function SoanThaoTab({
   const coSua = !!pSoanThao?.edit && !!soDo && !banKhoa;
 
   // ── Dẫn xuất từ sơ đồ ─────────────────────────────────────────
-  // Sơ đồ ĐANG HIỂN THỊ: trong lúc kéo, khối theo con trỏ để đường nối
-  // chạy theo cho mượt. Bản CAM KẾT (soDo) chỉ đổi khi thả tay.
+  // Sơ đồ ĐANG HIỂN THỊ: trong lúc kéo, khối (và chỗ bẻ đường nối) theo con trỏ
+  // để hình chạy theo cho mượt. Bản CAM KẾT (soDo) chỉ đổi khi thả tay — một
+  // bước hoàn tác cho một lần chỉnh, không phải một bước cho mỗi pixel.
   const soDoHien = useMemo(() => {
-    if (!soDo || !keo) return soDo;
-    return { ...soDo, nodes: soDo.nodes.map(n => (n.id === keo.id ? { ...n, dx: keo.dx, y: keo.y } : n)) };
-  }, [soDo, keo]);
+    if (!soDo) return soDo;
+    let s = soDo;
+    if (keo) s = { ...s, nodes: s.nodes.map(n => (n.id === keo.id ? { ...n, dx: keo.dx, y: keo.y } : n)) };
+    if (keoLech) s = { ...s, edges: s.edges.map(e => (e.id === keoLech.id ? { ...e, lech: keoLech.lech } : e)) };
+    return s;
+  }, [soDo, keo, keoLech]);
 
   const thuTu = useMemo(() => (soDoHien ? thuTuBuoc(soDoHien) : []), [soDoHien]);
 
@@ -176,6 +193,15 @@ export default function SoanThaoTab({
 
   const khoiChon = chon?.loai === 'node' && soDo ? timKhoi(soDo, chon.id) : null;
   const canhChon = chon?.loai === 'edge' && soDo ? soDo.edges.find(e => e.id === chon.id) : null;
+
+  // Núm kéo chỉnh chỗ bẻ của đường ĐANG CHỌN. routeEdge trả sẵn `keo` — chỗ đặt
+  // núm và hai đầu đoạn kéo được — nên tệp này không tính lấy một toạ độ nào.
+  // null nghĩa là đường ấy thẳng tuột, không có chỗ bẻ nào để chỉnh.
+  const numLech = (() => {
+    if (!soDoHien || chon?.loai !== 'edge') return null;
+    const e = soDoHien.edges.find(x => x.id === chon.id);
+    return (e && routeEdge(soDoHien, e)?.keo) || null;
+  })();
 
   // ── Thao tác trên sơ đồ ───────────────────────────────────────
   const nhayToi = useCallback((id) => {
@@ -399,6 +425,55 @@ export default function SoanThaoTab({
     toast('Đã tạo đường nối. Đặt nhãn OK / NG ở bảng bên phải.');
   };
 
+  // ── Kéo chỗ bẻ của đường nối ──────────────────────────────────
+  // Cử chỉ THỨ BA, tách khỏi hai cử chỉ kia đúng bằng CHỖ BẤM như chúng:
+  //   · bấm THÂN khối → dời khối · bấm núm ⤳ → kéo nối · bấm núm trên ĐƯỜNG → chỉnh chỗ bẻ.
+  // Núm nằm đè lên vệt bắt sự kiện của chính đường đó nên phải stopPropagation
+  // ở pointerdown, và nó được vẽ SAU mọi đường (SVG không có z-index, cái vẽ sau
+  // nằm trên). keoRef/noiRef vẫn null suốt lúc này ⇒ dichKhoi/thaNoi tự thoát.
+  //
+  // Số ghi vào sơ đồ là lech TƯƠNG ĐỐI so với chỗ bẻ tự động, nên kéo khối đi
+  // thì chỗ bẻ vẫn bám theo. Hình học của việc đó nằm trọn ở routeEdge.
+  const nenLech = (ev, huong) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    if (!coSua || !canhChon) return;
+    const goc = Number.isFinite(canhChon.lech) ? canhChon.lech : 0;
+    lechRef.current = { id: canhChon.id, huong, sx: ev.clientX, sy: ev.clientY, goc, lech: goc };
+    setKeoLech({ id: canhChon.id, lech: goc });
+    try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch { /* trình duyệt không hỗ trợ */ }
+  };
+
+  const dichLech = (ev) => {
+    const k = lechRef.current;
+    if (!k) return;
+    ev.stopPropagation();
+    // Chia cho zoom y như dichKhoi, rồi bám lưới 8px y như kéo khối.
+    const di = (k.huong === 'doc' ? ev.clientX - k.sx : ev.clientY - k.sy) / zoom;
+    k.lech = Math.round((k.goc + di) / BUOC_LUOI) * BUOC_LUOI;
+    setKeoLech({ id: k.id, lech: k.lech });
+  };
+
+  const thaLech = (ev) => {
+    const k = lechRef.current;
+    if (!k) return;
+    ev.stopPropagation();
+    lechRef.current = null;
+    setKeoLech(null);
+    // Không nhích được pixel nào thì KHÔNG đẩy gì vào ngăn xếp hoàn tác: bấm
+    // trúng núm rồi thả ra là chuyện thường, Ctrl+Z không nên tiêu vào đó một nấc.
+    if (!coSua || !soDo || k.lech === k.goc) return;
+    doiSoDo(k.lech === 0 ? boLech(soDo, k.id) : vaCanh(soDo, k.id, { lech: k.lech }));
+  };
+
+  const huyLech = (ev) => {
+    if (!lechRef.current) return;
+    ev.stopPropagation();
+    lechRef.current = null;
+    setKeoLech(null);
+  };
+
   // ── Phím tắt ──────────────────────────────────────────────────
   // Đọc mọi thứ qua ref: handler gắn MỘT lần, không dựng lại theo từng render,
   // và hoàn toàn không giữ bản sao sơ đồ nào. Ctrl+Z gọi thẳng hoanTac() —
@@ -418,6 +493,7 @@ export default function SoanThaoTab({
       if (ev.key === 'Escape') {
         setPop(null); setChon(null); setNguonNoi(null);
         noiRef.current = null; setNoiKeo(null);
+        lechRef.current = null; setKeoLech(null);   // bỏ luôn lần chỉnh đang dở
         return;
       }
       if (ev.key === 'Delete' || ev.key === 'Del') {
@@ -748,6 +824,20 @@ export default function SoanThaoTab({
             Thả ra chỗ trống thì <b>không tạo gì</b>. Một khối không nối được vào chính nó.
           </div>
 
+          <h3 style={{ ...S.h3, marginTop: 18 }}>Đường nối chồng nhau</h3>
+          <div style={S.hint}>
+            Hai đường bẻ trúng cùng một độ cao thì vẽ đè lên nhau, bản in không đọc được.
+            <br /><br />
+            Bấm vào <b>đường nối</b> → hiện một <b style={{ color: mau }}>núm tròn</b> ngay
+            chỗ bẻ → kéo núm đó ra cho hai đường tách nhau. Núm ngang thì kéo
+            <b> lên/xuống</b>, núm dọc thì kéo <b>trái/phải</b>.
+            <br /><br />
+            Đường <b>thẳng tuột</b> không có chỗ bẻ nên không có núm — chuyện đó bình thường.
+            <br /><br />
+            Chỗ bẻ nhớ theo <b>khoảng lệch</b> chứ không phải toạ độ, nên kéo khối đi thì nó
+            vẫn bám theo. Muốn bỏ: bấm <b>Đưa về tự động</b> ở bảng bên phải.
+          </div>
+
           <h3 style={{ ...S.h3, marginTop: 18 }}>Sửa cột và hàng</h3>
           <div style={S.hint}>
             Bấm <b>tên cột</b> hoặc <b>nhãn giai đoạn</b> → bảng bên phải có chỗ đổi tên
@@ -859,6 +949,43 @@ export default function SoanThaoTab({
                       </g>
                     );
                   })}
+
+                  {/* Núm chỉnh chỗ bẻ — chỉ trên đường ĐANG CHỌN, chỉ khi sửa được.
+                      Vẽ SAU mọi đường nên nó nằm trên vệt bắt sự kiện của chúng.
+                      Không có núm khi đường thẳng tuột (routeEdge trả keo = null). */}
+                  {coSua && numLech && (
+                    <g data-lech={numLech.huong}>
+                      <line
+                        x1={numLech.tu[0]} y1={numLech.tu[1]}
+                        x2={numLech.den[0]} y2={numLech.den[1]}
+                        stroke={mau} strokeWidth={2.4} strokeLinecap="round" opacity={0.35}
+                        pointerEvents="none" />
+                      {/* Dời cả nhóm tới chỗ routeEdge chỉ, rồi vẽ núm quanh gốc 0,0:
+                          hai gạch chỉ hướng kéo là hằng số, không phải phép tính. */}
+                      <g transform={`translate(${numLech.x} ${numLech.y})`}>
+                        <circle r={9.5} fill="#fff" stroke={mau} strokeWidth={2}
+                          style={{
+                            pointerEvents: 'all', touchAction: 'none',
+                            cursor: numLech.huong === 'doc' ? 'ew-resize' : 'ns-resize',
+                          }}
+                          onPointerDown={(ev) => nenLech(ev, numLech.huong)}
+                          onPointerMove={dichLech}
+                          onPointerUp={thaLech}
+                          onPointerCancel={huyLech}>
+                          <title>
+                            {numLech.huong === 'doc'
+                              ? 'Kéo trái/phải để dời nhánh dọc — tách đường này khỏi đường đang chồng lên nó'
+                              : 'Kéo lên/xuống để dời chỗ bẻ — tách đường này khỏi đường đang chồng lên nó'}
+                          </title>
+                        </circle>
+                        <path
+                          d={numLech.huong === 'doc'
+                            ? 'M-3 -4V4M3 -4V4'
+                            : 'M-4 -3H4M-4 3H4'}
+                          stroke={mau} strokeWidth={1.6} strokeLinecap="round" pointerEvents="none" />
+                      </g>
+                    </g>
+                  )}
 
                   {/* Đường nối đang kéo — chỉ là hình vẽ tạm, chưa có trong sơ đồ */}
                   {neoKeoNoi && (
@@ -1142,6 +1269,24 @@ function CanhInsp({ e, soDo, doiSoDo, coSua, onXoa }) {
         </select>
         <p style={S.note}>Nhánh OK / NG được tô màu tương ứng ở bảng diễn giải và bản in.</p>
       </div>
+
+      {/* Chỉ hiện khi đường ĐÃ bị kéo tay — không có gì để trả về thì không mời
+          người dùng bấm. Điều kiện đặt trên chính khoá lech chứ không đặt trên
+          "có chỗ bẻ hay không": kéo khối đi làm đường thành thẳng tuột thì lech
+          cũ vẫn nằm đó, và đây là chỗ duy nhất gỡ được nó ra. */}
+      {coSua && e.lech != null && e.lech !== 0 && (
+        <div style={S.fld}>
+          <button type="button" className="qe-btn" style={{ ...S.btn, ...S.btnNho }}
+            onClick={() => doiSoDo(boLech(soDo, e.id))}
+            title="Bỏ phần chỉnh tay, trả chỗ bẻ về chỗ máy tự tính">
+            Đưa về tự động
+          </button>
+          <p style={S.note}>
+            Chỗ bẻ đang được kéo tay lệch <b>{String(e.lech)}px</b> so với chỗ tự động.
+            Số này là khoảng LỆCH, không phải toạ độ — kéo khối đi thì chỗ bẻ vẫn bám theo.
+          </p>
+        </div>
+      )}
 
       {coSua && (
         <button type="button" className="qe-btn" style={{ ...S.btn, ...S.btnNho, color: C.do }}

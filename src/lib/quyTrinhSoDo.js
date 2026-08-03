@@ -48,14 +48,43 @@ export function phaseOf(soDo, n) {
   return soDo.phases.length - 1;
 }
 
+export const KE_HO_BE = 12;   // hở tối thiểu giữa chỗ bẻ và cạnh khối, khi kéo tay
+
+/** `lech` của một đường nối, đã lọc rác. CHỈ nhận số thật: `lech` nằm trong
+ *  so_do (jsonb) nên số lưu xuống lấy lên vẫn là số — gặp chuỗi hay null nghĩa
+ *  là dữ liệu hỏng, ép kiểu hộ lúc đó chỉ giấu cái hỏng đi. Number.isFinite
+ *  KHÔNG tự ép kiểu: '40', NaN, null, true, {} đều rơi về 0. */
+const doLech = e => (Number.isFinite(e?.lech) ? e.lech : 0);
+
+/** Nhích chỗ bẻ đi `lech`, kẹp trong [lo, hi] để đường không quặt ngược vào
+ *  chính khối vừa đi ra.
+ *  · lech = 0 thì trả THẲNG giá trị tự động, không kẹp: mọi sơ đồ đã lưu đều
+ *    không có lech, vẽ chúng phải ra đúng từng byte như trước.
+ *  · Khoảng cho phép luôn được nới để CHỨA giá trị tự động — hai khối sát nhau
+ *    có thể làm lo > hi, kẹp cứng lúc đó sẽ dời đường đi ngay cả khi lech nhỏ. */
+function nhich(tuDong, lech, lo, hi) {
+  if (!lech) return tuDong;
+  return Math.min(Math.max(tuDong + lech, Math.min(lo, tuDong)), Math.max(hi, tuDong));
+}
+
 /** Đường nối gấp khúc vuông góc, bo góc 9px — kiểu lưu đồ ISO.
- *  Trả { d, nhan:[x,y] }, hoặc null nếu thiếu khối đầu/cuối. */
+ *  Trả { d, nhan:[x,y], keo }, hoặc null nếu thiếu khối đầu/cuối.
+ *
+ *  `keo` tả ĐOẠN KÉO TAY ĐƯỢC để giao diện đặt núm mà không phải tính lấy một
+ *  toạ độ nào — null nghĩa là đường này thẳng tuột, không có chỗ bẻ để chỉnh:
+ *    { huong:'ngang', x, y, tu:[x,y], den:[x,y] }  kéo LÊN/XUỐNG, đổi y
+ *    { huong:'doc',   x, y, tu:[x,y], den:[x,y] }  kéo TRÁI/PHẢI, đổi x
+ *  x,y là TRUNG ĐIỂM đoạn đó (chỗ đặt núm); tu/den là hai đầu.
+ *
+ *  e.lech là số dôi TƯƠNG ĐỐI so với chỗ bẻ tự động, không phải toạ độ tuyệt
+ *  đối: lưu toạ độ thì kéo khối một cái là chỗ bẻ rơi lại đằng sau. */
 export function routeEdge(soDo, e) {
   const A0 = timKhoi(soDo, e.a), B0 = timKhoi(soDo, e.b);
   if (!A0 || !B0) return null;
   const A = rectOf(A0), B = rectOf(B0);
   const dx = B.cx - A.cx, dy = B.cy - A.cy;
-  let pts;
+  const lech = doLech(e);
+  let pts, keo = null;
 
   if (Math.abs(dy) < 46) {                       // cùng tầm cao → đi ngang
     const phai = dx > 0;
@@ -64,15 +93,21 @@ export function routeEdge(soDo, e) {
     if (Math.abs(dx) < 24) {
       pts = [[A.cx, A.y + A.h], [B.cx, B.y]];
     } else {
-      const giua = Math.max(A.y + A.h + 18, (A.y + A.h + B.y) / 2);
+      const giua = nhich(Math.max(A.y + A.h + 18, (A.y + A.h + B.y) / 2), lech,
+        A.y + A.h + KE_HO_BE, B.y - KE_HO_BE);
       pts = [[A.cx, A.y + A.h], [A.cx, giua], [B.cx, giua], [B.cx, B.y]];
+      keo = { huong: 'ngang', x: (A.cx + B.cx) / 2, y: giua, tu: [A.cx, giua], den: [B.cx, giua] };
     }
   } else {                                       // vòng ngược lên
     if (Math.abs(dx) < 24) {
       pts = [[A.cx, A.y], [B.cx, B.y + B.h]];
     } else {
       const phai = dx > 0;
-      pts = [[A.cx, A.y], [A.cx, B.cy], [phai ? B.x : B.x + B.w, B.cy]];
+      // Nhánh dọc leo ra từ cạnh TRÊN khối nguồn, nên kẹp trong bề ngang khối
+      // đó: đẩy quá là đường mọc ra từ khoảng không cạnh khối.
+      const doc = nhich(A.cx, lech, A.x + KE_HO_BE, A.x + A.w - KE_HO_BE);
+      pts = [[doc, A.y], [doc, B.cy], [phai ? B.x : B.x + B.w, B.cy]];
+      keo = { huong: 'doc', x: doc, y: (A.y + B.cy) / 2, tu: [doc, A.y], den: [doc, B.cy] };
     }
   }
 
@@ -94,7 +129,11 @@ export function routeEdge(soDo, e) {
     const len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
     if (len > bl) { bl = len; best = i; }
   }
-  return { d, nhan: [(pts[best][0] + pts[best + 1][0]) / 2, (pts[best][1] + pts[best + 1][1]) / 2] };
+  return {
+    d,
+    nhan: [(pts[best][0] + pts[best + 1][0]) / 2, (pts[best][1] + pts[best + 1][1]) / 2],
+    keo,
+  };
 }
 
 const KHOANG_DOC = 46;   // khoảng hở dọc giữa hai bước nối tiếp

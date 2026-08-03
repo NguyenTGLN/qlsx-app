@@ -107,6 +107,193 @@ describe('định tuyến đường nối', () => {
   });
 });
 
+describe('kéo tay điều chỉnh đường nối — lech', () => {
+  const nn = (id, lane, y, w = 164, h = 56) => ({ id, t: 'step', lane, y, dx: 0, w, h, tx: id });
+  const mk = (nodes, ...edges) => ({
+    lanes: [{}, {}, {}, {}], phases: [{ name: 'x', h: 900 }], nodes, edges,
+  });
+  const E = (them = {}) => ({ id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', ...them });
+
+  // MỐC BYTE — chuỗi d mà bản TỰ ĐỘNG (chưa có lech) sinh ra, chép nguyên văn.
+  // Mọi sơ đồ đã lưu trong DB đều KHÔNG có lech; đổi một ký tự ở đây là đổi bản
+  // in của tài liệu ISO đã ban hành, nên phải so từng byte chứ không so hình dạng.
+  const MOC = {
+    ngang:     'M188 128 L448 128',
+    xuongThang:'M318 156 L318 300',
+    xuongLech: 'M106 156 L106 219 Q106 228 115 228 L521 228 Q530 228 530 237 L530 300',
+    lenLech:   'M106 400 L106 137 Q106 128 115 128 L448 128',
+    lenThang:  'M318 400 L318 156',
+  };
+  const dung = {
+    ngang:      lech => mk([nn('a', 0, 100), nn('b', 2, 100)], E({ lech })),
+    xuongThang: lech => mk([nn('a', 1, 100), nn('b', 1, 300)], E({ lech })),
+    xuongLech:  lech => mk([nn('a', 0, 100), nn('b', 2, 300)], E({ lech })),
+    lenLech:    lech => mk([nn('a', 0, 400), nn('b', 2, 100)], E({ lech })),
+    lenThang:   lech => mk([nn('a', 1, 400), nn('b', 1, 100)], E({ lech })),
+  };
+  const ve = (ten, lech) => {
+    const s = dung[ten](lech);
+    return routeEdge(s, s.edges[0]);
+  };
+
+  // Rút các điểm NEO của path (M · đầu mút L · đầu mút Q) thành một đường gấp
+  // khúc, rồi hỏi "điểm này có nằm trên đó không". Cách duy nhất chứng minh núm
+  // kéo đậu trên NÉT VẼ chứ không lửng lơ cạnh nó.
+  const diemPath = (d) => {
+    const so = (d.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+    const pts = [];
+    let i = 0;
+    for (const c of d.match(/[MLQ]/g) || []) {
+      if (c === 'Q') i += 2;                 // bỏ điểm điều khiển, chỉ lấy đầu mút
+      pts.push([so[i], so[i + 1]]);
+      i += 2;
+    }
+    return pts;
+  };
+  // Mọi cặp toạ độ có mặt trong d, KỂ CẢ điểm điều khiển của Q. Góc bo 9px cắt
+  // ngang qua đỉnh nên đỉnh không nằm trên nét vẽ — nó là điểm điều khiển. Muốn
+  // chứng minh tu/den là đỉnh THẬT của đường thì phải soi ở đây.
+  const dinhPath = d => (d.match(/-?\d+(?:\.\d+)?\s-?\d+(?:\.\d+)?/g) || [])
+    .map(c => c.split(/\s+/).map(Number));
+  const laDinh = (d, [x, y]) => dinhPath(d).some(p => p[0] === x && p[1] === y);
+  const namTren = (d, [x, y]) => {
+    const pts = diemPath(d);
+    return pts.slice(0, -1).some((p, i) => {
+      const q = pts[i + 1];
+      const cheo = (q[0] - p[0]) * (y - p[1]) - (q[1] - p[1]) * (x - p[0]);
+      return Math.abs(cheo) < 1e-6
+        && x >= Math.min(p[0], q[0]) - 1e-6 && x <= Math.max(p[0], q[0]) + 1e-6
+        && y >= Math.min(p[1], q[1]) - 1e-6 && y <= Math.max(p[1], q[1]) + 1e-6;
+    });
+  };
+
+  test('KHÔNG có lech → vẽ y hệt bản tự động, từng byte', () => {
+    for (const ten of Object.keys(MOC)) expect(ve(ten, undefined).d).toBe(MOC[ten]);
+  });
+
+  test('lech = 0 → vẫn y hệt bản tự động, từng byte', () => {
+    for (const ten of Object.keys(MOC)) expect(ve(ten, 0).d).toBe(MOC[ten]);
+  });
+
+  test('đích ở DƯỚI lệch cột: lech 40 hạ đoạn ngang xuống đúng 40, không đổi gì khác', () => {
+    const a = ve('xuongLech', 0), b = ve('xuongLech', 40);
+    expect(b.keo.y - a.keo.y).toBe(40);
+    expect(b.keo.x).toBe(a.keo.x);
+    expect(b.keo.tu[0]).toBe(a.keo.tu[0]);           // bề ngang đoạn ngang giữ nguyên
+    expect(b.keo.den[0]).toBe(a.keo.den[0]);
+    const dA = diemPath(a.d), dB = diemPath(b.d);
+    expect(dB[0]).toEqual(dA[0]);                    // vẫn ra đúng cạnh dưới khối nguồn
+    expect(dB.at(-1)).toEqual(dA.at(-1));            // vẫn đâm đúng cạnh trên khối đích
+  });
+
+  test('lech ÂM nâng đoạn ngang lên đúng bằng đó', () => {
+    expect(ve('xuongLech', -40).keo.y - ve('xuongLech', 0).keo.y).toBe(-40);
+  });
+
+  test('vòng ngược LÊN: lech dịch nhánh DỌC sang ngang đúng bằng lech', () => {
+    const a = ve('lenLech', 0), b = ve('lenLech', 30);
+    expect(a.keo.huong).toBe('doc');
+    expect(b.keo.x - a.keo.x).toBe(30);
+    expect(b.keo.tu[0] - a.keo.tu[0]).toBe(30);
+    expect(b.keo.den[0] - a.keo.den[0]).toBe(30);
+    expect(diemPath(b.d).at(-1)).toEqual(diemPath(a.d).at(-1));   // vẫn đâm đúng cạnh bên khối đích
+  });
+
+  test('đoạn ngang mang huong "ngang", đoạn dọc mang huong "doc"', () => {
+    expect(ve('xuongLech', 0).keo.huong).toBe('ngang');
+    expect(ve('lenLech', 0).keo.huong).toBe('doc');
+  });
+
+  test('trường hợp KHÔNG chỉnh tay được trả keo:null và BỎ QUA lech', () => {
+    for (const ten of ['ngang', 'xuongThang', 'lenThang']) {
+      expect(ve(ten, 0).keo).toBeNull();
+      expect(ve(ten, 120).keo).toBeNull();
+      expect(ve(ten, 120).d).toBe(MOC[ten]);         // lech không được đụng vào
+      expect(ve(ten, -120).d).toBe(MOC[ten]);
+    }
+  });
+
+  test('keo.x / keo.y đậu ĐÚNG trên nét vẽ, và là trung điểm của tu–den', () => {
+    for (const [ten, lech] of [['xuongLech', 0], ['xuongLech', 40], ['xuongLech', -30],
+      ['lenLech', 0], ['lenLech', 40], ['lenLech', -40]]) {
+      const r = ve(ten, lech);
+      expect(namTren(r.d, [r.keo.x, r.keo.y])).toBe(true);
+      expect(r.keo.x).toBe((r.keo.tu[0] + r.keo.den[0]) / 2);
+      expect(r.keo.y).toBe((r.keo.tu[1] + r.keo.den[1]) / 2);
+      // tu/den là ĐỈNH thật của đường (góc bo 9px cắt qua chúng nên chúng nằm
+      // ở vai trò điểm điều khiển, không nằm trên nét) — không phải số bịa ra.
+      expect(laDinh(r.d, r.keo.tu)).toBe(true);
+      expect(laDinh(r.d, r.keo.den)).toBe(true);
+    }
+  });
+
+  test('lech quá lớn bị KẸP — chỗ bẻ không lùi lên trên cạnh dưới khối nguồn', () => {
+    const r = ve('xuongLech', -9999);
+    expect(r.keo.y).toBeGreaterThan(100 + 56);       // vẫn nằm DƯỚI đáy khối nguồn
+    const pts = diemPath(r.d);
+    // Không quặt ngược: mọi điểm neo của path đều đi xuống hoặc ngang, không lên.
+    for (let i = 1; i < pts.length; i++) expect(pts[i][1]).toBeGreaterThanOrEqual(pts[i - 1][1]);
+    expect(Number.isFinite(r.keo.y)).toBe(true);
+  });
+
+  test('lech DƯƠNG quá lớn cũng bị kẹp trước cạnh trên khối đích', () => {
+    const r = ve('xuongLech', 9999);
+    expect(r.keo.y).toBeLessThan(300);               // chưa chạm cạnh trên khối đích
+    const pts = diemPath(r.d);
+    for (let i = 1; i < pts.length; i++) expect(pts[i][1]).toBeGreaterThanOrEqual(pts[i - 1][1]);
+  });
+
+  test('vòng ngược lên: lech quá lớn bị kẹp trong bề ngang khối nguồn', () => {
+    const A = rectOf(dung.lenLech(0).nodes[0]);
+    for (const l of [-9999, 9999]) {
+      const r = ve('lenLech', l);
+      expect(r.keo.x).toBeGreaterThan(A.x);
+      expect(r.keo.x).toBeLessThan(A.x + A.w);
+      expect(namTren(r.d, [r.keo.x, r.keo.y])).toBe(true);
+    }
+  });
+
+  test('lech rác (chuỗi / NaN / null / true) → coi như 0, tuyệt đối không có NaN trong path', () => {
+    for (const rac of ['40', 'abc', NaN, null, true, {}, [], Infinity, -Infinity]) {
+      for (const ten of Object.keys(MOC)) {
+        const r = ve(ten, rac);
+        expect(r.d).toBe(MOC[ten]);
+        expect(r.d).not.toMatch(/NaN|Infinity|undefined/);
+        expect(r.nhan.every(Number.isFinite)).toBe(true);
+        if (r.keo) {
+          expect([r.keo.x, r.keo.y, ...r.keo.tu, ...r.keo.den].every(Number.isFinite)).toBe(true);
+        }
+      }
+    }
+  });
+
+  test('HAI đường nối bẻ trùng chỗ → chỉnh lech một cái là tách ra', () => {
+    // Đúng cảnh người dùng gặp: hai nhánh khác cột nhưng chỗ bẻ rơi cùng một
+    // độ cao, hai đoạn ngang chồng khít lên nhau trên quãng x dùng chung.
+    const s = mk(
+      [nn('a1', 0, 100), nn('b1', 2, 300), nn('a2', 1, 108), nn('b2', 3, 292)],
+      { id: 'e1', a: 'a1', b: 'b1', k: 'n', lbl: '' },
+      { id: 'e2', a: 'a2', b: 'b2', k: 'n', lbl: '' },
+    );
+    const r1 = routeEdge(s, s.edges[0]), r2 = routeEdge(s, s.edges[1]);
+    expect(r1.keo.y).toBe(r2.keo.y);                       // TRÙNG — đúng lỗi đang có
+    const chungX = Math.min(r1.keo.den[0], r2.keo.den[0]) - Math.max(r1.keo.tu[0], r2.keo.tu[0]);
+    expect(chungX).toBeGreaterThan(0);                     // và có quãng x dùng chung thật
+
+    const s2 = { ...s, edges: [s.edges[0], { ...s.edges[1], lech: 24 }] };
+    const r2b = routeEdge(s2, s2.edges[1]);
+    expect(routeEdge(s2, s2.edges[0]).d).toBe(r1.d);       // đường KHÔNG chỉnh giữ nguyên
+    expect(Math.abs(r2b.keo.y - r1.keo.y)).toBe(24);
+  });
+
+  test('lech đi cùng sơ đồ qua các phép biến đổi khác — không bị đánh rơi', () => {
+    const s = mk([nn('a', 0, 100), nn('b', 2, 300)], E({ lech: 36 }));
+    expect(xoaKhoi(s, 'khong-co').edges[0].lech).toBe(36);
+    expect(doiCot(s, 'a', 1).edges[0].lech).toBe(36);
+    expect(tuXepLai(s).edges[0].lech).toBe(36);
+  });
+});
+
 describe('thêm bước bằng nút ＋', () => {
   const base = () => ({
     lanes: [
