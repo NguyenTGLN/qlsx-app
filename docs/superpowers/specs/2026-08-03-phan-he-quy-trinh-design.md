@@ -212,8 +212,19 @@ Khối Quyết định có **hai** nút ＋: OK (xuống, xanh) và NG (trái, �
   bảng diễn giải đổi theo**. Bám lưới 8px.
 - **Nối**: chỉ dùng cho mũi tên **quay ngược lên** (làm lại, bổ sung) — thứ nút ＋ không
   tạo được.
-- **Tự xếp lại**: giữ nguyên thứ tự người dùng đã dựng, chỉ căn giữa khối theo cột và
-  giãn đều trong từng giai đoạn. Không đảo thứ tự — người dùng phải đoán được kết quả.
+- **Tự xếp lại**: căn giữa khối theo cột và giãn đều trong từng giai đoạn. **Không đảo
+  thứ tự trong cùng một giai đoạn** — người dùng phải đoán được kết quả trước khi bấm.
+
+  Nói chính xác giới hạn của lời hứa đó, phát hiện khi soát Task 5: khi một khối cao
+  có *tâm* rơi sang giai đoạn dưới trong khi *đỉnh* của nó còn nằm trên một khối thấp
+  hơn ở giai đoạn trên, xếp lại sẽ đưa nó xuống dưới khối kia. Hai lời hứa "giữ đúng
+  giai đoạn" và "giữ đúng thứ tự dọc" xung đột nhau ở đúng chỗ này, và **giai đoạn
+  thắng** — vì hàng ngang là khung xương của lưu đồ swimlane.
+
+  Hai khối **cùng một cột** không bao giờ được xếp chung một tầng. Bỏ luật này thì hai
+  khối cùng cột cách nhau dưới 44px sẽ trùng khít pixel: chồng lấn *một phần* (người
+  dùng nhìn thấy và sửa) biến thành chồng lấn *toàn phần*, và một bước **biến mất khỏi
+  bản in** mà không ai hay. Xếp lại phải **gỡ** chồng lấn ra, không phải giấu nó đi.
 - **Thêm cột / Thêm hàng**, **Hoàn tác / Làm lại** (ngăn xếp 40 bước), **Xoá** (xoá khối
   kéo theo mọi đường nối của nó), **Phóng to/thu nhỏ** 50–150%.
 - Bảng khối hình bên trái chỉ để thêm **khối rời** không nối tiếp ai — trường hợp hiếm.
@@ -239,11 +250,22 @@ Hàm thuần `kiemTraLuuDo(soDo)` trả danh sách vấn đề, chia **lỗi** (
 | Mức | Điều kiện |
 |---|---|
 | Lỗi | Thiếu khối Bắt đầu hoặc Kết thúc |
+| Lỗi | **Không có bước nào giữa Bắt đầu và Kết thúc** — mẫu mới tinh chưa ban hành được |
 | Lỗi | Khối mồ côi — không có đường vào (mà không phải Bắt đầu) hoặc không có đường ra (mà không phải Kết thúc) |
+| Lỗi | **Khối không đi tới được từ Bắt đầu** (đảo hoang) |
 | Lỗi | Khối Quyết định có ít hơn 2 nhánh ra, hoặc có nhánh thiếu nhãn |
 | Lỗi | Bước thiếu **Diễn giải chi tiết** — tài liệu ISO không được có ô trống |
-| Cảnh báo | Hai khối chồng lên nhau |
+| Cảnh báo | Hai khối chồng lên nhau (mỗi khối báo tối đa một lần) |
 | Cảnh báo | Bước thiếu **Hồ sơ / Biểu mẫu** hoặc **Thời gian chuẩn** |
+
+Luật "không đi tới được" thêm khi soát Task 6. Bậc vào/bậc ra **không** bắt được hai
+khối trỏ lẫn nhau (`P→Q`, `Q→P`) hay khối tự nối vào chính nó: cả hai đều thoả bậc vào
+lẫn bậc ra nên lọt qua, dù chẳng đi tới được từ đâu. Phải duyệt thật từ khối Bắt đầu.
+Luật này chỉ chạy khi **có** khối Bắt đầu — không thì lưu đồ thiếu Bắt đầu sẽ lãnh
+thêm một trận lỗi vô nghĩa cho từng khối.
+
+Đường nối trỏ tới khối **đã xoá** không được tính là "đã có đường ra", nếu không nó
+che mất đúng cái lỗi cần bắt.
 
 Đây là phần trả giá trị lớn nhất cho yêu cầu "đúng chuẩn ISO": nó chặn tài liệu lỗi
 **trước khi** ban hành, thay vì để đánh giá viên phát hiện.
@@ -252,8 +274,22 @@ Hàm thuần `kiemTraLuuDo(soDo)` trả danh sách vấn đề, chia **lỗi** (
 
 Bảng diễn giải sinh từ sơ đồ (`quyTrinhDienGiai.js`), thứ tự **trên xuống dưới, trái
 sang phải**, bỏ khối Bắt đầu/Kết thúc khỏi đánh số. Cột: Bước · Người thực hiện (suy từ
-cột) · Diễn giải chi tiết · Hồ sơ–Biểu mẫu · Thời gian. Dòng thuộc nhánh OK/NG được
-đánh dấu màu. Sửa ở bảng ghi ngược vào khối — một nguồn dữ liệu duy nhất.
+cột) · Diễn giải chi tiết · Hồ sơ–Biểu mẫu · Thời gian. Sửa ở bảng ghi ngược vào khối —
+một nguồn dữ liệu duy nhất.
+
+**Luật tô nhánh** (sửa khi soát Task 7): một bước chỉ được tô OK/NG khi **mọi** đường
+đi vào nó đều là nhánh. Có bất kỳ đường thường nào ⇒ bước nằm trên luồng chính, không
+tô. Bản đầu chỉ cần "có một nhánh NG đi vào" là tô đỏ, khiến bước bình thường nhất của
+quy trình — bước bị vòng "Làm lại" quay về — hiện lên bản in như một điểm không phù hợp.
+Điểm hợp lưu của hai nhánh cũng bị tô sai tương tự. Đây là nói sai trong tài liệu ISO,
+không phải lỗi thẩm mỹ.
+
+**Số thứ tự bước suy từ vị trí, nên bấm "Tự xếp lại" có thể đổi số.** Hai khối lệch nhau
+chút ít bị gộp về cùng một hàng thì thứ tự đọc chuyển từ trên-dưới sang trái-phải. Số
+mới **đúng với bản vẽ mới** — người đọc bản in numbering theo đúng cái họ nhìn thấy.
+Không sửa: đánh số theo vị trí mà lại đòi bất biến trước thay đổi vị trí là tự mâu
+thuẫn, còn đánh số theo thứ tự tạo sẽ đặt khối bên phải trước khối bên trái trên cùng
+một hàng in ra. Thay vào đó trình vẽ **báo cho người dùng** khi xếp lại làm đổi số.
 
 Bản in A3 ngang gồm, theo đúng thứ tự:
 
@@ -367,10 +403,59 @@ chấp nhận được vì **soát nội dung không phải ranh giới bảo m�
 
 Vì sao dùng quyền theo cột thay vì `with check` trên `trang_thai`: `WITH CHECK` soi
 **dòng sau khi sửa**, nên điều kiện `trang_thai <> 'published'` sẽ chặn luôn cả việc
-sửa tên một quy trình đang có hiệu lực — cấm nhầm người dùng hợp lệ. Quyền theo cột
-chặn đúng thứ cần chặn: **không ai ngoài RPC ghi được vào cột trạng thái.**
+sửa tên một quy trình đang có hiệu lực — cấm nhầm người dùng hợp lệ.
+
+### Chốt chặn thật là TRIGGER, không phải quyền theo cột
+
+Phát hiện khi soát Task 1, đã kiểm chứng trên mã nguồn thật:
+`sql/security_3_rls_lockdown.sql` quét **mọi** bảng public, xoá sạch policy rồi tạo
+`auth_all using(true)` (dòng 39), **và** chạy `grant all on all tables in schema
+public to authenticated` (dòng 50). Nghĩa là mỗi lần ai đó chạy lại file siết bảo mật
+đó, quyền-theo-cột ở trên **bị xoá sạch** và nhân viên thường ghi thẳng được cột
+`trang_thai` qua REST API — tự ban hành quy trình ISO. Lỗ hổng mở ra âm thầm, không
+báo lỗi ở đâu cả.
+
+Nên lớp chặn thật là **trigger `qt_canh_trang_thai`** — trigger không bị `drop policy`
+lẫn `grant all` đụng tới, nên sống sót qua file lockdown. Nó chặn ba việc:
+
+| Chặn | Vì sao |
+|---|---|
+| Đổi `trang_thai` ngoài RPC | ban hành phải qua đúng một cửa có kiểm tra vai trò |
+| Thêm dòng mới với trạng thái khác `draft` | không thì tạo thẳng được bản "đã ban hành" giả |
+| Sửa nội dung bản `published` / `expired` | tài liệu ISO đang có hiệu lực không được đổi ngầm; muốn sửa thì tạo phiên bản mới |
+
+Ba RPC bật cờ `set_config('qt.cho_phep','1',true)` (phạm vi giao dịch, tự hết) để đi
+qua được trigger. Client không gọi `set_config` qua PostgREST được vì nó nằm ở
+`pg_catalog`, không phải schema được phơi ra.
+
+Quyền theo cột **vẫn giữ** làm lớp phòng thủ thứ hai. File `sql/quy_trinh.sql` mang
+sẵn khối cảnh báo và câu lệnh kiểm chứng
+`has_column_privilege('authenticated','quy_trinh_phien_ban','trang_thai','update')`
+— trả `true` nghĩa là file lockdown đã chạy đè, phải chạy lại.
 
 Khoá nút Ban hành ở giao diện chỉ là lớp ngoài cho dễ nhìn, không phải chỗ chặn thật.
+
+### Chủ sở hữu: chỉ người soạn và Admin được sửa
+
+Người dùng chốt 03/08/2026. `quy_trinh.nguoi_soan` lưu **mã nhân viên** (`user.id`),
+đúng thứ JWT mang ở `nv_id` — không phải tên hiển thị. Hàm `qt_lam_chu(quy_trinh_id)`
+trả đúng khi người gọi là chủ hoặc là Admin; bảng phiên bản **thừa kế** chủ từ bảng cha
+nên đổi chủ một lần là đổi cho mọi phiên bản.
+
+Policy `qt_ins` có `with check (nguoi_soan = auth.jwt()->>'nv_id')`. Đây là chốt chống
+tự bắn vào chân: nếu màn hình lỡ gửi tên hiển thị thay vì mã nhân viên thì **hỏng ngay
+lúc tạo** với thông báo rõ ràng, thay vì đẻ ra một quy trình mà về sau không ai sửa nổi
+vì phép so chủ sở hữu không bao giờ khớp. Sai to và sớm hơn là sai nhỏ và muộn.
+
+### Đọc thì mọi người đăng nhập đều đọc được — cố ý
+
+`qt_sel` và `qtpb_sel` là `to authenticated using (true)`, nên bất kỳ ai đã đăng nhập
+cũng đọc được mọi quy trình qua REST, kể cả người chưa được cấp quyền tab. Quyền tab
+chỉ gác **giao diện** cho phần đọc. Đây là lựa chọn có ý thức, không phải sót: quy
+trình ISO là tài liệu tham chiếu nội bộ, không phải bí mật, và cùng khuôn với các bảng
+khác trong app (`kpi_chi_tieu` cũng vậy). Ngưỡng bảo mật vẫn giữ: khoá công khai đọc
+được **0 dòng**. Muốn siết phần đọc theo quyền tab thì phải thêm điều kiện vào policy,
+là việc riêng cần bàn riêng.
 
 ## I. Ảnh hưởng tới luồng đang chạy — đã rà
 

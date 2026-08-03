@@ -620,13 +620,23 @@ export function themBuoc(soDo, { tuId, nhanh = '', loai, cot, ten }) {
   if (!T) throw new Error('Loại khối không hợp lệ: ' + loai);
 
   const s = sao(soDo);
-  const y = nhanh === 'ng'
+  // Nhánh NG rẽ ngang chỉ có nghĩa khi sang cột KHÁC. Chọn đúng cột của khối
+  // nguồn thì rẽ ngang sẽ chồng lên chính nó, nên rơi về cách đặt thường: xuống dưới.
+  const cungCot = cot === nguon.lane;
+  const y = (nhanh === 'ng' && !cungCot)
     ? nguon.y + Math.round((nguon.h - T.h) / 2)
     : nguon.y + nguon.h + KHOANG_DOC;
 
-  // Đẩy khối đang chắn chỗ trong cùng cột xuống dưới
+  // Đẩy DỒN: mọi khối trong cột đích nằm từ chỗ chèn trở xuống đều dịch cùng
+  // một khoảng, nên thứ tự trên-dưới giữ nguyên và không sinh khối chồng nhau.
+  // Trừ chính khối nguồn ra — đẩy nguồn thì nhánh của nó rơi lên trên nó.
+  //
+  // Bản đầu chỉ đẩy khối GIAO với khối mới, phát hiện sai khi soát Task 4:
+  // cột có 3 bước (100/220/330), chèn sau bước đầu thì bước 2 xuống 322 còn
+  // bước 3 đứng yên ở 330 ⇒ hai khối chồng lên nhau.
+  const dichXuong = T.h + KHOANG_DOC;
   for (const n of s.nodes) {
-    if (n.lane === cot && n.y + n.h > y - 12 && n.y < y + T.h + 12) n.y += T.h + KHOANG_DOC;
+    if (n.lane === cot && n.id !== tuId && n.y + n.h > y - 12) n.y += dichXuong;
   }
 
   const id = idMoi('n');
@@ -2543,7 +2553,15 @@ Yêu cầu chức năng, đối chiếu mockup:
 1. Rail trái: lọc theo `NHOM` (từ `quyTrinhMau.js`) kèm số đếm, và lọc theo trạng thái (`draft` Bản nháp / `wait` Chờ duyệt / `published` Đã ban hành / `expired` Hết hiệu lực).
 2. Ô tìm kiếm lọc theo `ten` hoặc `ma_so`, không phân biệt hoa thường.
 3. Lưới thẻ: mã số, tên, pill trạng thái, số bước (`so_do.nodes` trừ start/end), ngày hiệu lực, người soạn, phiên bản. Bấm thẻ → gọi `onMo(qt)`.
-4. Nút **Tạo quy trình mới** chỉ hiện khi `pDanhMuc.create`. Modal gồm: tên, nhóm (select `NHOM`), mã số tự sinh bằng `maSoTiepTheo(nhom, ds.map(d => d.ma_so))` cập nhật khi đổi nhóm, người soạn (readonly `user.name`). Bấm Tạo → `api.taoQuyTrinh(...)` → `napLai()` → `onMo(quyTrinh)`.
+4. Nút **Tạo quy trình mới** chỉ hiện khi `pDanhMuc.create`. Modal gồm: tên, nhóm (select `NHOM`), mã số tự sinh bằng `maSoTiepTheo(nhom, ds.map(d => d.ma_so))` cập nhật khi đổi nhóm, người soạn (readonly, **hiện `user.name` cho người đọc**). Bấm Tạo → `api.taoQuyTrinh(...)` → `napLai()` → `onMo(quyTrinh)`.
+
+   **`nguoiSoan` truyền vào API phải là `user.id`, KHÔNG phải `user.name`.** Cột
+   `nguoi_soan` là thứ RLS đem so với `auth.jwt()->>'nv_id'` để biết ai làm chủ quy
+   trình. Gửi tên hiển thị vào đó thì so không bao giờ khớp. Policy `qt_ins` có
+   `with check (nguoi_soan = auth.jwt()->>'nv_id')` nên gửi sai sẽ **hỏng ngay lúc
+   tạo** với thông báo rõ, thay vì đẻ ra một quy trình không ai sửa nổi — nhưng vẫn
+   phải truyền cho đúng ngay từ đầu. Tên người lập để in ra nằm ở
+   `tai_lieu.nguoiLap`, chỗ khác.
 5. Nút **Xoá** trên thẻ chỉ hiện khi `pDanhMuc.delete` **và** `trang_thai === 'draft'`; hỏi xác nhận trước khi gọi `api.xoaQuyTrinh`.
 
 - [ ] **Step 2: Kiểm chứng tay**
@@ -2590,11 +2608,28 @@ Khối đang chọn hiện nút ＋; khối `dec` hiện hai nút (OK xuống, N
 doiSoDo(themBuoc(soDo, { tuId, nhanh, loai, cot, ten }));
 ```
 
+**Với nút ＋ của nhánh NG: bỏ hẳn cột của chính khối nguồn khỏi danh sách chọn.**
+Phát hiện khi soát Task 4: `themBuoc` có xử lý an toàn cho trường hợp này (rơi
+xuống dưới thay vì chồng lên nguồn), nhưng người dùng chọn "rẽ ngang" mà lại được
+một bước đi xuống thì khó hiểu. Chặn ở chỗ chọn rõ ràng hơn là im lặng đổi ý họ.
+
 - [ ] **Step 3: Kéo khối, đổi cột, xoá, tự xếp lại**
 
 - Kéo: cập nhật `dx`/`y` cục bộ trong lúc kéo cho mượt; **thả xong** mới gọi `doiSoDo`. Xác định cột rơi vào bằng `Math.floor((nodeX(n) + n.w / 2) / LANE_W)` rồi `doiCot`, và báo bằng toast: *"Đã chuyển sang cột X — người thực hiện thành Y."*
 - Xoá: `doiSoDo(xoaKhoi(soDo, id))`. Phím `Delete` cũng gọi hàm này.
-- Tự xếp lại: `doiSoDo(tuXepLai(soDo))`.
+- Tự xếp lại: **so lại thứ tự bước trước và sau, báo nếu có đổi.** Số thứ tự bước suy
+  từ vị trí trên trang (trên→dưới, trái→phải), nên khi xếp lại gộp hai khối lệch nhau
+  chút ít về cùng một hàng thì thứ tự đọc đổi theo — đúng với bản vẽ mới, nhưng người
+  dùng phải biết vì số bước đi vào bản in và bị trích dẫn ("bước 5 làm sai").
+
+```js
+const truoc = dongDienGiai(soDo).map(r => r.khoiId);
+const moi = tuXepLai(soDo);
+const sau = dongDienGiai(moi).map(r => r.khoiId);
+doiSoDo(moi);
+if (truoc.join() !== sau.join())
+  toast('Đã xếp lại. <b>Số thứ tự bước có thay đổi</b> — xem lại bảng diễn giải trước khi in.');
+```
 - Hoàn tác / Làm lại: gọi `hoanTac()` / `lamLai()` từ props. `Ctrl+Z` / `Ctrl+Shift+Z`.
 
 - [ ] **Step 4: Bảng thuộc tính bên phải**
@@ -2699,6 +2734,11 @@ import { xuatPng, xuatDocx, inPdf } from '../../lib/quyTrinhXuat';
 
 Cả ba nút chỉ hiện khi `pDanhMuc.io`.
 
+**Phải đúng `pDanhMuc`, KHÔNG được dùng `pSoanThao`.** Cap `io` chỉ khai ở tab
+`danh_muc`; `getTabPerm(user,'quy_trinh','soan_thao').io` trả `false` **kể cả với
+ADMIN**, vì cap tab không khai thì luôn false. Lấy nhầm chỗ là nút xuất file tắt câm
+với mọi người, không báo lỗi gì.
+
 - [ ] **Step 3: CSS in khổ A3 ngang**
 
 Thêm vào tệp component một khối `<style>`:
@@ -2715,6 +2755,26 @@ Thêm vào tệp component một khối `<style>`:
 - [ ] **Step 4: Kiểm chứng tay — quan trọng nhất của task này**
 
 1. Bấm **Xuất PNG** → mở tệp tải về, lưu đồ phải khớp với những gì thấy trên trình vẽ.
+
+   **BẮT BUỘC soi kỹ chữ trong ảnh này, đừng liếc qua.** Phát hiện khi soát Task 11:
+   ảnh PNG dựng từ SVG qua `blob:` URL chạy trong một tài liệu tách biệt, **không đọc
+   được `@font-face` của trang**, nên nó rơi về Segoe UI trong khi màn hình hiện
+   Be Vietnam Pro. Hệ quả bậc hai mới là chỗ nguy: `catDong` ngắt dòng theo ước lượng
+   0,56 em/ký tự; phông khác thì bề rộng ký tự khác, nên chữ **có thể tràn ra khỏi
+   khối chỉ trong bản xuất**, đúng cái đem in dán tường.
+
+   Phải kiểm ba thứ trên ảnh thật:
+   - **Nhãn giai đoạn ở cột trái trước tiên** — chỗ này chỉ rộng 112px (`GUT`), hẹp
+     hơn khối 212px, nên nếu có tràn thì tràn ở đây đầu tiên. Soi xong chỗ này rồi
+     mới kết luận bản xuất sạch.
+   - Chữ có nằm gọn trong khối không, nhất là tên bước dài nhất.
+   - Tên cột có bị cắt không.
+   - Dấu tiếng Việt có đủ không (`ắ ầ ể ứ ợ ộ`).
+
+   Nếu chữ tràn: sửa ở `quyTrinhSvg.js`, hoặc hạ hệ số 0,56 xuống cho rộng bụng hơn,
+   hoặc nhúng phông dạng base64 vào chính SVG. **Chưa sửa trước** vì chưa đo được —
+   hai phông đều quanh 0,56 nên có thể không tràn, mà siết mù thì mất mật độ chữ trên
+   mọi lưu đồ, còn nhúng phông thì mỗi lần xuất nặng thêm 50–200 KB.
 2. Bấm **In** → hộp thoại in phải hiện khổ **A3 ngang**, chỉ có tờ giấy, không có khung ứng dụng.
 3. Bấm **Xuất Word** → **mở tệp bằng Microsoft Word thật**. Phải: mở được không báo hỏng tệp; đúng khổ A3 ngang (Layout → Size); có ảnh lưu đồ; đủ 8 mục; tiếng Việt có dấu đúng.
 4. Thử với một quy trình có tên bước chứa ký tự `&` và `<` → cả PNG lẫn Word vẫn mở được.
@@ -2754,11 +2814,27 @@ Ngưỡng phải đạt — **đo thật, không suy luận**:
 | Phép thử | Kết quả phải là |
 |---|---|
 | Đọc danh mục quy trình | được |
-| Lưu bản nháp (`so_do`, `tai_lieu`) | được |
-| `update quy_trinh_phien_ban set trang_thai='published'` gọi thẳng REST | **bị từ chối** (cột đã revoke) |
+| Lưu bản nháp (`so_do`, `tai_lieu`) trên bản `draft` | được |
+| `update quy_trinh_phien_ban set trang_thai='published'` gọi thẳng REST | **bị từ chối** (cột đã revoke + trigger chặn) |
+| Sửa `so_do` của một bản **đã ban hành** qua REST | **bị từ chối** — trigger báo *"Không sửa được nội dung bản đã ban hành"* |
+| `insert into quy_trinh (..., trang_thai) values (..., 'published')` | **bị từ chối** — trigger báo *"Bản ghi mới phải ở trạng thái nháp"* |
 | Gọi `rpc_qt_ban_hanh` | **bị từ chối** với thông báo *"Chỉ Admin được duyệt và ban hành"* |
 
-Phép thử thứ ba là quan trọng nhất: nó chứng minh khoá nút ở giao diện **không phải** chỗ chặn duy nhất.
+Bốn phép thử giữa là quan trọng nhất: chúng chứng minh khoá nút ở giao diện **không phải** chỗ chặn duy nhất.
+
+- [ ] **Step 3b: Đo lớp trigger còn sống sau khi chạy file lockdown**
+
+Đây là phép thử riêng cho lỗ hổng phát hiện ở Task 1 (`sql/security_3_rls_lockdown.sql` dòng 39 và 50 xoá policy và cấp lại `grant all`).
+
+```sql
+select has_column_privilege('authenticated','quy_trinh_phien_ban','trang_thai','update');
+-- kỳ vọng false. true = file lockdown đã chạy đè, phải chạy lại sql/quy_trinh.sql
+select tgname from pg_trigger
+ where tgrelid in ('quy_trinh'::regclass,'quy_trinh_phien_ban'::regclass) and not tgisinternal;
+-- kỳ vọng 2 dòng: qt_tg_trang_thai, qt_pb_tg_trang_thai
+```
+
+Sau đó **thử lại phép thử "nhân viên thường tự ban hành"** để chắc trigger chặn được ngay cả khi quyền theo cột đã mất.
 
 - [ ] **Step 4: Rà lại các luồng khác không vỡ**
 
