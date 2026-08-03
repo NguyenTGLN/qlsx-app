@@ -53,19 +53,47 @@ drop policy if exists qt_sel on quy_trinh;
 drop policy if exists qt_ins on quy_trinh;
 drop policy if exists qt_upd on quy_trinh;
 drop policy if exists qt_del on quy_trinh;
+-- Ai làm chủ một quy trình: chính người soạn, hoặc Admin.
+-- security definer để policy trên bảng phiên bản đọc được bảng cha mà không
+-- phải lồng policy vào nhau.
+create or replace function qt_lam_chu(p_quy_trinh_id uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce(auth.jwt()->>'nv_role', '') = 'ADMIN'
+      or exists (select 1 from quy_trinh q
+                  where q.id = p_quy_trinh_id
+                    and q.nguoi_soan = auth.jwt()->>'nv_id');
+$$;
+revoke all on function qt_lam_chu(uuid) from public, anon;
+grant execute on function qt_lam_chu(uuid) to authenticated;
+
 create policy qt_sel on quy_trinh for select to authenticated using (true);
-create policy qt_ins on quy_trinh for insert to authenticated with check (true);
-create policy qt_upd on quy_trinh for update to authenticated using (true) with check (true);
-create policy qt_del on quy_trinh for delete to authenticated using (trang_thai = 'draft');
+-- Bắt buộc nguoi_soan = chính mình. Nếu màn hình lỡ gửi TÊN hiển thị thay vì mã
+-- nhân viên thì hỏng NGAY tại đây với thông báo rõ, thay vì tạo ra một quy trình
+-- mà sau đó không ai sửa nổi vì so chủ sở hữu không bao giờ khớp.
+create policy qt_ins on quy_trinh for insert to authenticated
+  with check (nguoi_soan = auth.jwt()->>'nv_id');
+create policy qt_upd on quy_trinh for update to authenticated
+  using (nguoi_soan = auth.jwt()->>'nv_id'
+         or coalesce(auth.jwt()->>'nv_role', '') = 'ADMIN')
+  with check (true);
+create policy qt_del on quy_trinh for delete to authenticated
+  using (trang_thai = 'draft'
+         and (nguoi_soan = auth.jwt()->>'nv_id'
+              or coalesce(auth.jwt()->>'nv_role', '') = 'ADMIN'));
 
 drop policy if exists qtpb_sel on quy_trinh_phien_ban;
 drop policy if exists qtpb_ins on quy_trinh_phien_ban;
 drop policy if exists qtpb_upd on quy_trinh_phien_ban;
 drop policy if exists qtpb_del on quy_trinh_phien_ban;
+-- Phiên bản THỪA KẾ chủ sở hữu từ quy trình cha: đổi chủ một lần là đổi cho cả
+-- các phiên bản, không phải sửa từng dòng.
 create policy qtpb_sel on quy_trinh_phien_ban for select to authenticated using (true);
-create policy qtpb_ins on quy_trinh_phien_ban for insert to authenticated with check (trang_thai = 'draft');
-create policy qtpb_upd on quy_trinh_phien_ban for update to authenticated using (true) with check (true);
-create policy qtpb_del on quy_trinh_phien_ban for delete to authenticated using (trang_thai = 'draft');
+create policy qtpb_ins on quy_trinh_phien_ban for insert to authenticated
+  with check (trang_thai = 'draft' and qt_lam_chu(quy_trinh_id));
+create policy qtpb_upd on quy_trinh_phien_ban for update to authenticated
+  using (qt_lam_chu(quy_trinh_id)) with check (true);
+create policy qtpb_del on quy_trinh_phien_ban for delete to authenticated
+  using (trang_thai = 'draft' and qt_lam_chu(quy_trinh_id));
 
 -- ── Cấp quyền TƯỜNG MINH cho người đã đăng nhập ──
 --    KHÔNG trông chờ quyền mặc định của Supabase: file security_3_rls_lockdown.sql
@@ -124,7 +152,13 @@ create trigger qt_pb_tg_trang_thai before insert or update on quy_trinh_phien_ba
 -- ── RPC 1: gửi duyệt (ai đăng nhập cũng gọi được) ──
 create or replace function rpc_qt_gui_duyet(p_phien_ban_id uuid)
 returns void language plpgsql security definer set search_path = public as $$
+declare v_qt uuid;
 begin
+  select quy_trinh_id into v_qt from quy_trinh_phien_ban where id = p_phien_ban_id;
+  if v_qt is null then raise exception 'Không tìm thấy phiên bản cần gửi duyệt'; end if;
+  if not qt_lam_chu(v_qt) then
+    raise exception 'Chỉ người soạn hoặc Admin mới gửi duyệt được quy trình này';
+  end if;
   perform set_config('qt.cho_phep', '1', true);
   update quy_trinh_phien_ban set trang_thai = 'wait'
    where id = p_phien_ban_id and trang_thai = 'draft';
