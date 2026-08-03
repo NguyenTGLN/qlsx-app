@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { A3_W_TWIP, A3_H_TWIP, sectPrXml, doanXml, bangXml, anhXml, documentXml, contentTypesXml, relsXml, docRelsXml } from './quyTrinhDocx';
+import { A3_W_TWIP, A3_H_TWIP, CAO_IN_EMU, sectPrXml, doanXml, bangXml, anhXml, documentXml, contentTypesXml, relsXml, docRelsXml } from './quyTrinhDocx';
 
 const duLieu = () => ({
   quyTrinh: { ma_so: 'QT-SX-01', ten: 'Sản xuất & kiểm soát chất lượng', nhom: 'SX' },
@@ -159,6 +159,41 @@ describe('documentXml', () => {
     const d = duLieu(); d.phienBan.tai_lieu = {};
     expect(() => documentXml(d, null)).not.toThrow();
   });
+});
+
+describe('ảnh lưu đồ phải nằm vừa trang', () => {
+  const vua = (w, h) => {
+    const x = documentXml(duLieu(), 'rId10', { w, h });
+    const m = /<wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(x);
+    return { cx: +m[1], cy: +m[2] };
+  };
+
+  test('lưu đồ 4 cột KHÔNG tràn chiều cao trang', () => {
+    const { cy } = vua(960, 726);          // nhóm CL/HC, chưa thêm bước nào
+    expect(cy).toBeLessThanOrEqual(CAO_IN_EMU);
+  });
+
+  test('lưu đồ rất cao vẫn nằm trong trang', () => {
+    const { cy } = vua(960, 1806);         // CL sau khi thêm 16 bước
+    expect(cy).toBeLessThanOrEqual(CAO_IN_EMU);
+  });
+
+  test('lưu đồ rộng bẹt thì kẹp theo BỀ NGANG, không phóng quá khổ', () => {
+    const { cx } = vua(2400, 700);
+    expect(cx).toBeLessThanOrEqual((A3_W_TWIP - 1134) * 635);
+  });
+
+  test('giữ đúng tỉ lệ ảnh sau khi kẹp', () => {
+    const { cx, cy } = vua(960, 1806);
+    expect(Math.abs(cx / cy - 960 / 1806)).toBeLessThan(0.01);
+  });
+});
+
+test('doanXml xếp con theo đúng thứ tự ECMA-376', () => {
+  const x = doanXml('x', { canGiua: true, dam: true, mau: '#ff0000', co: 12 });
+  expect(x.indexOf('<w:spacing')).toBeLessThan(x.indexOf('<w:jc'));
+  expect(x.indexOf('<w:color')).toBeLessThan(x.indexOf('<w:sz '));
+  expect(x.indexOf('<w:b/>')).toBeLessThan(x.indexOf('<w:color'));
 });
 
 describe('các tệp phụ của gói docx', () => {

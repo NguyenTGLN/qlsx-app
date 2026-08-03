@@ -15,6 +15,8 @@ import { thoatXml } from './quyTrinhSvg';
 export const A3_W_TWIP = 23811;   // 420mm — cạnh dài, làm BỀ NGANG vì in ngang
 export const A3_H_TWIP = 16838;   // 297mm
 const EMU_PER_TWIP = 635;
+// Vùng in A3 ngang sau khi trừ lề trên+dưới (567+567 twip), tính bằng EMU.
+export const CAO_IN_EMU = (A3_H_TWIP - 1134) * EMU_PER_TWIP;
 const PHONG = 'Times New Roman';
 const CO_MAC_DINH = 12;
 
@@ -27,10 +29,12 @@ export function sectPrXml() {
 
 export function doanXml(text, { dam = false, co = CO_MAC_DINH, canGiua = false, mau = null } = {}) {
   const sz = Math.round(co * 2);   // Word dùng nửa-điểm
-  const pPr = `<w:pPr>${canGiua ? '<w:jc w:val="center"/>' : ''}<w:spacing w:before="20" w:after="20"/></w:pPr>`;
+  // Thứ tự con trong pPr/rPr theo ECMA-376 là BẮT BUỘC: spacing (22) trước jc (27),
+  // color (19) trước sz (24). Sai thứ tự thì Word báo "không mở được tệp", không nói lý do.
+  const pPr = `<w:pPr><w:spacing w:before="20" w:after="20"/>${canGiua ? '<w:jc w:val="center"/>' : ''}</w:pPr>`;
   const rPr = `<w:rPr><w:rFonts w:ascii="${PHONG}" w:hAnsi="${PHONG}" w:cs="${PHONG}"/>`
-    + `${dam ? '<w:b/>' : ''}<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/>`
-    + `${mau ? `<w:color w:val="${mau.replace('#', '')}"/>` : ''}</w:rPr>`;
+    + `${dam ? '<w:b/>' : ''}${mau ? `<w:color w:val="${thoatXml(mau).replace('#', '')}"/>` : ''}`
+    + `<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/></w:rPr>`;
   return `<w:p>${pPr}<w:r>${rPr}<w:t xml:space="preserve">${thoatXml(text)}</w:t></w:r></w:p>`;
 }
 
@@ -103,7 +107,14 @@ export function documentXml({ quyTrinh, phienBan, dienGiai, lichSu }, rIdAnh, an
 
   // ── Mục 5: lưu đồ ──
   p.push(tieuDeMuc('5. Lưu đồ quy trình'));
-  if (rIdAnh && anh) p.push(anhXml(rIdAnh, anh.w, anh.h, RONG * EMU_PER_TWIP));
+  if (rIdAnh && anh) {
+    // Kẹp theo CẢ hai chiều. Ép full bề ngang rồi thôi là sai: lưu đồ ÍT CỘT thì
+    // hẹp, ép ra 400mm sẽ phóng to nhiều hơn nên lại CAO hơn — nhóm 4 cột tràn
+    // khổ giấy ngay lần xuất đầu, trước khi vẽ thêm bước nào.
+    const rongToiDa = RONG * EMU_PER_TWIP;
+    const rongVua = Math.min(rongToiDa, CAO_IN_EMU * (anh.w / anh.h));
+    p.push(anhXml(rIdAnh, anh.w, anh.h, rongVua));
+  }
 
   // ── Mục 6: diễn giải ──
   p.push(tieuDeMuc('6. Diễn giải lưu đồ'));
