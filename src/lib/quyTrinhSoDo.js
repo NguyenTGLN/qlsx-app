@@ -127,13 +127,19 @@ export function themBuoc(soDo, { tuId, nhanh = '', loai, cot, ten }) {
   if (!T) throw new Error('Loại khối không hợp lệ: ' + loai);
 
   const s = sao(soDo);
-  const y = nhanh === 'ng'
+  // Nhánh NG rẽ ngang chỉ có nghĩa khi sang cột KHÁC. Chọn đúng cột của khối
+  // nguồn thì rẽ ngang sẽ chồng lên chính nó, nên rơi về cách đặt thường: xuống dưới.
+  const cungCot = cot === nguon.lane;
+  const y = (nhanh === 'ng' && !cungCot)
     ? nguon.y + Math.round((nguon.h - T.h) / 2)
     : nguon.y + nguon.h + KHOANG_DOC;
 
-  // Đẩy khối đang chắn chỗ trong cùng cột xuống dưới
+  // Đẩy DỒN: mọi khối trong cột đích nằm từ chỗ chèn trở xuống đều dịch cùng
+  // một khoảng, nên thứ tự trên-dưới giữ nguyên và không sinh khối chồng nhau.
+  // Trừ chính khối nguồn ra — đẩy nguồn thì nhánh của nó rơi lên trên nó.
+  const dichXuong = T.h + KHOANG_DOC;
   for (const n of s.nodes) {
-    if (n.lane === cot && n.y + n.h > y - 12 && n.y < y + T.h + 12) n.y += T.h + KHOANG_DOC;
+    if (n.lane === cot && n.id !== tuId && n.y + n.h > y - 12) n.y += dichXuong;
   }
 
   const id = idMoi('n');

@@ -174,6 +174,33 @@ describe('thêm bước bằng nút ＋', () => {
     expect(() => themBuoc(base(), { tuId: 'zzz', nhanh: '', loai: 'step', cot: 0, ten: 'X' }))
       .toThrow(/không tìm thấy khối nguồn/i);
   });
+
+  test('đẩy DỒN — chèn giữa cột 3 bước không tạo ra khối chồng nhau', () => {
+    const s0 = base();
+    s0.nodes = [
+      { id: 'a', t: 'step', lane: 1, y: 100, dx: 0, w: 164, h: 56, tx: 'A', desc: '', form: '—', time: '—' },
+      { id: 'b', t: 'step', lane: 1, y: 220, dx: 0, w: 164, h: 56, tx: 'B', desc: '', form: '—', time: '—' },
+      { id: 'c', t: 'step', lane: 1, y: 330, dx: 0, w: 164, h: 56, tx: 'C', desc: '', form: '—', time: '—' },
+    ];
+    s0.edges = [];
+    const s = themBuoc(s0, { tuId: 'a', nhanh: '', loai: 'step', cot: 1, ten: 'Chèn' });
+
+    const trongCot = s.nodes.filter(n => n.lane === 1).sort((x, y2) => x.y - y2.y);
+    for (let i = 1; i < trongCot.length; i++) {
+      expect(trongCot[i].y).toBeGreaterThanOrEqual(trongCot[i - 1].y + trongCot[i - 1].h);
+    }
+    // thứ tự tương đối giữ nguyên: A trước Chèn trước B trước C
+    expect(trongCot.map(n => n.tx)).toEqual(['A', 'Chèn', 'B', 'C']);
+  });
+
+  test('nhánh NG vào ĐÚNG cột của khối nguồn thì rơi xuống dưới, không chồng nguồn', () => {
+    const s = themBuoc(base(), { tuId: 'n2', nhanh: 'ng', loai: 'step', cot: 1, ten: 'NG cùng cột' });
+    const nguon = s.nodes.find(n => n.id === 'n2');
+    const moi = s.nodes.find(n => n.tx === 'NG cùng cột');
+    expect(nguon.y).toBe(220);                          // nguồn KHÔNG bị đẩy
+    expect(moi.y).toBeGreaterThanOrEqual(nguon.y + nguon.h);
+    expect(s.edges.find(e => e.b === moi.id).lbl).toBe('NG');   // vẫn là nhánh NG
+  });
 });
 
 describe('xoá khối & đổi cột', () => {
