@@ -308,7 +308,13 @@ export function hutHang(soDo, id, y, nguong = NGUONG_HUT) {
 export const DUNG_SAI_DAI = 24;   // tâm cách nhau bao nhiêu px thì vẫn tính là MỘT hàng
 // Nền so le và vạch ngăn của dải bước. Để ở đây để trình vẽ và bản xuất SVG
 // dùng CHUNG một bộ màu — hai nơi tô lệch nhau là bản in khác màn hình.
-export const MAU_DAI = { nen: '#f8fafc', vach: '#e9eef5' };
+//
+// Bản đầu để rất nhạt (#f8fafc / #e9eef5) cho khỏi lấn cột, nhưng người dùng
+// bảo nhìn không rõ hàng. Đậm lên như dưới đây: nền dải ~7% xanh lạnh, vạch ngăn
+// đủ rõ để đọc được từng bước trên bản in A3 kể cả khi in đen trắng.
+// Vẫn nhạt hơn nền cột (rgba(148,163,184,.045) chồng LÊN nền dải) nên cột vẫn là
+// cấu trúc chính, dải bước là chia nhỏ bên trong.
+export const MAU_DAI = { nen: '#e8eff8', vach: '#c2d0e0' };
 
 /** Gom khối thành các DẢI BƯỚC theo tâm dọc. Hai khối đã hút ngang hàng
  *  (tâm bằng nhau) luôn vào chung một dải.
