@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, fetchAllRows } from '../lib/supabase';
 import { useAuth, canSeeTab } from '../lib/AuthContext';
@@ -70,7 +70,13 @@ export default function BangTinCaNhan() {
   const [dangTai, setDangTai] = useState(true);
   const [loi, setLoi] = useState('');
 
+  // Đếm lượt tải. Đổi kỳ hai lần liên tiếp thì hai truy vấn cùng bay; lượt cũ về sau
+  // sẽ ghi đè kết quả của lượt mới và màn hình hiện số tháng cũ dưới nhãn tháng mới.
+  const luotRef = useRef(0);
+
   const tai = useCallback(async () => {
+    const luot = ++luotRef.current;
+    const conHieuLuc = () => luot === luotRef.current;
     setDangTai(true);
     setLoi('');
     try {
@@ -94,7 +100,11 @@ export default function BangTinCaNhan() {
           : Promise.resolve(null),
       ]);
 
-      if (kq1.status === 'fulfilled') setDuLieu(kq1.value);
+      if (!conHieuLuc()) return;   // đã có lượt tải mới — bỏ hẳn kết quả của lượt này
+
+      // Gắn kèm kỳ vào dữ liệu: phần tính bên dưới đối chiếu để không bao giờ ghép
+      // số của kỳ này với nhãn của kỳ kia.
+      if (kq1.status === 'fulfilled') setDuLieu(kq1.value && { ...kq1.value, kyCuaDuLieu: ky });
       else { setDuLieu(null); setLoi(kq1.reason?.message || String(kq1.reason)); }
 
       if (kq2.status === 'rejected') {
@@ -109,28 +119,35 @@ export default function BangTinCaNhan() {
         setViec(kq2.value.data || []);
       }
     } catch (err) {
-      setLoi(p => p || err?.message || String(err));
+      if (conHieuLuc()) setLoi(p => p || err?.message || String(err));
     } finally {
-      setDangTai(false);
+      if (conHieuLuc()) setDangTai(false);
     }
   }, [ky, xemKpi, xemViec]);
 
   useEffect(() => { tai(); }, [tai]);
 
+  // Dữ liệu chỉ được dùng khi ĐÚNG kỳ đang chọn. Ngay sau khi bấm đổi kỳ có một lượt
+  // vẽ mà `ky` đã mới còn `duLieu` vẫn cũ — không chặn ở đây thì điểm tháng cũ loé lên
+  // dưới nhãn tháng mới, và đó đúng là kiểu sai mà màn hình này sinh ra để tránh.
+  const duLieuDungKy = duLieu && duLieu.kyCuaDuLieu === ky ? duLieu : null;
+  const dangTaiKpi = dangTai || (duLieu !== null && duLieu.kyCuaDuLieu !== ky);
+
   // Tính KPI của CHÍNH MÌNH — đúng ba dòng mà KpiTab dùng để dựng bảng từng người,
   // nên hai màn hình không thể ra hai con số khác nhau.
   const kpi = useMemo(() => {
-    if (!duLieu || !user) return null;
+    const d = duLieuDungKy;
+    if (!d || !user) return null;
     const { rows, logs } = apDungChamTuDong(
-      duLieu.rows, duLieu.logs, duLieu.viec, ky, undefined,
-      duLieu.sanXuat, duLieu.chamCong, duLieu.ngoaiLe, duLieu.caiTien);
+      d.rows, d.logs, d.viec, ky, undefined,
+      d.sanXuat, d.chamCong, d.ngoaiLe, d.caiTien);
     const dongBoPhan = rows.filter(r => r.cap_do === 'BO_PHAN');
     const cuaToi = rows.filter(r => r.cap_do !== 'BO_PHAN' && r.nhan_vien_id === user.id);
     // "Chưa có bảng KPI cho kỳ này" khác hẳn "có bảng, đạt trọn điểm". Trả cờ để
     // phần hiển thị nói đúng chuyện, đừng khoe 0 điểm cho người chưa được lập chỉ tiêu.
     if (!cuaToi.length) return { chuaCoBang: true };
     return tinhBangKpi([...dongBoPhan, ...cuaToi], logs);
-  }, [duLieu, user, ky]);
+  }, [duLieuDungKy, user, ky]);
 
   // Giữ null xuyên suốt khi chưa đọc được: khối việc phải nói "không tải được"
   // chứ không phải "không có việc nào đang làm".
@@ -176,8 +193,8 @@ export default function BangTinCaNhan() {
         <div style={S.luoi}>
           {xemKpi && (
             <KhoiKpi
-              ky={ky} setKy={setKy} kpi={kpi} dangTai={dangTai}
-              loiNguon={duLieu?.loiViec}
+              ky={ky} setKy={setKy} kpi={kpi} dangTai={dangTaiKpi}
+              loiNguon={duLieuDungKy?.loiViec}
               // KHÔNG kèm mã nhân viên vào URL: mã đó cũng là tên đăng nhập, và màn hình
               // này chỉ bao giờ mở KPI của CHÍNH người đang đăng nhập — TaskApp tự biết
               // họ là ai. Thêm tham số chỉ để lộ tên đăng nhập ra thanh địa chỉ.
