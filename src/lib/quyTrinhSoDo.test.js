@@ -5,6 +5,7 @@ import { themBuoc, xoaKhoi, doiCot, thuTuBuoc } from './quyTrinhSoDo';
 import { datThuTu, boThuTu } from './quyTrinhSoDo';
 import { tuXepLai } from './quyTrinhSoDo';
 import { xoaCot, xoaHang } from './quyTrinhSoDo';
+import { chuyenCot, cotTaiX } from './quyTrinhSoDo';
 import { hutHang, NGUONG_HUT } from './quyTrinhSoDo';
 import { daiBuoc } from './quyTrinhSoDo';
 import { CAO_HANG, tamHang, hangCua, yTaiHang } from './quyTrinhSoDo';
@@ -743,6 +744,198 @@ describe('xoá cột', () => {
     const g = base(), truoc = JSON.stringify(g);
     expect(() => xoaCot(g, 2)).toThrow();
     expect(JSON.stringify(g)).toBe(truoc);
+  });
+});
+
+describe('chuyển cột — đổi chỗ cột bộ phận', () => {
+  // MỖI CỘT một khối: bài kiểm tra quan trọng nhất của cả phép này là "khối nào
+  // cũng còn đúng bộ phận cũ", nên phải có khối ở mọi cột để mà đối chiếu.
+  // dx cố ý để lệch ở vài khối — nó là phần kéo tay TRONG cột, phải đi theo khối.
+  const base = () => ({
+    lanes: [
+      { name: 'Kinh doanh', owner: 'NV Kinh doanh', color: '#111111' },
+      { name: 'Kế hoạch',   owner: 'NV Kế hoạch',   color: '#222222' },
+      { name: 'Kho',        owner: 'Thủ kho',       color: '#333333' },
+      { name: 'Sản xuất',   owner: 'Tổ trưởng SX',  color: '#444444' },
+      { name: 'QC',         owner: 'NV QC',         color: '#555555' },
+    ],
+    phases: [{ name: 'G1', h: 480 }],
+    nodes: [
+      { id: 'a', t: 'start', lane: 0, y: 30,  dx: 0,   w: 164, h: 48, tx: 'Bắt đầu',      desc: '',   form: '—',  time: '—' },
+      { id: 'b', t: 'step',  lane: 1, y: 110, dx: -12, w: 164, h: 56, tx: 'Lên kế hoạch', desc: 'd1', form: 'F1', time: '1h' },
+      { id: 'c', t: 'step',  lane: 2, y: 190, dx: 0,   w: 164, h: 56, tx: 'Xuất kho',     desc: '',   form: '—',  time: '—' },
+      { id: 'd', t: 'step',  lane: 3, y: 270, dx: 24,  w: 164, h: 56, tx: 'Lắp ráp',      desc: '',   form: '—',  time: '—' },
+      { id: 'e', t: 'check', lane: 4, y: 350, dx: 0,   w: 164, h: 56, tx: 'Kiểm QC',      desc: '',   form: '—',  time: '—' },
+    ],
+    edges: [
+      { id: 'e1', a: 'a', b: 'b', lbl: '', k: 'n' },
+      { id: 'e2', a: 'b', b: 'c', lbl: '', k: 'n' },
+      { id: 'e3', a: 'c', b: 'd', lbl: '', k: 'n' },
+      { id: 'e4', a: 'd', b: 'e', lbl: '', k: 'n' },
+    ],
+  });
+
+  // Bộ phận của MỌI khối, đọc đúng lối bảng diễn giải đọc: soDo.lanes[n.lane].
+  const boPhan = s => s.nodes.map(n => `${n.id}:${s.lanes[n.lane]?.name ?? '—'}`);
+
+  test('BẤT BIẾN — chuyển cột thì khối nào cũng GIỮ NGUYÊN bộ phận của nó', () => {
+    const g = base();
+    const truoc = boPhan(g);
+    const s = chuyenCot(g, 1, 3);
+    expect(boPhan(s)).toEqual(truoc);
+  });
+
+  test('BẤT BIẾN giữ được với MỌI cặp (tu, den) — quét hết 5×5', () => {
+    const truoc = boPhan(base());
+    for (let tu = 0; tu < 5; tu++) {
+      for (let den = 0; den < 5; den++) {
+        expect(boPhan(chuyenCot(base(), tu, den))).toEqual(truoc);
+      }
+    }
+  });
+
+  test('DỜI CHỖ chứ không ĐỔI CHỖ — các cột khác dồn theo, không hoán vị', () => {
+    // Cột 3 về vị trí 0: 0,1,2 dồn sang phải một bậc.
+    expect(chuyenCot(base(), 3, 0).lanes.map(l => l.name))
+      .toEqual(['Sản xuất', 'Kinh doanh', 'Kế hoạch', 'Kho', 'QC']);
+    // Cột 1 sang vị trí 3: 2,3 dồn sang trái một bậc.
+    expect(chuyenCot(base(), 1, 3).lanes.map(l => l.name))
+      .toEqual(['Kinh doanh', 'Kho', 'Sản xuất', 'Kế hoạch', 'QC']);
+  });
+
+  test('chỉ số cột mới ĐÚNG CHỖ — cột đã chuyển đậu đúng vị trí `den`', () => {
+    const s = chuyenCot(base(), 1, 3);
+    expect(s.lanes[3].name).toBe('Kế hoạch');
+    expect(s.nodes.find(n => n.id === 'b').lane).toBe(3);
+    expect(s.nodes.find(n => n.id === 'c').lane).toBe(1);   // Kho: 2 → 1
+    expect(s.nodes.find(n => n.id === 'd').lane).toBe(2);   // Sản xuất: 3 → 2
+    expect(s.nodes.find(n => n.id === 'a').lane).toBe(0);   // ngoài quãng dời: đứng yên
+    expect(s.nodes.find(n => n.id === 'e').lane).toBe(4);
+  });
+
+  test('ĐẦU → CUỐI', () => {
+    const s = chuyenCot(base(), 0, 4);
+    expect(s.lanes.map(l => l.name))
+      .toEqual(['Kế hoạch', 'Kho', 'Sản xuất', 'QC', 'Kinh doanh']);
+    expect(boPhan(s)).toEqual(boPhan(base()));
+  });
+
+  test('CUỐI → ĐẦU', () => {
+    const s = chuyenCot(base(), 4, 0);
+    expect(s.lanes.map(l => l.name))
+      .toEqual(['QC', 'Kinh doanh', 'Kế hoạch', 'Kho', 'Sản xuất']);
+    expect(boPhan(s)).toEqual(boPhan(base()));
+  });
+
+  test('lưu đồ chỉ có MỘT cột — không có chỗ nào để chuyển, trả nguyên sơ đồ cũ', () => {
+    const g = {
+      lanes: [{ name: 'A', owner: 'a', color: '#111111' }],
+      phases: [{ name: 'G1', h: 200 }],
+      nodes: [{ id: 'x', t: 'step', lane: 0, y: 10, dx: 0, w: 164, h: 56, tx: 'X' }],
+      edges: [],
+    };
+    expect(chuyenCot(g, 0, 0)).toBe(g);
+    expect(chuyenCot(g, 0, 1)).toBe(g);
+  });
+
+  test('HAI cột — đổi chỗ được, và cả hai khối vẫn đúng bộ phận', () => {
+    const g = {
+      lanes: [
+        { name: 'Kho', owner: 'Thủ kho', color: '#111111' },
+        { name: 'QC',  owner: 'NV QC',   color: '#222222' },
+      ],
+      phases: [{ name: 'G1', h: 200 }],
+      nodes: [
+        { id: 'x', t: 'step',  lane: 0, y: 10, dx: 0, w: 164, h: 56, tx: 'X' },
+        { id: 'y', t: 'check', lane: 1, y: 90, dx: 0, w: 164, h: 56, tx: 'Y' },
+      ],
+      edges: [],
+    };
+    const s = chuyenCot(g, 0, 1);
+    expect(s.lanes.map(l => l.name)).toEqual(['QC', 'Kho']);
+    expect(s.nodes.find(n => n.id === 'x').lane).toBe(1);
+    expect(s.nodes.find(n => n.id === 'y').lane).toBe(0);
+    expect(boPhan(s)).toEqual(boPhan(g));
+  });
+
+  test('dx và MỌI trường khác của khối đi qua nguyên vẹn — chỉ `lane` đổi', () => {
+    const g = base();
+    const s = chuyenCot(g, 1, 3);
+    for (const cu of g.nodes) {
+      const moi = s.nodes.find(n => n.id === cu.id);
+      expect({ ...moi, lane: cu.lane }).toEqual(cu);
+    }
+    expect(s.nodes.find(n => n.id === 'b').dx).toBe(-12);
+    expect(s.nodes.find(n => n.id === 'd').dx).toBe(24);
+  });
+
+  test('đường nối, giai đoạn và thứ tự đánh tay đi theo nguyên vẹn', () => {
+    const g = { ...base(), thuTu: ['d', 'b', 'c'] };
+    const s = chuyenCot(g, 4, 1);
+    expect(s.edges).toEqual(g.edges);
+    expect(s.phases).toEqual(g.phases);
+    expect(s.thuTu).toEqual(['d', 'b', 'c']);
+    expect(s.thuTu).not.toBe(g.thuTu);          // chép ra, không dùng chung mảng
+  });
+
+  test('đối số rác → trả CHÍNH sơ đồ cũ, để giao diện khỏi tiêu một nấc hoàn tác', () => {
+    const g = base();
+    for (const [tu, den] of [
+      [2, 2], [-1, 2], [2, -1], [5, 0], [0, 5], [1.5, 2], [2, 1.5],
+      [NaN, 2], [2, NaN], ['1', 2], [2, '1'], [null, 2], [2, null],
+      [undefined, 0], [Infinity, 0], [0, Infinity],
+    ]) {
+      expect(chuyenCot(g, tu, den)).toBe(g);
+    }
+  });
+
+  test('sơ đồ hỏng (thiếu lanes) → trả nguyên sơ đồ cũ, không nổ', () => {
+    const g = { nodes: [], edges: [], phases: [] };
+    expect(chuyenCot(g, 0, 1)).toBe(g);
+    expect(chuyenCot(null, 0, 1)).toBe(null);
+  });
+
+  test('lane RÁC trong so_do không bị gán bừa sang một bộ phận khác', () => {
+    // so_do là jsonb: lane có thể là chuỗi, số ngoài phạm vi, null.
+    // Luật đúng = luật bảng diễn giải đang đọc: lanes[lane]. Chuỗi '2' vẫn tra ra
+    // đúng cột 2 nên PHẢI được dời theo; 99 và null vốn đã là '—' nên để yên.
+    const g = base();
+    g.nodes.push(
+      { id: 'r1', t: 'step', lane: '2',  y: 400, dx: 0, w: 164, h: 56, tx: 'Rác chuỗi' },
+      { id: 'r2', t: 'step', lane: 99,   y: 400, dx: 0, w: 164, h: 56, tx: 'Rác ngoài phạm vi' },
+      { id: 'r3', t: 'step', lane: null, y: 400, dx: 0, w: 164, h: 56, tx: 'Rác null' },
+    );
+    const truoc = boPhan(g);
+    const s = chuyenCot(g, 1, 3);
+    expect(boPhan(s)).toEqual(truoc);
+    expect(s.nodes.find(n => n.id === 'r1').lane).toBe(1);   // '2' → cột Kho, nay ở 1
+    expect(s.nodes.find(n => n.id === 'r2').lane).toBe(99);  // vô nghĩa trước, vô nghĩa sau
+    expect(s.nodes.find(n => n.id === 'r3').lane).toBe(null);
+  });
+
+  test('BẤT BIẾN — sơ đồ gốc không bị sửa', () => {
+    const g = base(), truoc = JSON.stringify(g);
+    chuyenCot(g, 1, 3);
+    chuyenCot(g, 4, 0);
+    expect(JSON.stringify(g)).toBe(truoc);
+  });
+
+  test('KHỨ HỒI — chuyển đi rồi chuyển về là y hệt bản đầu', () => {
+    const g = base();
+    expect(chuyenCot(chuyenCot(g, 1, 3), 3, 1)).toEqual(g);
+    expect(chuyenCot(chuyenCot(g, 0, 4), 4, 0)).toEqual(g);
+  });
+
+  test('cotTaiX — hoành độ trên giấy đọc ra chỉ số cột, kẹp ở hai mép', () => {
+    const g = base();
+    expect(cotTaiX(g, 0)).toBe(0);
+    expect(cotTaiX(g, LANE_W - 1)).toBe(0);
+    expect(cotTaiX(g, LANE_W)).toBe(1);
+    expect(cotTaiX(g, LANE_W * 3 + 5)).toBe(3);
+    expect(cotTaiX(g, -500)).toBe(0);                  // kéo ra ngoài mép trái
+    expect(cotTaiX(g, LANE_W * 99)).toBe(4);           // kéo ra ngoài mép phải
+    expect(cotTaiX(g, NaN)).toBe(0);                   // rác tính như 0
+    expect(cotTaiX({ lanes: [] }, 10)).toBe(0);
   });
 });
 

@@ -8,7 +8,7 @@ import {
   laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
   themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc, tronCaoGiaiDoan,
   diemGiao, CANH_NEO, diemNeo, neoHopLe, datThuTu, boThuTu, kepTrongTrang,
-  tiLeTrenDuong, tiLeNhanHopLe,
+  tiLeTrenDuong, tiLeNhanHopLe, chuyenCot, cotTaiX,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -166,6 +166,7 @@ export default function SoanThaoTab({
   const [noiKeo, setNoiKeo] = useState(null);    // { tuId, x, y } — đường nối đang kéo
   const [keoLech, setKeoLech] = useState(null);  // { id, lech } — chỗ bẻ đang kéo tay
   const [keoNhan, setKeoNhan] = useState(null);  // { id, tiLe } — nhãn đang trượt dọc đường
+  const [keoCot, setKeoCot] = useState(null);    // { tu, den } — cột đang kéo đổi chỗ
   const [pop, setPop] = useState(null);          // bảng chọn của nút ＋
   const [dangChay, setDangChay] = useState('');  // tên hành động đang gọi API
   const [toasts, setToasts] = useState([]);
@@ -174,6 +175,7 @@ export default function SoanThaoTab({
   const noiRef = useRef(null);
   const lechRef = useRef(null);
   const nhanRef = useRef(null);
+  const cotRef = useRef(null);
   const cvRef = useRef(null);
   const giayRef = useRef(null);
   const rf = useRef({});
@@ -309,6 +311,34 @@ export default function SoanThaoTab({
     } catch (e) {
       alert(e?.message || 'Không xoá được cột.');
     }
+  };
+
+  // Đổi chỗ cột bộ phận. Toàn bộ phép dời — kể cả việc ánh xạ lại `lane` của MỌI
+  // khối để không bước nào sang tên bộ phận khác — nằm ở chuyenCot; ở đây chỉ đẩy
+  // một nấc hoàn tác và nói lại kết quả. Dùng chung cho CẢ HAI lối: kéo tên cột
+  // và hai nút ◀ ▶ ở bảng bên phải, nên hai lối không thể lệch nhau.
+  const chuyenCotTai = (tu, den) => {
+    if (!coSua) return;
+    // Số thứ tự bước suy từ VỊ TRÍ trên trang (trên xuống, rồi TRÁI SANG PHẢI),
+    // nên đổi chỗ cột có thể đánh số lại các bước cùng hàng. Số bước đi vào bản
+    // in ISO và bị trích dẫn ra miệng ("bước 5 làm sai") — đổi âm thầm là điều
+    // phải tránh. Đúng cách nút "Tự xếp lại" đang báo.
+    const truoc = dongDienGiai(soDo).map(r => r.khoiId);
+    const moi = chuyenCot(soDo, tu, den);
+    // chuyenCot trả CHÍNH sơ đồ cũ khi không có gì đổi (ngoài phạm vi, cùng chỗ)
+    // — Ctrl+Z không nên tiêu một nấc vào đó.
+    if (moi === soDo) return;
+    const sau = dongDienGiai(moi).map(r => r.khoiId);
+    const ten = soDo.lanes[tu]?.name || `Cột ${tu + 1}`;
+    doiSoDo(moi);
+    setChon({ loai: 'lane', id: den });     // cột vừa dời vẫn là cột đang chọn
+    // Đã ghim thứ tự bằng tay thì số bước KHÔNG chạy theo vị trí nữa, nên không
+    // có gì để cảnh báo — điều kiện đặt trên khoá ĐÃ LỌC, y như nút "Đánh số lại
+    // theo vị trí": khoá rác trong so_do vốn đã bị thuTuBuoc coi như không có.
+    const danhTay = Array.isArray(soDo.thuTu) && soDo.thuTu.length > 0;
+    toast(`Đã chuyển cột “${ten}” sang vị trí ${den + 1}. Mọi bước giữ nguyên bộ phận phụ trách.`
+      + (!danhTay && truoc.join() !== sau.join()
+        ? ' Số thứ tự bước có thay đổi — xem lại bảng diễn giải trước khi in.' : ''));
   };
 
   const xoaHangTai = (i) => {
@@ -661,6 +691,68 @@ export default function SoanThaoTab({
       : `Đã ghim vào ${TEN_CANH[canh]}. Đường đã ghim thôi tự lách khối chắn.`);
   };
 
+  // ── Kéo TÊN CỘT để đổi chỗ cột ────────────────────────────────
+  // Cử chỉ THỨ SÁU, tách khỏi năm cử chỉ kia đúng bằng CHỖ BẤM như chúng — và ở
+  // đây là chỗ tách rạch ròi nhất trong cả tệp: năm cử chỉ kia đều nằm TRONG
+  // KHUNG GIẤY (thân khối, núm ＋/⤳ mọc trên khối, núm chỗ bẻ, bốn chấm ghim và
+  // khung nhãn đều nằm trong lớp phủ của khung giấy), còn hàng TÊN CỘT là một dải
+  // riêng cao HEAD_H nằm PHÍA TRÊN khung giấy — không khối nào, không lớp phủ nào
+  // với tới được. Hai vùng không giao nhau một pixel.
+  // pointerdown ở đây vốn đã stopPropagation từ trước (để bấm chọn cột không bị
+  // nền canvas huỷ chọn ngay sau đó), và cotRef vẫn null suốt lúc kéo thứ khác ⇒
+  // dichCot/thaCot tự thoát ở dòng đầu; ngược lại keoRef/noiRef/lechRef/nhanRef
+  // null suốt lúc kéo cột.
+  //
+  // BẤM mà không kéo vẫn CHỈ LÀ BẤM CHỌN CỘT, y như trước: chọn xong ngay ở
+  // pointerdown, rồi phải đi quá 3px (đúng ngưỡng của dichKhoi/dichNhan) mới tính
+  // là kéo. Nhờ vậy tính năng mới không lấy mất cú bấm cũ.
+  const nenCot = (ev, i) => {
+    ev.stopPropagation();
+    setChon({ loai: 'lane', id: i });
+    // Đọc soDo.lanes chứ không đọc biến `lanes` (khai báo mãi phía dưới): một cột
+    // thì không có chỗ nào để chuyển sang, đừng bắt đầu cử chỉ kéo làm gì.
+    if (ev.button !== 0 || !coSua || (soDo?.lanes?.length || 0) <= 1) return;
+    ev.preventDefault();          // y như bốn cử chỉ kia: đừng để trình duyệt bôi đen
+    cotRef.current = { tu: i, den: i, sx: ev.clientX, di: false };
+    try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch { /* trình duyệt không hỗ trợ */ }
+  };
+
+  const dichCot = (ev) => {
+    const k = cotRef.current;
+    if (!k) return;
+    ev.stopPropagation();
+    if (!k.di) {
+      // Chia cho zoom y như dichKhoi/dichNhan, để ngưỡng cắn cùng một khoảng
+      // trên MÀN HÌNH ở mọi mức phóng to.
+      if (Math.abs(ev.clientX - k.sx) / zoom < 3) return;
+      k.di = true;
+    }
+    // Cột đích đọc từ hoành độ con trỏ TRÊN GIẤY. diemGiay đã chia cho zoom và
+    // trừ gốc khung giấy; phép đổi hoành độ thành chỉ số cột nằm ở cotTaiX —
+    // tệp này không tính lấy một toạ độ nào.
+    k.den = cotTaiX(soDo, diemGiay(ev).x);
+    setKeoCot({ tu: k.tu, den: k.den });
+  };
+
+  const thaCot = (ev) => {
+    const k = cotRef.current;
+    if (!k) return;
+    ev.stopPropagation();
+    cotRef.current = null;
+    setKeoCot(null);
+    // Chỉ bấm chọn rồi thả ra là chuyện thường — không đẩy gì vào ngăn xếp hoàn
+    // tác. chuyenCotTai cũng tự bỏ qua khi tu === den.
+    if (!k.di) return;
+    chuyenCotTai(k.tu, k.den);
+  };
+
+  const huyCot = (ev) => {
+    if (!cotRef.current) return;
+    ev.stopPropagation();
+    cotRef.current = null;
+    setKeoCot(null);
+  };
+
   // ── Phím tắt ──────────────────────────────────────────────────
   // Đọc mọi thứ qua ref: handler gắn MỘT lần, không dựng lại theo từng render,
   // và hoàn toàn không giữ bản sao sơ đồ nào. Ctrl+Z gọi thẳng hoanTac() —
@@ -682,6 +774,7 @@ export default function SoanThaoTab({
         noiRef.current = null; setNoiKeo(null);
         lechRef.current = null; setKeoLech(null);   // bỏ luôn lần chỉnh đang dở
         nhanRef.current = null; setKeoNhan(null);
+        cotRef.current = null; setKeoCot(null);     // cột đang kéo về lại chỗ cũ
         return;
       }
       if (ev.key === 'Delete' || ev.key === 'Del') {
@@ -1097,6 +1190,11 @@ export default function SoanThaoTab({
             <br /><br />
             Chỉ xoá được cột/hàng <b>đang trống</b>. Còn khối thì phải chuyển đi trước —
             đổi cột là đổi người thực hiện, máy không quyết hộ.
+            <br /><br />
+            <b>Đổi chỗ cột:</b> kéo ngang <b>tên cột</b>, hoặc dùng
+            <b style={{ color: mau }}> ◀ Chuyển trái</b> /
+            <b style={{ color: mau }}> Chuyển phải ▶</b> ở bảng bên phải. Khối đi theo cột
+            của mình nên <b>bộ phận phụ trách không đổi</b>.
           </div>
 
           <h3 style={{ ...S.h3, marginTop: 18 }}>Phím tắt</h3>
@@ -1122,15 +1220,27 @@ export default function SoanThaoTab({
 
               <div className="qe-guthead" style={{ width: GUT }}>Giai đoạn</div>
 
+              {/* Tên cột: bấm để chọn, KÉO NGANG để đổi chỗ cột. Cột đang kéo mờ
+                  đi, cột đích viền nét đứt — thêm một dải phủ suốt chiều cao cột
+                  đích ở trong khung giấy, để thấy rõ cột sẽ đậu vào đâu. */}
               {lanes.map((l, i) => (
                 <div key={`lh${i}`} className="qe-lanehead"
                   data-sel={chon?.loai === 'lane' && chon.id === i ? '1' : undefined}
+                  data-keo={keoCot?.tu === i ? '1' : undefined}
+                  data-dich={keoCot && keoCot.den === i && keoCot.den !== keoCot.tu ? '1' : undefined}
                   style={{
                     left: GUT + laneX(i), width: LANE_W, color: l.color || C.xam,
                     background: `${l.color || C.xam}14`,
+                    cursor: coSua && lanes.length > 1 ? (keoCot ? 'grabbing' : 'grab') : 'pointer',
                   }}
-                  onPointerDown={(ev) => { ev.stopPropagation(); setChon({ loai: 'lane', id: i }); }}
-                  title={`${l.name} — ${l.owner || '—'}`}>
+                  onPointerDown={(ev) => nenCot(ev, i)}
+                  onPointerMove={dichCot}
+                  onPointerUp={thaCot}
+                  onPointerCancel={huyCot}
+                  title={coSua && lanes.length > 1
+                    ? `${l.name} — ${l.owner || '—'}\nKéo ngang để đổi chỗ cột. `
+                      + 'Khối trong cột đi theo cột, bộ phận phụ trách không đổi.'
+                    : `${l.name} — ${l.owner || '—'}`}>
                   {l.name}
                 </div>
               ))}
@@ -1182,6 +1292,19 @@ export default function SoanThaoTab({
                     borderTop: '1px dashed #d6dee9',
                   }} />
                 ) : null))}
+
+                {/* CHỖ CỘT SẼ ĐẬU khi đang kéo tên cột. Phủ suốt chiều cao cột đích
+                    nên nhìn một cái là biết cả cột sẽ nằm ở đâu, chứ không phải đoán
+                    theo một vạch mảnh trên hàng tiêu đề. Không ăn chuột và chỉ tồn
+                    tại trong lúc kéo, nên không cử chỉ nào bị nó chắn. */}
+                {keoCot && keoCot.den !== keoCot.tu && (
+                  <div style={{
+                    position: 'absolute', top: 0, bottom: 0,
+                    left: laneX(keoCot.den), width: LANE_W,
+                    background: `${mau}14`, border: `2px dashed ${mau}`, borderRadius: 6,
+                    pointerEvents: 'none', zIndex: 7,
+                  }} />
+                )}
 
                 {/* Đường nối — d LUÔN lấy từ routeEdge, không tự vẽ */}
                 <svg className="qe-edges" width={drawW(soDoHien)} height={drawH(soDoHien)}>
@@ -1455,7 +1578,8 @@ export default function SoanThaoTab({
               coSua={coSua} onXoa={() => { doiSoDo(boCanh(soDo, canhChon.id)); setChon(null); toast('Đã xoá đường nối.'); }} />
           ) : chon?.loai === 'lane' && lanes[chon.id] ? (
             <CotInsp key={`lane${chon.id}`} i={chon.id} l={lanes[chon.id]} soDo={soDo}
-              doiSoDo={doiSoDo} coSua={coSua} onXoa={() => xoaCotTai(chon.id)} />
+              doiSoDo={doiSoDo} coSua={coSua} onXoa={() => xoaCotTai(chon.id)}
+              onChuyen={den => chuyenCotTai(chon.id, den)} />
           ) : chon?.loai === 'phase' && phases[chon.id] ? (
             <HangInsp key={`ph${chon.id}`} i={chon.id} p={phases[chon.id]} soDo={soDo}
               doiSoDo={doiSoDo} coSua={coSua} onXoa={() => xoaHangTai(chon.id)} />
@@ -1768,13 +1892,44 @@ function CanhInsp({ e, soDo, doiSoDo, coSua, onXoa }) {
   );
 }
 
-function CotInsp({ i, l, soDo, doiSoDo, coSua, onXoa }) {
+function CotInsp({ i, l, soDo, doiSoDo, coSua, onXoa, onChuyen }) {
   const va = (k, v) => doiSoDo(vaCot(soDo, i, { [k]: v }));
   const dung = soDo.nodes.filter(n => n.lane === i).length;
+  const soCot = soDo.lanes.length;
   return (
     <>
       <h3 style={S.h3}>Thuộc tính cột</h3>
-      <p style={S.kind}>Cột {i + 1} · {dung} khối đang nằm trong cột này</p>
+      <p style={S.kind}>Cột {i + 1} / {soCot} · {dung} khối đang nằm trong cột này</p>
+
+      {/* ĐỔI CHỖ CỘT — lối chính xác, đi kèm lối kéo tên cột trên lưu đồ. Hai nút
+          thấy được ngay nên người dùng không phải đoán là kéo được; kéo thì nhanh
+          hơn khi phải đi xa. Cả hai đều gọi chuyenCotTai nên không thể lệch nhau.
+          Tắt ở hai đầu: cột đầu không có chỗ nào bên trái để mà sang. */}
+      {coSua && soCot > 1 && (
+        <div style={S.fld}>
+          <span style={S.lbl}>Đổi chỗ cột</span>
+          <div style={S.doiCho}>
+            <button type="button" className="qe-btn" disabled={i === 0}
+              style={{ ...S.btn, ...S.btnNho, flex: 1, justifyContent: 'center' }}
+              onClick={() => onChuyen(i - 1)}
+              title={i === 0 ? 'Cột này đã ở ngoài cùng bên trái.'
+                : `Đổi chỗ với cột “${soDo.lanes[i - 1]?.name || '—'}”`}>
+              ◀ Chuyển trái
+            </button>
+            <button type="button" className="qe-btn" disabled={i >= soCot - 1}
+              style={{ ...S.btn, ...S.btnNho, flex: 1, justifyContent: 'center' }}
+              onClick={() => onChuyen(i + 1)}
+              title={i >= soCot - 1 ? 'Cột này đã ở ngoài cùng bên phải.'
+                : `Đổi chỗ với cột “${soDo.lanes[i + 1]?.name || '—'}”`}>
+              Chuyển phải ▶
+            </button>
+          </div>
+          <p style={S.note}>
+            Khối trong cột <b>đi theo cột của mình</b> — bộ phận phụ trách của mọi bước
+            giữ nguyên. Trên lưu đồ còn kéo ngang <b>tên cột</b> được. Hoàn tác bằng Ctrl+Z.
+          </p>
+        </div>
+      )}
 
       <ONhap id="qe-f-lname" nhan="Tên bộ phận" giaTri={l.name} doc={!coSua}
         key={`ln${l.name}`} onLuu={v => va('name', v.trim() || 'Bộ phận mới')} />
@@ -1910,10 +2065,17 @@ const CSS = `
 .qe-guthead { position:absolute; left:0; top:0; height:${HEAD_H}px; display:grid; place-items:center;
   font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#94a3b8;
   border-bottom:2px solid ${C.giayVien}; background:${C.giayBang}; }
+/* touch-action:none để kéo bằng ngón tay không bị trình duyệt cướp thành cuộn
+   trang giữa chừng — y như .qe-node đã làm cho cử chỉ kéo khối. */
 .qe-lanehead { position:absolute; top:0; height:${HEAD_H}px; display:grid; place-items:center;
   padding:0 8px; font-size:12px; font-weight:700; text-align:center; line-height:1.25; cursor:pointer;
-  border-left:1px solid ${C.giayVien}; border-bottom:2px solid currentColor; overflow:hidden; }
+  border-left:1px solid ${C.giayVien}; border-bottom:2px solid currentColor; overflow:hidden;
+  user-select:none; touch-action:none; }
 .qe-lanehead[data-sel] { outline:2px solid currentColor; outline-offset:-2px; }
+/* Cột ĐANG KÉO mờ đi (nó sắp rời chỗ), cột ĐÍCH viền nét đứt. Hai dấu hiệu khác
+   hẳn nhau nên không lẫn với nhau, và cũng không lẫn với viền LIỀN của data-sel. */
+.qe-lanehead[data-keo] { opacity:.42; }
+.qe-lanehead[data-dich] { outline:2px dashed currentColor; outline-offset:-3px; }
 .qe-phaselbl { position:absolute; left:0; display:grid; place-items:center; padding:0 8px;
   font-size:11.5px; font-weight:700; color:#475569; text-align:center; line-height:1.3; cursor:pointer;
   border-top:1px solid ${C.giayVien}; background:${C.giayBang}; }
@@ -2051,6 +2213,8 @@ const S = {
   inpDoc: { background: C.mat2, color: C.chu2 },
   ta: { resize: 'vertical', minHeight: 64, lineHeight: 1.5 },
   note: { fontSize: 10.5, color: C.chu3, margin: '4px 0 0', lineHeight: 1.45 },
+
+  doiCho: { display: 'flex', gap: 6 },
 
   swatches: { display: 'flex', gap: 5, flexWrap: 'wrap' },
   swatch: {

@@ -882,6 +882,77 @@ export function xoaCot(soDo, i) {
   return s;
 }
 
+/** Chuyển cột từ vị trí `tu` sang vị trí `den`. Các cột khác dồn theo.
+ *  Ánh xạ lại `lane` của MỌI khối. Trả sơ đồ MỚI.
+ *
+ *  DỜI CHỖ, không ĐỔI CHỖ — đúng luật datThuTu đã dùng cho số bước: đưa cột 4 về
+ *  vị trí 1 thì 1,2,3 trượt sang phải một bậc, không phải cột 4 và cột 1 hoán vị
+ *  cho nhau. Người dùng kéo một cột đi là muốn ĐẶT nó vào chỗ đó, không phải
+ *  quăng cột đang ở đó về chỗ mình vừa rời.
+ *
+ *  ĐIỀU DUY NHẤT KHÔNG ĐƯỢC SAI: khối phải giữ đúng BỘ PHẬN, không phải giữ đúng
+ *  chỉ số. lane là CHỈ SỐ vào lanes, mà bộ phận ấy in ra cột "Người thực hiện"
+ *  của bảng diễn giải trong tài liệu ISO — đổi chỗ cột mà quên dời chỉ số là mọi
+ *  bước lặng lẽ sang tên bộ phận khác, không một dòng lỗi nào báo ra. Cùng cái
+ *  bẫy xoaCot đã phải gỡ, chỉ khác là ở đây chỉ số dời theo cả hai chiều.
+ *
+ *  Ánh xạ dựng bằng CHÍNH phép splice vừa làm trên danh sách chỉ số, không viết
+ *  lại công thức dời bằng tay: hai bên lệch nhau một bậc là hỏng đúng cái đang
+ *  phải giữ, mà lệch một bậc thì nhìn bản in không ra ngay.
+ *
+ *  Tra bảng ánh xạ bằng phép ĐÁNH CHỈ SỐ MẢNG — đúng lối `soDo.lanes[n.lane]` mà
+ *  bảng diễn giải đang đọc, nên rác trong so_do (jsonb) được đối xử y hệt hai
+ *  nơi: '2' vẫn tra ra cột 2 nên phải dời theo, còn 99 / null / NaN vốn đã không
+ *  tra ra cột nào thì để nguyên — gán bừa một chỉ số cho chúng là BỊA ra một bộ
+ *  phận phụ trách mà dữ liệu chưa từng nói.
+ *
+ *  Trả CHÍNH sơ đồ cũ (không phải bản sao) khi không có gì đổi, để nơi gọi so
+ *  tham chiếu là biết có nên đẩy một nấc hoàn tác hay không — đúng luật datThuTu:
+ *    · tu hoặc den không phải số nguyên (NaN, '2', 2.5, null, Infinity…);
+ *    · tu hoặc den ngoài 0…số cột−1 — KHÔNG kẹp về đầu/cuối như datThuTu: ở đây
+ *      con số không do người dùng gõ mà do cử chỉ kéo sinh ra, nên số ngoài
+ *      phạm vi nghĩa là phép đo hỏng, chứ không phải một ý định "cho ra rìa";
+ *    · tu === den — cột đã đứng đúng chỗ đó rồi.
+ *  dx đi theo khối NGUYÊN VẸN: nó là phần kéo tay TRONG lòng cột, cả cột dời chỗ
+ *  thì phần lệch ấy vẫn còn nguyên nghĩa (khác doiCot — đổi cột của MỘT khối thì
+ *  dx phải về 0 để khối căn giữa cột mới). */
+export function chuyenCot(soDo, tu, den) {
+  const lanes = Array.isArray(soDo?.lanes) ? soDo.lanes : null;
+  if (!lanes) return soDo;
+  if (!Number.isInteger(tu) || !Number.isInteger(den)) return soDo;
+  if (tu < 0 || tu >= lanes.length || den < 0 || den >= lanes.length) return soDo;
+  if (tu === den) return soDo;
+
+  const s = sao(soDo);
+  s.lanes.splice(den, 0, s.lanes.splice(tu, 1)[0]);
+
+  // moiChiSo[chỉ số CŨ] = chỉ số MỚI, dựng bằng đúng phép splice ở trên.
+  const thuTuCu = lanes.map((_, i) => i);
+  thuTuCu.splice(den, 0, thuTuCu.splice(tu, 1)[0]);
+  const moiChiSo = [];
+  thuTuCu.forEach((cu, i) => { moiChiSo[cu] = i; });
+
+  for (const n of s.nodes) {
+    const v = moiChiSo[n.lane];
+    if (v !== undefined) n.lane = v;
+  }
+  return s;
+}
+
+/** Cột mà hoành độ `x` (toạ độ TRÊN GIẤY, gốc ở mép trái cột đầu tiên) rơi vào.
+ *  Kẹp trong 0…số cột−1 nên con trỏ kéo ra ngoài mép trang vẫn cho một cột thật.
+ *
+ *  Xuất ra ngoài thay vì để giao diện tự chia lấy: đổi một điểm trên màn hình
+ *  thành chỉ số cột là HÌNH HỌC, mà hình học của phân hệ này nằm trọn ở tệp đây.
+ *  Rác tính như 0 theo đúng luật soThat — NaN đem đi kẹp vẫn ra NaN, và một chỉ
+ *  số NaN thả vào chuyenCot thì lặng lẽ không làm gì, người dùng kéo mà không
+ *  hiểu vì sao cột đứng yên. */
+export function cotTaiX(soDo, x) {
+  const n = Array.isArray(soDo?.lanes) ? soDo.lanes.length : 0;
+  if (n <= 0) return 0;
+  return Math.max(0, Math.min(n - 1, Math.floor(soThat(x) / LANE_W)));
+}
+
 /** Xoá một hàng giai đoạn. Trả sơ đồ MỚI. Ném lỗi nếu hàng còn khối. */
 export function xoaHang(soDo, i) {
   const phases = soDo?.phases || [];
