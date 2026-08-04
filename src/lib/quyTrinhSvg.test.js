@@ -218,3 +218,38 @@ describe('soDoSangSvg', () => {
     expect(out).toContain(MAU_DAI.vach);
   });
 });
+
+describe('nhịp cầu trong ảnh xuất ra', () => {
+  // Đường e1 bẻ ngang ở y=180 chạy ngang qua nhánh dọc của e2 ở x=318.
+  const K = (id, lane, hang, w = 164, h = 56) => ({
+    id, t: 'step', lane, y: hang * CAO_HANG + CAO_HANG / 2 - h / 2, dx: 0, w, h,
+    tx: id, desc: '', form: '—', time: '—',
+  });
+  const cheo = {
+    lanes: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }],
+    phases: [{ name: 'G', h: 4 * CAO_HANG }],
+    nodes: [K('a1', 0, 0), K('b1', 3, 2), K('a2', 1, 0), K('b2', 1, 2)],
+    edges: [
+      { id: 'e1', a: 'a1', b: 'b1', lbl: '', k: 'n' },
+      { id: 'e2', a: 'a2', b: 'b2', lbl: '', k: 'n' },
+    ],
+  };
+
+  test('CÓ chỗ cắt → ảnh xuất ra có nhịp cầu, đúng chỗ cắt', () => {
+    const out = soDoSangSvg(cheo);
+    expect(out).toContain('A5 5 0 0 1 323 180');    // cung nhảy ở x=318, y=180
+    expect(out).not.toContain('NaN');
+  });
+
+  test('nhịp cầu bẻ đường NGANG, KHÔNG bẻ đường dọc', () => {
+    const out = soDoSangSvg(cheo);
+    expect((out.match(/A5 5 /g) || []).length).toBe(1);
+  });
+
+  test('KHÔNG có chỗ cắt → không thêm cung nào, ảnh y hệt', () => {
+    const out = soDoSangSvg(soDo);
+    expect(out).not.toContain('A5 5');
+    // sơ đồ mẫu cũng vậy — không đẻ ra phần tử thừa
+    expect(soDoSangSvg(mauSoDo('SX'))).not.toContain('A5 5');
+  });
+});

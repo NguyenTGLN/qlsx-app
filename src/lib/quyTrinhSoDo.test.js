@@ -7,6 +7,7 @@ import { xoaCot, xoaHang } from './quyTrinhSoDo';
 import { hutHang, NGUONG_HUT } from './quyTrinhSoDo';
 import { daiBuoc } from './quyTrinhSoDo';
 import { CAO_HANG, tamHang, hangCua, yTaiHang } from './quyTrinhSoDo';
+import { soKhoiCat, lanDoc, diemGiao } from './quyTrinhSoDo';
 import { mauSoDo } from './quyTrinhMau';
 
 const soDo = {
@@ -1097,5 +1098,192 @@ describe('dải bước — HÀNG ĐỀU, mỗi hàng cao đúng CAO_HANG', () =
     const truoc = JSON.stringify(s);
     daiBuoc(s);
     expect(JSON.stringify(s)).toBe(truoc);
+  });
+});
+
+// ── LÁCH KHỐI ────────────────────────────────────────────────────
+// Lỗi người dùng chỉ trên ảnh chụp: một nhánh dọc bổ THẲNG QUA ba khối liền.
+const K = (id, lane, hang, t = 'step') => {
+  const T = LOAI_KHOI[t];
+  return { id, t, lane, y: yTaiHang(hang, T.h), dx: 0, w: T.w, h: T.h, tx: id };
+};
+const mkS = (soCot, nodes, ...edges) => ({
+  lanes: Array.from({ length: soCot }, () => ({})),
+  phases: [{ name: 'x', h: 8 * CAO_HANG }],
+  nodes, edges,
+});
+const veE = (s, i = 0) => routeEdge(s, s.edges[i]);
+
+describe('lách khối — nhánh dọc tránh khối chắn', () => {
+  test('soKhoiCat — đếm khối bị cắt, CHẠM MÉP không tính, bỏ qua khối đầu/cuối', () => {
+    const s = mkS(3, [K('a', 0, 0), K('c', 0, 1), K('b', 0, 2)]);
+    const A = rectOf(s.nodes[1]);
+    expect(soKhoiCat(s, [[A.cx, 0], [A.cx, 900]], [])).toBe(3);
+    expect(soKhoiCat(s, [[A.cx, 0], [A.cx, 900]], ['a', 'b'])).toBe(1);
+    expect(soKhoiCat(s, [[A.x, 0], [A.x, 900]], [])).toBe(0);          // đúng mép trái
+    expect(soKhoiCat(s, [[A.x + A.w, 0], [A.x + A.w, 900]], [])).toBe(0);
+    expect(soKhoiCat(s, [[0, A.cy], [900, A.cy]], [])).toBe(1);        // ngang, cắt đúng một khối
+  });
+
+  test('soKhoiCat — số rác không đẻ ra kết quả bừa', () => {
+    const s = mkS(3, [{ id: 'x', t: 'step', lane: 0, y: '10', dx: null, w: NaN, h: 56, tx: 'x' }]);
+    expect(Number.isFinite(soKhoiCat(s, [[106, 0], [106, 900]], []))).toBe(true);
+    expect(soKhoiCat(null, [[0, 0], [1, 1]], [])).toBe(0);
+    expect(soKhoiCat(mkS(1, []), null, [])).toBe(0);
+  });
+
+  test('lanDoc — mép cột và tim cột, tăng dần', () => {
+    expect(lanDoc({ lanes: [{}, {}] })).toEqual([0, 106, 212, 318, 424]);
+    expect(lanDoc(null)).toEqual([0]);
+  });
+
+  test('KHÔNG có khối chắn → d y hệt bản cũ, từng byte', () => {
+    const e = { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' };
+    const s1 = mkS(3, [K('a', 0, 0), K('b', 2, 2)], e);
+    const s2 = mkS(3, [K('a', 0, 0), K('b', 2, 2), K('x', 1, 6)], e);
+    expect(veE(s1).d).toBe('M106 88 L106 171 Q106 180 115 180 L521 180 Q530 180 530 189 L530 272');
+    expect(veE(s2).d).toBe(veE(s1).d);
+  });
+
+  test('nhánh dọc XUYÊN QUA BA KHỐI cùng cột → lách sang làn trống, không cắt khối nào nữa', () => {
+    const s = mkS(3, [K('a', 0, 0), K('c1', 0, 1), K('c2', 0, 2), K('c3', 0, 3), K('b', 0, 4)],
+      { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    expect(soKhoiCat(s, [[106, 88], [106, 512]], ['a', 'b'])).toBe(3);   // bản cũ: bổ qua 3 khối
+    const r = veE(s);
+    expect(soKhoiCat(s, r.pts, ['a', 'b'])).toBe(0);
+    expect(r.keo.huong).toBe('doc');
+    expect(r.pts.some(p => p[0] === 212)).toBe(true);                    // làn giữa cột 0 và 1
+  });
+
+  test('vòng ngược LÊN xuyên khối → cũng lách', () => {
+    const s = mkS(3, [K('b', 2, 0), K('c1', 0, 1), K('c2', 0, 2), K('a', 0, 3)],
+      { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    expect(soKhoiCat(s, [[106, 392], [106, 60], [448, 60]], ['a', 'b'])).toBe(2);
+    expect(soKhoiCat(s, veE(s).pts, ['a', 'b'])).toBe(0);
+  });
+
+  test('không làn nào đỡ hơn → GIỮ NGUYÊN bản cũ, không nổ', () => {
+    // Khối chắn trải rộng −50…250, trùm KÍN cả hai làn ứng viên (0 và 212).
+    const chan = { id: 'c', t: 'step', lane: 0, y: yTaiHang(1, 56), dx: -6, w: 300, h: 56, tx: 'c' };
+    const s = mkS(1, [K('a', 0, 0), chan, K('b', 0, 2)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    expect(veE(s).d).toBe('M106 88 L106 272');
+  });
+
+  test('đường vòng: lech vẫn nhích được nhánh dọc, và vẫn bị KẸP', () => {
+    const nodes = [K('a', 0, 0), K('c1', 0, 1), K('c2', 0, 2), K('c3', 0, 3), K('b', 0, 4)];
+    const mkE = lech => mkS(3, nodes, { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', lech });
+    const a = veE(mkE(0)), b = veE(mkE(40));
+    expect(b.keo.x - a.keo.x).toBe(40);
+    expect(b.keo.tu[0] - a.keo.tu[0]).toBe(40);
+    expect(veE(mkE(-9999)).keo.x).toBe(0);
+    expect(veE(mkE(9999)).keo.x).toBe(drawW(mkE(0)));
+    for (const l of [0, 40, -40, 9999, -9999]) {
+      const r = veE(mkE(l));
+      expect(r.d).not.toMatch(/NaN|Infinity|undefined/);
+      expect(r.keo.x).toBe((r.keo.tu[0] + r.keo.den[0]) / 2);
+    }
+  });
+
+  test('lech rác trên đường vòng → coi như 0', () => {
+    const nodes = [K('a', 0, 0), K('c1', 0, 1), K('c2', 0, 2), K('b', 0, 3)];
+    const goc = veE(mkS(3, nodes, { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' })).d;
+    for (const rac of ['40', 'abc', NaN, null, true, {}, []]) {
+      expect(veE(mkS(3, nodes, { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', lech: rac })).d).toBe(goc);
+    }
+  });
+
+  test('đi NGANG cùng tầm cao thì không lách — chỉ nhánh DỌC mới xét', () => {
+    const s = mkS(3, [K('a', 0, 0), K('c', 1, 0), K('b', 2, 0)],
+      { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    expect(veE(s).d).toBe('M188 60 L448 60');
+  });
+});
+
+// ── NHỊP CẦU ─────────────────────────────────────────────────────
+describe('diemGiao — chỗ hai đường nối cắt nhau', () => {
+  // e1 bẻ ngang ở y=180 chạy từ x=106 tới x=742; e2 bổ dọc ở x=318 từ y=88 tới 272.
+  const cheo = () => mkS(4,
+    [K('a1', 0, 0), K('b1', 3, 2), K('a2', 1, 0), K('b2', 1, 2)],
+    { id: 'e1', a: 'a1', b: 'b1', k: 'n', lbl: '' },
+    { id: 'e2', a: 'a2', b: 'b2', k: 'n', lbl: '' });
+
+  test('cắt nhau THẬT → đúng một điểm, đúng chỗ', () => {
+    expect(diemGiao(cheo())).toEqual([{ x: 318, y: 180 }]);
+  });
+
+  test('chữ T — đầu mút đường này đậu ĐÚNG trên đường kia → KHÔNG tính', () => {
+    const s = cheo();
+    s.nodes[3] = { ...s.nodes[3], y: 180 };        // b2 có cạnh trên đúng y=180
+    expect(diemGiao(s)).toEqual([]);
+  });
+
+  test('chung khối nguồn → KHÔNG tính là cắt', () => {
+    const s = mkS(3, [K('a', 1, 0), K('b', 0, 2), K('c', 2, 2)],
+      { id: 'e1', a: 'a', b: 'b', k: 'n', lbl: '' },
+      { id: 'e2', a: 'a', b: 'c', k: 'n', lbl: '' });
+    expect(diemGiao(s)).toEqual([]);
+  });
+
+  test('hai đoạn NGANG trùng nhau → KHÔNG tính là cắt', () => {
+    const s = mkS(4, [K('a1', 0, 0), K('b1', 2, 2), K('a2', 1, 0), K('b2', 3, 2)],
+      { id: 'e1', a: 'a1', b: 'b1', k: 'n', lbl: '' },
+      { id: 'e2', a: 'a2', b: 'b2', k: 'n', lbl: '' });
+    const r1 = routeEdge(s, s.edges[0]), r2 = routeEdge(s, s.edges[1]);
+    expect(r1.keo.y).toBe(r2.keo.y);              // hai đoạn ngang ĐÚNG cùng độ cao
+    expect(diemGiao(s)).toEqual([]);
+  });
+
+  test('khối bị xoá → bỏ qua, không nổ', () => {
+    const s = cheo();
+    s.edges.push({ id: 'e3', a: 'khong-co', b: 'b2', k: 'n', lbl: '' });
+    expect(() => diemGiao(s)).not.toThrow();
+    expect(diemGiao(s)).toEqual([{ x: 318, y: 180 }]);
+    expect(diemGiao({ nodes: [], edges: null, lanes: [] })).toEqual([]);
+    expect(diemGiao(null)).toEqual([]);
+  });
+
+  test('THỨ TỰ ổn định — đảo thứ tự đường nối vẫn ra đúng một danh sách', () => {
+    const s = cheo();
+    const dao = { ...s, edges: [s.edges[1], s.edges[0]] };
+    expect(diemGiao(dao)).toEqual(diemGiao(s));
+  });
+
+  test('sơ đồ không có chỗ cắt → mảng rỗng', () => {
+    expect(diemGiao(mauSoDo('SX'))).toEqual([]);
+  });
+});
+
+describe('nhịp cầu vẽ trên đường NGANG', () => {
+  const cheo = () => mkS(4,
+    [K('a1', 0, 0), K('b1', 3, 2), K('a2', 1, 0), K('b2', 1, 2)],
+    { id: 'e1', a: 'a1', b: 'b1', k: 'n', lbl: '' },
+    { id: 'e2', a: 'a2', b: 'b2', k: 'n', lbl: '' });
+
+  test('KHÔNG truyền giao → d y hệt từng byte', () => {
+    const s = cheo();
+    expect(routeEdge(s, s.edges[0], []).d).toBe(routeEdge(s, s.edges[0]).d);
+    expect(routeEdge(s, s.edges[0]).d)
+      .toBe('M106 88 L106 171 Q106 180 115 180 L733 180 Q742 180 742 189 L742 272');
+  });
+
+  test('truyền giao → đường NGANG có cung nhảy, đường DỌC giữ nguyên', () => {
+    const s = cheo();
+    const g = diemGiao(s);
+    expect(routeEdge(s, s.edges[0], g).d)
+      .toBe('M106 88 L106 171 Q106 180 115 180 L313 180 A5 5 0 0 1 323 180 L733 180 Q742 180 742 189 L742 272');
+    expect(routeEdge(s, s.edges[1], g).d).toBe(routeEdge(s, s.edges[1]).d);   // đường dọc: không nhảy
+  });
+
+  test('cung nhảy nằm SÁT chỗ bẻ thì bỏ qua — không vẽ cung tràn qua góc bo', () => {
+    const s = cheo();
+    const r = routeEdge(s, s.edges[0], [{ x: 117, y: 180 }, { x: 731, y: 180 }]);
+    expect(r.d).toBe(routeEdge(s, s.edges[0]).d);
+  });
+
+  test('giao rác không đẻ ra NaN trong path', () => {
+    const s = cheo();
+    for (const rac of [[{ x: NaN, y: 180 }], [{ x: 318 }], [null], 'abc', 7]) {
+      expect(routeEdge(s, s.edges[0], rac).d).not.toMatch(/NaN|Infinity|undefined/);
+    }
   });
 });

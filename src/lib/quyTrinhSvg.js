@@ -10,7 +10,7 @@
 
 import {
   GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI,
-  rectOf, drawW, drawH, phaseTop, routeEdge, daiBuoc,
+  rectOf, drawW, drawH, phaseTop, routeEdge, daiBuoc, diemGiao,
 } from './quyTrinhSoDo';
 
 /** Thoát ký tự cho cả SVG lẫn DOCX. & phải thay TRƯỚC, nếu không sinh &amp;lt;. */
@@ -186,10 +186,14 @@ export function soDoSangSvg(soDoVao, { tyLe = 1 } = {}) {
     `<marker id="ar-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">`
     + `<path d="M0 0L10 5L0 10z" fill="${c}"/></marker>`).join('');
 
-  // Đường nối + khối, đặt trong nhóm dịch theo gutter/header
+  // Đường nối + khối, đặt trong nhóm dịch theo gutter/header.
+  // Chỗ hai đường cắt nhau tính MỘT LẦN cho cả bản vẽ rồi truyền vào từng đường:
+  // nhịp cầu phải có mặt ở ĐÂY chứ không riêng trên màn hình — bản in A3, ảnh
+  // nhúng .docx và ảnh PNG dán xưởng đều đi qua hàm này.
+  const giao = diemGiao(soDo);
   const trong = [];
   for (const e of soDo.edges || []) {
-    const r = routeEdge(soDo, e);
+    const r = routeEdge(soDo, e, giao);
     if (!r) continue;                       // đường trỏ tới khối đã xoá
     const c = MAU_DUONG[e.k] || MAU_DUONG.n;
     trong.push(`<g data-noi="${thoatXml(e.id)}">`

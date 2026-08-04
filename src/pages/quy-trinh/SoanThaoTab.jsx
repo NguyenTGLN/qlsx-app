@@ -7,6 +7,7 @@ import {
   GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT, CAO_HANG,
   laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
   themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc, tronCaoGiaiDoan,
+  diemGiao,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -190,6 +191,11 @@ export default function SoanThaoTab({
   // lưới, nên kéo khối KHÔNG làm hàng cao thấp đổi theo nữa — đúng điều người
   // dùng yêu cầu. Toàn bộ phép chia hàng nằm ở daiBuoc; tệp này chỉ đọc y1/y2.
   const dai = useMemo(() => (soDoHien ? daiBuoc(soDoHien) : []), [soDoHien]);
+
+  // Chỗ hai đường nối CẮT NHAU — tính một lần cho cả bản vẽ rồi truyền vào từng
+  // đường để nó tự bẻ nhịp cầu. Toàn bộ hình học nằm ở diemGiao/routeEdge; tệp
+  // này không tính lấy một toạ độ nào, và màn hình dùng ĐÚNG hàm mà bản in dùng.
+  const giaoNoi = useMemo(() => (soDoHien ? diemGiao(soDoHien) : []), [soDoHien]);
 
   // kiemTraLuuDo O(n²) ở phần soát khối chồng nhau. Nhớ theo soDo (bản CAM KẾT)
   // nên kéo khối, đổi vùng chọn, gõ chữ, phóng to đều KHÔNG chạy lại.
@@ -971,7 +977,7 @@ export default function SoanThaoTab({
                     </marker>
                   </defs>
                   {(soDoHien.edges || []).map((e) => {
-                    const r = routeEdge(soDoHien, e);
+                    const r = routeEdge(soDoHien, e, giaoNoi);
                     if (!r) return null;    // đầu hoặc cuối đã bị xoá — bỏ qua, không vẽ
                     const k = e.k || 'n';
                     const c = MAU_DUONG[k] || MAU_DUONG.n;

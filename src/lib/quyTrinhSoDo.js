@@ -103,8 +103,146 @@ function nhich(tuDong, lech, lo, hi) {
   return Math.min(Math.max(tuDong + lech, Math.min(lo, tuDong)), Math.max(hi, tuDong));
 }
 
+// ── LÁCH KHỐI ────────────────────────────────────────────────────
+// Lỗi người dùng chỉ tận tay trên ảnh chụp: một nhánh dọc bổ THẲNG QUA ba khối
+// liền. Chỗ ấy KHÔNG chữa được bằng cách nhích chỗ bẻ, vì hai nhánh dọc của bản
+// tự động đều DÍNH CỨNG vào tim khối đầu và tim khối cuối — dời x của chúng là
+// đường mọc ra từ khoảng không cạnh khối.
+//
+// Cách chữa: khi bản tự động cắt qua khối, đổi sang lối VÒNG — ra CẠNH BÊN khối
+// nguồn, chạy tới một LÀN TRỐNG, đi dọc trong làn đó, rồi đâm vào CẠNH BÊN khối
+// đích. Vẫn 3 đoạn như bản cũ, vẫn đúng MỘT chỗ bẻ cho `lech` chỉnh, nên núm kéo
+// tay không mất nghĩa. Không làn nào đỡ hơn thì GIỮ NGUYÊN bản cũ: đường xấu còn
+// sửa được bằng tay, mất đường thì không.
+
+/** Đoạn thẳng [p,q] có cắt VÀO TRONG hình chữ nhật r không?
+ *  Chạm đúng mép KHÔNG tính — đường nối nào cũng chạm mép khối đầu và khối cuối,
+ *  tính cả chạm mép thì đường nào cũng "xuyên khối" và mọi sơ đồ đều bị vẽ lại. */
+function doanCatRect(p, q, r) {
+  const x1 = Math.min(p[0], q[0]), x2 = Math.max(p[0], q[0]);
+  const y1 = Math.min(p[1], q[1]), y2 = Math.max(p[1], q[1]);
+  return x2 > r.x && x1 < r.x + r.w && y2 > r.y && y1 < r.y + r.h;
+}
+
+/** Đường gấp khúc `pts` cắt qua BAO NHIÊU khối (mỗi khối đếm một lần).
+ *  boQua: id khối đầu/cuối của chính đường nối — đường phải chạm chúng.
+ *
+ *  Số hỏng trong so_do (jsonb, không ràng buộc kiểu) bị BỎ QUA hẳn: đem NaN đi so
+ *  sánh thì mọi phép so đều false, khối rác lặng lẽ được coi là "không chắn" hoặc
+ *  "chắn tất" tuỳ dấu — cả hai đều là quyết định bịa ra từ dữ liệu vô nghĩa. */
+export function soKhoiCat(soDo, pts, boQua = []) {
+  const ds = Array.isArray(soDo?.nodes) ? soDo.nodes : [];
+  if (!Array.isArray(pts) || pts.length < 2) return 0;
+  const doan = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p = pts[i], q = pts[i + 1];
+    if (![p?.[0], p?.[1], q?.[0], q?.[1]].every(Number.isFinite)) continue;
+    doan.push([p, q]);
+  }
+  let dem = 0;
+  for (const n of ds) {
+    if (!n || typeof n !== 'object' || boQua.includes(n.id)) continue;
+    const r = rectOf(n);
+    if (![r.x, r.y, r.w, r.h].every(Number.isFinite)) continue;
+    if (doan.some(([p, q]) => doanCatRect(p, q, r))) dem++;
+  }
+  return dem;
+}
+
+/** Các LÀN DỌC ứng viên: mép cột và tim cột — hai chỗ trống tự nhiên của lưới.
+ *  Cột rộng 212, khối rộng 164 nên mép cột luôn hở 24px mỗi bên; tim cột là chỗ
+ *  đẹp nhất khi cột ấy trống. Danh sách NGẮN và CỐ ĐỊNH: đây là chọn làn, không
+ *  phải dò đường — dò đường nhiều khúc thì `lech` (một con số) hết nghĩa. */
+export function lanDoc(soDo) {
+  const n = Array.isArray(soDo?.lanes) ? soDo.lanes.length : 0;
+  const ds = [];
+  for (let i = 0; i <= n; i++) {
+    ds.push(laneX(i));
+    if (i < n) ds.push(laneX(i) + LANE_W / 2);
+  }
+  return ds;
+}
+
+/** Lối vòng qua làn dọc x: ra cạnh bên khối nguồn → chạy tới làn → đi dọc →
+ *  đâm vào cạnh bên khối đích. Bốn điểm, ba đoạn — đúng bằng bản tự động. */
+function duongVong(A, B, x) {
+  return [
+    [x > A.cx ? A.x + A.w : A.x, A.cy],
+    [x, A.cy],
+    [x, B.cy],
+    [x > B.cx ? B.x + B.w : B.x, B.cy],
+  ];
+}
+
+/** Làn dọc đi vòng ÍT CẮT KHỐI NHẤT, hoặc null nếu không làn nào đỡ hơn `chan`.
+ *  Cách đều nhau thì lấy làn BÊN PHẢI: lưu đồ đọc trái→phải, vòng bên phải ít
+ *  chồng lên dòng chảy chính hơn, và cột đầu tiên không phải bám mép trang. */
+function lanTot(soDo, A, B, boQua, chan) {
+  const moc = (A.cx + B.cx) / 2;
+  let tot = null;
+  for (const x of lanDoc(soDo)) {
+    // Làn rơi vào GIỮA khối đầu hoặc khối cuối thì đoạn chạy ngang lại đâm ngược
+    // vào chính khối vừa ra — vô nghĩa, loại thẳng.
+    if ((x > A.x && x < A.x + A.w) || (x > B.x && x < B.x + B.w)) continue;
+    const c = soKhoiCat(soDo, duongVong(A, B, x), boQua);
+    if (c >= chan) continue;
+    const d = Math.abs(x - moc);
+    if (!tot || c < tot.c || (c === tot.c && (d < tot.d || (d === tot.d && x > tot.x)))) tot = { c, d, x };
+  }
+  return tot ? tot.x : null;
+}
+
+export const BAN_KINH_CAU = 5;   // bán kính nhịp cầu ở chỗ hai đường nối cắt nhau
+
+/** Tìm chỗ hai đường nối CẮT NHAU thật (một dọc, một ngang).
+ *  Trả [{ x, y }] để vẽ nhịp cầu.
+ *
+ *  CHỈ tính cắt vuông góc THẬT SỰ: đoạn dọc của đường này băng qua GIỮA đoạn
+ *  ngang của đường KHÁC. Không tính:
+ *    · đầu mút chạm nhau (chữ T) và neo dùng chung — hai đường cùng ra từ một
+ *      khối thì gặp nhau ở gốc, vẽ cầu ở đó là bịa ra một chỗ cắt không có;
+ *    · hai đoạn cùng phương chồng lên nhau — đó là trùng đường, không phải cắt,
+ *      và bắc cầu cũng chẳng gỡ được;
+ *    · góc bẻ của chính một đường.
+ *  Nên mọi phép so đều dùng dấu NGẶT.
+ *
+ *  Thứ tự CỐ ĐỊNH theo (x, y), không theo thứ tự đường nối trong mảng: đảo thứ
+ *  tự đường nối vẫn ra đúng một danh sách, nên ảnh xuất ra không đổi vô cớ.
+ *  Đường trỏ tới khối đã xoá (routeEdge trả null) bị bỏ qua, không nổ. */
+export function diemGiao(soDo) {
+  const es = Array.isArray(soDo?.edges) ? soDo.edges : [];
+  const doc = [], ngang = [];
+  es.forEach((e, i) => {
+    const r = e && typeof e === 'object' ? routeEdge(soDo, e) : null;
+    if (!r) return;
+    const pts = r.pts;
+    for (let k = 0; k < pts.length - 1; k++) {
+      const [x1, y1] = pts[k], [x2, y2] = pts[k + 1];
+      if (![x1, y1, x2, y2].every(Number.isFinite)) continue;
+      if (x1 === x2 && y1 !== y2) doc.push({ i, x: x1, a: Math.min(y1, y2), b: Math.max(y1, y2) });
+      else if (y1 === y2 && x1 !== x2) ngang.push({ i, y: y1, a: Math.min(x1, x2), b: Math.max(x1, x2) });
+    }
+  });
+  const gom = new Map();
+  for (const v of doc) {
+    for (const h of ngang) {
+      if (v.i === h.i) continue;                       // cùng một đường: góc bẻ, không phải cắt
+      if (!(h.y > v.a && h.y < v.b)) continue;
+      if (!(v.x > h.a && v.x < h.b)) continue;
+      const khoa = `${Math.round(v.x * 100)}|${Math.round(h.y * 100)}`;
+      if (!gom.has(khoa)) gom.set(khoa, { x: v.x, y: h.y });
+    }
+  }
+  return [...gom.values()].sort((p, q) => (p.x - q.x) || (p.y - q.y));
+}
+
 /** Đường nối gấp khúc vuông góc, bo góc 9px — kiểu lưu đồ ISO.
- *  Trả { d, nhan:[x,y], keo }, hoặc null nếu thiếu khối đầu/cuối.
+ *  Trả { d, nhan:[x,y], keo, pts }, hoặc null nếu thiếu khối đầu/cuối.
+ *  `pts` là đường gấp khúc THÔ (chưa bo góc) — diemGiao soi ở đấy.
+ *
+ *  `giao` (tuỳ chọn) là danh sách chỗ cắt do diemGiao trả về: truyền vào thì các
+ *  đoạn NGANG được bẻ ra một nhịp cầu nửa cung tại mỗi chỗ cắt. Không truyền thì
+ *  chuỗi d ra ĐÚNG TỪNG BYTE như trước — mọi sơ đồ đã lưu vẫn vẽ y hệt.
  *
  *  `keo` tả ĐOẠN KÉO TAY ĐƯỢC để giao diện đặt núm mà không phải tính lấy một
  *  toạ độ nào — null nghĩa là đường này thẳng tuột, không có chỗ bẻ để chỉnh:
@@ -114,7 +252,7 @@ function nhich(tuDong, lech, lo, hi) {
  *
  *  e.lech là số dôi TƯƠNG ĐỐI so với chỗ bẻ tự động, không phải toạ độ tuyệt
  *  đối: lưu toạ độ thì kéo khối một cái là chỗ bẻ rơi lại đằng sau. */
-export function routeEdge(soDo, e) {
+export function routeEdge(soDo, e, giao) {
   const A0 = timKhoi(soDo, e.a), B0 = timKhoi(soDo, e.b);
   if (!A0 || !B0) return null;
   const A = rectOf(A0), B = rectOf(B0);
@@ -125,39 +263,90 @@ export function routeEdge(soDo, e) {
   if (Math.abs(dy) < 46) {                       // cùng tầm cao → đi ngang
     const phai = dx > 0;
     pts = [[phai ? A.x + A.w : A.x, A.cy], [phai ? B.x : B.x + B.w, B.cy]];
-  } else if (dy > 0) {                           // đi xuống
-    if (Math.abs(dx) < 24) {
-      pts = [[A.cx, A.y + A.h], [B.cx, B.y]];
-    } else {
-      const giua = nhich(Math.max(A.y + A.h + 18, (A.y + A.h + B.y) / 2), lech,
-        A.y + A.h + KE_HO_BE, B.y - KE_HO_BE);
-      pts = [[A.cx, A.y + A.h], [A.cx, giua], [B.cx, giua], [B.cx, B.y]];
-      keo = { huong: 'ngang', x: (A.cx + B.cx) / 2, y: giua, tu: [A.cx, giua], den: [B.cx, giua] };
-    }
-  } else {                                       // vòng ngược lên
-    if (Math.abs(dx) < 24) {
-      pts = [[A.cx, A.y], [B.cx, B.y + B.h]];
-    } else {
-      const phai = dx > 0;
-      // Nhánh dọc leo ra từ cạnh TRÊN khối nguồn, nên kẹp trong bề ngang khối
-      // đó: đẩy quá là đường mọc ra từ khoảng không cạnh khối.
-      const doc = nhich(A.cx, lech, A.x + KE_HO_BE, A.x + A.w - KE_HO_BE);
-      pts = [[doc, A.y], [doc, B.cy], [phai ? B.x : B.x + B.w, B.cy]];
-      keo = { huong: 'doc', x: doc, y: (A.y + B.cy) / 2, tu: [doc, A.y], den: [doc, B.cy] };
+  } else {
+    const xuong = dy > 0, thang = Math.abs(dx) < 24;
+    const giua0 = Math.max(A.y + A.h + 18, (A.y + A.h + B.y) / 2);
+    // Bản TỰ ĐỘNG, CHƯA cộng lech — chỉ nó mới được quyền quyết định có lách hay
+    // không. Xét trên bản đã nhích tay thì kéo núm một cái là đường nhảy đổi cả
+    // hình dạng giữa chừng, người dùng không đoán nổi mình đang kéo cái gì.
+    const tuDong = xuong
+      ? (thang ? [[A.cx, A.y + A.h], [B.cx, B.y]]
+        : [[A.cx, A.y + A.h], [A.cx, giua0], [B.cx, giua0], [B.cx, B.y]])
+      : (thang ? [[A.cx, A.y], [B.cx, B.y + B.h]]
+        : [[A.cx, A.y], [A.cx, B.cy], [dx > 0 ? B.x : B.x + B.w, B.cy]]);
+    const chan = soKhoiCat(soDo, tuDong, [A0.id, B0.id]);
+    const lan = chan ? lanTot(soDo, A, B, [A0.id, B0.id], chan) : null;
+
+    if (lan !== null) {                          // lối VÒNG qua làn trống
+      const W = Array.isArray(soDo?.lanes) ? drawW(soDo) : 0;
+      const doc = nhich(lan, lech, Math.min(0, lan), Math.max(W, lan));
+      pts = duongVong(A, B, doc);
+      keo = { huong: 'doc', x: doc, y: (A.cy + B.cy) / 2, tu: [doc, A.cy], den: [doc, B.cy] };
+    } else if (xuong) {                          // đi xuống
+      if (thang) {
+        pts = tuDong;
+      } else {
+        const giua = nhich(giua0, lech, A.y + A.h + KE_HO_BE, B.y - KE_HO_BE);
+        pts = [[A.cx, A.y + A.h], [A.cx, giua], [B.cx, giua], [B.cx, B.y]];
+        keo = { huong: 'ngang', x: (A.cx + B.cx) / 2, y: giua, tu: [A.cx, giua], den: [B.cx, giua] };
+      }
+    } else {                                     // vòng ngược lên
+      if (thang) {
+        pts = tuDong;
+      } else {
+        const phai = dx > 0;
+        // Nhánh dọc leo ra từ cạnh TRÊN khối nguồn, nên kẹp trong bề ngang khối
+        // đó: đẩy quá là đường mọc ra từ khoảng không cạnh khối.
+        const doc = nhich(A.cx, lech, A.x + KE_HO_BE, A.x + A.w - KE_HO_BE);
+        pts = [[doc, A.y], [doc, B.cy], [phai ? B.x : B.x + B.w, B.cy]];
+        keo = { huong: 'doc', x: doc, y: (A.y + B.cy) / 2, tu: [doc, A.y], den: [doc, B.cy] };
+      }
     }
   }
 
+  // Nhịp cầu: chỗ đường NGANG cắt qua đường DỌC thì đường ngang nhảy một nửa
+  // cung 5px. Luôn là đường NGANG nhảy, không bao giờ đường dọc — nhảy lung tung
+  // mỗi chỗ một kiểu còn khó đọc hơn là không nhảy.
+  //
+  // Bẻ HẲN nét vẽ chứ không phủ một cung màu nền lên trên: nền chỗ ấy có thể là
+  // trắng, là nền dải bước, hay nền cột — phủ màu trắng lên nền dải là để lại
+  // một vệt trắng giữa dải xám.
+  const cau = Array.isArray(giao)
+    ? giao.filter(g => Number.isFinite(g?.x) && Number.isFinite(g?.y)) : [];
+  const RC = BAN_KINH_CAU;
+  /** Đi hết một đoạn đã cắt góc. Không nhịp cầu nào ⇒ trả ĐÚNG ` L…` như cũ. */
+  const diDoan = (sx, sy, ex, ey) => {
+    let out = '';
+    if (cau.length && sy === ey && sx !== ex) {
+      const huong = ex > sx ? 1 : -1;
+      const lo = Math.min(sx, ex), hi = Math.max(sx, ex);
+      const xs = [...new Set(cau.filter(g => g.y === sy && g.x - RC > lo && g.x + RC < hi)
+        .map(g => g.x))].sort((a, b) => (a - b) * huong);
+      let truoc = null;
+      for (const x of xs) {
+        // Hai chỗ cắt sát nhau quá thì chỉ bắc một cầu: hai cung chồng lên nhau
+        // vẽ ra một nét ngoằn ngoèo, đọc còn tệ hơn để đường đi thẳng.
+        if (truoc !== null && Math.abs(x - truoc) < 2 * RC) continue;
+        out += ` L${x - RC * huong} ${sy} A${RC} ${RC} 0 0 ${huong > 0 ? 1 : 0} ${x + RC * huong} ${sy}`;
+        truoc = x;
+      }
+    }
+    return out + ` L${ex} ${ey}`;
+  };
+
   let d = `M${pts[0][0]} ${pts[0][1]}`;
   const R = 9;
+  let tx = pts[0][0], ty = pts[0][1];
   for (let i = 1; i < pts.length - 1; i++) {
     const [px, py] = pts[i - 1], [cx, cy] = pts[i], [nx, ny] = pts[i + 1];
     const l1 = Math.hypot(cx - px, cy - py) || 1, l2 = Math.hypot(nx - cx, ny - cy) || 1;
     const r = Math.min(R, l1 / 2, l2 / 2);
-    d += ` L${cx + (px - cx) / l1 * r} ${cy + (py - cy) / l1 * r}`;
-    d += ` Q${cx} ${cy} ${cx + (nx - cx) / l2 * r} ${cy + (ny - cy) / l2 * r}`;
+    d += diDoan(tx, ty, cx + (px - cx) / l1 * r, cy + (py - cy) / l1 * r);
+    tx = cx + (nx - cx) / l2 * r; ty = cy + (ny - cy) / l2 * r;
+    d += ` Q${cx} ${cy} ${tx} ${ty}`;
   }
   const cuoi = pts[pts.length - 1];
-  d += ` L${cuoi[0]} ${cuoi[1]}`;
+  d += diDoan(tx, ty, cuoi[0], cuoi[1]);
 
   // Nhãn đặt giữa đoạn dài nhất
   let best = 0, bl = -1;
@@ -169,6 +358,7 @@ export function routeEdge(soDo, e) {
     d,
     nhan: [(pts[best][0] + pts[best + 1][0]) / 2, (pts[best][1] + pts[best + 1][1]) / 2],
     keo,
+    pts,
   };
 }
 
