@@ -7,7 +7,7 @@ import {
   GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT, CAO_HANG,
   laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
   themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc, tronCaoGiaiDoan,
-  diemGiao, CANH_NEO, diemNeo, neoHopLe,
+  diemGiao, CANH_NEO, diemNeo, neoHopLe, datThuTu, boThuTu,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -111,7 +111,7 @@ const CANH_BAO_CHUA_LUU = 'Còn thay đổi chưa lưu. Hãy bấm "Lưu nháp" 
    Gõ một câu 40 ký tự mà mỗi ký tự đẩy một bản vào ngăn xếp hoàn tác
    thì Ctrl+Z trở nên vô dụng. Không kiểm soát giá trị (defaultValue) +
    key ở nơi gọi ⇒ hoàn tác đổi giá trị thì ô tự dựng lại theo. */
-function ONhap({ nhan, giaTri, onLuu, doc, dong, goiY, ghiChu, id }) {
+function ONhap({ nhan, giaTri, onLuu, doc, dong, goiY, ghiChu, id, kieu = 'text', them }) {
   const luu = (ev) => {
     const v = ev.target.value;
     if (!doc && v !== (giaTri ?? '')) onLuu(v);
@@ -119,16 +119,21 @@ function ONhap({ nhan, giaTri, onLuu, doc, dong, goiY, ghiChu, id }) {
   const chung = {
     id, defaultValue: giaTri ?? '', onBlur: luu, readOnly: !!doc,
     placeholder: goiY, style: { ...S.inp, ...(doc ? S.inpDoc : null) },
+    ...them,
   };
   return (
     <div style={S.fld}>
       <label htmlFor={id} style={S.lbl}>{nhan}</label>
       {dong ? <textarea {...chung} rows={dong} style={{ ...chung.style, ...S.ta }} />
-        : <input type="text" {...chung} />}
+        : <input type={kieu} {...chung} />}
       {ghiChu && <p style={S.note}>{ghiChu}</p>}
     </div>
   );
 }
+
+// Ô "Số thứ tự bước" ở bảng bên phải. Huy hiệu số ở góc khối bấm vào là nhảy
+// tới đây, nên hai chỗ phải cùng biết một cái id.
+const ID_STT = 'qe-f-stt';
 
 function Rong({ tieuDe, phu }) {
   return (
@@ -244,6 +249,16 @@ export default function SoanThaoTab({
     setChon({ loai: 'node', id });
     const el = cvRef.current?.querySelector(`[data-node="${id}"]`);
     if (el?.scrollIntoView) el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+  }, []);
+
+  // Bấm huy hiệu số ở góc khối = nhảy tới ô "Số thứ tự bước" bên phải, con trỏ
+  // bôi sẵn số cũ để gõ đè. Huy hiệu chỉ rộng 19px: nhét ô nhập vào trong đó thì
+  // bấm trượt nhiều hơn bấm trúng, nên nó chỉ là CÁI NÚT DẪN, chỗ sửa ở bảng.
+  const chinhSoBuoc = useCallback(() => {
+    const el = document.getElementById(ID_STT);
+    if (!el) return;
+    el.focus();
+    if (typeof el.select === 'function') el.select();
   }, []);
 
   const xoaDangChon = useCallback(() => {
@@ -860,6 +875,9 @@ export default function SoanThaoTab({
             <br /><br />
             Kéo khối tới gần ngang hàng một khối khác thì nó <b>tự hút cho bằng hàng</b>,
             kèm một <b style={{ color: mau }}>vạch gióng nét đứt</b> chạy suốt trang.
+            <br /><br />
+            <b>Số ở góc khối</b> là số thứ tự bước. Bấm vào nó rồi gõ số khác ở ô
+            <b> Số thứ tự bước</b> bên phải — bước đang giữ số đó tự dồn theo, khối không xê dịch.
           </div>
 
           <h3 style={{ ...S.h3, marginTop: 18 }}>Thêm khối rời</h3>
@@ -1088,8 +1106,20 @@ export default function SoanThaoTab({
                       <div className="qe-shape" style={{ background: laDauNoi ? mau : c }}>
                         <div className="qe-shapein"><span className="qe-tx">{n.tx}</span></div>
                       </div>
+                      {/* Huy hiệu SỐ BƯỚC. Trên khối ĐANG CHỌN nó là cái nút dẫn tới ô
+                          "Số thứ tự bước" bên phải — đúng chỗ người dùng chỉ tay vào khi
+                          hỏi cách đổi số. Nút nằm TRONG khối nên phải chặn pointerdown y
+                          như núm ＋ và núm ⤳, nếu không bấm số một cái là khối bắt đầu bị kéo. */}
                       {n.t !== 'start' && n.t !== 'end' && so > 0 && (
-                        <span className="qe-num" style={{ background: c, fontFamily: MONO }}>{so}</span>
+                        daChon && coSua ? (
+                          <button type="button" className="qe-num"
+                            style={{ background: c, fontFamily: MONO }}
+                            title={`Bước ${so} — bấm để sửa số thứ tự ở bảng bên phải`}
+                            onPointerDown={(ev) => ev.stopPropagation()}
+                            onClick={(ev) => { ev.stopPropagation(); chinhSoBuoc(); }}>{so}</button>
+                        ) : (
+                          <span className="qe-num" style={{ background: c, fontFamily: MONO }}>{so}</span>
+                        )
                       )}
                       {daChon && <span className="qe-selbox" style={{ borderColor: mau }} />}
 
@@ -1351,6 +1381,29 @@ function KhoiInsp({ n, soDo, doiSoDo, coSua, mau, toast }) {
   const l = soDo.lanes[n.lane] || {};
   const va = (k, v) => doiSoDo(vaKhoi(soDo, n.id, { [k]: v }));
 
+  // Số bước đọc từ thuTuBuoc — CÙNG một hàm mà bảng diễn giải và bản in dùng,
+  // nên ba chỗ không bao giờ nói ba số khác nhau. Bắt đầu/Kết thúc không mang số.
+  const ds = thuTuBuoc(soDo);
+  const so = ds.indexOf(n.id) + 1;
+  const coSo = so > 0;
+  const dangDanhTay = Array.isArray(soDo.thuTu) && soDo.thuTu.length > 0;
+
+  // Gõ rác rồi rời ô thì ô phải trả về con số THẬT. datThuTu từ chối giá trị
+  // hỏng nên sơ đồ không đổi, mà ô lại đang giữ thứ người dùng vừa gõ — dựng
+  // lại ô sau mỗi lần ghi là cách rẻ nhất để hai bên khớp nhau.
+  const [lanNhap, setLanNhap] = useState(0);
+
+  const datSo = (v) => {
+    setLanNhap(k => k + 1);
+    const tx = String(v ?? '').trim();
+    if (!tx) return;                       // xoá trắng ô rồi đi chỗ khác = không đổi gì
+    const s = datThuTu(soDo, n.id, Number(tx));
+    if (s === soDo) return;                // số hỏng, hoặc bước đã đứng đúng chỗ đó
+    doiSoDo(s);
+    toast(`“${n.tx}” thành bước ${thuTuBuoc(s).indexOf(n.id) + 1}. Các bước khác dồn theo — `
+      + 'khối trên trang không xê dịch.');
+  };
+
   return (
     <>
       <h3 style={S.h3}>Thuộc tính bước</h3>
@@ -1360,6 +1413,37 @@ function KhoiInsp({ n, soDo, doiSoDo, coSua, mau, toast }) {
 
       <ONhap id="qe-f-tx" nhan="Tên bước" giaTri={n.tx} doc={!coSua}
         key={`tx${n.tx}`} onLuu={v => va('tx', v.trim() || 'Bước mới')} />
+
+      {/* SỐ THỨ TỰ BƯỚC — mặc định suy từ chỗ khối đứng, sửa được bằng tay.
+          Bắt đầu/Kết thúc không có số nên cũng không có ô này. */}
+      {coSo && (
+        <ONhap id={ID_STT} nhan="Số thứ tự bước" kieu="number" giaTri={String(so)}
+          doc={!coSua} key={`stt${so}-${lanNhap}`} them={{ min: 1, max: ds.length, step: 1 }}
+          onLuu={datSo}
+          ghiChu={`Đang là bước ${so} trong ${ds.length}. Gõ số khác rồi rời ô: bước đang giữ `
+            + 'số đó dồn theo một bậc, còn khối trên trang không xê dịch.'} />
+      )}
+
+      {/* Chỉ hiện khi ĐÃ đánh số tay — chưa đánh thì không có gì để trả về, mà
+          mời người dùng bấm một nút không làm gì là mời họ đi tìm xem nó hỏng ở đâu.
+          Điều kiện đặt trên khoá ĐÃ LỌC (mảng, còn phần tử) y như nút bỏ ghim
+          của đường nối: khoá rác trong so_do vốn đã bị coi như không có. */}
+      {coSua && coSo && dangDanhTay && (
+        <div style={S.fld}>
+          <button type="button" className="qe-btn" style={{ ...S.btn, ...S.btnNho }}
+            onClick={() => {
+              doiSoDo(boThuTu(soDo));
+              toast('Đã bỏ đánh số tay. Số bước chạy lại theo vị trí khối trên trang.');
+            }}
+            title="Bỏ thứ tự đánh tay của cả lưu đồ, đánh số lại theo chỗ khối đang đứng">
+            Đánh số lại theo vị trí
+          </button>
+          <p style={S.note}>
+            Lưu đồ này đang đánh số <b>bằng tay</b>. Bỏ đi thì số bước lại chạy theo vị trí:
+            trên xuống dưới, trái sang phải.
+          </p>
+        </div>
+      )}
 
       <div style={S.fld}>
         <label htmlFor="qe-f-lane" style={S.lbl}>Cột — bộ phận phụ trách</label>
@@ -1655,6 +1739,10 @@ const CSS = `
 .qe-num { position:absolute; left:-8px; top:-8px; width:19px; height:19px; border-radius:50%;
   color:#fff; font-size:10.5px; font-weight:800; display:grid; place-items:center; z-index:2;
   box-shadow:0 1px 4px rgba(15,23,42,.28); }
+/* Trên khối đang chọn, huy hiệu số là một cái NÚT dẫn tới ô sửa số bên phải.
+   Gỡ hết nét mặc định của <button> để nó trông y hệt huy hiệu tĩnh. */
+button.qe-num { border:none; padding:0; cursor:pointer; }
+button.qe-num:hover { filter:brightness(1.12); }
 .qe-selbox { position:absolute; inset:-7px; border:1.5px dashed; border-radius:4px; pointer-events:none; }
 .qe-cv[data-noi] .qe-node { cursor:crosshair; }
 

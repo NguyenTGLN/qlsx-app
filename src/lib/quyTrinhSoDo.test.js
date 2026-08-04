@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import { LANE_W, LOAI_KHOI, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi } from './quyTrinhSoDo';
 import { routeEdge } from './quyTrinhSoDo';
 import { themBuoc, xoaKhoi, doiCot, thuTuBuoc } from './quyTrinhSoDo';
+import { datThuTu, boThuTu } from './quyTrinhSoDo';
 import { tuXepLai } from './quyTrinhSoDo';
 import { xoaCot, xoaHang } from './quyTrinhSoDo';
 import { hutHang, NGUONG_HUT } from './quyTrinhSoDo';
@@ -1704,4 +1705,252 @@ describe('ghim điểm nối — nhịp cầu vẫn bắc trên đường đã g
     expect(co).not.toBe(routeEdge(s, s.edges[0]).d);
     expect(routeEdge(s, s.edges[1], g).d).toBe(routeEdge(s, s.edges[1]).d);   // đường dọc không nhảy
   });
+});
+
+describe('đánh số bước bằng tay — soDo.thuTu', () => {
+  const K = (id, y, lane = 0) => ({
+    id, t: 'step', lane, y, dx: 0, w: 164, h: 56, tx: id, desc: '', form: '—', time: '—',
+  });
+  // Năm bước xếp thẳng một cột, cách đều — thứ tự THEO VỊ TRÍ là n1…n5.
+  const base = () => ({
+    lanes: [{ name: 'A', owner: 'a', color: '#111111' }, { name: 'B', owner: 'b', color: '#222222' }],
+    phases: [{ name: 'G', h: 7 * CAO_HANG }],
+    nodes: [
+      { id: 'n0', t: 'start', lane: 0, y: 12, dx: 0, w: 164, h: 48, tx: 'Bắt đầu' },
+      K('n1', 100), K('n2', 220), K('n3', 340), K('n4', 460), K('n5', 580),
+      { id: 'n9', t: 'end', lane: 0, y: 700, dx: 0, w: 164, h: 48, tx: 'Kết thúc' },
+    ],
+    edges: [],
+  });
+
+  test('không có thuTu ⇒ vẫn là thứ tự theo VỊ TRÍ, y như cũ', () => {
+    expect(thuTuBuoc(base())).toEqual(['n1', 'n2', 'n3', 'n4', 'n5']);
+  });
+
+  test('có thuTu ⇒ đi theo danh sách đó', () => {
+    const s = { ...base(), thuTu: ['n3', 'n1', 'n2', 'n4', 'n5'] };
+    expect(thuTuBuoc(s)).toEqual(['n3', 'n1', 'n2', 'n4', 'n5']);
+  });
+
+  test('thuTu THIẾU vài khối ⇒ phần thiếu nối vào cuối theo VỊ TRÍ', () => {
+    const s = { ...base(), thuTu: ['n4', 'n2'] };
+    expect(thuTuBuoc(s)).toEqual(['n4', 'n2', 'n1', 'n3', 'n5']);
+  });
+
+  test('KHỐI MỚI thêm sau không phá thứ tự đã chọn — nó xuống cuối', () => {
+    const s = { ...base(), thuTu: ['n3', 'n1', 'n2', 'n4', 'n5'] };
+    const s2 = themBuoc(s, { tuId: 'n5', loai: 'step', cot: 1, ten: 'Bước mới' });
+    const moi = s2.nodes[s2.nodes.length - 1];
+    expect(thuTuBuoc(s2)).toEqual(['n3', 'n1', 'n2', 'n4', 'n5', moi.id]);
+  });
+
+  test('XOÁ khối nằm trong thuTu ⇒ nó rụng khỏi thứ tự, số vẫn liền 1..n', () => {
+    const s = { ...base(), thuTu: ['n3', 'n1', 'n2', 'n4', 'n5'] };
+    const s2 = xoaKhoi(s, 'n1');
+    expect(thuTuBuoc(s2)).toEqual(['n3', 'n2', 'n4', 'n5']);
+  });
+
+  test('thuTu KHÔNG được chứa Bắt đầu / Kết thúc, kể cả khi bị nhét vào', () => {
+    const s = { ...base(), thuTu: ['n9', 'n2', 'n0', 'n1'] };
+    const r = thuTuBuoc(s);
+    expect(r).not.toContain('n0');
+    expect(r).not.toContain('n9');
+    expect(r).toEqual(['n2', 'n1', 'n3', 'n4', 'n5']);
+  });
+
+  test.each([
+    ['null', null],
+    ['chuỗi', 'abc'],
+    ['số', 7],
+    ['mảng số', [1, 2, 3]],
+    ['mảng rỗng', []],
+    ['toàn id đã xoá', ['zzz', 'yyy']],
+    ['có null lẫn trong', ['n2', null, undefined, 'n1']],
+    ['id lặp lại', ['n2', 'n2', 'n2', 'n1', 'n1']],
+    ['object', { 0: 'n1' }],
+  ])('thuTu RÁC (%s) ⇒ không nổ, không sinh số trùng, vẫn đủ 5 bước', (_ten, rac) => {
+    const s = { ...base(), thuTu: rac };
+    let r;
+    expect(() => { r = thuTuBuoc(s); }).not.toThrow();
+    expect(r).toHaveLength(5);
+    expect(new Set(r).size).toBe(5);
+    expect(r.slice().sort()).toEqual(['n1', 'n2', 'n3', 'n4', 'n5']);
+  });
+
+  test('rác hoàn toàn ⇒ rơi HẲN về thứ tự vị trí', () => {
+    for (const rac of [null, 'abc', 7, [1, 2, 3], [], ['zzz'], { 0: 'n1' }]) {
+      expect(thuTuBuoc({ ...base(), thuTu: rac })).toEqual(['n1', 'n2', 'n3', 'n4', 'n5']);
+    }
+  });
+
+  test('id lặp trong thuTu chỉ tính LẦN ĐẦU', () => {
+    const s = { ...base(), thuTu: ['n3', 'n3', 'n1', 'n3'] };
+    expect(thuTuBuoc(s)).toEqual(['n3', 'n1', 'n2', 'n4', 'n5']);
+  });
+
+  // ── datThuTu ──────────────────────────────────────────────────
+  test('ĐÚNG VIỆC NGƯỜI DÙNG XIN: khối số 3 đổi thành 2 ⇒ khối số 2 cũ thành 3', () => {
+    const s = base();
+    expect(thuTuBuoc(s).indexOf('n3') + 1).toBe(3);      // đang là 3
+    const s2 = datThuTu(s, 'n3', 2);
+    const sau = thuTuBuoc(s2);
+    expect(sau.indexOf('n3') + 1).toBe(2);               // thành 2
+    expect(sau.indexOf('n2') + 1).toBe(3);               // bước 2 cũ tự thành 3
+    expect(sau).toEqual(['n1', 'n3', 'n2', 'n4', 'n5']); // n1, n4, n5 giữ nguyên số
+  });
+
+  test('nhảy XA (5 → 2): các bước ở giữa dồn xuống một bậc, phần trên không đụng', () => {
+    const sau = thuTuBuoc(datThuTu(base(), 'n5', 2));
+    expect(sau).toEqual(['n1', 'n5', 'n2', 'n3', 'n4']);
+    expect(sau.indexOf('n1') + 1).toBe(1);
+  });
+
+  test('nhảy XUỐNG (2 → 4): các bước ở giữa dồn lên một bậc', () => {
+    expect(thuTuBuoc(datThuTu(base(), 'n2', 4))).toEqual(['n1', 'n3', 'n4', 'n2', 'n5']);
+  });
+
+  test('DỜI CHỖ chứ không ĐỔI CHỖ — 5→2 không đẩy n2 xuống cuối', () => {
+    const sau = thuTuBuoc(datThuTu(base(), 'n5', 2));
+    expect(sau[sau.length - 1]).toBe('n4');
+  });
+
+  test('kẹp vào 1..n: số nhỏ hơn 1 về đầu, số lớn quá về cuối', () => {
+    expect(thuTuBuoc(datThuTu(base(), 'n3', 0))).toEqual(['n3', 'n1', 'n2', 'n4', 'n5']);
+    expect(thuTuBuoc(datThuTu(base(), 'n3', -9))).toEqual(['n3', 'n1', 'n2', 'n4', 'n5']);
+    expect(thuTuBuoc(datThuTu(base(), 'n3', 99))).toEqual(['n1', 'n2', 'n4', 'n5', 'n3']);
+  });
+
+  test('ghi ĐỦ danh sách, không ghi lửng — mọi bước đang có đều nằm trong thuTu', () => {
+    const s = datThuTu(base(), 'n3', 2);
+    expect(s.thuTu).toEqual(['n1', 'n3', 'n2', 'n4', 'n5']);
+    expect(new Set(s.thuTu).size).toBe(s.thuTu.length);
+  });
+
+  test.each([
+    ['NaN', NaN], ['chuỗi số', '2'], ['số lẻ', 2.5], ['null', null],
+    ['undefined', undefined], ['vô cực', Infinity], ['object', {}], ['mảng', [2]],
+  ])('viTri RÁC (%s) ⇒ trả NGUYÊN sơ đồ cũ, không bịa ra thứ tự nào', (_ten, rac) => {
+    const s = base();
+    expect(datThuTu(s, 'n3', rac)).toBe(s);
+    expect(thuTuBuoc(datThuTu(s, 'n3', rac))).toEqual(['n1', 'n2', 'n3', 'n4', 'n5']);
+  });
+
+  test.each([
+    ['id không có', 'khong-co'], ['khối Bắt đầu', 'n0'], ['khối Kết thúc', 'n9'],
+    ['null', null], ['undefined', undefined],
+  ])('id không đánh số được (%s) ⇒ trả NGUYÊN sơ đồ cũ', (_ten, id) => {
+    const s = base();
+    expect(datThuTu(s, id, 2)).toBe(s);
+  });
+
+  test('đặt lại ĐÚNG chỗ đang đứng ⇒ trả nguyên sơ đồ cũ, không tốn một nấc hoàn tác', () => {
+    const s = base();
+    expect(datThuTu(s, 'n3', 3)).toBe(s);
+    const s2 = datThuTu(s, 'n3', 2);
+    expect(datThuTu(s2, 'n3', 2)).toBe(s2);
+  });
+
+  test('BẤT BIẾN: sơ đồ gốc không bị sửa', () => {
+    const s = base();
+    const truoc = JSON.stringify(s);
+    const s2 = datThuTu(s, 'n5', 1);
+    expect(JSON.stringify(s)).toBe(truoc);
+    expect(s.thuTu).toBeUndefined();
+    expect(s2).not.toBe(s);
+    expect(s2.nodes).toEqual(s.nodes);
+  });
+
+  test('gọi nhiều lần thì cộng dồn đúng', () => {
+    let s = base();
+    s = datThuTu(s, 'n5', 1);            // n5 n1 n2 n3 n4
+    s = datThuTu(s, 'n2', 2);            // n5 n2 n1 n3 n4
+    expect(thuTuBuoc(s)).toEqual(['n5', 'n2', 'n1', 'n3', 'n4']);
+  });
+
+  test('đã có thuTu thì datThuTu tính TRÊN thứ tự đang hiện, không trên vị trí', () => {
+    const s = { ...base(), thuTu: ['n5', 'n4', 'n3', 'n2', 'n1'] };
+    expect(thuTuBuoc(datThuTu(s, 'n1', 1))).toEqual(['n1', 'n5', 'n4', 'n3', 'n2']);
+  });
+
+  test('thuTu RÁC + datThuTu ⇒ ghi đè bằng danh sách sạch, đủ 5 bước', () => {
+    const s = { ...base(), thuTu: ['zzz', 'n2', 'n2', null] };
+    const s2 = datThuTu(s, 'n3', 1);
+    expect(s2.thuTu).toEqual(['n3', 'n2', 'n1', 'n4', 'n5']);
+  });
+
+  // ── boThuTu ───────────────────────────────────────────────────
+  test('boThuTu xoá HẲN khoá, số bước quay về suy từ vị trí', () => {
+    const s = datThuTu(base(), 'n5', 1);
+    const s2 = boThuTu(s);
+    expect('thuTu' in s2).toBe(false);
+    expect(thuTuBuoc(s2)).toEqual(['n1', 'n2', 'n3', 'n4', 'n5']);
+    expect(s.thuTu).toBeDefined();        // bản cũ không bị đụng
+  });
+
+  test('boThuTu trên sơ đồ chưa từng đánh số tay ⇒ không nổ, không đổi gì', () => {
+    const s = base();
+    expect(() => boThuTu(s)).not.toThrow();
+    expect(thuTuBuoc(boThuTu(s))).toEqual(['n1', 'n2', 'n3', 'n4', 'n5']);
+  });
+
+  // ── thuTu sống sót qua các phép biến đổi khác ──────────────────
+  test('thuTu KHÔNG bị các phép biến đổi khác làm rơi mất', () => {
+    const s = { ...base(), thuTu: ['n3', 'n1', 'n2', 'n4', 'n5'] };
+    const mong = ['n3', 'n1', 'n2', 'n4', 'n5'];
+    // Chép NGUYÊN VĂN, kể cả id vừa bị xoá: chỗ lọc là thuTuBuoc, không phải ở đây.
+    expect(doiCot(s, 'n1', 1).thuTu).toEqual(mong);
+    expect(tuXepLai(s).thuTu).toEqual(mong);
+    expect(xoaKhoi(s, 'n4').thuTu).toEqual(mong);
+    expect(themBuoc(s, { tuId: 'n1', loai: 'step', cot: 1, ten: 'x' }).thuTu).toEqual(mong);
+    expect(xoaCot(s, 1).thuTu).toEqual(mong);
+    const coHangTrong = {
+      ...s,
+      phases: [{ name: 'trống', h: CAO_HANG }, { name: 'G', h: 7 * CAO_HANG }],
+      nodes: s.nodes.map(n => ({ ...n, y: n.y + CAO_HANG })),
+    };
+    expect(xoaHang(coHangTrong, 0).thuTu).toEqual(mong);
+  });
+
+  test('TỰ XẾP LẠI không đảo số bước khi đã đánh số tay', () => {
+    const s = { ...base(), thuTu: ['n5', 'n4', 'n3', 'n2', 'n1'] };
+    expect(thuTuBuoc(tuXepLai(s))).toEqual(['n5', 'n4', 'n3', 'n2', 'n1']);
+  });
+
+  test('thuTu là BẢN SAO, sửa mảng của sơ đồ mới không đụng sơ đồ cũ', () => {
+    const s = { ...base(), thuTu: ['n3', 'n1', 'n2', 'n4', 'n5'] };
+    const s2 = doiCot(s, 'n1', 1);
+    expect(s2.thuTu).not.toBe(s.thuTu);
+    s2.thuTu.push('rác');
+    expect(s.thuTu).toHaveLength(5);
+  });
+
+  test('thuTu RÁC không được chép sang sơ đồ mới', () => {
+    const s = { ...base(), thuTu: 'abc' };
+    expect(doiCot(s, 'n1', 1).thuTu).toBeUndefined();
+  });
+
+  test('xoá rồi thêm: thứ tự vẫn hợp lệ, số liền 1..n, không trùng không hụt', () => {
+    let s = { ...base(), thuTu: ['n3', 'n1', 'n2', 'n4', 'n5'] };
+    s = xoaKhoi(s, 'n2');
+    s = themBuoc(s, { tuId: 'n1', loai: 'step', cot: 1, ten: 'Bước mới' });
+    const r = thuTuBuoc(s);
+    const buoc = s.nodes.filter(n => n.t !== 'start' && n.t !== 'end').map(n => n.id);
+    expect(r).toHaveLength(buoc.length);
+    expect(new Set(r).size).toBe(r.length);
+    expect(r.slice().sort()).toEqual(buoc.slice().sort());
+    expect(r.slice(0, 4)).toEqual(['n3', 'n1', 'n4', 'n5']);
+  });
+
+  test('chuỗi lạ trong thuTu KHÔNG lọt ra kết quả — chỉ id có thật mới được nhắc tên', () => {
+    // thuTu đi thẳng vào so_do (jsonb). Kết quả của thuTuBuoc được bảng diễn giải
+    // và bản in dùng, nên nó chỉ được phép nhả ra id của khối CÓ THẬT: chuỗi lạ
+    // chỉ dùng để tra bảng rồi vứt, không bao giờ thành một dòng trên tài liệu.
+    const ban = '<script>alert(1)</script>';
+    const s = { ...base(), thuTu: [ban, 'n2', { a: 1 }, ['n1'], 'n1'] };
+    const r = thuTuBuoc(s);
+    expect(r).toEqual(['n2', 'n1', 'n3', 'n4', 'n5']);
+    expect(JSON.stringify(r)).not.toContain('script');
+    expect(r.every(id => s.nodes.some(n => n.id === id))).toBe(true);
+  });
+
 });

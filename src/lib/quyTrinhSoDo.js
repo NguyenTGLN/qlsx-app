@@ -551,23 +551,108 @@ export function routeEdge(soDo, e, giao) {
   };
 }
 
-const sao = soDo => ({
-  lanes:  soDo.lanes.map(l => ({ ...l })),
-  phases: soDo.phases.map(p => ({ ...p })),
-  nodes:  soDo.nodes.map(n => ({ ...n })),
-  edges:  soDo.edges.map(e => ({ ...e })),
-});
+const sao = (soDo) => {
+  const s = {
+    lanes:  soDo.lanes.map(l => ({ ...l })),
+    phases: soDo.phases.map(p => ({ ...p })),
+    nodes:  soDo.nodes.map(n => ({ ...n })),
+    edges:  soDo.edges.map(e => ({ ...e })),
+  };
+  // Thứ tự bước đánh tay phải SỐNG SÓT qua mọi phép biến đổi: xoá một khối,
+  // đổi cột, tự xếp lại… đều không phải là "thôi đánh số tay". Chép NGUYÊN VĂN,
+  // kể cả id vừa bị xoá — chỗ lọc là thuTuBuoc, một nơi duy nhất.
+  // Chỉ chép khi là MẢNG: khoá rác trong so_do (jsonb) không đáng mang theo,
+  // và thuTuBuoc vốn đã coi nó như không có.
+  if (Array.isArray(soDo.thuTu)) s.thuTu = soDo.thuTu.slice();
+  return s;
+};
 
 let dem = 0;
 const idMoi = tien => `${tien}${Date.now().toString(36)}${(dem++).toString(36)}`;
 
-/** Thứ tự đánh số bước: trên xuống dưới, trái sang phải. Bỏ Bắt đầu/Kết thúc. */
+// ── SỐ THỨ TỰ BƯỚC ───────────────────────────────────────────────
+// Mặc định số bước SUY RA từ chỗ khối đứng trên trang. Nhưng lưu đồ thật có
+// những bước không xếp nổi thành một cột đọc xuôi (hai nhánh song song, vòng
+// làm lại), nên người dùng phải sửa được số bằng tay.
+//
+// Chỗ lưu là soDo.thuTu — một MẢNG ID nằm ngay trong so_do (jsonb), KHÔNG thêm
+// cột, KHÔNG di trú dữ liệu. Sơ đồ chưa từng đánh tay thì không có khoá này và
+// chạy y như trước, TỪNG BYTE.
+//
+// Danh sách chỉ là GỢI Ý THỨ TỰ, không phải nguồn sự thật về việc có bước nào:
+// bước nào có là do soDo.nodes nói. Nhờ vậy nó tự lành: id đã xoá thì rụng, khối
+// mới chưa có tên trong danh sách thì xuống cuối chứ không phá thứ tự đã chọn,
+// và danh sách hỏng thì rơi hẳn về thứ tự vị trí.
+
+/** Thứ tự đánh số bước. Bỏ Bắt đầu/Kết thúc.
+ *  · Chưa đánh tay ⇒ trên xuống dưới, trái sang phải — y như xưa.
+ *  · Đã đánh tay (soDo.thuTu) ⇒ theo danh sách đó, phần chưa có tên xếp tiếp
+ *    vào cuối theo VỊ TRÍ.
+ *  Luôn trả một hoán vị ĐỦ và KHÔNG TRÙNG của các bước đang có, nên số bước
+ *  luôn liền 1..n — bảng diễn giải và bản in ISO đánh số từ đây. */
 export function thuTuBuoc(soDo) {
-  return soDo.nodes
+  const viTri = soDo.nodes
     .filter(n => n.t !== 'start' && n.t !== 'end')
     .slice()
     .sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)))
     .map(n => n.id);
+
+  const tay = Array.isArray(soDo?.thuTu) ? soDo.thuTu : null;
+  if (!tay || !tay.length) return viTri;
+
+  // Còn lại = chưa được danh sách gọi tên. Gọi tên rồi thì rút khỏi đây, nên id
+  // lặp lại chỉ tính lần đầu và id lạ (khối đã xoá, rác) bị bỏ qua hẳn.
+  const conLai = new Set(viTri);
+  const ra = [];
+  for (const id of tay) {
+    if (!conLai.has(id)) continue;
+    conLai.delete(id);
+    ra.push(id);
+  }
+  for (const id of viTri) if (conLai.has(id)) ra.push(id);
+  return ra;
+}
+
+/** Chuyển bước `id` về vị trí thứ `viTri` (đếm từ 1). Các bước khác dồn theo.
+ *  Trả sơ đồ MỚI.
+ *
+ *  DỜI CHỖ, không ĐỔI CHỖ: đưa bước 5 về 2 thì 2,3,4 lùi xuống thành 3,4,5 —
+ *  không phải 5 và 2 hoán vị cho nhau. Hai cách này trùng nhau ở hai bước liền
+ *  kề (đúng cảnh người dùng mô tả), nhưng với bước nhảy xa thì đổi chỗ làm hai
+ *  con số nhảy loạn còn dời chỗ chỉ trượt đi một bậc — thứ đọc được trên bản in.
+ *
+ *  Trả CHÍNH sơ đồ cũ (không phải bản sao) khi không có gì đổi, để nơi gọi so
+ *  tham chiếu là biết có nên đẩy một nấc hoàn tác hay không:
+ *    · viTri không phải số nguyên (NaN, '2', 2.5, null, Infinity…) — ép kiểu hộ
+ *      ở đây là lặng lẽ ghi một thứ tự người dùng không gõ;
+ *    · id không có, hoặc là khối Bắt đầu/Kết thúc — chúng không mang số bước;
+ *    · bước đã đứng đúng chỗ đó rồi.
+ *  viTri ngoài khoảng 1..n thì KẸP về đầu/cuối: người dùng gõ 99 nghĩa là "cho
+ *  xuống cuối", từ chối thẳng chỉ làm họ phải đoán con số cuối cùng là mấy.
+ *
+ *  Ghi ĐỦ danh sách (mọi bước đang có, theo thứ tự sau khi dời) chứ không ghi
+ *  mỗi cái vừa dời: danh sách lửng là chỗ nấp của lỗi thứ tự — phần không được
+ *  gọi tên sẽ trôi theo vị trí mỗi lần ai đó kéo một khối. */
+export function datThuTu(soDo, id, viTri) {
+  if (!Number.isInteger(viTri)) return soDo;
+  const ds = thuTuBuoc(soDo);
+  const tu = ds.indexOf(id);
+  if (tu < 0) return soDo;
+  const den = Math.min(Math.max(viTri, 1), ds.length) - 1;
+  if (den === tu) return soDo;
+  const moi = ds.slice();
+  moi.splice(tu, 1);
+  moi.splice(den, 0, id);
+  return { ...soDo, thuTu: moi };
+}
+
+/** Bỏ thứ tự đánh tay — số bước quay về suy từ VỊ TRÍ. Trả sơ đồ MỚI.
+ *  XOÁ HẲN khoá chứ không đặt về mảng rỗng: bản lưu quay lại đúng hình dạng của
+ *  một sơ đồ chưa từng đánh số tay, không đọng lại khoá thừa nào. */
+export function boThuTu(soDo) {
+  const s = { ...soDo };
+  delete s.thuTu;
+  return s;
 }
 
 /** Thêm bước nối tiếp từ một khối. Tự đặt chỗ, tự nối, tự đẩy khối chắn chỗ.
