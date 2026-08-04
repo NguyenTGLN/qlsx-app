@@ -72,6 +72,27 @@ describe('dongDienGiai', () => {
     expect(rows.find(r => r.ten === 'Xuất kho').nhanh).toBe('');
   });
 
+  test('bảng đánh số CÙNG CHIỀU với lưu đồ khi khối cao thấp đứng chung một hàng', () => {
+    // Bảng diễn giải in ngay dưới lưu đồ, trên cùng một trang A3. Khối Quyết
+    // định (cao 86) ở cột PHẢI và khối Thao tác (cao 56) ở cột TRÁI đặt chung
+    // một hàng thì trên hình phải đọc trái → phải; đánh số theo mép trên là
+    // Quyết định lên trước, tức bảng nói ngược lại chính cái hình bên trên nó.
+    const s = {
+      lanes: [{ name: 'Kho', owner: 'Thủ kho', color: '#0d9488' },
+              { name: 'QC', owner: 'NV QC', color: '#16a34a' }],
+      phases: [{ name: 'G', h: 360 }],
+      nodes: [
+        { id: 's', t: 'start', lane: 0, y: 36, dx: 0, w: 164, h: 48, tx: 'Bắt đầu', desc: '', form: '—', time: '—' },
+        // Cùng tâm 180: Thao tác y=152, Quyết định y=137.
+        { id: 'tt', t: 'step', lane: 0, y: 152, dx: 0, w: 164, h: 56, tx: 'Soạn hàng', desc: 'x', form: '—', time: '—' },
+        { id: 'qd', t: 'dec',  lane: 1, y: 137, dx: 0, w: 150, h: 86, tx: 'Đạt?',      desc: 'x', form: '—', time: '—' },
+      ],
+      edges: [{ id: 'e1', a: 's', b: 'tt', lbl: '', k: 'n' }, { id: 'e2', a: 'tt', b: 'qd', lbl: '', k: 'n' }],
+    };
+    expect(dongDienGiai(s).map(r => r.ten)).toEqual(['Soạn hàng', 'Đạt?']);
+    expect(dongDienGiai(s).map(r => r.stt)).toEqual([1, 2]);
+  });
+
   test('điểm hợp lưu — vừa có đường thường vừa có nhánh OK → không tô nhánh', () => {
     const s = structuredClone(soDo);
     s.edges.push({ id: 'e7', a: 'b3', b: 'b2', lbl: 'OK', k: 'ok' });

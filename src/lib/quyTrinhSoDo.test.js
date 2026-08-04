@@ -1954,3 +1954,61 @@ describe('đánh số bước bằng tay — soDo.thuTu', () => {
   });
 
 });
+
+describe('đánh số bước theo TÂM khối, không theo MÉP TRÊN', () => {
+  // Khối Quyết định cao 86, khối Thao tác cao 56 — đặt cùng một hàng thì tâm
+  // trùng nhau nhưng MÉP TRÊN lệch 15px. Mọi thứ khác của phân hệ (lưới hàng,
+  // hutHang, tuXepLai, daiBuoc) đều căn theo TÂM, nên đánh số theo mép trên là
+  // bảng diễn giải đọc ngược chiều với lưu đồ in ngay phía trên nó.
+  const cungHang = () => ({
+    lanes: [{ name: 'A', owner: 'a', color: '#111111' }, { name: 'B', owner: 'b', color: '#222222' }],
+    phases: [{ name: 'G', h: 3 * CAO_HANG }],
+    nodes: [
+      { id: 'n0', t: 'start', lane: 0, y: yTaiHang(0, 48), dx: 0, w: 164, h: 48, tx: 'Bắt đầu' },
+      // Thao tác ở cột TRÁI, Quyết định ở cột PHẢI — cùng hàng 1, tâm trùng nhau.
+      { id: 'tt', t: 'step', lane: 0, y: yTaiHang(1, 56), dx: 0, w: 164, h: 56, tx: 'Thao tác', desc: '', form: '—', time: '—' },
+      { id: 'qd', t: 'dec',  lane: 1, y: yTaiHang(1, 86), dx: 0, w: 150, h: 86, tx: 'Quyết định', desc: '', form: '—', time: '—' },
+    ],
+    edges: [],
+  });
+
+  test('hai khối cùng hàng có TÂM trùng nhau nhưng MÉP TRÊN lệch nhau', () => {
+    const s = cungHang();
+    const tt = s.nodes.find(n => n.id === 'tt'), qd = s.nodes.find(n => n.id === 'qd');
+    expect(tt.y + tt.h / 2).toBe(qd.y + qd.h / 2);      // tâm bằng nhau
+    expect(qd.y).toBeLessThan(tt.y);                     // mép trên thì không
+  });
+
+  test('cùng hàng ⇒ đánh số TRÁI sang PHẢI, khối cao không được chen lên trước', () => {
+    expect(thuTuBuoc(cungHang())).toEqual(['tt', 'qd']);
+  });
+
+  test('đảo lại: Quyết định ở cột TRÁI thì nó mới được số nhỏ hơn', () => {
+    const s = cungHang();
+    s.nodes.find(n => n.id === 'tt').lane = 1;
+    s.nodes.find(n => n.id === 'qd').lane = 0;
+    expect(thuTuBuoc(s)).toEqual(['qd', 'tt']);
+  });
+
+  test('khác hàng thì vẫn trên xuống dưới, bất kể khối cao thấp', () => {
+    const s = cungHang();
+    s.nodes.find(n => n.id === 'qd').y = yTaiHang(2, 86);   // Quyết định xuống hàng dưới
+    expect(thuTuBuoc(s)).toEqual(['tt', 'qd']);
+  });
+
+  test('thứ tự bước KHỚP thứ tự đọc của daiBuoc — bảng diễn giải và lưu đồ cùng chiều', () => {
+    const s = cungHang();
+    const theoDai = daiBuoc(s).flatMap(d => d.ids)
+      .filter(id => !['n0'].includes(id));
+    expect(thuTuBuoc(s)).toEqual(theoDai);
+  });
+
+  test('toạ độ RÁC trong so_do (jsonb) không làm thứ tự nhảy loạn — tính như 0', () => {
+    const s = cungHang();
+    s.nodes.push({ id: 'rac', t: 'step', lane: 0, y: null, dx: 0, w: 164, h: '56', tx: 'rác' });
+    let r;
+    expect(() => { r = thuTuBuoc(s); }).not.toThrow();
+    expect(r).toHaveLength(3);
+    expect(r[0]).toBe('rac');                              // tâm 0 ⇒ trên cùng
+  });
+});

@@ -584,17 +584,30 @@ const idMoi = tien => `${tien}${Date.now().toString(36)}${(dem++).toString(36)}`
 // mới chưa có tên trong danh sách thì xuống cuối chứ không phá thứ tự đã chọn,
 // và danh sách hỏng thì rơi hẳn về thứ tự vị trí.
 
+/** TÂM DỌC của khối — mốc duy nhất để nói hai khối có "cùng hàng" hay không.
+ *  Rác trong so_do (jsonb) tính như 0, đúng luật soThat: NaN đem đi so sánh làm
+ *  mọi phép so thành false, và thứ tự bước lúc đó phụ thuộc thứ tự khối trong
+ *  mảng — tức là phụ thuộc người dùng đã THÊM khối nào trước. */
+const tamY = n => soThat(n?.y) + soThat(n?.h) / 2;
+
 /** Thứ tự đánh số bước. Bỏ Bắt đầu/Kết thúc.
  *  · Chưa đánh tay ⇒ trên xuống dưới, trái sang phải — y như xưa.
  *  · Đã đánh tay (soDo.thuTu) ⇒ theo danh sách đó, phần chưa có tên xếp tiếp
  *    vào cuối theo VỊ TRÍ.
  *  Luôn trả một hoán vị ĐỦ và KHÔNG TRÙNG của các bước đang có, nên số bước
- *  luôn liền 1..n — bảng diễn giải và bản in ISO đánh số từ đây. */
+ *  luôn liền 1..n — bảng diễn giải và bản in ISO đánh số từ đây.
+ *
+ *  "Trên xuống dưới" đo bằng TÂM khối, không bằng MÉP TRÊN. Khối Quyết định cao
+ *  86 và khối Thao tác cao 56 đặt cùng một hàng thì tâm trùng nhau nhưng mép
+ *  trên lệch 15px — so mép trên là Quyết định luôn được số nhỏ hơn, kể cả khi nó
+ *  đứng ở cột bên PHẢI. Bảng diễn giải in ngay dưới lưu đồ khi ấy đánh số ngược
+ *  chiều với chính lưu đồ đó. Lưới hàng, hutHang, tuXepLai và daiBuoc đều đã căn
+ *  theo tâm; đây là chỗ cuối cùng còn lệch luật. */
 export function thuTuBuoc(soDo) {
   const viTri = soDo.nodes
     .filter(n => n.t !== 'start' && n.t !== 'end')
     .slice()
-    .sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)))
+    .sort((a, b) => (tamY(a) - tamY(b)) || (nodeX(a) - nodeX(b)))
     .map(n => n.id);
 
   const tay = Array.isArray(soDo?.thuTu) ? soDo.thuTu : null;
