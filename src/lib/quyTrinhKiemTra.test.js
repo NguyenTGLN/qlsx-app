@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { kiemTraLuuDo, coTheBanHanh } from './quyTrinhKiemTra';
-import { CAO_HANG, LANE_W, drawH, drawW } from './quyTrinhSoDo';
+import { CAO_HANG, LANE_W, drawH, drawW, tuXepLai } from './quyTrinhSoDo';
 import { mauSoDo } from './quyTrinhMau';
 
 const K = (id, t, lane, y, extra = {}) => ({
@@ -251,6 +251,33 @@ describe('khối lọt ra NGOÀI TRANG — NGOAI_TRANG', () => {
     expect(() => kiemTraLuuDo({ nodes: [], edges: [] })).not.toThrow();
     expect(kiemTraLuuDo({ lanes: [], phases: [], nodes: [], edges: [] })
       .loi.some(x => x.ma === 'NGOAI_TRANG')).toBe(false);
+  });
+
+  // Lỗi này CHẶN ban hành, nên lối thoát nó chỉ ra phải thật sự gỡ được. Chỉ sai
+  // đường là người dùng bấm "Tự xếp lại" mấy lần rồi kẹt hẳn, không ban hành nổi
+  // một quy trình vốn không có gì sai về nội dung.
+  test('bấm "Tự xếp lại" GỠ ĐƯỢC lỗi này — lối thoát trong thông điệp có thật', () => {
+    const s = sach();
+    s.phases = [{ name: 'G', h: 200 }];
+    s.nodes.find(n => n.id === 'b1').dx = 500;      // lọt mép phải
+    s.nodes.find(n => n.id === 'e').y = 900;        // lọt đáy
+    s.nodes.find(n => n.id === 's').y = -60;        // lọt mép trên
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'NGOAI_TRANG')).toBe(true);
+    expect(kiemTraLuuDo(tuXepLai(s)).loi.filter(x => x.ma === 'NGOAI_TRANG')).toEqual([]);
+  });
+
+  test('"Tự xếp lại" giữ mọi khối trong trang ở cả sơ đồ nhiều cột nhiều giai đoạn', () => {
+    const s = {
+      lanes: [{ name: 'A', owner: 'a', color: '#111111' }, { name: 'B', owner: 'b', color: '#222222' },
+              { name: 'C', owner: 'c', color: '#333333' }],
+      phases: [{ name: 'G1', h: CAO_HANG }, { name: 'G2', h: 2 * CAO_HANG }],
+      nodes: [
+        K('s', 'start', 0, -30), K('b1', 'step', 2, 40, { dx: 700 }),
+        K('d', 'dec', 1, 150), K('b2', 'step', 2, 800), K('e', 'end', 0, 999),
+      ],
+      edges: [],
+    };
+    expect(kiemTraLuuDo(tuXepLai(s)).loi.filter(x => x.ma === 'NGOAI_TRANG')).toEqual([]);
   });
 
   test('toạ độ RÁC (jsonb) KHÔNG bị báo lọt trang — bản xuất tính chúng như 0', () => {
