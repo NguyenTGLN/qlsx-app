@@ -48,6 +48,42 @@ export function phaseOf(soDo, n) {
   return soDo.phases.length - 1;
 }
 
+// ── LƯỚI HÀNG ────────────────────────────────────────────────────
+// Chiều dọc chia thành các HÀNG CAO BẰNG NHAU. Khối rơi vào TÂM Ô — giao của
+// hàng với cột — nên khối Quyết định (cao 86) và khối Thao tác (cao 56) cùng
+// hàng thì trông thẳng hàng. Căn theo TÂM chứ không theo ĐỈNH: căn đỉnh là hai
+// khối "cùng bước" so le 15px, nhìn thấy rõ trên bản in A3. Đúng luật hutHang
+// đã dùng từ trước.
+//
+// 120 = khối cao nhất (Quyết định, 86) + 34 hở, đủ để khối không dính vạch ngăn.
+//
+// KHÔNG có ô "hàng" nào lưu ở khối: hàng SUY RA từ y, y vẫn là nguồn sự thật duy
+// nhất. Lưới là LUẬT ĐẶT KHỐI, không phải trường dữ liệu mới — nhờ vậy mọi sơ đồ
+// đã lưu vẫn đọc và vẽ được y như cũ, chỉ là chưa thẳng lưới cho tới khi người
+// dùng bấm "Tự xếp lại".
+//
+// Chiều cao giai đoạn (phases[].h) phải là BỘI SỐ của CAO_HANG, nếu không mốc
+// ngăn giai đoạn xẻ ngang giữa một hàng. Mọi chỗ TẠO hoặc NỚI h đều phải giữ.
+export const CAO_HANG = 120;
+
+/** Số thật, không ép kiểu hộ: so_do là jsonb nên '10', null, NaN đều có thể lọt
+ *  vào toạ độ. Chúng tính như 0 — lệch chỗ thì còn sửa được, NaN thì vỡ bản vẽ. */
+const soThat = v => (Number.isFinite(v) ? v : 0);
+
+/** Tâm ô của hàng r — chỗ đặt TÂM khối. */
+export const tamHang = r => soThat(r) * CAO_HANG + CAO_HANG / 2;
+
+/** Khối đang ở hàng nào, đọc ngược ra từ TÂM khối. */
+export const hangCua = n => Math.round((soThat(n?.y) + soThat(n?.h) / 2 - CAO_HANG / 2) / CAO_HANG);
+
+/** y để khối cao h rơi đúng tâm hàng r. */
+export const yTaiHang = (r, h) => tamHang(r) - soThat(h) / 2;
+
+/** Làm tròn LÊN bội số CAO_HANG, tối thiểu một hàng. Dùng ở MỌI chỗ tạo hoặc
+ *  nới chiều cao giai đoạn — h lẻ là mốc ngăn giai đoạn cắt ngang giữa hàng.
+ *  Xuất ra ngoài để giao diện gọi được mà không phải tự tính lấy con số nào. */
+export const tronCaoGiaiDoan = v => Math.max(CAO_HANG, Math.ceil(soThat(v) / CAO_HANG) * CAO_HANG);
+
 export const KE_HO_BE = 12;   // hở tối thiểu giữa chỗ bẻ và cạnh khối, khi kéo tay
 
 /** `lech` của một đường nối, đã lọc rác. CHỈ nhận số thật: `lech` nằm trong
@@ -136,8 +172,6 @@ export function routeEdge(soDo, e) {
   };
 }
 
-const KHOANG_DOC = 46;   // khoảng hở dọc giữa hai bước nối tiếp
-
 const sao = soDo => ({
   lanes:  soDo.lanes.map(l => ({ ...l })),
   phases: soDo.phases.map(p => ({ ...p })),
@@ -158,7 +192,11 @@ export function thuTuBuoc(soDo) {
 }
 
 /** Thêm bước nối tiếp từ một khối. Tự đặt chỗ, tự nối, tự đẩy khối chắn chỗ.
- *  nhanh: '' | 'ok' | 'ng'  — 'ng' rẽ ngang cùng tầm, còn lại xuống dưới. */
+ *  nhanh: '' | 'ok' | 'ng'  — 'ng' rẽ ngang cùng hàng, còn lại xuống hàng dưới.
+ *
+ *  Khối mới LUÔN rơi vào TÂM Ô — giao của hàng với cột đã chọn. Không còn cộng
+ *  dồn pixel từ chỗ khối nguồn đang đứng: cộng pixel thì mỗi lần thêm một bước
+ *  lại đẻ ra một độ cao hàng khác nhau, đúng thứ người dùng bảo phải hết. */
 export function themBuoc(soDo, { tuId, nhanh = '', loai, cot, ten }) {
   const nguon = timKhoi(soDo, tuId);
   if (!nguon) throw new Error('Không tìm thấy khối nguồn khi thêm bước: ' + tuId);
@@ -168,17 +206,23 @@ export function themBuoc(soDo, { tuId, nhanh = '', loai, cot, ten }) {
   const s = sao(soDo);
   // Nhánh NG rẽ ngang chỉ có nghĩa khi sang cột KHÁC. Chọn đúng cột của khối
   // nguồn thì rẽ ngang sẽ chồng lên chính nó, nên rơi về cách đặt thường: xuống dưới.
+  //
+  // Nhánh NG dùng ĐÚNG HÀNG của khối nguồn, nên nguồn đứng thẳng lưới thì hai
+  // khối trùng tâm — rẽ ngang thật sự nằm ngang. Nguồn còn lệch lưới (sơ đồ lưu
+  // từ trước) thì khối mới vẫn về tâm ô: cái mới luôn đúng lưới, cái cũ chỉnh
+  // một lần bằng nút "Tự xếp lại".
   const cungCot = cot === nguon.lane;
-  const y = (nhanh === 'ng' && !cungCot)
-    ? nguon.y + Math.round((nguon.h - T.h) / 2)
-    : nguon.y + nguon.h + KHOANG_DOC;
+  const hangNguon = hangCua(nguon);
+  const hang = (nhanh === 'ng' && !cungCot) ? hangNguon : hangNguon + 1;
+  const y = yTaiHang(hang, T.h);
 
-  // Đẩy DỒN: mọi khối trong cột đích nằm từ chỗ chèn trở xuống đều dịch cùng
-  // một khoảng, nên thứ tự trên-dưới giữ nguyên và không sinh khối chồng nhau.
+  // Đẩy DỒN THEO HÀNG: mọi khối trong cột đích nằm từ hàng chèn trở xuống đều
+  // tụt đúng MỘT HÀNG, nên thứ tự trên-dưới giữ nguyên, không sinh khối chồng
+  // nhau, và khối bị đẩy vẫn đậu đúng tâm ô của hàng mới. Đẩy theo pixel thì
+  // khối bị đẩy rơi ra ngoài lưới ngay lần chèn đầu tiên.
   // Trừ chính khối nguồn ra — đẩy nguồn thì nhánh của nó rơi lên trên nó.
-  const dichXuong = T.h + KHOANG_DOC;
   for (const n of s.nodes) {
-    if (n.lane === cot && n.id !== tuId && n.y + n.h > y - 12) n.y += dichXuong;
+    if (n.lane === cot && n.id !== tuId && hangCua(n) >= hang) n.y += CAO_HANG;
   }
 
   const id = idMoi('n');
@@ -193,9 +237,13 @@ export function themBuoc(soDo, { tuId, nhanh = '', loai, cot, ten }) {
     k: nhanh || 'n',
   });
 
-  // Nới hàng cuối nếu lưu đồ dài ra
-  const can = Math.max(...s.nodes.map(n => n.y + n.h)) + 34;
-  if (can > drawH(s)) s.phases[s.phases.length - 1].h += can - drawH(s);
+  // Nới hàng cuối nếu lưu đồ dài ra — nới THEO HÀNG TRỌN VẸN, không nới lẻ:
+  // giai đoạn cao lẻ là mốc ngăn giai đoạn xẻ ngang giữa một hàng.
+  const can = (Math.max(...s.nodes.map(n => hangCua(n))) + 1) * CAO_HANG;
+  if (s.phases.length && can > drawH(s)) {
+    const p = s.phases[s.phases.length - 1];
+    p.h = tronCaoGiaiDoan(soThat(p.h) + (can - drawH(s)));
+  }
   return s;
 }
 
@@ -271,9 +319,15 @@ export function xoaHang(soDo, i) {
 
 export const NGUONG_HUT = 10;   // tâm cách nhau bao nhiêu px thì nam châm bắt
 
-/** Hút khối đang kéo về ngang hàng với khối khác.
+/** Hút khối đang kéo về ngang hàng với khối khác, HOẶC về tâm ô của hàng gần nhất.
  *  Trả { y, mocY } — y đã hút (hoặc y gốc nếu không có gì để hút),
- *  và mocY là toạ độ đường gióng để vẽ, hoặc null nếu không hút vào đâu.
+ *  và mocY là toạ độ đường gióng để vẽ, hoặc null nếu không hút vào khối nào.
+ *
+ *  Hai nam châm, cùng một luật "so theo TÂM":
+ *    · tâm khối khác  → có đường gióng, vì có khối thật để gióng vào;
+ *    · tâm ô của lưới → không đường gióng, vì chẳng gióng vào khối nào cả.
+ *  Khối đã thẳng lưới thì hai nam châm TRÙNG NHAU, nên thêm cái thứ hai không
+ *  làm hỏng cái thứ nhất; cách đều thì khối thắng, để người dùng thấy đường gióng.
  *
  *  So theo TÂM chứ không theo ĐỈNH. Khối Quyết định cao 86, khối Thao tác cao
  *  56 — căn đỉnh thì hai khối "cùng bước" vẫn so le 15px, nhìn thấy rõ trên bản
@@ -294,18 +348,23 @@ export function hutHang(soDo, id, y, nguong = NGUONG_HUT) {
   const tam = y + n.h / 2;
 
   let gan = null;
-  for (const m of ds) {
-    if (m.id === id) continue;
-    const c = m.y + m.h / 2;
+  // Số hỏng trong so_do (jsonb, không ràng buộc kiểu) làm d thành NaN, mà
+  // `NaN > nguong` là false — không chặn ở đây thì khối rác thành đích hút và
+  // trả về y = NaN, khối biến mất khỏi bản vẽ.
+  const xet = (c, moc) => {
     const d = Math.abs(c - tam);
-    if (d > nguong) continue;
-    if (!gan || d < gan.d || (d === gan.d && c < gan.c)) gan = { d, c };
-  }
+    if (!Number.isFinite(d) || d > nguong) return;
+    if (!gan || d < gan.d || (d === gan.d && c < gan.c)) gan = { d, c, moc };
+  };
+  // Xét KHỐI trước, tâm ô sau: cách đều nhau thì khối đã đăng ký trước sẽ thắng
+  // (luật `c < gan.c` không lật ngược khi hai tâm bằng nhau), nên vẫn có đường gióng.
+  for (const m of ds) if (m.id !== id) xet(m.y + m.h / 2, m.y + m.h / 2);
+  xet(tamHang(Math.round((tam - CAO_HANG / 2) / CAO_HANG)), null);
+
   if (!gan) return { y, mocY: null };
-  return { y: gan.c - n.h / 2, mocY: gan.c };
+  return { y: gan.c - n.h / 2, mocY: gan.moc };
 }
 
-export const DUNG_SAI_DAI = 24;   // tâm cách nhau bao nhiêu px thì vẫn tính là MỘT hàng
 // Nền so le và vạch ngăn của dải bước. Để ở đây để trình vẽ và bản xuất SVG
 // dùng CHUNG một bộ màu — hai nơi tô lệch nhau là bản in khác màn hình.
 //
@@ -316,87 +375,65 @@ export const DUNG_SAI_DAI = 24;   // tâm cách nhau bao nhiêu px thì vẫn t�
 // cấu trúc chính, dải bước là chia nhỏ bên trong.
 export const MAU_DAI = { nen: '#e8eff8', vach: '#c2d0e0' };
 
-/** Gom khối thành các DẢI BƯỚC theo tâm dọc. Hai khối đã hút ngang hàng
- *  (tâm bằng nhau) luôn vào chung một dải.
- *  Trả [{ tam, y1, y2, ids }] xếp từ trên xuống — y1/y2 là mép dải để vẽ.
+/** Các DẢI BƯỚC của trang — HÀNG ĐỀU, mỗi dải cao đúng CAO_HANG.
+ *  Trả [{ tam, y1, y2, ids }] xếp từ trên xuống — y1/y2 là mép dải để vẽ,
+ *  tam là tâm ô, ids là các khối rơi vào hàng đó (trái → phải).
  *
- *  CHỈ ĐỌC chỗ khối đang đứng: không dời khối nào, không đẻ thêm luật xếp tự
- *  động. Người dùng vẫn cầm quyền đặt khối ở đâu, dải chỉ vẽ lại kết quả đó.
+ *  Dải KHÔNG còn suy ra từ chỗ khối đang đứng nữa: bản cũ gom khối theo tâm nên
+ *  mỗi hàng cao một kiểu, đúng thứ người dùng bảo phải hết ("chiều cao các hàng
+ *  bằng nhau"). Nay lưới có trước, khối rơi vào lưới — hàng nào không có khối
+ *  vẫn là một hàng, ids rỗng.
  *
- *  So theo TÂM chứ không theo ĐỈNH, cùng lý lẽ với hutHang: Quyết định cao 86
- *  và Thao tác cao 56 nằm ngang hàng thì đỉnh lệch nhau 15px. Gom theo đỉnh là
- *  tách nhầm đúng hai khối người dùng vừa cất công hút cho bằng hàng.
+ *  Phủ TRỌN chiều cao trang: số dải đủ để chứa cả drawH lẫn hàng thấp nhất còn
+ *  khối (kéo khối bằng tay không nới chiều cao giai đoạn, nên khối tụt quá đáy
+ *  trang là chuyện có thật). Chiều cao giai đoạn là bội số CAO_HANG thì các dải
+ *  khép đúng vào drawH, không thừa không thiếu.
  *
- *  Mép chung của hai dải nằm CHÍNH GIỮA khe hở — giữa đáy thấp nhất của dải trên
- *  và đỉnh cao nhất của dải dưới — nên vạch ngăn rơi vào khe, không xẻ ngang khối
- *  nào. Riêng khi hai khối CHỒNG NHAU theo chiều dọc mà tâm vẫn cách nhau quá
- *  dung sai thì không đường ngang nào tách được chúng (mọi y giữa hai tâm đều
- *  nằm trong khối này hoặc khối kia); lúc đó vạch vẫn đi qua, nhưng nó được vẽ
- *  DƯỚI khối nên bị chính khối che đi.
+ *  Khối bị kéo lên TRÊN mép trang (hàng âm) tính vào hàng 0: không có hàng nào
+ *  ở trên đó để nó thuộc về, mà bỏ hẳn thì khối biến mất khỏi danh sách ids.
  *
- *  Số hỏng (chuỗi, null, thiếu — so_do là jsonb, không ràng buộc kiểu) tính như
- *  0, đúng lối doLech: không ép kiểu hộ để khỏi giấu cái hỏng đi, nhưng cũng
- *  không thả NaN chảy vào toạ độ vẽ. */
-export function daiBuoc(soDo, dungSai = DUNG_SAI_DAI) {
-  const soThat = v => (Number.isFinite(v) ? v : 0);
+ *  CHỈ ĐỌC: không dời khối nào. Số hỏng (chuỗi, null, thiếu — so_do là jsonb,
+ *  không ràng buộc kiểu) tính như 0, không thả NaN chảy vào toạ độ vẽ. */
+export function daiBuoc(soDo) {
   const khoi = [];
   for (const n of (Array.isArray(soDo?.nodes) ? soDo.nodes : [])) {
     if (!n || typeof n !== 'object') continue;
-    const y = soThat(n.y), h = soThat(n.h);
-    khoi.push({ id: n.id, x: soThat(nodeX(n)), tam: y + h / 2, tren: y, duoi: y + h });
+    khoi.push({ id: n.id, x: soThat(nodeX(n)), hang: Math.max(0, hangCua(n)) });
   }
-  if (!khoi.length) return [];
 
-  const sai = soThat(dungSai);
   const cao = Array.isArray(soDo?.phases) ? soThat(drawH(soDo)) : 0;
+  let soHang = Math.max(0, Math.ceil(cao / CAO_HANG));
+  for (const k of khoi) soHang = Math.max(soHang, k.hang + 1);
+  if (!soHang) return [];
+
+  const dai = Array.from({ length: soHang }, (_, r) => ({
+    tam: tamHang(r), y1: r * CAO_HANG, y2: (r + 1) * CAO_HANG, ids: [],
+  }));
   // Thứ tự khối trong mảng là thứ tự người dùng THÊM, không liên quan gì tới chỗ
-  // chúng đứng trên trang — phải sắp theo tâm rồi mới gom.
-  khoi.sort((a, b) => (a.tam - b.tam) || (a.x - b.x));
-
-  const nhom = [];
-  for (const k of khoi) {
-    const g = nhom[nhom.length - 1];
-    // So với khối LIỀN TRƯỚC, không so với khối mở đầu nhóm: luật là "hai tâm
-    // cách nhau trong dung sai thì chung một dải", và nó phải đúng với mọi cặp.
-    if (g && k.tam - g.tamCuoi <= sai) {
-      g.ds.push(k);
-      g.tamCuoi = k.tam;
-      g.tren = Math.min(g.tren, k.tren);
-      g.duoi = Math.max(g.duoi, k.duoi);
-    } else {
-      nhom.push({ ds: [k], tamCuoi: k.tam, tren: k.tren, duoi: k.duoi });
-    }
-  }
-
-  const dai = [];
-  let y1 = 0;
-  nhom.forEach((g, i) => {
-    const sau = nhom[i + 1];
-    // Math.max(y1, …): kéo khối bằng tay KHÔNG nới chiều cao giai đoạn, nên khối
-    // tụt xuống dưới đáy trang là chuyện có thật — mép dưới rơi lên trên mép trên
-    // thì dải cao âm, trình duyệt bỏ luôn hình đó. Kẹp một nhịp là hết, các dải
-    // vẫn liền mạch vì mép dưới của dải này là mép trên của dải kia.
-    const y2 = Math.max(y1, sau ? (g.duoi + sau.tren) / 2 : cao);
-    dai.push({
-      tam: g.ds.reduce((s, k) => s + k.tam, 0) / g.ds.length,
-      y1,
-      y2,
-      ids: g.ds.slice().sort((a, b) => a.x - b.x).map(k => k.id),
-    });
-    y1 = y2;
-  });
+  // chúng đứng trên trang — ids phải xếp lại theo x để đọc trái → phải.
+  for (const k of khoi.slice().sort((a, b) => a.x - b.x)) dai[k.hang].ids.push(k.id);
   return dai;
 }
 
-/** Căn giữa khối theo cột và giãn đều trong từng giai đoạn.
- *  CỐ Ý không đảo thứ tự: người dùng phải đoán được kết quả trước khi bấm. */
+/** Căn giữa khối theo cột và ĐƯA CẢ SƠ ĐỒ VỀ ĐÚNG LƯỚI HÀNG.
+ *  Mỗi tầng khối chiếm trọn một hàng, khối rơi vào tâm ô; chiều cao giai đoạn
+ *  làm tròn lên bội số CAO_HANG để mốc ngăn giai đoạn không xẻ ngang hàng nào.
+ *
+ *  Đây cũng là nút "chỉnh lại cho thẳng lưới" của những sơ đồ lưu từ trước khi
+ *  có lưới: chúng vẫn mở, vẫn vẽ, vẫn in được, chỉ là chưa thẳng hàng cho tới
+ *  khi bấm nút này một lần.
+ *
+ *  CỐ Ý không đảo thứ tự: người dùng phải đoán được kết quả trước khi bấm. Thứ
+ *  tự tầng và cách gom tầng giữ y như cũ — chỉ đổi chỗ ĐẶT tầng, không đổi tầng
+ *  nào gồm những khối nào. */
 export function tuXepLai(soDo) {
   if (!soDo?.phases?.length) return sao(soDo);   // không có hàng nào thì không xếp gì
   const s = sao(soDo);
-  const HO = 44, LE = 28;
+  const HO = 44;
   const nhom = s.phases.map(() => []);
   for (const n of s.nodes) nhom[phaseOf(soDo, n)].push(n);
 
+  let hang = 0;                 // hàng đầu tiên của giai đoạn đang xếp
   nhom.forEach((g, i) => {
     g.sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)));
     const tang = [];
@@ -409,16 +446,15 @@ export function tuXepLai(soDo) {
                             && !t.items.some(m => m.lane === n.lane));
       if (t) t.items.push(n); else tang.push({ y: n.y, items: [n] });
     }
-    let cur = LE;
-    for (const t of tang) {
-      const hMax = Math.max(...t.items.map(n => n.h));
-      for (const n of t.items) {
-        n.dx = 0;
-        n.y = phaseTop(s, i) + cur + Math.round((hMax - n.h) / 2);
-      }
-      cur += hMax + HO;
-    }
-    s.phases[i].h = Math.max(s.phases[i].h, cur - HO + LE);
+    // Mỗi tầng một hàng, khối đặt theo TÂM nên khối cao thấp khác nhau vẫn thẳng.
+    tang.forEach((t, k) => {
+      for (const n of t.items) { n.dx = 0; n.y = yTaiHang(hang + k, n.h); }
+    });
+    // Giai đoạn phải đủ hàng cho các tầng của nó, và luôn là bội số CAO_HANG —
+    // chỉ NỚI, không co lại, để chỗ trống người dùng cố ý chừa ra không mất đi.
+    const soHang = Math.max(tang.length, tronCaoGiaiDoan(s.phases[i].h) / CAO_HANG);
+    s.phases[i].h = soHang * CAO_HANG;
+    hang += soHang;
   });
   return s;
 }

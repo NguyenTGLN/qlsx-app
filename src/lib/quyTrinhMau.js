@@ -7,7 +7,7 @@
 // Mọi hàm trả BẢN SAO để nơi gọi sửa thoải mái mà không hỏng mẫu gốc.
 // ============================================================
 
-import { LOAI_KHOI } from './quyTrinhSoDo';
+import { LOAI_KHOI, CAO_HANG, yTaiHang } from './quyTrinhSoDo';
 
 export const NHOM = [
   { ma: 'SX', ten: 'Sản xuất',              mau: '#0891b2' },
@@ -85,21 +85,25 @@ export function mauTaiLieu(nhom) {
   });
 }
 
-/** Sơ đồ khởi tạo: cột + hàng sẵn, khối Bắt đầu → Kết thúc đã nối. Trả BẢN SAO. */
+/** Sơ đồ khởi tạo: cột + hàng sẵn, khối Bắt đầu → Kết thúc đã nối. Trả BẢN SAO.
+ *
+ *  ĐÃ THẲNG LƯỚI ngay từ đầu — chiều cao giai đoạn là bội số CAO_HANG, hai khối
+ *  đậu đúng tâm ô. Quy trình mới vì thế không bao giờ phải bấm "Tự xếp lại" mới
+ *  ngay hàng, và mọi bước thêm sau đó cũng rơi đúng lưới. */
 export function mauSoDo(nhom) {
   const m = MAU[nhom] || MAU.SX;
   const lanes = m.lanes.map(([name, owner, color]) => ({ name, owner, color }));
-  const phases = [
-    { name: 'Tiếp nhận', h: 160 },
-    { name: 'Thực hiện', h: 320 },
-    { name: 'Hoàn tất',  h: 200 },
+  const phases = [                                    // 1 + 3 + 2 = 6 hàng
+    { name: 'Tiếp nhận', h: 1 * CAO_HANG },
+    { name: 'Thực hiện', h: 3 * CAO_HANG },
+    { name: 'Hoàn tất',  h: 2 * CAO_HANG },
   ];
   const S = LOAI_KHOI.start, E = LOAI_KHOI.end;
   return structuredClone({
     lanes, phases,
     nodes: [
-      { id: 'n_start', t: 'start', lane: 0, y: 46,  dx: 0, w: S.w, h: S.h, tx: 'Bắt đầu',  desc: '', form: '—', time: '—', color: null },
-      { id: 'n_end',   t: 'end',   lane: 0, y: 560, dx: 0, w: E.w, h: E.h, tx: 'Kết thúc', desc: '', form: '—', time: '—', color: null },
+      { id: 'n_start', t: 'start', lane: 0, y: yTaiHang(0, S.h), dx: 0, w: S.w, h: S.h, tx: 'Bắt đầu',  desc: '', form: '—', time: '—', color: null },
+      { id: 'n_end',   t: 'end',   lane: 0, y: yTaiHang(5, E.h), dx: 0, w: E.w, h: E.h, tx: 'Kết thúc', desc: '', form: '—', time: '—', color: null },
     ],
     edges: [{ id: 'e_se', a: 'n_start', b: 'n_end', lbl: '', k: 'n' }],
   });

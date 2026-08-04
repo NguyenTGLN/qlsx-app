@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { thoatXml, soDoSangSvg } from './quyTrinhSvg';
-import { GUT, LANE_W, MAU_DAI } from './quyTrinhSoDo';
+import { GUT, LANE_W, MAU_DAI, CAO_HANG } from './quyTrinhSoDo';
 import { mauSoDo } from './quyTrinhMau';
 
 const soDo = {
@@ -190,11 +190,26 @@ describe('soDoSangSvg', () => {
     }
   });
 
-  test('hai khối hút NGANG HÀNG → chung một dải, ảnh bớt đi một vạch ngăn', () => {
+  test('DẢI ĐỀU NHAU — mọi dải cao đúng CAO_HANG, vạch ngăn cách đều', () => {
+    const nen = [...svg.matchAll(new RegExp(
+      `<rect x="[\\d.]+" y="([\\d.]+)" width="[\\d.]+" height="([\\d.]+)" fill="${MAU_DAI.nen}"/>`, 'g'))];
+    expect(nen.length).toBeGreaterThan(0);
+    for (const m of nen) expect(+m[2]).toBe(CAO_HANG);
+    const vach = [...svg.matchAll(new RegExp(
+      `<line x1="[\\d.]+" y1="([\\d.]+)"[^/]*stroke="${MAU_DAI.vach}"`, 'g'))].map(m => +m[1]);
+    expect(vach.length).toBeGreaterThan(1);
+    for (let i = 1; i < vach.length; i++) expect(vach[i] - vach[i - 1]).toBe(CAO_HANG);
+  });
+
+  test('DỜI KHỐI ĐI ĐÂU thì dải vẫn thế — chiều cao hàng không theo chỗ khối đứng', () => {
     const s = structuredClone(soDo);
-    s.nodes[2].y = 138 - 86 / 2;   // Quyết định (h 86) về đúng tâm 138 của Xuất kho
+    s.nodes[2].y = 138 - 86 / 2;   // kéo Quyết định lên ngang hàng Xuất kho
     const out = soDoSangSvg(s);
-    expect((out.match(new RegExp(`stroke="${MAU_DAI.vach}"`, 'g')) || []).length).toBe(2);
+    const dem = (t, re) => (t.match(re) || []).length;
+    const reVach = new RegExp(`stroke="${MAU_DAI.vach}"`, 'g');
+    const reNen  = new RegExp(`fill="${MAU_DAI.nen}"`, 'g');
+    expect(dem(out, reVach)).toBe(dem(svg, reVach));
+    expect(dem(out, reNen)).toBe(dem(svg, reNen));
   });
 
   test('sơ đồ mẫu (hai khối) vẫn ra dải, không nổ và không đẻ NaN', () => {

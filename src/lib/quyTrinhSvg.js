@@ -132,8 +132,8 @@ export function soDoSangSvg(soDoVao, { tyLe = 1 } = {}) {
 
   p.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`);
 
-  // Dải bước — mỗi bước một hàng, suy ra từ chỗ khối đang đứng (daiBuoc), y hệt
-  // trình vẽ. Đẩy vào NGAY SAU nền trắng nên nằm dưới cùng: dưới vạch giai đoạn,
+  // Dải bước — HÀNG ĐỀU, mỗi dải cao đúng CAO_HANG (daiBuoc), y hệt trình vẽ.
+  // Đẩy vào NGAY SAU nền trắng nên nằm dưới cùng: dưới vạch giai đoạn,
   // dưới vạch cột, dưới đường nối và khối. Vạch nét liền màu nhạt hơn hẳn vạch
   // giai đoạn (nét đứt, đậm hơn) — giai đoạn là cấu trúc lớn, dải bước chỉ chia
   // nhỏ bên trong nó. Bản in A3 là lý do có tính năng này, nên nó phải có mặt ở

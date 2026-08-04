@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { NHOM, mauTaiLieu, mauSoDo, maSoTiepTheo } from './quyTrinhMau';
 import { kiemTraLuuDo } from './quyTrinhKiemTra';
+import { CAO_HANG, tamHang, hangCua, drawH, tuXepLai } from './quyTrinhSoDo';
 
 describe('NHOM', () => {
   test('đủ 6 nhóm bộ phận, mã 2 chữ, không trùng', () => {
@@ -70,6 +71,31 @@ describe('mauSoDo', () => {
   test('trả BẢN SAO — sửa sơ đồ không làm hỏng mẫu gốc', () => {
     const a = mauSoDo('SX'); a.nodes.push({ id: 'x' });
     expect(mauSoDo('SX').nodes.some(n => n.id === 'x')).toBe(false);
+  });
+
+  test('ĐÃ THẲNG LƯỚI ngay từ đầu — quy trình mới không phải bấm "Tự xếp lại"', () => {
+    for (const n of NHOM) {
+      const s = mauSoDo(n.ma);
+      // giai đoạn cao trọn hàng ⇒ mốc ngăn không xẻ ngang hàng nào
+      for (const p of s.phases) expect(p.h % CAO_HANG, `nhóm ${n.ma}`).toBe(0);
+      // khối đậu đúng TÂM Ô
+      for (const k of s.nodes) expect(k.y + k.h / 2, `nhóm ${n.ma} khối ${k.id}`).toBe(tamHang(hangCua(k)));
+      // Bắt đầu ở hàng đầu, Kết thúc ở hàng cuối của trang
+      expect(hangCua(s.nodes.find(k => k.t === 'start'))).toBe(0);
+      expect(hangCua(s.nodes.find(k => k.t === 'end'))).toBe(drawH(s) / CAO_HANG - 1);
+    }
+  });
+
+  test('bấm "Tự xếp lại" trên mẫu chỉ DỒN LÊN, vẫn thẳng lưới, không xáo trộn', () => {
+    // Mẫu cố ý chừa hàng trống dưới Kết thúc cho dễ chèn bước; tuXepLai thì dồn
+    // các tầng lên đầu từng giai đoạn — nên nó DỜI Kết thúc lên, đúng như xưa nay.
+    const s = mauSoDo('SX');
+    const x = tuXepLai(s);
+    for (const p of x.phases) expect(p.h % CAO_HANG).toBe(0);
+    for (const k of x.nodes) expect(k.y + k.h / 2).toBe(tamHang(hangCua(k)));
+    expect(hangCua(x.nodes.find(k => k.t === 'start')))
+      .toBeLessThan(hangCua(x.nodes.find(k => k.t === 'end')));
+    expect(JSON.stringify(tuXepLai(x))).toBe(JSON.stringify(x));   // lần hai thì bất động
   });
 });
 

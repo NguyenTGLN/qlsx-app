@@ -4,9 +4,9 @@ import {
   Minus, Plus, Save, Send, BadgeCheck, RotateCcw, Loader2, GitBranch,
 } from 'lucide-react';
 import {
-  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT,
+  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT, CAO_HANG,
   laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
-  themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc,
+  themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc, tronCaoGiaiDoan,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -186,9 +186,9 @@ export default function SoanThaoTab({
 
   const thuTu = useMemo(() => (soDoHien ? thuTuBuoc(soDoHien) : []), [soDoHien]);
 
-  // Dải bước — mỗi bước một hàng. Nhớ theo soDoHien nên kéo khối là dải chạy
-  // theo ngay, thả tay ở hàng mới thì có hàng mới, kéo về chỗ cũ thì nhập lại.
-  // Phép gom nằm trọn ở daiBuoc; tệp này chỉ đọc y1/y2 nó trả ra.
+  // Dải bước — HÀNG ĐỀU, mỗi dải cao đúng CAO_HANG. Lưới có trước, khối rơi vào
+  // lưới, nên kéo khối KHÔNG làm hàng cao thấp đổi theo nữa — đúng điều người
+  // dùng yêu cầu. Toàn bộ phép chia hàng nằm ở daiBuoc; tệp này chỉ đọc y1/y2.
   const dai = useMemo(() => (soDoHien ? daiBuoc(soDoHien) : []), [soDoHien]);
 
   // kiemTraLuuDo O(n²) ở phần soát khối chồng nhau. Nhớ theo soDo (bản CAM KẾT)
@@ -691,7 +691,10 @@ export default function SoanThaoTab({
           {nut({
             disabled: !coSua,
             onClick: () => {
-              doiSoDo({ ...soDo, phases: [...phases, { name: 'Giai đoạn mới', h: 180 }] });
+              // Chiều cao giai đoạn phải TRỌN HÀNG, nếu không mốc ngăn giai đoạn
+              // xẻ ngang giữa một hàng. Hai hàng là chỗ vừa đủ cho một bước và
+              // một nhánh của nó.
+              doiSoDo({ ...soDo, phases: [...phases, { name: 'Giai đoạn mới', h: 2 * CAO_HANG }] });
               setChon({ loai: 'phase', id: phases.length });
               toast('Đã thêm một hàng giai đoạn.');
             },
@@ -699,7 +702,8 @@ export default function SoanThaoTab({
           })}
           {nut({
             disabled: !coSua, onClick: xepLai,
-            children: <><Wand2 size={13} />Tự xếp lại</>, title: 'Căn giữa cột và giãn đều theo giai đoạn',
+            children: <><Wand2 size={13} />Tự xếp lại</>,
+            title: 'Căn giữa cột và đưa mọi khối về đúng tâm ô của lưới hàng',
           })}
         </div>
 
@@ -918,7 +922,7 @@ export default function SoanThaoTab({
                 position: 'absolute', left: GUT, top: HEAD_H,
                 width: drawW(soDoHien), height: drawH(soDoHien),
               }}>
-                {/* ── DẢI BƯỚC: mỗi bước một hàng ─────────────────────
+                {/* ── DẢI BƯỚC: hàng đều, mỗi hàng cao đúng CAO_HANG ──
                     Lớp ĐẦU TIÊN trong khung giấy nên nằm dưới cùng — dưới cột,
                     dưới vạch giai đoạn, dưới đường nối và khối. Cả lớp KHÔNG ăn
                     chuột nên khối và đường nối bên trên bấm, kéo y như cũ.
@@ -927,7 +931,7 @@ export default function SoanThaoTab({
                     là cấu trúc lớn, dải bước chỉ chia nhỏ bên trong nó, không
                     được tranh chỗ với nó. Nền so le tô rất nhạt và nằm DƯỚI nền
                     cột, nên nền cột (đậm hơn) vẫn là thứ đọc trước. */}
-                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
                   {dai.map((d, i) => (
                     <div key={`db${i}`} style={{
                       position: 'absolute', left: 0, right: 0,
@@ -1424,12 +1428,15 @@ function HangInsp({ i, p, soDo, doiSoDo, coSua, onXoa }) {
       <ONhap id="qe-f-ph" nhan="Chiều cao hàng (px)" giaTri={String(p.h)} doc={!coSua}
         key={`ph${p.h}`}
         onLuu={(v) => {
-          const s = Math.round(Number(v));
-          // Số rác hoặc quá thấp thì bỏ qua: hàng cao 0px làm khối trong đó biến mất.
-          if (!Number.isFinite(s) || s < 80) return;
-          doiSoDo(vaHang(soDo, i, { h: s }));
+          const s = Number(v);
+          // Số rác thì bỏ qua: hàng cao 0px làm khối trong đó biến mất.
+          if (!Number.isFinite(s) || s <= 0) return;
+          // Làm tròn lên TRỌN HÀNG — mốc ngăn giai đoạn rơi vào giữa một hàng thì
+          // vạch ngăn xẻ ngang qua bước. Phép làm tròn nằm ở lib, không ở đây.
+          doiSoDo(vaHang(soDo, i, { h: tronCaoGiaiDoan(s) }));
         }}
-        ghiChu="Tối thiểu 80. Tự xếp lại sẽ tự nới thêm nếu các khối cần nhiều chỗ hơn." />
+        ghiChu={`Tự làm tròn lên bội số ${CAO_HANG} — mỗi hàng cao đúng ${CAO_HANG}px. `
+          + 'Tự xếp lại sẽ tự nới thêm nếu các khối cần nhiều chỗ hơn.'} />
 
       {coSua && (
         <>

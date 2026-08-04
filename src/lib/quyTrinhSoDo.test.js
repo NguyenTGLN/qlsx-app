@@ -5,7 +5,9 @@ import { themBuoc, xoaKhoi, doiCot, thuTuBuoc } from './quyTrinhSoDo';
 import { tuXepLai } from './quyTrinhSoDo';
 import { xoaCot, xoaHang } from './quyTrinhSoDo';
 import { hutHang, NGUONG_HUT } from './quyTrinhSoDo';
-import { daiBuoc, DUNG_SAI_DAI } from './quyTrinhSoDo';
+import { daiBuoc } from './quyTrinhSoDo';
+import { CAO_HANG, tamHang, hangCua, yTaiHang } from './quyTrinhSoDo';
+import { mauSoDo } from './quyTrinhMau';
 
 const soDo = {
   lanes: [
@@ -58,6 +60,61 @@ describe('hình học', () => {
       expect(LOAI_KHOI[k].mau).toMatch(/^#[0-9a-f]{6}$/i);
       expect(LOAI_KHOI[k].w).toBeGreaterThan(0);
       expect(LOAI_KHOI[k].h).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('lưới hàng — chiều cao các hàng bằng nhau', () => {
+  test('CAO_HANG đủ chứa khối CAO NHẤT và còn hở', () => {
+    const caoNhat = Math.max(...Object.values(LOAI_KHOI).map(t => t.h));
+    expect(caoNhat).toBe(86);                 // Quyết định — khối cao nhất
+    expect(CAO_HANG).toBe(120);
+    expect(CAO_HANG - caoNhat).toBe(34);      // hở còn lại, đủ để khối không dính vạch
+  });
+
+  test('tamHang — tâm ô giữa hàng, hai hàng liền nhau cách đúng CAO_HANG', () => {
+    expect(tamHang(0)).toBe(60);
+    expect(tamHang(1)).toBe(180);
+    expect(tamHang(4) - tamHang(3)).toBe(CAO_HANG);
+  });
+
+  test('QUYẾT ĐỊNH 86 và THAO TÁC 56 cùng hàng → TÂM bằng nhau, ĐỈNH lệch đúng 15', () => {
+    // Điều phải ghim: đặt khối theo TÂM, không theo ĐỈNH. Căn đỉnh thì hai khối
+    // "cùng bước" so le 15px — nhìn thấy rõ trên bản in A3.
+    const yDec = yTaiHang(2, 86), yStep = yTaiHang(2, 56);
+    expect(yDec + 86 / 2).toBe(tamHang(2));
+    expect(yStep + 56 / 2).toBe(tamHang(2));
+    expect(yDec + 86 / 2).toBe(yStep + 56 / 2);
+    expect(yStep - yDec).toBe(15);
+  });
+
+  test('hangCua(yTaiHang) KHỨ HỒI đúng với mọi hàng và mọi chiều cao khối', () => {
+    for (const r of [0, 1, 2, 3, 7, 40]) {
+      for (const h of Object.values(LOAI_KHOI).map(t => t.h)) {
+        expect(hangCua({ y: yTaiHang(r, h), h })).toBe(r);
+      }
+    }
+  });
+
+  test('hangCua bắt hàng GẦN NHẤT khi khối lệch khỏi tâm ô', () => {
+    expect(hangCua({ y: yTaiHang(1, 56) + 59, h: 56 })).toBe(1);   // chưa quá nửa hàng
+    expect(hangCua({ y: yTaiHang(1, 56) + 60, h: 56 })).toBe(2);   // đúng nửa hàng → sang hàng dưới
+  });
+
+  test('hàng ÂM vẫn tính được — khối bị kéo lên trên mép trang', () => {
+    expect(tamHang(-1)).toBe(-60);
+    expect(hangCua({ y: yTaiHang(-1, 56), h: 56 })).toBe(-1);
+  });
+
+  test('số âm / khổng lồ / hỏng KHÔNG đẻ ra NaN', () => {
+    for (const r of [-3, -1, 0, 1e6, Infinity, -Infinity, NaN, null, undefined, '2', {}]) {
+      expect(Number.isFinite(tamHang(r))).toBe(true);
+      expect(Number.isFinite(yTaiHang(r, 56))).toBe(true);
+      expect(Number.isFinite(yTaiHang(1, r))).toBe(true);
+    }
+    for (const n of [{}, null, undefined, { y: '10', h: null }, { y: NaN, h: 56 },
+      { y: 1e9, h: 56 }, { y: -1e9, h: Infinity }]) {
+      expect(Number.isFinite(hangCua(n))).toBe(true);
     }
   });
 });
@@ -311,23 +368,51 @@ describe('thêm bước bằng nút ＋', () => {
     edges: [{ id: 'e1', a: 'n1', b: 'n2', lbl: '', k: 'n' }],
   });
 
-  test('bước mới nằm DƯỚI khối nguồn và được nối tự động', () => {
+  test('bước mới rơi vào TÂM Ô của hàng NGAY DƯỚI khối nguồn, và được nối tự động', () => {
+    // n1 ở y=100 h=56 ⇒ tâm 128 ⇒ hàng 1. Bước mới xuống hàng 2, tâm 300.
     const s = themBuoc(base(), { tuId: 'n1', nhanh: '', loai: 'check', cot: 2, ten: 'Kiểm QC' });
     const moi = s.nodes.find(n => n.tx === 'Kiểm QC');
     expect(moi).toBeTruthy();
     expect(moi.t).toBe('check');
     expect(moi.lane).toBe(2);
-    expect(moi.y).toBe(100 + 56 + 46);
+    expect(hangCua(moi)).toBe(hangCua(base().nodes[0]) + 1);
+    expect(moi.y + moi.h / 2).toBe(tamHang(2));        // ĐÚNG tâm ô, không xê xích
+    expect(moi.y).toBe(272);
     expect(s.edges.some(e => e.a === 'n1' && e.b === moi.id && e.k === 'n')).toBe(true);
   });
 
-  test('nhánh NG rẽ NGANG cùng tầm cao và mang nhãn NG', () => {
+  test('nhánh NG rẽ NGANG — CÙNG HÀNG với khối nguồn và mang nhãn NG', () => {
+    // n2 là Quyết định y=220 h=86 ⇒ tâm 263 ⇒ hàng 2. Nhánh NG ở lại hàng 2.
     const s = themBuoc(base(), { tuId: 'n2', nhanh: 'ng', loai: 'step', cot: 0, ten: 'Tái chế' });
     const moi = s.nodes.find(n => n.tx === 'Tái chế');
-    expect(moi.y).toBe(220 + Math.round((86 - 56) / 2));
+    expect(hangCua(moi)).toBe(hangCua(base().nodes[1]));
+    expect(moi.y + moi.h / 2).toBe(tamHang(2));
+    expect(moi.y).toBe(272);
     const e = s.edges.find(x => x.b === moi.id);
     expect(e.k).toBe('ng');
     expect(e.lbl).toBe('NG');
+  });
+
+  test('nguồn ĐÃ THẲNG LƯỚI thì nhánh NG NGANG BẰNG nó — tâm trùng, đỉnh lệch 15', () => {
+    // Điều người dùng nhìn thấy: rẽ ngang phải thật sự nằm ngang. Đúng khi nguồn
+    // đậu đúng tâm ô — mọi khối do themBuoc/tuXepLai đặt ra đều thế.
+    const g = base();
+    g.nodes[1].y = yTaiHang(2, 86);                    // Quyết định về đúng tâm hàng 2
+    const s = themBuoc(g, { tuId: 'n2', nhanh: 'ng', loai: 'step', cot: 0, ten: 'Tái chế' });
+    const nguon = s.nodes.find(n => n.id === 'n2');
+    const moi = s.nodes.find(n => n.tx === 'Tái chế');
+    expect(moi.y + moi.h / 2).toBe(nguon.y + nguon.h / 2);
+    expect(moi.y - nguon.y).toBe(15);                  // đỉnh so le, tâm thì không
+  });
+
+  test('mọi khối thêm vào CÙNG MỘT HÀNG đều trùng tâm, dù cao thấp khác nhau', () => {
+    const g = base();
+    const a = themBuoc(g, { tuId: 'n1', nhanh: '', loai: 'dec',  cot: 0, ten: 'Hình thoi' });
+    const b = themBuoc(g, { tuId: 'n1', nhanh: '', loai: 'step', cot: 2, ten: 'Chữ nhật' });
+    const d = a.nodes.find(n => n.tx === 'Hình thoi'), t = b.nodes.find(n => n.tx === 'Chữ nhật');
+    expect(d.h).toBe(86); expect(t.h).toBe(56);
+    expect(d.y + d.h / 2).toBe(t.y + t.h / 2);         // TÂM bằng nhau…
+    expect(t.y - d.y).toBe(15);                        // …ĐỈNH lệch đúng 15
   });
 
   test('nhánh OK mang nhãn OK', () => {
@@ -348,10 +433,26 @@ describe('thêm bước bằng nút ＋', () => {
     expect(typeof moi.desc).toBe('string');
   });
 
-  test('nới chiều cao hàng cuối khi lưu đồ dài ra', () => {
+  test('nới chiều cao hàng cuối khi lưu đồ dài ra — và nới TRỌN HÀNG', () => {
     let s = base(); s.phases = [{ name: 'G1', h: 180 }];
     s = themBuoc(s, { tuId: 'n1', nhanh: '', loai: 'step', cot: 1, ten: 'Dài ra' });
     expect(drawH(s)).toBeGreaterThan(180);
+    // Giai đoạn cao lẻ ⇒ mốc ngăn giai đoạn xẻ ngang giữa một hàng.
+    expect(s.phases.at(-1).h % CAO_HANG).toBe(0);
+    // và phải đủ chứa khối thấp nhất
+    expect(drawH(s)).toBeGreaterThanOrEqual((hangCua(s.nodes.at(-1)) + 1) * CAO_HANG);
+  });
+
+  test('thêm bước LIÊN TỤC trên sơ đồ mẫu: mọi giai đoạn luôn là bội số CAO_HANG', () => {
+    let s = mauSoDo('SX');
+    let tu = 'n_start';
+    for (let i = 0; i < 8; i++) {
+      s = themBuoc(s, { tuId: tu, nhanh: '', loai: i % 3 === 1 ? 'dec' : 'step', cot: i % 3, ten: `B${i}` });
+      tu = s.nodes.at(-1).id;
+      for (const p of s.phases) expect(p.h % CAO_HANG).toBe(0);
+      // và khối nào cũng đậu đúng tâm ô
+      for (const n of s.nodes) expect(n.y + n.h / 2).toBe(tamHang(hangCua(n)));
+    }
   });
 
   test('BẤT BIẾN — sơ đồ gốc không bị sửa', () => {
@@ -508,6 +609,52 @@ describe('tự xếp lại', () => {
     const g = { lanes: [{ name: 'A', owner: 'a', color: '#111111' }], phases: [], nodes: [], edges: [] };
     expect(() => tuXepLai(g)).not.toThrow();
     expect(tuXepLai(g).phases).toEqual([]);
+  });
+
+  test('LƯỚI — mọi khối về đúng TÂM Ô sau khi xếp lại', () => {
+    const s = tuXepLai(base());
+    for (const n of s.nodes) expect(n.y + n.h / 2).toBe(tamHang(hangCua(n)));
+  });
+
+  test('mọi giai đoạn cao BỘI SỐ CAO_HANG — mốc ngăn không xẻ ngang hàng nào', () => {
+    const g = base();
+    g.phases = [{ name: 'G1', h: 137 }, { name: 'G2', h: 301 }];
+    const s = tuXepLai(g);
+    for (const p of s.phases) expect(p.h % CAO_HANG).toBe(0);
+    expect(drawH(s) % CAO_HANG).toBe(0);
+  });
+
+  test('SƠ ĐỒ XÔ LỆCH (kiểu đã lưu từ trước) — một lần bấm là về lưới, KHÔNG đảo hàng', () => {
+    const g = {
+      lanes: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+      phases: [{ name: 'G1', h: 160 }, { name: 'G2', h: 320 }, { name: 'G3', h: 200 }],
+      nodes: [
+        { id: 'a', t: 'start', lane: 0, y: 46,  dx: 11, w: 164, h: 48, tx: 'a', desc: '', form: '—', time: '—' },
+        { id: 'b', t: 'dec',   lane: 1, y: 133, dx: 0,  w: 150, h: 86, tx: 'b', desc: '', form: '—', time: '—' },
+        { id: 'c', t: 'step',  lane: 2, y: 150, dx: -7, w: 164, h: 56, tx: 'c', desc: '', form: '—', time: '—' },
+        { id: 'd', t: 'step',  lane: 0, y: 291, dx: 0,  w: 164, h: 56, tx: 'd', desc: '', form: '—', time: '—' },
+        { id: 'e', t: 'end',   lane: 1, y: 553, dx: 3,  w: 164, h: 48, tx: 'e', desc: '', form: '—', time: '—' },
+      ],
+      edges: [],
+    };
+    const doc = ds => ds.slice().sort((x, y) => (x.y + x.h / 2) - (y.y + y.h / 2)).map(n => n.id);
+    const truoc = doc(g.nodes);
+    const s = tuXepLai(g);
+
+    for (const n of s.nodes) {
+      expect(n.y + n.h / 2).toBe(tamHang(hangCua(n)));   // đúng tâm ô
+      expect(n.dx).toBe(0);
+    }
+    expect(doc(s.nodes)).toEqual(truoc);                 // KHÔNG đảo thứ tự hàng
+    const hg = id => hangCua(s.nodes.find(n => n.id === id));
+    expect(hg('b')).toBe(hg('c'));                       // vốn cùng tầng thì vẫn chung hàng
+    expect(hg('a')).toBeLessThan(hg('b'));
+    for (const p of s.phases) expect(p.h % CAO_HANG).toBe(0);
+  });
+
+  test('BẤT ĐỘNG — xếp lại lần hai không dời thêm gì nữa', () => {
+    const mot = tuXepLai(base());
+    expect(JSON.stringify(tuXepLai(mot))).toBe(JSON.stringify(mot));
   });
 });
 
@@ -728,7 +875,31 @@ describe('hút ngang hàng khi kéo khối', () => {
     // Trong lúc kéo, y lưu ở sơ đồ vẫn là chỗ cũ. Tính cả chính nó thì khối
     // bị ghim chết tại chỗ xuất phát, kéo đi 4px là bị kéo ngược về.
     const s = mk(nn('A', 100), nn('B', 500));
-    expect(hutHang(s, 'B', 504)).toEqual({ y: 504, mocY: null });
+    const r = hutHang(s, 'B', 504);
+    expect(r.y).not.toBe(500);          // KHÔNG bị kéo về chỗ xuất phát
+    expect(r.mocY).toBeNull();          // và không gióng vào khối nào cả
+    expect(r.y).toBe(yTaiHang(4, 56));  // rơi về tâm ô hàng 4 (512) — nam châm lưới
+  });
+
+  test('NAM CHÂM LƯỚI — kéo tới gần tâm ô thì hút vào tâm ô, KHÔNG vẽ đường gióng', () => {
+    const s = mk(nn('A', 100));
+    // tâm ô hàng 3 = 420 ⇒ khối cao 56 đậu ở y = 392. Kéo tới 396 (lệch 4).
+    expect(hutHang(s, 'A', 396)).toEqual({ y: 392, mocY: null });
+    // ngoài ngưỡng thì nhả ra, y giữ nguyên
+    expect(hutHang(s, 'A', 381)).toEqual({ y: 381, mocY: null });
+  });
+
+  test('CÁCH ĐỀU tâm khối và tâm ô → khối thắng, để còn thấy đường gióng', () => {
+    // A đặt đúng tâm ô hàng 1 (180) ⇒ hai nam châm TRÙNG NHAU, phải ra đường gióng.
+    const s = mk(nn('A', yTaiHang(1, 56)), nn('B', 600));
+    expect(hutHang(s, 'B', yTaiHang(1, 56) + 6)).toEqual({ y: yTaiHang(1, 56), mocY: 180 });
+  });
+
+  test('toạ độ hỏng ở khối khác KHÔNG kéo theo NaN vào khối đang kéo', () => {
+    const s = mk({ id: 'X', t: 'step', lane: 0, y: 'abc', dx: 0, w: 164, h: 56, tx: 'X' }, nn('B', 300));
+    const r = hutHang(s, 'B', 304);
+    expect(Number.isFinite(r.y)).toBe(true);
+    expect(r.mocY === null || Number.isFinite(r.mocY)).toBe(true);
   });
 
   test('id lạ → trả nguyên y, không nổ', () => {
@@ -769,7 +940,7 @@ describe('hút ngang hàng khi kéo khối', () => {
   });
 });
 
-describe('dải bước — mỗi bước một hàng', () => {
+describe('dải bước — HÀNG ĐỀU, mỗi hàng cao đúng CAO_HANG', () => {
   // h = 48 Bắt đầu/Kết thúc · 56 Thao tác · 86 Quyết định — đúng số ở LOAI_KHOI.
   const nn = (id, y, h = 56, lane = 0) => ({
     id, t: h === 86 ? 'dec' : 'step', lane, y, dx: 0, w: h === 86 ? 150 : 164, h, tx: id,
@@ -778,83 +949,107 @@ describe('dải bước — mỗi bước một hàng', () => {
     lanes: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
     phases: [{ name: 'x', h: cao }], nodes, edges: [],
   });
-
-  // Điều DUY NHẤT không được phép xảy ra: vạch ngăn xẻ ngang một khối. Vạch nằm
-  // ở y1 của mỗi dải từ dải thứ hai trở đi (y1 của dải đầu là mép trên trang,
-  // y2 của dải cuối là mép dưới — không vẽ vạch nào ở đó).
-  const catQuaKhoi = (s, dai) => dai.slice(1).some(
-    d => s.nodes.some(n => n.y < d.y1 && d.y1 < n.y + n.h));
+  /** Khối đặt ĐÚNG LƯỚI ở hàng r — đúng chỗ themBuoc / tuXepLai đặt nó. */
+  const oHang = (id, r, h = 56, lane = 0) => nn(id, yTaiHang(r, h), h, lane);
 
   test('sơ đồ rỗng hoặc hỏng → không có dải nào, không nổ', () => {
-    expect(daiBuoc(mk(400))).toEqual([]);
     expect(daiBuoc(null)).toEqual([]);
     expect(daiBuoc({})).toEqual([]);
-    expect(daiBuoc({ nodes: [null, 7, 'x'], phases: [{ h: 300 }] })).toEqual([]);
+    expect(daiBuoc({ nodes: [], phases: [] })).toEqual([]);
+    expect(daiBuoc({ nodes: [null, 7, 'x'], phases: [] })).toEqual([]);
   });
 
-  test('MỘT khối → một dải trùm trọn chiều cao trang', () => {
-    expect(daiBuoc(mk(400, nn('A', 100)))).toEqual([{ tam: 128, y1: 0, y2: 400, ids: ['A'] }]);
+  test('trang CÓ chiều cao nhưng CHƯA có khối nào → vẫn đủ hàng, ids rỗng', () => {
+    // Lưới có TRƯỚC, khối rơi vào lưới sau. Bản cũ gom theo khối nên trang trống
+    // là không thấy hàng nào — không biết đặt khối vào đâu cho thẳng.
+    const d = daiBuoc(mk(480));
+    expect(d).toHaveLength(4);
+    expect(d.every(x => x.ids.length === 0)).toBe(true);
+    expect(d.map(x => x.y1)).toEqual([0, 120, 240, 360]);
   });
 
-  test('HAI NHÁNH ĐÃ HÚT NGANG HÀNG — Quyết định 86 và Thao tác 56 tâm bằng nhau → CHUNG một dải', () => {
-    // Đúng cặp số hutHang trả ra: dec y=100 h=86 và step y=115 h=56, tâm cùng 143.
-    const s = mk(500, nn('Bước mới', 100, 86, 0), nn('Kiểm tra', 115, 56, 1));
+  test('MỌI dải cao ĐÚNG CAO_HANG và lợp kín 0…drawH — không hở, không chồng', () => {
+    const s = mk(720, oHang('a', 0, 48), oHang('b', 2, 86, 1), oHang('c', 5));
     const d = daiBuoc(s);
-    expect(d).toHaveLength(1);
-    expect(d[0].ids).toEqual(['Bước mới', 'Kiểm tra']);
-    expect(d[0].tam).toBe(143);
-    // ĐỈNH hai khối lệch nhau 15px: gom theo đỉnh là tách nhầm thành hai dải,
-    // đúng thứ người dùng vừa cất công hút cho bằng hàng.
-    expect(115 - 100).toBe(15);
+    expect(d).toHaveLength(6);
+    expect(d.every(x => x.y2 - x.y1 === CAO_HANG)).toBe(true);
+    expect(d[0].y1).toBe(0);
+    expect(d.at(-1).y2).toBe(drawH(s));
+    for (let i = 1; i < d.length; i++) expect(d[i].y1).toBe(d[i - 1].y2);
+  });
+
+  test('CHIỀU CAO HÀNG KHÔNG PHỤ THUỘC chỗ khối đứng — đúng điều người dùng yêu cầu', () => {
+    const goc    = mk(600, nn('A', 30), nn('B', 400, 86, 1));
+    const xoTung = mk(600, nn('A', 137), nn('B', 211, 86, 1));
+    const cao = s => daiBuoc(s).map(d => d.y2 - d.y1);
+    expect(cao(goc)).toEqual(cao(xoTung));
+    expect([...new Set(cao(goc))]).toEqual([CAO_HANG]);
+  });
+
+  test('tam của dải là TÂM Ô — không phải trung bình tâm các khối trong đó', () => {
+    const d = daiBuoc(mk(360, oHang('a', 1, 86), oHang('b', 1, 56, 1)));
+    expect(d.map(x => x.tam)).toEqual([tamHang(0), tamHang(1), tamHang(2)]);
+  });
+
+  test('QUYẾT ĐỊNH 86 và THAO TÁC 56 cùng hàng → CHUNG một dải', () => {
+    const d = daiBuoc(mk(480, oHang('Bước mới', 1, 86, 0), oHang('Kiểm tra', 1, 56, 1)));
+    expect(d[1].ids).toEqual(['Bước mới', 'Kiểm tra']);
+    expect(d.filter(x => x.ids.length)).toHaveLength(1);
+    // ĐỈNH hai khối vẫn lệch 15px — gom theo đỉnh là tách nhầm chúng ra.
+    const [a, b] = [yTaiHang(1, 86), yTaiHang(1, 56)];
+    expect(b - a).toBe(15);
   });
 
   test('ids xếp TRÁI → PHẢI theo nodeX, không theo thứ tự trong mảng', () => {
-    const s = mk(400, nn('phai', 100, 56, 2), nn('trai', 100, 56, 0), nn('giua', 100, 56, 1));
-    expect(daiBuoc(s)[0].ids).toEqual(['trai', 'giua', 'phai']);
+    const d = daiBuoc(mk(360, oHang('phai', 1, 56, 2), oHang('trai', 1, 56, 0), oHang('giua', 1, 56, 1)));
+    expect(d[1].ids).toEqual(['trai', 'giua', 'phai']);
   });
 
-  test('nhiều dải xếp TỪ TRÊN XUỐNG, mỗi dải đủ khối của nó', () => {
-    const s = mk(700, nn('c1', 400, 56, 0), nn('a1', 60, 48, 0), nn('b2', 220, 56, 1), nn('b1', 220, 56, 0));
+  test('mỗi khối nằm ĐÚNG MỘT dải, và là dải chứa TÂM nó', () => {
+    const s = mk(720, oHang('a', 0, 48), oHang('b', 1, 86, 1), oHang('c', 1, 56, 2), oHang('d', 4));
     const d = daiBuoc(s);
-    expect(d.map(x => x.ids)).toEqual([['a1'], ['b1', 'b2'], ['c1']]);
-    expect(d.map(x => x.tam)).toEqual([84, 248, 428]);
+    expect(d.flatMap(x => x.ids).sort()).toEqual(['a', 'b', 'c', 'd']);
+    for (const x of d) {
+      for (const id of x.ids) {
+        const n = s.nodes.find(m => m.id === id);
+        expect(n.y + n.h / 2).toBeGreaterThanOrEqual(x.y1);
+        expect(n.y + n.h / 2).toBeLessThan(x.y2);
+      }
+    }
   });
 
-  test('RANH GIỚI nằm chính giữa khe hở: đáy thấp nhất dải trên ↔ đỉnh cao nhất dải dưới', () => {
-    // Dải 1: đáy 100+86 = 186 (khối kia đáy 171). Dải 2: đỉnh 260 (khối kia 268).
-    // Giữa khe = (186 + 260) / 2 = 223.
-    const s = mk(600, nn('A', 100, 86, 0), nn('B', 115, 56, 1), nn('C', 260, 56, 0), nn('D', 268, 56, 1));
+  test('khối LỆCH LƯỚI (sơ đồ lưu từ trước) rơi vào hàng GẦN NHẤT, dải vẫn đều', () => {
+    const s = mk(480, nn('A', 100), nn('B', 265, 86, 1));
     const d = daiBuoc(s);
-    expect(d).toHaveLength(2);
-    expect(d[0]).toEqual({ tam: 143, y1: 0, y2: 223, ids: ['A', 'B'] });
-    expect(d[1]).toEqual({ tam: 292, y1: 223, y2: 600, ids: ['C', 'D'] });
-    expect(catQuaKhoi(s, d)).toBe(false);
+    expect(d.every(x => x.y2 - x.y1 === CAO_HANG)).toBe(true);
+    expect(d[1].ids).toEqual(['A']);      // tâm 128 → hàng 1
+    expect(d[2].ids).toEqual(['B']);      // tâm 308 → hàng 2
   });
 
-  test('các dải LIỀN NHAU và phủ kín 0…drawH — không hở, không chồng', () => {
-    const s = mk(720, nn('a', 40, 48), nn('b', 180), nn('c', 320, 86), nn('d', 500, 56, 1));
+  test('khối bị kéo TỤT quá đáy trang → nới thêm hàng, không dải nào lộn ngược', () => {
+    // Kéo khối bằng tay không nới chiều cao giai đoạn, nên chuyện này có thật.
+    const d = daiBuoc(mk(120, nn('A', 20), oHang('B', 4)));
+    expect(d).toHaveLength(5);
+    expect(d.every(x => x.y2 - x.y1 === CAO_HANG)).toBe(true);
+    expect(d[4].ids).toEqual(['B']);
+  });
+
+  test('khối bị kéo lên TRÊN mép trang → gom về hàng 0, không biến mất', () => {
+    const d = daiBuoc(mk(360, nn('tren', -400)));
+    expect(d[0].ids).toEqual(['tren']);
+    expect(d.flatMap(x => x.ids)).toEqual(['tren']);
+  });
+
+  test('toạ độ hỏng trong so_do (chuỗi, null, thiếu) → tính như 0, KHÔNG đẻ ra NaN', () => {
+    const s = mk(300, { id: 'x', t: 'step', lane: 0, w: 164, h: 56, tx: 'x' },   // thiếu y
+      { id: 'y', t: 'step', lane: 0, y: '200', dx: 0, w: 164, h: null, tx: 'y' },
+      null, 7, 'x');
     const d = daiBuoc(s);
-    expect(d).toHaveLength(4);
-    expect(d[0].y1).toBe(0);
-    expect(d[d.length - 1].y2).toBe(720);
-    for (let i = 1; i < d.length; i++) expect(d[i].y1).toBe(d[i - 1].y2);
-    expect(catQuaKhoi(s, d)).toBe(false);
+    expect(d.every(x => [x.tam, x.y1, x.y2].every(Number.isFinite))).toBe(true);
+    expect(d.flatMap(x => x.ids).sort()).toEqual(['x', 'y']);
   });
 
-  test('tâm lệch TRONG dung sai → chung dải; quá dung sai → tách', () => {
-    expect(DUNG_SAI_DAI).toBe(24);
-    expect(daiBuoc(mk(600, nn('A', 100), nn('B', 124, 56, 1)))).toHaveLength(1);   // lệch đúng 24
-    expect(daiBuoc(mk(600, nn('A', 100), nn('B', 125, 56, 1)))).toHaveLength(2);   // lệch 25
-  });
-
-  test('dung sai truyền vào có tác dụng', () => {
-    const s = mk(600, nn('A', 100), nn('B', 140, 56, 1));   // tâm lệch 40
-    expect(daiBuoc(s)).toHaveLength(2);
-    expect(daiBuoc(s, 40)).toHaveLength(1);
-    expect(daiBuoc(s, 0)).toHaveLength(2);
-  });
-
-  test('QUÉT NGẪU NHIÊN 200 sơ đồ — vạch ngăn không lần nào rơi vào trong một khối', () => {
+  test('QUÉT NGẪU NHIÊN 200 sơ đồ — dải luôn đều, luôn kín, khối nào cũng có dải', () => {
     // Hạt cố định: test hỏng là dựng lại được đúng sơ đồ đó, không phải chạy lại
     // xem có ra nữa không. (mulberry32 — vài dòng, không thêm phụ thuộc nào.)
     const rng = (hat) => () => {
@@ -870,27 +1065,26 @@ describe('dải bước — mỗi bước một hàng', () => {
       const r = rng(hat);
       const nodes = [];
       const soHang = 1 + Math.floor(r() * 6);
-      let day = 20;
       for (let h = 0; h < soHang; h++) {
         const k = 1 + Math.floor(r() * 3);
-        const cao = Array.from({ length: k }, () => CAO[Math.floor(r() * 3)]);
-        // Khe ≥ 40 giữa hai hàng, lệch tâm trong hàng ≤ 6 ⇒ hai hàng KHÔNG chồng
-        // nhau theo chiều dọc và tâm cách nhau > 70, còn tâm trong cùng một hàng
-        // cách nhau ≤ 12. Dung sai 24 vì thế phải cắt ra đúng soHang dải.
-        const tam = day + 40 + Math.floor(r() * 60) + Math.max(...cao) / 2;
-        const hang = cao.map((c, i) => nn(`h${h}k${i}`, tam + Math.floor(r() * 13) - 6 - c / 2, c, i));
-        nodes.push(...hang);
-        day = Math.max(...hang.map(n => n.y + n.h));
+        // CỐ Ý xô lệch khỏi lưới ±40px: sơ đồ lưu từ trước lệch tứ tung, dải vẫn
+        // phải đều tăm tắp và không được đánh rơi khối nào.
+        for (let i = 0; i < k; i++) {
+          const c = CAO[Math.floor(r() * 3)];
+          nodes.push(nn(`h${h}k${i}`, yTaiHang(h, c) + Math.floor(r() * 81) - 40, c, i));
+        }
       }
-
-      const s = mk(day + 60, ...nodes);
+      const cao = (1 + Math.floor(r() * 9)) * CAO_HANG;
+      const s = mk(cao, ...nodes);
       const d = daiBuoc(s);
-      if (d.length !== soHang) hong.push(`hạt ${hat}: ${d.length} dải, đáng ra ${soHang}`);
-      if (catQuaKhoi(s, d)) hong.push(`hạt ${hat}: vạch ngăn CẮT QUA khối`);
+
+      if (!d.length) hong.push(`hạt ${hat}: không có dải nào`);
       if (d[0].y1 !== 0) hong.push(`hạt ${hat}: dải đầu không bắt đầu từ 0`);
-      if (d[d.length - 1].y2 !== day + 60) hong.push(`hạt ${hat}: dải cuối không chạm đáy trang`);
+      if (d.at(-1).y2 < cao) hong.push(`hạt ${hat}: dải cuối chưa chạm đáy trang`);
+      const co = d.flatMap(x => x.ids).sort();
+      if (co.length !== nodes.length) hong.push(`hạt ${hat}: ${co.length}/${nodes.length} khối có dải`);
       for (let i = 0; i < d.length; i++) {
-        if (d[i].y2 < d[i].y1) hong.push(`hạt ${hat}: dải ${i} lộn ngược`);
+        if (d[i].y2 - d[i].y1 !== CAO_HANG) hong.push(`hạt ${hat}: dải ${i} cao ${d[i].y2 - d[i].y1}`);
         if (i && d[i].y1 !== d[i - 1].y2) hong.push(`hạt ${hat}: hở giữa dải ${i - 1} và ${i}`);
         if (![d[i].tam, d[i].y1, d[i].y2].every(Number.isFinite)) hong.push(`hạt ${hat}: dải ${i} có số không hợp lệ`);
       }
@@ -898,37 +1092,8 @@ describe('dải bước — mỗi bước một hàng', () => {
     expect(hong).toEqual([]);
   });
 
-  test('GIỚI HẠN ĐÃ BIẾT — hai khối CHỒNG NHAU theo chiều dọc thì không đường ngang nào tách được', () => {
-    // A: 100…156 (tâm 128). B: 125…181 (tâm 153). Tâm lệch 25 > dung sai nên là
-    // hai dải, nhưng hai khối đè lên nhau 31px: mọi y giữa hai tâm đều nằm trong
-    // khối này hoặc khối kia. Vạch vẫn đi qua — nó được vẽ DƯỚI khối nên bị chính
-    // khối che, và người dùng chỉ cần hút hai khối cho bằng hàng là hết.
-    const s = mk(400, nn('A', 100), nn('B', 125, 56, 1));
-    const d = daiBuoc(s);
-    expect(d).toHaveLength(2);
-    expect(d[0].y2).toBe(140.5);       // (156 + 125) / 2
-    expect(catQuaKhoi(s, d)).toBe(true);
-  });
-
-  test('khối bị kéo tụt xuống dưới đáy trang → dải cuối KHÔNG lộn ngược', () => {
-    // Kéo khối bằng tay không nới chiều cao giai đoạn, nên chuyện này có thật.
-    const s = mk(120, nn('A', 20), nn('B', 300, 56, 1));
-    const d = daiBuoc(s);
-    expect(d).toHaveLength(2);
-    expect(d[1].y2).toBeGreaterThanOrEqual(d[1].y1);
-    expect(d.every(x => [x.tam, x.y1, x.y2].every(Number.isFinite))).toBe(true);
-  });
-
-  test('toạ độ hỏng trong so_do (chuỗi, null, thiếu) → tính như 0, KHÔNG đẻ ra NaN', () => {
-    const s = mk(300, { id: 'x', t: 'step', lane: 0, w: 164, h: 56, tx: 'x' },   // thiếu y
-      { id: 'y', t: 'step', lane: 0, y: '200', dx: 0, w: 164, h: null, tx: 'y' });
-    const d = daiBuoc(s);
-    expect(d.every(x => [x.tam, x.y1, x.y2].every(Number.isFinite))).toBe(true);
-    expect(d.flatMap(x => x.ids).sort()).toEqual(['x', 'y']);
-  });
-
   test('BẤT BIẾN — không sửa sơ đồ gốc, chỉ đọc', () => {
-    const s = mk(600, nn('A', 100, 86, 1), nn('B', 115, 56, 0), nn('C', 300));
+    const s = mk(600, oHang('A', 1, 86, 1), oHang('B', 1, 56, 0), oHang('C', 3));
     const truoc = JSON.stringify(s);
     daiBuoc(s);
     expect(JSON.stringify(s)).toBe(truoc);
