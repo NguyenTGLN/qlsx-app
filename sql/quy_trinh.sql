@@ -141,10 +141,21 @@ begin
     raise exception 'Chỉ đổi được trạng thái qua RPC gửi duyệt / trả lại / ban hành.';
   end if;
 
-  -- Nội dung bản đã ban hành là tài liệu ISO đang có hiệu lực: khoá lại.
+  -- CHỈ BẢN NHÁP MỚI SỬA ĐƯỢC NỘI DUNG.
   -- Chỉ áp cho bảng phiên bản; bảng quy_trinh vẫn đổi tên được khi đã ban hành.
+  --
+  -- 'wait' cũng khoá: trước đây người soạn gửi duyệt xong VẪN bấm "Lưu nháp" và
+  -- đổi được so_do/tai_lieu, rồi Admin đóng dấu lên thứ đã bị đổi chứ không phải
+  -- thứ họ vừa đọc. Cờ "chưa lưu" ở giao diện chỉ canh được trong MỘT phiên
+  -- trình duyệt, không canh được giữa hai người ngồi hai máy.
+  --
+  -- Ba RPC bên dưới KHÔNG bị chặn ở đây: chúng bật cờ qt.cho_phep và thoát ngay
+  -- ở đầu hàm — kể cả rpc_qt_tra_lai, thứ ghi ghi_chu_sua_doi lên một dòng 'wait'.
   if tg_table_name = 'quy_trinh_phien_ban'
-     and old.trang_thai in ('published', 'expired') then
+     and old.trang_thai is distinct from 'draft' then
+    if old.trang_thai = 'wait' then
+      raise exception 'Bản đang chờ duyệt đã khoá nội dung, để Admin duyệt đúng thứ đang đọc. Cần sửa thì nhờ Admin bấm "Trả lại" đưa bản này về nháp.';
+    end if;
     raise exception 'Không sửa được nội dung bản đã ban hành. Hãy tạo phiên bản mới.';
   end if;
 

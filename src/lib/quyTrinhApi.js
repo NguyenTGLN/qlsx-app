@@ -26,6 +26,35 @@ export async function taiPhienBan(quyTrinhId) {
   return data || [];
 }
 
+// ── KHOÁ NỘI DUNG THEO TRẠNG THÁI ────────────────────────────────
+// Chỉ bản NHÁP mới sửa được nội dung. Luật này phải KHỚP TỪNG CHỮ với trigger
+// qt_canh_trang_thai trong sql/quy_trinh.sql — trigger mới là chốt chặn thật,
+// đây chỉ là để giao diện nói cùng một điều.
+//
+// Vì sao 'wait' cũng khoá: người soạn gửi duyệt xong VẪN bấm "Lưu nháp" và đổi
+// được nội dung, rồi Admin đóng dấu lên thứ đã bị đổi chứ không phải thứ họ vừa
+// đọc. Cờ chuaLuu chỉ canh được trong MỘT phiên trình duyệt, không canh được
+// giữa hai người.
+//
+// Trạng thái LẠ (null, chuỗi rác, cột bị sửa tay) rơi về KHOÁ: mở nhầm một bản
+// đã có hiệu lực nguy hơn hẳn khoá nhầm một bản nháp — khoá nhầm thì người dùng
+// kêu ngay, mở nhầm thì không ai biết.
+export const banKhoaNoiDung = trangThai => trangThai !== 'draft';
+
+/** Câu giải thích hiện trên màn hình khi nội dung bị khoá — trả '' nếu không
+ *  khoá. Mỗi trạng thái chỉ sang ĐÚNG cái nút gỡ được nó: bản chờ duyệt gỡ bằng
+ *  "Trả lại" (việc của Admin), bản đã ban hành gỡ bằng "Tạo phiên bản mới".
+ *  Chỉ đường sai là người dùng đi tìm một cái nút không tồn tại. */
+export function lyDoKhoaNoiDung(trangThai, tenTrangThai) {
+  if (!banKhoaNoiDung(trangThai)) return '';
+  const ten = String(tenTrangThai ?? '').trim() || 'này';
+  if (trangThai === 'wait') {
+    return `Bản ${ten} đã khoá nội dung, để Admin duyệt đúng thứ đang đọc. `
+      + 'Cần sửa thì nhờ Admin bấm “Trả lại” đưa bản này về nháp.';
+  }
+  return `Bản ${ten} chỉ để xem. Muốn sửa thì tạo phiên bản mới.`;
+}
+
 /** Bản để mở ra sửa: ưu tiên bản nháp/chờ duyệt, không có thì bản đang hiệu lực. */
 export function banDangLam(dsPhienBan) {
   return dsPhienBan.find(p => p.trang_thai === 'draft')

@@ -164,9 +164,9 @@ export default function ThongTinTab({
   const tt = pb?.trang_thai || 'draft';
   const ttNhan = TT[tt] || { ten: tt, mau: C.chu3 };
 
-  // Khoá y hệt SoanThaoTab: bản đã ban hành / hết hiệu lực là tài liệu đang có
-  // hiệu lực pháp lý trong hồ sơ ISO. RLS vẫn cho ghi đè, nên phải khoá ở đây.
-  const banKhoa = tt === 'published' || tt === 'expired';
+  // Khoá y hệt SoanThaoTab, và cùng một hàm chứ không cùng một dòng chép lại:
+  // chỉ bản NHÁP mới sửa được. Luật khớp từng chữ với trigger qt_canh_trang_thai.
+  const banKhoa = api.banKhoaNoiDung(tt);
   const coSua = !!pSoanThao?.edit && !!pb && !banKhoa;
 
   const tl = useMemo(() => chuanHoa(pb?.tai_lieu), [pb?.tai_lieu]);
@@ -272,7 +272,7 @@ export default function ThongTinTab({
 
   const doc = !coSua;          // doc = chỉ đọc
   const lyDoKhoa = banKhoa
-    ? `Bản ${ttNhan.ten} chỉ để xem. Muốn sửa thì tạo phiên bản mới.`
+    ? api.lyDoKhoaNoiDung(tt, ttNhan.ten)
     : !pSoanThao?.edit ? 'Bạn không có quyền sửa nội dung quy trình — màn hình chỉ để xem.'
       : '';
 

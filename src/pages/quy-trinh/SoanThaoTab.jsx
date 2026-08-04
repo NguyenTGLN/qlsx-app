@@ -177,10 +177,10 @@ export default function SoanThaoTab({
   const tt = pb?.trang_thai || 'draft';
   const ttNhan = TT[tt] || { ten: tt, mau: C.chu3 };
 
-  // Bản ĐÃ ban hành / hết hiệu lực là tài liệu đang có hiệu lực pháp lý trong
-  // hồ sơ ISO. RLS vẫn cho chủ sở hữu ghi đè so_do của nó, nên phải khoá ở đây:
-  // sửa im lặng một bản đã phát hành là hỏng bằng chứng, không phải tiện tay.
-  const banKhoa = tt === 'published' || tt === 'expired';
+  // CHỈ BẢN NHÁP MỚI SỬA ĐƯỢC. Luật ở api.banKhoaNoiDung, khớp từng chữ với
+  // trigger qt_canh_trang_thai — trigger mới là chốt chặn thật, đây là để màn
+  // hình nói cùng một điều thay vì để người dùng bấm nút rồi ăn lỗi PL/pgSQL.
+  const banKhoa = api.banKhoaNoiDung(tt);
   const coSua = !!pSoanThao?.edit && !!soDo && !banKhoa;
 
   // ── Dẫn xuất từ sơ đồ ─────────────────────────────────────────
@@ -849,7 +849,7 @@ export default function SoanThaoTab({
         <div className="qe-loibar">
           {banKhoa && (
             <div style={{ ...S.loiDong, color: C.chu2, background: C.mat2, borderColor: C.vien2, cursor: 'default' }}>
-              Bản <b>{ttNhan.ten}</b> chỉ để xem. Muốn sửa thì tạo phiên bản mới.
+              {api.lyDoKhoaNoiDung(tt, ttNhan.ten)}
             </div>
           )}
           {loi.map((l, i) => (
