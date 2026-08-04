@@ -184,7 +184,7 @@ describe('lưới hàng — chiều cao các hàng bằng nhau', () => {
 
   test('QUYẾT ĐỊNH 86 và THAO TÁC 56 cùng hàng → TÂM bằng nhau, ĐỈNH lệch đúng 15', () => {
     // Điều phải ghim: đặt khối theo TÂM, không theo ĐỈNH. Căn đỉnh thì hai khối
-    // "cùng bước" so le 15px — nhìn thấy rõ trên bản in A3.
+    // "cùng bước" so le 15px — nhìn thấy rõ trên bản in.
     const yDec = yTaiHang(2, 86), yStep = yTaiHang(2, 56);
     expect(yDec + 86 / 2).toBe(tamHang(2));
     expect(yStep + 56 / 2).toBe(tamHang(2));

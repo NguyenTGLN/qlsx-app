@@ -168,7 +168,7 @@ describe('soDoSangSvg', () => {
   });
 
   /* ── DẢI BƯỚC ────────────────────────────────────────────────────
-     Bản in A3 là lý do có tính năng này, nên nó phải nằm trong CHÍNH chuỗi SVG
+     Bản in là lý do có tính năng này, nên nó phải nằm trong CHÍNH chuỗi SVG
      đã dùng cho PNG, ảnh nhúng .docx và màn hình Xem trước — không riêng trình
      vẽ. Bốn khối của sơ đồ mẫu ở bốn tầm khác nhau ⇒ 4 dải ⇒ 3 vạch ngăn và 2
      dải được tô nền (so le, dải đầu để trắng). */
@@ -300,7 +300,7 @@ describe('nhịp cầu trong ảnh xuất ra', () => {
 });
 
 /* ── GHIM ĐIỂM NỐI TRONG ẢNH XUẤT RA ─────────────────────────────────
-   Bản in A3, ảnh PNG dán xưởng và ảnh nhúng .docx đều đi qua hàm này. Đường đã
+   Bản in, ảnh PNG dán xưởng và ảnh nhúng .docx đều đi qua hàm này. Đường đã
    ghim mà chỉ đúng trên màn hình thì tài liệu ISO in ra lại là một hình khác —
    nên phải đo ngay ở chuỗi SVG, không suy từ việc "cùng gọi routeEdge". */
 describe('ghim điểm nối — ảnh xuất ra vẽ y hệt trình vẽ', () => {
@@ -354,7 +354,7 @@ describe('ghim điểm nối — ảnh xuất ra vẽ y hệt trình vẽ', () =
 });
 
 /* ── NHÃN ĐÃ KÉO TAY TRONG ẢNH XUẤT RA ───────────────────────────────
-   PNG dán xưởng, ảnh nhúng .docx và bản in A3 đều đi qua soDoSangSvg. Nhãn kéo
+   PNG dán xưởng, ảnh nhúng .docx và bản in đều đi qua soDoSangSvg. Nhãn kéo
    tay mà chỉ đúng trên màn hình soạn thảo thì tài liệu ISO in ra là một hình
    khác — nên đo thẳng trên chuỗi SVG, không suy từ việc "cùng gọi routeEdge". */
 describe('kéo nhãn dọc đường — ảnh xuất ra đặt nhãn đúng chỗ', () => {

@@ -73,7 +73,7 @@ describe('dongDienGiai', () => {
   });
 
   test('bảng đánh số CÙNG CHIỀU với lưu đồ khi khối cao thấp đứng chung một hàng', () => {
-    // Bảng diễn giải in ngay dưới lưu đồ, trên cùng một trang A3. Khối Quyết
+    // Bảng diễn giải in ngay dưới lưu đồ, trên cùng một trang. Khối Quyết
     // định (cao 86) ở cột PHẢI và khối Thao tác (cao 56) ở cột TRÁI đặt chung
     // một hàng thì trên hình phải đọc trái → phải; đánh số theo mép trên là
     // Quyết định lên trước, tức bảng nói ngược lại chính cái hình bên trên nó.

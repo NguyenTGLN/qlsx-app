@@ -191,7 +191,7 @@ export function soDoSangSvg(soDoVao, { tyLe = 1 } = {}) {
 
   // Đường nối + khối, đặt trong nhóm dịch theo gutter/header.
   // Chỗ hai đường cắt nhau tính MỘT LẦN cho cả bản vẽ rồi truyền vào từng đường:
-  // nhịp cầu phải có mặt ở ĐÂY chứ không riêng trên màn hình — bản in A3, ảnh
+  // nhịp cầu phải có mặt ở ĐÂY chứ không riêng trên màn hình — bản in, ảnh
   // nhúng .docx và ảnh PNG dán xưởng đều đi qua hàm này.
   const giao = diemGiao(soDo);
   const trong = [];

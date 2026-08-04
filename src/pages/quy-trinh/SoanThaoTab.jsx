@@ -441,7 +441,7 @@ export default function SoanThaoTab({
     // Nam châm ngang hàng ĐÈ LÊN lưới 8px, không thay nó: lưới chỉ cho ra bội số
     // của 8, mà khối Quyết định (cao 86) muốn TRÙNG TÂM với khối Thao tác (cao 56)
     // thì y phải lệch nhau 15 — con số không bao giờ rơi trúng lưới. Canh bằng mắt
-    // trên lưới vẫn lệch 3-4px, và 3-4px đó nhìn thấy rõ trên bản in A3.
+    // trên lưới vẫn lệch 3-4px, và 3-4px đó nhìn thấy rõ trên bản in.
     // Ngưỡng chia cho zoom y như quãng kéo ở trên, để nam châm ở 50% và 150%
     // cắn cùng một khoảng trên MÀN HÌNH. Phép hút nằm ở hutHang, không ở đây.
     const hut = hutHang(soDo, k.id, oLuoi, NGUONG_HUT / zoom);

@@ -1,5 +1,5 @@
 // ============================================================
-// QUY TRÌNH — dựng tệp .docx khổ A3 ngang.
+// QUY TRÌNH — dựng tệp .docx khổ A4 dọc.
 // Spec: docs/superpowers/specs/2026-08-03-phan-he-quy-trinh-design.md (mục G)
 //
 // .docx = ZIP chứa XML ⇒ dùng jszip có sẵn, KHÔNG thêm phụ thuộc mới.
@@ -11,20 +11,28 @@
 
 import { thoatXml } from './quyTrinhSvg';
 
-// A3 = 297 × 420 mm. 1mm = 1440/25.4 twip.
-export const A3_W_TWIP = 23811;   // 420mm — cạnh dài, làm BỀ NGANG vì in ngang
-export const A3_H_TWIP = 16838;   // 297mm
+// A4 = 210 × 297 mm. 1mm = 1440/25.4 twip.
+export const A4_W_TWIP = 11906;   // 210mm — cạnh NGẮN, làm bề ngang vì in dọc
+export const A4_H_TWIP = 16838;   // 297mm
 const EMU_PER_TWIP = 635;
-// Vùng in A3 ngang sau khi trừ lề trên+dưới (567+567 twip), tính bằng EMU.
-export const CAO_IN_EMU = (A3_H_TWIP - 1134) * EMU_PER_TWIP;
+const LE = 567;                   // lề mỗi bên, 10mm
+// Vùng in A4 dọc sau khi trừ lề: ngang 10772 twip (190mm), dọc 15704 twip (277mm).
+export const RONG_IN_TWIP = A4_W_TWIP - 2 * LE;
+export const CAO_IN_EMU = (A4_H_TWIP - 2 * LE) * EMU_PER_TWIP;
 const PHONG = 'Times New Roman';
 const CO_MAC_DINH = 12;
 
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
+/** Khổ giấy + lề. A4 DỌC: w là cạnh ngắn, h là cạnh dài.
+ *
+ *  w:orient BỎ HẲN, không ghi "portrait". ST_PageOrientation lấy portrait làm
+ *  MẶC ĐỊNH của lược đồ ECMA-376, và chính Word cũng không ghi thuộc tính này
+ *  ra khi trang đứng — ghi thêm chỉ mở ra khả năng orient chọi nhau với cặp
+ *  w/h. Ở đây w < h nên hướng trang đã không thể hiểu nhầm. */
 export function sectPrXml() {
-  return `<w:sectPr><w:pgSz w:w="${A3_W_TWIP}" w:h="${A3_H_TWIP}" w:orient="landscape"/>`
-    + `<w:pgMar w:top="567" w:right="567" w:bottom="567" w:left="567" w:header="284" w:footer="284" w:gutter="0"/></w:sectPr>`;
+  return `<w:sectPr><w:pgSz w:w="${A4_W_TWIP}" w:h="${A4_H_TWIP}"/>`
+    + `<w:pgMar w:top="${LE}" w:right="${LE}" w:bottom="${LE}" w:left="${LE}" w:header="284" w:footer="284" w:gutter="0"/></w:sectPr>`;
 }
 
 export function doanXml(text, { dam = false, co = CO_MAC_DINH, canGiua = false, mau = null } = {}) {
@@ -78,7 +86,7 @@ const tieuDeMuc = t => doanXml(t, { dam: true, co: 13 });
 
 export function documentXml({ quyTrinh, phienBan, dienGiai, lichSu }, rIdAnh, anh = null) {
   const t = phienBan.tai_lieu || {};
-  const RONG = A3_W_TWIP - 1134;                     // trừ lề hai bên
+  const RONG = RONG_IN_TWIP;                         // vùng in ngang, đã trừ lề
   const p = [];
 
   // ── Khối kiểm soát tài liệu ──
@@ -109,8 +117,13 @@ export function documentXml({ quyTrinh, phienBan, dienGiai, lichSu }, rIdAnh, an
   p.push(tieuDeMuc('5. Lưu đồ quy trình'));
   if (rIdAnh && anh) {
     // Kẹp theo CẢ hai chiều. Ép full bề ngang rồi thôi là sai: lưu đồ ÍT CỘT thì
-    // hẹp, ép ra 400mm sẽ phóng to nhiều hơn nên lại CAO hơn — nhóm 4 cột tràn
-    // khổ giấy ngay lần xuất đầu, trước khi vẽ thêm bước nào.
+    // hẹp, ép ra trọn bề ngang sẽ phóng to nhiều hơn nên lại CAO hơn — nhóm 4
+    // cột tràn khổ giấy ngay lần xuất đầu, trước khi vẽ thêm bước nào.
+    //
+    // Trên A4 DỌC vùng in chỉ còn 190 × 277 mm (A3 ngang trước đây là 400 × 277),
+    // nên hầu hết lưu đồ nay bị kẹp theo BỀ NGANG chứ không theo chiều cao nữa.
+    // Phép kẹp không đổi và vẫn đúng cho cả hai chiều: nhánh nào thắng thì chiều
+    // kia luôn nhỏ hơn hoặc bằng giới hạn của nó, vì hai nhánh cùng giữ tỉ lệ ảnh.
     const rongToiDa = RONG * EMU_PER_TWIP;
     const rongVua = Math.min(rongToiDa, CAO_IN_EMU * (anh.w / anh.h));
     p.push(anhXml(rIdAnh, anh.w, anh.h, rongVua));

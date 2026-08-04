@@ -43,7 +43,7 @@ export const timKhoi = (soDo, id) => soDo.nodes.find(n => n.id === id);
 // Chiều dọc chia thành các HÀNG CAO BẰNG NHAU. Khối rơi vào TÂM Ô — giao của
 // hàng với cột — nên khối Quyết định (cao 86) và khối Thao tác (cao 56) cùng
 // hàng thì trông thẳng hàng. Căn theo TÂM chứ không theo ĐỈNH: căn đỉnh là hai
-// khối "cùng bước" so le 15px, nhìn thấy rõ trên bản in A3. Đúng luật hutHang
+// khối "cùng bước" so le 15px, nhìn thấy rõ trên bản in. Đúng luật hutHang
 // đã dùng từ trước.
 //
 // 120 = khối cao nhất (Quyết định, 86) + 34 hở, đủ để khối không dính vạch ngăn.
@@ -1041,7 +1041,7 @@ export function xoaHang(soDo, i) {
 /** Kẹp một khối vào TRONG trang vẽ: cả hình chữ nhật phải nằm gọn trong
  *  0…drawW × 0…drawH. Trả { dx, y } đã kẹp — KHÔNG sửa sơ đồ, không sửa khối.
  *
- *  Vì sao phải có: ảnh xuất ra (PNG dán xưởng, ảnh nhúng .docx, bản in A3) lấy
+ *  Vì sao phải có: ảnh xuất ra (PNG dán xưởng, ảnh nhúng .docx, bản in) lấy
  *  viewBox đúng bằng drawW × drawH. Khối kéo ra ngoài khung ấy VẪN hiện trên
  *  màn hình soạn thảo và VẪN có một dòng trong bảng diễn giải, nhưng RỤNG khỏi
  *  mọi bản in — người dùng thấy đủ bước rồi in ra tài liệu ISO thiếu bước.
@@ -1081,7 +1081,7 @@ export const NGUONG_HUT = 10;   // tâm cách nhau bao nhiêu px thì nam châm 
  *
  *  So theo TÂM chứ không theo ĐỈNH. Khối Quyết định cao 86, khối Thao tác cao
  *  56 — căn đỉnh thì hai khối "cùng bước" vẫn so le 15px, nhìn thấy rõ trên bản
- *  in A3. Ngang hàng theo mắt người là tâm trùng nhau.
+ *  in. Ngang hàng theo mắt người là tâm trùng nhau.
  *
  *  Khối đang kéo KHÔNG tính chính nó: lúc kéo, y lưu ở sơ đồ vẫn là chỗ cũ, tính
  *  vào thì nó tự ghim mình tại chỗ xuất phát, nhích 4px là bị kéo ngược về.
@@ -1120,7 +1120,7 @@ export function hutHang(soDo, id, y, nguong = NGUONG_HUT) {
 //
 // Bản đầu để rất nhạt (#f8fafc / #e9eef5) cho khỏi lấn cột, nhưng người dùng
 // bảo nhìn không rõ hàng. Đậm lên như dưới đây: nền dải ~7% xanh lạnh, vạch ngăn
-// đủ rõ để đọc được từng bước trên bản in A3 kể cả khi in đen trắng.
+// đủ rõ để đọc được từng bước trên bản in kể cả khi in đen trắng.
 // Vẫn nhạt hơn nền cột (rgba(148,163,184,.045) chồng LÊN nền dải) nên cột vẫn là
 // cấu trúc chính, dải bước là chia nhỏ bên trong.
 export const MAU_DAI = { nen: '#e8eff8', vach: '#c2d0e0' };

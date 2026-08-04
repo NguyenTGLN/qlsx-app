@@ -174,7 +174,7 @@ describe('kiemTraLuuDo', () => {
 });
 
 describe('khối lọt ra NGOÀI TRANG — NGOAI_TRANG', () => {
-  // Ảnh xuất ra (PNG dán xưởng, ảnh nhúng .docx, bản in A3) lấy viewBox đúng
+  // Ảnh xuất ra (PNG dán xưởng, ảnh nhúng .docx, bản in) lấy viewBox đúng
   // bằng drawW × drawH. Khối nằm ngoài khung đó VẪN hiện trên màn hình soạn
   // thảo và VẪN có một dòng trong bảng diễn giải, nhưng RỤNG khỏi mọi bản in.
   // Người dùng nhìn thấy đủ bước, rồi in ra một tài liệu ISO thiếu bước.

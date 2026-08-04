@@ -6,7 +6,7 @@ import { xuatPng, xuatDocx, inPdf } from '../../lib/quyTrinhXuat';
 import * as api from '../../lib/quyTrinhApi';
 
 /* ═══════════════════════════════════════════════════════════════
-   XEM TRƯỚC & XUẤT — tờ giấy A3 ngang và ba đường xuất tệp.
+   XEM TRƯỚC & XUẤT — tờ giấy A4 dọc và ba đường xuất tệp.
 
    Màn hình này KHÔNG tính gì cả, chỉ ghép lại:
      · mục 1–4, 7 và ba tên ký ← mo.phienBan.tai_lieu (tab Thông tin tài liệu)
@@ -227,7 +227,7 @@ export default function XemTruocTab({ mo, soDo, pDanhMuc, mau = '#ea580c', chuaL
           phu={(
             <>
               Sang tab <b>Danh mục quy trình</b> rồi bấm vào một thẻ để mở nó.
-              <br />Bản in A3 dựng từ một phiên bản cụ thể của quy trình, nên chưa
+              <br />Bản in A4 dựng từ một phiên bản cụ thể của quy trình, nên chưa
               mở thì chưa có gì để xem trước hay xuất ra.
             </>
           )} />
@@ -252,7 +252,7 @@ export default function XemTruocTab({ mo, soDo, pDanhMuc, mau = '#ea580c', chuaL
       {/* ── Thanh công cụ (không in ra giấy) ─────────────────────── */}
       <div className="qx-bar">
         <div style={S.lbl}>
-          Bản in khổ A3 ngang
+          Bản in khổ A4 dọc
           <small style={S.lblPhu}>
             Khối kiểm soát tài liệu · lưu đồ · bảng diễn giải · hồ sơ lưu · theo dõi sửa đổi
           </small>
@@ -279,16 +279,16 @@ export default function XemTruocTab({ mo, soDo, pDanhMuc, mau = '#ea580c', chuaL
 
             <button type="button" className="qx-btn" style={S.btn} disabled={dangChay}
               onClick={() => chay('docx', () => xuatDocx(qt, pbXuat, lichSu))}
-              title="Tải tệp Word .docx khổ A3 ngang, sửa được, để nộp hồ sơ ISO">
+              title="Tải tệp Word .docx khổ A4 dọc, sửa được, để nộp hồ sơ ISO">
               {dangXuat === 'docx' ? <Loader2 size={14} className="qx-spin" /> : <FileText size={14} />}
-              {dangXuat === 'docx' ? 'Đang dựng tệp Word…' : 'Xuất Word A3'}
+              {dangXuat === 'docx' ? 'Đang dựng tệp Word…' : 'Xuất Word A4'}
             </button>
 
             <button type="button" className="qx-btn"
               style={{ ...S.btn, ...S.btnChinh, background: mau, boxShadow: `0 2px 10px ${mau}66` }}
               disabled={dangChay} onClick={inPdf}
-              title="Mở hộp thoại in — chọn khổ A3 ngang, hoặc “Lưu thành PDF”">
-              <Printer size={14} /> In / PDF A3
+              title="Mở hộp thoại in — chọn khổ A4 dọc, hoặc “Lưu thành PDF”">
+              <Printer size={14} /> In / PDF A4
             </button>
           </>
         ) : (
@@ -320,7 +320,7 @@ export default function XemTruocTab({ mo, soDo, pDanhMuc, mau = '#ea580c', chuaL
               <div>Ngày hiệu lực: <b>{ngayVn(pb.ngay_hieu_luc)}</b></div>
               <div>Phiên bản: <b>{hoac(pb.phien_ban)}</b></div>
               <div>Trang: <b>1/1</b></div>
-              <div>Khổ giấy: <b>A3</b></div>
+              <div>Khổ giấy: <b>A4</b></div>
             </div>
           </div>
 
@@ -500,8 +500,11 @@ const CSS = `
 
 .qx-body { flex:1; overflow:auto; background:${C.nen}; padding:18px; }
 
-/* ── Tờ giấy ─────────────────────────────────────────────────── */
-.qt-paper { width:1240px; max-width:100%; margin:0 auto; background:${C.giay};
+/* ── Tờ giấy ───────────────────────────────────────────────────
+   794px = 210mm ở 96dpi, đúng bề ngang A4 dọc mà @page đang đặt. Tờ giấy
+   trên màn hình phải BẰNG tờ giấy in ra: lệch nhau thì bảng nào vừa chỗ ở
+   đây lại tràn cột khi in, mà không có gì báo trước. */
+.qt-paper { width:794px; max-width:100%; margin:0 auto; background:${C.giay};
   color:${C.giayChu}; border:1px solid ${C.giayVien}; border-radius:4px;
   box-shadow:0 18px 48px -16px rgba(15,23,42,.32); padding:26px 30px 30px; }
 
@@ -571,9 +574,9 @@ const CSS = `
   .qx-iso > div:nth-child(odd) { border-right:none; }
 }
 
-/* ── Khổ in A3 ngang: chỉ còn tờ giấy, không khung ứng dụng ──── */
+/* ── Khổ in A4 dọc: chỉ còn tờ giấy, không khung ứng dụng ──── */
 @media print {
-  @page { size: A3 landscape; margin: 10mm; }
+  @page { size: A4 portrait; margin: 10mm; }
   body * { visibility: hidden; }
   .qt-paper, .qt-paper * { visibility: visible; }
   .qt-paper { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; border: none; }

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { A3_W_TWIP, A3_H_TWIP, CAO_IN_EMU, sectPrXml, doanXml, bangXml, anhXml, documentXml, contentTypesXml, relsXml, docRelsXml } from './quyTrinhDocx';
+import { A4_W_TWIP, A4_H_TWIP, CAO_IN_EMU, RONG_IN_TWIP, sectPrXml, doanXml, bangXml, anhXml, documentXml, contentTypesXml, relsXml, docRelsXml } from './quyTrinhDocx';
 
 const duLieu = () => ({
   quyTrinh: { ma_so: 'QT-SX-01', ten: 'Sản xuất & kiểm soát chất lượng', nhom: 'SX' },
@@ -20,17 +20,41 @@ const duLieu = () => ({
   lichSu: [{ lan_ban_hanh: 1, ngay: '10/06/2025', phien_ban: '1.0', noiDung: 'Ban hành lần đầu', nguoi: 'Nguyên' }],
 });
 
-describe('khổ giấy A3 ngang', () => {
-  test('hằng số đúng: 420mm = 23811 twip, 297mm = 16838 twip', () => {
-    expect(A3_W_TWIP).toBe(23811);
-    expect(A3_H_TWIP).toBe(16838);
+const MM_EMU = 36000;                        // 1 mm = 36 000 EMU (chuẩn OOXML)
+const mm = emu => emu / MM_EMU;
+
+describe('khổ giấy A4 dọc', () => {
+  test('hằng số đúng: 210mm = 11906 twip, 297mm = 16838 twip', () => {
+    expect(A4_W_TWIP).toBe(11906);
+    expect(A4_H_TWIP).toBe(16838);
+    // 1mm = 1440/25.4 twip — làm tròn tới số nguyên gần nhất.
+    expect(A4_W_TWIP).toBe(Math.round(210 * 1440 / 25.4));
+    expect(A4_H_TWIP).toBe(Math.round(297 * 1440 / 25.4));
   });
-  test('sectPr đặt A3 NGANG — bề ngang là cạnh dài', () => {
+
+  test('sectPr đặt A4 DỌC — bề ngang là cạnh NGẮN', () => {
     const x = sectPrXml();
-    expect(x).toContain(`w:w="${A3_W_TWIP}"`);
-    expect(x).toContain(`w:h="${A3_H_TWIP}"`);
-    expect(x).toContain('w:orient="landscape"');
+    expect(x).toContain(`w:w="${A4_W_TWIP}"`);
+    expect(x).toContain(`w:h="${A4_H_TWIP}"`);
+    expect(A4_W_TWIP).toBeLessThan(A4_H_TWIP);
     expect(x).toContain('<w:pgMar');
+  });
+
+  // w:orient BỎ HẲN, không ghi "portrait". ST_PageOrientation lấy portrait làm
+  // MẶC ĐỊNH của lược đồ, và chính Word cũng không ghi thuộc tính này ra khi
+  // trang đứng — ghi thêm là mở ra khả năng orient chọi nhau với cặp w/h.
+  // Ở đây w < h nên hướng trang đã không thể hiểu nhầm.
+  test('KHÔNG ghi w:orient — portrait là mặc định của lược đồ', () => {
+    expect(sectPrXml()).not.toContain('w:orient');
+  });
+
+  test('vùng in trừ đúng lề: ngang 10772 twip, dọc 15704 twip', () => {
+    expect(RONG_IN_TWIP).toBe(A4_W_TWIP - 1134);
+    expect(RONG_IN_TWIP).toBe(10772);
+    expect(CAO_IN_EMU).toBe((A4_H_TWIP - 1134) * 635);
+    // 190 × 277 mm — đúng A4 trừ lề 10mm mỗi bên.
+    expect(Math.round(mm(RONG_IN_TWIP * 635))).toBe(190);
+    expect(Math.round(mm(CAO_IN_EMU))).toBe(277);
   });
 });
 
@@ -145,9 +169,25 @@ describe('documentXml', () => {
     expect(y).toContain('6. Diễn giải lưu đồ');
   });
 
-  test('kết thúc body bằng sectPr A3 ngang', () => {
-    expect(x).toContain('w:orient="landscape"');
+  test('kết thúc body bằng sectPr A4 dọc', () => {
+    expect(x).toContain(`w:w="${A4_W_TWIP}" w:h="${A4_H_TWIP}"`);
+    expect(x).not.toContain('w:orient');
     expect(x.indexOf('<w:sectPr>')).toBeGreaterThan(x.indexOf('8. Theo dõi sửa đổi'));
+  });
+
+  // Bề rộng cột khai bằng PHÂN SỐ của vùng in. Tổng lệch là bảng thò ra ngoài
+  // lề (tổng lớn hơn) hoặc chừa một vệt trắng bên phải (tổng nhỏ hơn) — cả hai
+  // đều nhìn thấy ngay trên tờ A4, vốn hẹp hơn A3 cũ hơn một nửa.
+  test('bề rộng các cột của MỌI bảng cộng đúng bằng vùng in', () => {
+    const bang = x.split('<w:tbl>').slice(1);
+    expect(bang.length).toBe(5);              // kiểm soát, chữ ký, diễn giải, hồ sơ, sửa đổi
+    for (const b of bang) {
+      const grid = b.slice(0, b.indexOf('</w:tblGrid>'));
+      const tong = [...grid.matchAll(/<w:gridCol w:w="(\d+)"\/>/g)].reduce((s, m) => s + +m[1], 0);
+      // Mỗi cột làm tròn riêng nên tổng lệch nhiều nhất nửa twip mỗi cột — với
+      // 5 cột là 2 twip, tức 0.035 mm. Ngoài khoảng đó là phân số cộng không đủ 1.
+      expect(Math.abs(tong - RONG_IN_TWIP)).toBeLessThanOrEqual(3);
+    }
   });
 
   test('bảng diễn giải có đủ số dòng dữ liệu', () => {
@@ -180,12 +220,30 @@ describe('ảnh lưu đồ phải nằm vừa trang', () => {
 
   test('lưu đồ rộng bẹt thì kẹp theo BỀ NGANG, không phóng quá khổ', () => {
     const { cx } = vua(2400, 700);
-    expect(cx).toBeLessThanOrEqual((A3_W_TWIP - 1134) * 635);
+    expect(cx).toBeLessThanOrEqual(RONG_IN_TWIP * 635);
   });
 
   test('giữ đúng tỉ lệ ảnh sau khi kẹp', () => {
     const { cx, cy } = vua(960, 1806);
     expect(Math.abs(cx / cy - 960 / 1806)).toBeLessThan(0.01);
+  });
+
+  // Lưu đồ THẬT dùng để đo: nhóm SX (5 cột) + 8 bước ⇒ ảnh 1172 × 1126 px.
+  // Đây là kích thước soDoSangSvg trả về, đo bằng chính hàm đó (xem
+  // quyTrinhSvg.test.js) — không phải con số bịa ra cho vừa bài kiểm tra.
+  test('LƯU ĐỒ 5 CỘT nằm gọn trong CẢ HAI chiều của trang A4 dọc', () => {
+    const { cx, cy } = vua(1172, 1126);
+    expect(cx).toBeLessThanOrEqual(RONG_IN_TWIP * 635);
+    expect(cy).toBeLessThanOrEqual(CAO_IN_EMU);
+    // 190.0 × 182.5 mm trong vùng in 190 × 277 mm — chạm mép ngang, dư chiều cao.
+    expect(mm(cx)).toBeCloseTo(190.0, 1);
+    expect(mm(cy)).toBeCloseTo(182.5, 1);
+  });
+
+  test('KẸP THEO CHIỀU CAO vẫn còn hiệu lực — lưu đồ cao gầy không tràn đáy', () => {
+    const { cx, cy } = vua(700, 2400);
+    expect(cy).toBeLessThanOrEqual(CAO_IN_EMU);
+    expect(cx).toBeLessThanOrEqual(RONG_IN_TWIP * 635);
   });
 });
 

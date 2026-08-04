@@ -477,7 +477,7 @@ export default function ThongTinTab({
           </Khoi>
 
           <Khoi so="✍" tieuDe="Chữ ký trên bản in"
-            phu="Ba ô ký ở đầu trang A3. Ghi chức danh cũng được, không bắt buộc là tên người.">
+            phu="Ba ô ký ở đầu trang A4. Ghi chức danh cũng được, không bắt buộc là tên người.">
             <div className="qt-ba">
               <ONhap id="qt-nguoilap" nhan="Người lập" giaTri={tl.nguoiLap} doc={doc}
                 key={`nl${tl.nguoiLap}`} onLuu={v => sua(() => ({ nguoiLap: v }))}
