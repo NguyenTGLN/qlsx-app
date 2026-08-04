@@ -11,6 +11,7 @@ import { CAO_HANG, tamHang, hangCua, yTaiHang } from './quyTrinhSoDo';
 import { soKhoiCat, lanDoc, diemGiao } from './quyTrinhSoDo';
 import { CANH_NEO, DAI_MOI, diemNeo, canhHuong, neoHopLe } from './quyTrinhSoDo';
 import { kepTrongTrang } from './quyTrinhSoDo';
+import { tiLeTrenDuong, tiLeNhanHopLe } from './quyTrinhSoDo';
 import { mauSoDo } from './quyTrinhMau';
 
 const soDo = {
@@ -2121,5 +2122,319 @@ describe('kepTrongTrang — khối không kéo ra khỏi trang được', () => 
     const k = kepTrongTrang(s, { id: 'x', lane: 'z', w: null, h: undefined, dx: 0, y: 0 }, 10, 10);
     expect(Number.isFinite(k.dx)).toBe(true);
     expect(Number.isFinite(k.y)).toBe(true);
+  });
+});
+
+// ── KÉO NHÃN DỌC THEO ĐƯỜNG (e.viTriNhan) ────────────────────────
+// Nhãn OK/NG mặc định đậu giữa ĐOẠN DÀI NHẤT. Trên lưu đồ thật, đoạn dài nhất
+// thường là một quãng ngang chạy tít sang mép trái — nhãn "OK" lạc hẳn khỏi
+// khối Quyết định sinh ra nó. e.viTriNhan là TỈ LỆ 0…1 dọc TỔNG chiều dài
+// đường, nên nhãn luôn còn nằm TRÊN nét vẽ kể cả khi khối dời chỗ hay đường
+// đổi hình (lách khối).
+describe('kéo nhãn dọc theo đường — viTriNhan', () => {
+  const CACH = (p, q) => Math.hypot(q[0] - p[0], q[1] - p[1]);
+  const daiDuong = pts => pts.slice(0, -1).reduce((s, p, i) => s + CACH(p, pts[i + 1]), 0);
+
+  /** Quãng đường từ đầu tới điểm p, hoặc null nếu p KHÔNG nằm trên đường.
+   *  Đo lại từ đầu bằng phép khác hẳn phép của module — không đem chính hàm
+   *  đang thử ra làm thước đo. */
+  const quangTaiDiem = (pts, p) => {
+    let truoc = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const l = CACH(a, b);
+      if (l > 0) {
+        const cheo = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+        const doc = ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / l;
+        if (Math.abs(cheo) / l < 1e-6 && doc >= -1e-6 && doc <= l + 1e-6) return truoc + doc;
+      }
+      truoc += l;
+    }
+    return null;
+  };
+
+  // Năm hình dạng đường của routeEdge + một đường LÁCH KHỐI + một đường ĐÃ GHIM.
+  const nn = (id, lane, y, w = 164, h = 56) => ({ id, t: 'step', lane, y, dx: 0, w, h, tx: id });
+  const mk = (nodes, edge) => ({
+    lanes: [{}, {}, {}, {}], phases: [{ name: 'x', h: 900 }], nodes, edges: [edge],
+  });
+  const E = (them = {}) => ({ id: 'e', a: 'a', b: 'b', k: 'ok', lbl: 'OK', ...them });
+  const DUNG = {
+    ngang:      t => mk([nn('a', 0, 100), nn('b', 2, 100)], E(t)),
+    xuongThang: t => mk([nn('a', 1, 100), nn('b', 1, 300)], E(t)),
+    xuongLech:  t => mk([nn('a', 0, 100), nn('b', 2, 300)], E(t)),
+    lenLech:    t => mk([nn('a', 0, 400), nn('b', 2, 100)], E(t)),
+    lenThang:   t => mk([nn('a', 1, 400), nn('b', 1, 100)], E(t)),
+    lach:       t => mkS(3, [K('a', 0, 0), K('c1', 0, 1), K('c2', 0, 2), K('c3', 0, 3), K('b', 0, 4)],
+      { id: 'e', a: 'a', b: 'b', k: 'ok', lbl: 'OK', ...t }),
+    ghim:       t => mkS(3, [K('a', 0, 0), K('b', 2, 3)],
+      { id: 'e', a: 'a', b: 'b', k: 'ok', lbl: 'OK', raA: 'phai', vaoB: 'tren', ...t }),
+  };
+  const TEN = Object.keys(DUNG);
+  const ve = (ten, viTriNhan) => {
+    const s = DUNG[ten]({ viTriNhan });
+    return routeEdge(s, s.edges[0]);
+  };
+
+  // MỐC — nhãn của bản TỰ ĐỘNG (chưa có viTriNhan), chép nguyên văn. Mọi sơ đồ
+  // đã lưu trong DB đều KHÔNG có khoá này; đổi một con số ở đây là dời nhãn
+  // trên bản in của tài liệu ISO đã ban hành.
+  const MOC_NHAN = {
+    ngang:      [318, 128],
+    xuongThang: [318, 228],
+    xuongLech:  [318, 228],
+    lenLech:    [277, 128],
+    lenThang:   [318, 278],
+    lach:       [212, 300],
+    ghim:       [359, 60],
+  };
+
+  test('KHÔNG có viTriNhan → nhãn y hệt bản tự động, từng con số', () => {
+    for (const ten of TEN) expect(ve(ten, undefined).nhan, ten).toEqual(MOC_NHAN[ten]);
+  });
+
+  test('viTriNhan 0 / .25 / .5 / .75 / 1 → nhãn nằm ĐÚNG TRÊN đường, đúng quãng', () => {
+    const hong = [];
+    for (const ten of TEN) {
+      const pts = ve(ten, undefined).pts;
+      const tong = daiDuong(pts);
+      for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+        const nhan = ve(ten, t).nhan;
+        if (!nhan.every(Number.isFinite)) { hong.push(`${ten} @${t}: nhãn hỏng ${nhan}`); continue; }
+        const q = quangTaiDiem(pts, nhan);
+        if (q === null) { hong.push(`${ten} @${t}: nhãn ${nhan} KHÔNG nằm trên đường`); continue; }
+        if (Math.abs(q - t * tong) > 1e-6) {
+          hong.push(`${ten} @${t}: quãng ${q}, phải là ${t * tong}`);
+        }
+      }
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('viTriNhan 0 đậu đúng đầu đường, 1 đậu đúng cuối đường', () => {
+    for (const ten of TEN) {
+      const pts = ve(ten, undefined).pts;
+      expect(ve(ten, 0).nhan, ten).toEqual([pts[0][0], pts[0][1]]);
+      expect(ve(ten, 1).nhan, ten).toEqual([pts.at(-1)[0], pts.at(-1)[1]]);
+    }
+  });
+
+  test('viTriNhan KHÔNG đụng vào nét vẽ — chuỗi d ra đúng từng byte', () => {
+    for (const ten of TEN) {
+      const goc = ve(ten, undefined);
+      for (const t of [0, 0.1, 0.5, 0.9, 1]) {
+        const r = ve(ten, t);
+        expect(r.d, `${ten} @${t}`).toBe(goc.d);
+        expect(r.pts, `${ten} @${t}`).toEqual(goc.pts);
+        expect(r.keo, `${ten} @${t}`).toEqual(goc.keo);
+        expect(r.neo, `${ten} @${t}`).toEqual(goc.neo);
+      }
+    }
+  });
+
+  test('viTriNhan RÁC → coi như KHÔNG có, nhãn về đúng chỗ tự động, không NaN', () => {
+    // so_do là jsonb: '0.5', null, NaN, {} đều lọt xuống được. Luật giống hệt
+    // doLech và neoHopLe — rác thì rơi về bản TỰ ĐỘNG, không ép kiểu hộ.
+    // Số ngoài 0…1 cũng là rác: giao diện không bao giờ đẻ ra được nó, mà kẹp
+    // về 0/1 là dán nhãn đè lên mũi tên hoặc lên mép khối — chỗ không đọc được.
+    const RAC = ['0.5', '1', 'abc', NaN, null, undefined, true, false, {}, [],
+      -1, 2, -0.0001, 1.0001, Infinity, -Infinity, 1e9];
+    const hong = [];
+    for (const rac of RAC) {
+      for (const ten of TEN) {
+        const r = ve(ten, rac);
+        if (String(r.nhan) !== String(MOC_NHAN[ten])) hong.push(`${ten} với ${String(rac)}: ${r.nhan}`);
+        if (!r.nhan.every(Number.isFinite)) hong.push(`${ten} với ${String(rac)}: nhãn có số hỏng`);
+        if (/NaN|Infinity|undefined/.test(r.d)) hong.push(`${ten} với ${String(rac)}: path hỏng`);
+      }
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('tiLeNhanHopLe — nhận đúng số thật trong 0…1, mọi thứ khác là KHÔNG ĐẶT', () => {
+    for (const v of [0, 0.001, 0.5, 0.999, 1]) expect(tiLeNhanHopLe(v)).toBe(v);
+    for (const rac of ['0.5', '1', 'abc', NaN, null, undefined, true, {}, [],
+      -1, 2, -1e-9, 1 + 1e-9, Infinity, -Infinity]) {
+      expect(tiLeNhanHopLe(rac), String(rac)).toBeNull();
+    }
+  });
+
+  test('KHỨ HỒI: điểm trên đường → tiLeTrenDuong → nhãn về đúng chỗ đó (<1px)', () => {
+    const hong = [];
+    for (const ten of TEN) {
+      const s = DUNG[ten]({});
+      const pts = routeEdge(s, s.edges[0]).pts;
+      const tong = daiDuong(pts);
+      // 21 điểm rải đều dọc đường, lấy bằng phép nội suy của TEST, không của module.
+      for (let k = 0; k <= 20; k++) {
+        const can = (k / 20) * tong;
+        let con = can, p = [pts[0][0], pts[0][1]];
+        for (let i = 0; i < pts.length - 1; i++) {
+          const l = CACH(pts[i], pts[i + 1]);
+          if (con <= l || i === pts.length - 2) {
+            const u = l > 0 ? Math.min(1, con / l) : 0;
+            p = [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * u,
+              pts[i][1] + (pts[i + 1][1] - pts[i][1]) * u];
+            break;
+          }
+          con -= l;
+        }
+        const t = tiLeTrenDuong(s, s.edges[0], p[0], p[1]);
+        if (t === null) { hong.push(`${ten} @${k}: tiLeTrenDuong trả null`); continue; }
+        if (!(t >= 0 && t <= 1)) { hong.push(`${ten} @${k}: tỉ lệ ${t} ngoài 0…1`); continue; }
+        const q = ve(ten, t).nhan;
+        if (CACH(p, q) > 1) hong.push(`${ten} @${k}: thả ${p} → về ${q}, lệch ${CACH(p, q)}px`);
+      }
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('tiLeTrenDuong chiếu điểm THẢ LỆCH khỏi đường về chỗ gần nhất TRÊN đường', () => {
+    const s = DUNG.xuongLech({});
+    const pts = routeEdge(s, s.edges[0]).pts;      // [106,156] [106,228] [530,228] [530,300]
+    // Thả cao hơn đoạn ngang 40px, ở giữa: phải bám về đúng (318, 228).
+    const t = tiLeTrenDuong(s, s.edges[0], 318, 188);
+    const nhan = routeEdge(s, { ...s.edges[0], viTriNhan: t }).nhan;
+    expect(quangTaiDiem(pts, nhan)).not.toBeNull();
+    expect(Math.abs(nhan[0] - 318)).toBeLessThan(1);
+    expect(Math.abs(nhan[1] - 228)).toBeLessThan(1);
+    // Thả tít ra ngoài trang vẫn cho một tỉ lệ THẬT trong 0…1, không NaN.
+    for (const [x, y] of [[-9999, -9999], [9999, 9999], [0, 0]]) {
+      const u = tiLeTrenDuong(s, s.edges[0], x, y);
+      expect(Number.isFinite(u)).toBe(true);
+      expect(u).toBeGreaterThanOrEqual(0);
+      expect(u).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('tiLeTrenDuong: đầu vào hỏng → null, không nổ, không NaN', () => {
+    const s = DUNG.xuongLech({});
+    const e = s.edges[0];
+    for (const [x, y] of [[NaN, 0], [0, NaN], ['10', 0], [null, null], [undefined, 5]]) {
+      expect(tiLeTrenDuong(s, e, x, y)).toBeNull();
+    }
+    // đường trỏ tới khối đã xoá — routeEdge trả null thì đây cũng trả null
+    expect(tiLeTrenDuong(s, { ...e, b: 'khong-co' }, 300, 200)).toBeNull();
+    expect(tiLeTrenDuong(s, null, 300, 200)).toBeNull();
+    expect(tiLeTrenDuong(null, e, 300, 200)).toBeNull();
+  });
+
+  test('THUẦN: routeEdge và tiLeTrenDuong không sửa sơ đồ lẫn đường nối', () => {
+    const s = DUNG.xuongLech({ viTriNhan: 0.3 });
+    const truoc = JSON.stringify(s);
+    routeEdge(s, s.edges[0]);
+    tiLeTrenDuong(s, s.edges[0], 300, 200);
+    expect(JSON.stringify(s)).toBe(truoc);
+  });
+
+  test('viTriNhan đi cùng sơ đồ qua các phép biến đổi khác — không bị đánh rơi', () => {
+    const s = DUNG.xuongLech({ viTriNhan: 0.2 });
+    expect(xoaKhoi(s, 'khong-co').edges[0].viTriNhan).toBe(0.2);
+    expect(doiCot(s, 'a', 1).edges[0].viTriNhan).toBe(0.2);
+    expect(tuXepLai(s).edges[0].viTriNhan).toBe(0.2);
+  });
+
+  test('nhãn BÁM ĐƯỜNG khi khối dời chỗ — vẫn đúng tỉ lệ, vẫn trên nét vẽ', () => {
+    // Chính lý do chọn "tỉ lệ dọc đường" thay vì {dx,dy}: dời khối là đường đổi
+    // hình, mà nhãn vẫn phải nằm trên đường chứ không trôi ra khoảng không.
+    for (const yB of [300, 420, 560]) {
+      const s = mk([nn('a', 0, 100), nn('b', 2, yB)], E({ viTriNhan: 0.4 }));
+      const r = routeEdge(s, s.edges[0]);
+      const q = quangTaiDiem(r.pts, r.nhan);
+      expect(q, `yB=${yB}`).not.toBeNull();
+      expect(Math.abs(q - 0.4 * daiDuong(r.pts))).toBeLessThan(1e-6);
+    }
+  });
+
+  test('QUÉT NGẪU NHIÊN 2000 sơ đồ — KHÔNG có viTriNhan thì d và nhãn không đổi một byte', () => {
+    // Hạt cố định (mulberry32) để test hỏng là dựng lại được đúng sơ đồ đó.
+    const rng = (hat) => () => {
+      hat = (hat + 0x6d2b79f5) | 0;
+      let t = Math.imul(hat ^ (hat >>> 15), 1 | hat);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const RAC = ['0.5', 'xyz', null, true, {}, [], -1, 2, NaN, Infinity];
+    const hong = [];
+    let soDuong = 0;
+    for (let hat = 1; hat <= 2000; hat++) {
+      const r = rng(hat);
+      const soCot = 1 + Math.floor(r() * 4);
+      const soKhoi = 2 + Math.floor(r() * 5);
+      const nodes = [];
+      for (let i = 0; i < soKhoi; i++) {
+        nodes.push(K(`n${i}`, Math.floor(r() * soCot), Math.floor(r() * 6),
+          r() < 0.25 ? 'dec' : 'step'));
+      }
+      const edges = [];
+      for (let i = 0; i + 1 < soKhoi; i++) {
+        if (r() < 0.6) continue;
+        const e = { id: `e${i}`, a: `n${i}`, b: `n${i + 1}`, k: 'n', lbl: r() < 0.5 ? 'OK' : '' };
+        if (r() < 0.3) e.lech = Math.floor(r() * 80) - 40;
+        if (r() < 0.25) e.raA = CANH_NEO[Math.floor(r() * 4)];
+        if (r() < 0.25) e.vaoB = CANH_NEO[Math.floor(r() * 4)];
+        edges.push(e);
+      }
+      if (!edges.length) edges.push({ id: 'e0', a: 'n0', b: `n${soKhoi - 1}`, k: 'n', lbl: 'NG' });
+      const s = mkS(soCot, nodes, ...edges);
+      // Bản "bẩn": thêm khoá viTriNhan RÁC vào mọi đường. Phải ra y hệt bản sạch.
+      const ban = { ...s, edges: s.edges.map((e, i) => ({ ...e, viTriNhan: RAC[i % RAC.length] })) };
+      const g = diemGiao(s);
+      if (String(diemGiao(ban)) !== String(g)) hong.push(`hạt ${hat}: diemGiao đổi`);
+      for (let i = 0; i < s.edges.length; i++) {
+        soDuong++;
+        const sach = routeEdge(s, s.edges[i], g);
+        const bua = routeEdge(ban, ban.edges[i], g);
+        if (sach.d !== bua.d) hong.push(`hạt ${hat} đường ${i}: d đổi`);
+        if (String(sach.nhan) !== String(bua.nhan)) hong.push(`hạt ${hat} đường ${i}: nhãn đổi`);
+        if (/NaN|Infinity|undefined/.test(bua.d)) hong.push(`hạt ${hat} đường ${i}: path hỏng`);
+        if (!bua.nhan.every(Number.isFinite)) hong.push(`hạt ${hat} đường ${i}: nhãn hỏng`);
+      }
+    }
+    expect(hong).toEqual([]);
+    expect(soDuong).toBeGreaterThan(2000);
+  });
+
+  test('QUÉT NGẪU NHIÊN — mọi tỉ lệ hợp lệ đều cho nhãn NẰM TRÊN đường', () => {
+    const rng = (hat) => () => {
+      hat = (hat + 0x6d2b79f5) | 0;
+      let t = Math.imul(hat ^ (hat >>> 15), 1 | hat);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const hong = [];
+    for (let hat = 1; hat <= 800; hat++) {
+      const r = rng(hat);
+      const soCot = 1 + Math.floor(r() * 4);
+      const hangA = Math.floor(r() * 6);
+      const A = K('a', Math.floor(r() * soCot), hangA, r() < 0.3 ? 'dec' : 'step');
+      const B = K('b', Math.floor(r() * soCot), (hangA + 1 + Math.floor(r() * 5)) % 6,
+        r() < 0.3 ? 'dec' : 'step');
+      const them = {};
+      if (r() < 0.4) them.raA = CANH_NEO[Math.floor(r() * 4)];
+      if (r() < 0.4) them.vaoB = CANH_NEO[Math.floor(r() * 4)];
+      if (r() < 0.4) them.lech = [24, -24, 9999, -9999][Math.floor(r() * 4)];
+      const t = r();
+      const s = mkS(soCot, [A, B], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: 'OK', ...them, viTriNhan: t });
+      const x = routeEdge(s, s.edges[0]);
+      const tag = `hạt ${hat} (t=${t.toFixed(3)})`;
+      if (!x.nhan.every(Number.isFinite)) { hong.push(`${tag}: nhãn hỏng`); continue; }
+      if (quangTaiDiem(x.pts, x.nhan) === null) hong.push(`${tag}: nhãn ${x.nhan} không trên đường`);
+      const lai = tiLeTrenDuong(s, s.edges[0], x.nhan[0], x.nhan[1]);
+      if (lai === null || Math.abs(lai - t) > 1e-3) hong.push(`${tag}: khứ hồi ra ${lai}`);
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('HAI KHỐI CHỒNG KHÍT (đường thu về một điểm) → vẫn không NaN, không nổ', () => {
+    for (const canh of CANH_NEO) {
+      const s = mkS(2, [K('a', 0, 1), { ...K('b', 0, 1), id: 'b' }],
+        { id: 'e', a: 'a', b: 'b', k: 'n', lbl: 'OK', raA: canh, vaoB: canh, viTriNhan: 0.5 });
+      const r = veE(s);
+      expect(r.nhan.every(Number.isFinite)).toBe(true);
+      expect(r.d).not.toMatch(/NaN|Infinity|undefined/);
+      const t = tiLeTrenDuong(s, s.edges[0], 100, 100);
+      expect(t === null || Number.isFinite(t)).toBe(true);
+    }
   });
 });

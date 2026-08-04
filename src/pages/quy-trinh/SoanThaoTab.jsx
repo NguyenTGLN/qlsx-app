@@ -8,6 +8,7 @@ import {
   laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
   themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc, tronCaoGiaiDoan,
   diemGiao, CANH_NEO, diemNeo, neoHopLe, datThuTu, boThuTu, kepTrongTrang,
+  tiLeTrenDuong, tiLeNhanHopLe,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -49,6 +50,13 @@ const TT = {
 const LOAI_POP = ['step', 'check', 'dec', 'doc', 'end'];
 const PAL = ['#2563eb', '#0891b2', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#475569'];
 const BUOC_LUOI = 8;   // kéo khối bám lưới 8px cho thẳng hàng mắt thường
+
+// Khung bắt chuột quanh NHÃN đường nối (chỗ kéo nhãn trượt dọc đường).
+// CỐ Ý to hơn hẳn núm chỗ bẻ (đường kính 19): chỗ đặt nhãn tự động — giữa đoạn
+// dài nhất — trùng đúng vào núm chỗ bẻ ở lối "xuống lệch cột" và lối lách khối.
+// Núm vẽ SAU nên nó nằm trên và giữ nguyên vùng bấm cũ; khung nhãn rộng 44 thì
+// hai đầu vẫn thò ra mỗi bên 12px để mà bắt. Kéo một cái là nhãn rời chỗ ấy hẳn.
+const NHAN_W = 44, NHAN_H = 24;
 
 // Tên bốn cạnh khối bằng tiếng Việt — chỉ là CHỮ, để hiện lên mách nước và bảng
 // bên phải. Hình học của bốn điểm nối nằm ở diemNeo bên quyTrinhSoDo.
@@ -157,6 +165,7 @@ export default function SoanThaoTab({
   const [keo, setKeo] = useState(null);          // { id, dx, y, mocY } — vị trí TẠM lúc kéo khối
   const [noiKeo, setNoiKeo] = useState(null);    // { tuId, x, y } — đường nối đang kéo
   const [keoLech, setKeoLech] = useState(null);  // { id, lech } — chỗ bẻ đang kéo tay
+  const [keoNhan, setKeoNhan] = useState(null);  // { id, tiLe } — nhãn đang trượt dọc đường
   const [pop, setPop] = useState(null);          // bảng chọn của nút ＋
   const [dangChay, setDangChay] = useState('');  // tên hành động đang gọi API
   const [toasts, setToasts] = useState([]);
@@ -164,6 +173,7 @@ export default function SoanThaoTab({
   const keoRef = useRef(null);
   const noiRef = useRef(null);
   const lechRef = useRef(null);
+  const nhanRef = useRef(null);
   const cvRef = useRef(null);
   const giayRef = useRef(null);
   const rf = useRef({});
@@ -193,8 +203,11 @@ export default function SoanThaoTab({
     let s = soDo;
     if (keo) s = { ...s, nodes: s.nodes.map(n => (n.id === keo.id ? { ...n, dx: keo.dx, y: keo.y } : n)) };
     if (keoLech) s = { ...s, edges: s.edges.map(e => (e.id === keoLech.id ? { ...e, lech: keoLech.lech } : e)) };
+    if (keoNhan) {
+      s = { ...s, edges: s.edges.map(e => (e.id === keoNhan.id ? { ...e, viTriNhan: keoNhan.tiLe } : e)) };
+    }
     return s;
-  }, [soDo, keo, keoLech]);
+  }, [soDo, keo, keoLech, keoNhan]);
 
   const thuTu = useMemo(() => (soDoHien ? thuTuBuoc(soDoHien) : []), [soDoHien]);
 
@@ -228,6 +241,12 @@ export default function SoanThaoTab({
     if (!r || !A || !B) return null;
     return {
       keo: r.keo || null,
+      // Chỗ NHÃN đang đậu (routeEdge đã tính cả phần kéo tay viTriNhan) và chữ
+      // của nó — khung kéo nhãn chỉ mọc khi đường thật sự CÓ nhãn để mà kéo.
+      // Toạ độ khối hỏng (so_do là jsonb) làm nhãn thành NaN: thà không có
+      // khung còn hơn đặt một khung ở transform="translate(NaN NaN)".
+      nhan: r.nhan.every(Number.isFinite) ? r.nhan : null,
+      lbl: String(e.lbl ?? '').trim(),
       // Hai đầu đường: khối để đặt chấm, cạnh ĐANG GHIM (null là để tự động) và
       // cạnh ĐANG CÓ HIỆU LỰC (để tô sáng chấm mà đường thật sự đang dùng).
       dau: [
@@ -543,6 +562,80 @@ export default function SoanThaoTab({
     setKeoLech(null);
   };
 
+  // ── Kéo nhãn OK / NG trượt dọc đường nối ──────────────────────
+  // Cử chỉ THỨ NĂM, tách khỏi bốn cử chỉ kia đúng bằng CHỖ BẤM như chúng:
+  //   · bấm THÂN khối → dời khối · núm ⤳ → kéo nối · núm trên đường → chỗ bẻ
+  //   · chấm giữa cạnh khối → ghim điểm nối · KHUNG QUANH NHÃN → trượt nhãn.
+  //
+  // Khung nhãn và núm chỗ bẻ CÙNG thuộc một đường đang chọn và CÓ THỂ trùng chỗ:
+  // nhãn tự động đậu giữa đoạn DÀI NHẤT, mà ở lối "xuống lệch cột" và lối lách
+  // khối thì đoạn ấy chính là đoạn kéo được, nên hai tâm rơi trùng nhau. Tách
+  // bằng THỨ TỰ VẼ + KÍCH THƯỚC, không bằng ngưỡng thời gian:
+  //   · khung nhãn vẽ TRƯỚC (nằm dưới) và rộng 44×24;
+  //   · núm chỗ bẻ và bốn chấm ghim vẫn vẽ SAU nên nằm trên, vùng bấm y như cũ —
+  //     cử chỉ cũ không mất một pixel nào;
+  //   · núm chỉ rộng 19 nên hai đầu khung nhãn vẫn thò ra 12px mỗi bên để bắt,
+  //     và kéo một cái là nhãn rời hẳn chỗ ấy (viTriNhan được ghi lại).
+  // nhanRef null suốt lúc kéo thứ khác ⇒ dichNhan/thaNhan tự thoát ở dòng đầu,
+  // và ngược lại keoRef/noiRef/lechRef null suốt lúc kéo nhãn.
+  //
+  // Số ghi vào sơ đồ là TỈ LỆ 0…1 dọc đường, không phải toạ độ: kéo khối đi hay
+  // đường đổi hình thì nhãn vẫn bám trên nét vẽ. Phép đổi điểm thả thành tỉ lệ
+  // nằm trọn ở tiLeTrenDuong — tệp này không tính lấy một toạ độ nào.
+  const nenNhan = (ev) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();          // y như bốn cử chỉ kia: đừng để trình duyệt bôi đen
+    if (!coSua || !canhChon) return;
+    const goc = tiLeNhanHopLe(canhChon.viTriNhan);
+    nhanRef.current = { id: canhChon.id, goc, tiLe: goc, sx: ev.clientX, sy: ev.clientY, di: false };
+    try { ev.currentTarget.setPointerCapture(ev.pointerId); } catch { /* trình duyệt không hỗ trợ */ }
+  };
+
+  const dichNhan = (ev) => {
+    const k = nhanRef.current;
+    if (!k) return;
+    ev.stopPropagation();
+    const e = soDo?.edges?.find(x => x.id === k.id);
+    if (!e) return;
+    // Rung tay khi bấm chọn không tính là kéo — y như dichKhoi. Núm chỗ bẻ khỏi
+    // cần vì nó bám lưới 8px, còn nhãn trượt liên tục nên 1px rung cũng đủ đẩy
+    // một nấc hoàn tác và bật cờ "Chưa lưu".
+    if (!k.di) {
+      if (Math.hypot(ev.clientX - k.sx, ev.clientY - k.sy) / zoom < 3) return;
+      k.di = true;
+    }
+    // diemGiay đã chia cho zoom y như dichKhoi/dichNoi — con trỏ đi 100px trên
+    // màn hình ở mức 50% là 200px trên giấy.
+    const p = diemGiay(ev);
+    // Đo trên bản CAM KẾT: hình đường không phụ thuộc viTriNhan, nên lấy sơ đồ
+    // đang kéo cũng ra đúng chừng ấy — mà lấy bản cam kết thì không có vòng lặp
+    // "vị trí nhãn quyết định vị trí nhãn".
+    const t = tiLeTrenDuong(soDo, e, p.x, p.y);
+    if (t === null) return;       // đường trỏ tới khối đã xoá — không đoán bừa
+    k.tiLe = t;
+    setKeoNhan({ id: k.id, tiLe: t });
+  };
+
+  const thaNhan = (ev) => {
+    const k = nhanRef.current;
+    if (!k) return;
+    ev.stopPropagation();
+    nhanRef.current = null;
+    setKeoNhan(null);
+    // Bấm trúng khung rồi thả ngay là chuyện thường — Ctrl+Z không nên tiêu một
+    // nấc vào đó. Một lần kéo = MỘT bước hoàn tác, ghi đúng lúc thả tay.
+    if (!coSua || !soDo || !k.di || k.tiLe === null || k.tiLe === k.goc) return;
+    doiSoDo(vaCanh(soDo, k.id, { viTriNhan: k.tiLe }));
+  };
+
+  const huyNhan = (ev) => {
+    if (!nhanRef.current) return;
+    ev.stopPropagation();
+    nhanRef.current = null;
+    setKeoNhan(null);
+  };
+
   // ── Ghim điểm nối vào cạnh khối ───────────────────────────────
   // Cử chỉ THỨ TƯ, tách khỏi ba cử chỉ kia đúng bằng CHỖ BẤM như chúng — và ở
   // đây còn chặt hơn: bốn chấm chỉ mọc khi đang chọn một ĐƯỜNG NỐI, mà núm ＋
@@ -588,6 +681,7 @@ export default function SoanThaoTab({
         setPop(null); setChon(null); setNguonNoi(null);
         noiRef.current = null; setNoiKeo(null);
         lechRef.current = null; setKeoLech(null);   // bỏ luôn lần chỉnh đang dở
+        nhanRef.current = null; setKeoNhan(null);
         return;
       }
       if (ev.key === 'Delete' || ev.key === 'Del') {
@@ -990,6 +1084,12 @@ export default function SoanThaoTab({
             ghim để bỏ. Đường <b>đã ghim thôi tự lách</b> khối chắn.
           </div>
 
+          <h3 style={{ ...S.h3, marginTop: 18 }}>Kéo nhãn OK / NG</h3>
+          <div style={S.hint}>
+            Bấm <b>đường nối</b> → kéo <b style={{ color: mau }}>khung nét đứt</b> quanh nhãn
+            để trượt nhãn dọc theo đường; trả về chỗ cũ bằng nút <b>Đưa nhãn về giữa</b> bên phải.
+          </div>
+
           <h3 style={{ ...S.h3, marginTop: 18 }}>Sửa cột và hàng</h3>
           <div style={S.hint}>
             Bấm <b>tên cột</b> hoặc <b>nhãn giai đoạn</b> → bảng bên phải có chỗ đổi tên
@@ -1241,6 +1341,32 @@ export default function SoanThaoTab({
                     {mocGiong != null && (
                       <line x1={0} y1={mocGiong} x2={drawW(soDoHien)} y2={mocGiong}
                         stroke={mau} strokeWidth={1.3} strokeDasharray="4 5" opacity={0.95} />
+                    )}
+
+                    {/* ── KHUNG KÉO NHÃN OK / NG ──
+                        Vẽ ĐẦU TIÊN trong ba thứ bắt chuột của lớp phủ nên nằm
+                        DƯỚI bốn chấm ghim và núm chỗ bẻ: hai cử chỉ cũ giữ
+                        nguyên từng pixel vùng bấm, còn khung nhãn thì to hơn
+                        hẳn nên chỗ trùng vẫn còn viền mà bắt. Chỉ mọc khi đường
+                        THẬT SỰ có nhãn — kéo một khung rỗng thì kéo cái gì.
+                        Toạ độ lấy nguyên từ routeEdge (r.nhan), không tự tính. */}
+                    {noiChon?.lbl && noiChon.nhan && (
+                      <g transform={`translate(${noiChon.nhan[0]} ${noiChon.nhan[1]})`}>
+                        <rect x={-NHAN_W / 2} y={-NHAN_H / 2} width={NHAN_W} height={NHAN_H} rx={7}
+                          fill="transparent" stroke={mau} strokeWidth={1.2}
+                          strokeDasharray="3 3" opacity={0.8}
+                          style={{ pointerEvents: 'all', touchAction: 'none', cursor: 'move' }}
+                          onPointerDown={nenNhan}
+                          onPointerMove={dichNhan}
+                          onPointerUp={thaNhan}
+                          onPointerCancel={huyNhan}>
+                          <title>
+                            {`Kéo để trượt nhãn “${noiChon.lbl}” dọc theo đường nối — `}
+                            đưa nó về gần khối cần chú thích. Trả về giữa: nút “Đưa nhãn về giữa”
+                            ở bảng bên phải.
+                          </title>
+                        </rect>
+                      </g>
                     )}
 
                     {/* ── BỐN CHẤM GHIM ĐIỂM NỐI (kiểu Visio) ──
@@ -1558,6 +1684,34 @@ function CanhInsp({ e, soDo, doiSoDo, coSua, onXoa }) {
       <ONhap id="qe-f-lbl" nhan="Nhãn trên đường" giaTri={e.lbl} doc={!coSua}
         key={`lbl${e.lbl}`} onLuu={v => doiSoDo(vaCanh(soDo, e.id, { lbl: v }))}
         goiY="VD: OK, NG, Đủ, Thiếu" />
+
+      {/* Chỉ hiện khi nhãn ĐÃ bị kéo tay — không có gì để trả về thì không mời
+          người dùng bấm. Điều kiện đặt trên chính khoá viTriNhan (CHƯA lọc rác)
+          chứ không trên giá trị đã lọc: giá trị hỏng vẫn nằm trong bản lưu, và
+          đây là chỗ duy nhất xoá hẳn nó ra được. */}
+      {coSua && e.viTriNhan != null && (
+        <div style={S.fld}>
+          <button type="button" className="qe-btn" style={{ ...S.btn, ...S.btnNho }}
+            onClick={() => doiSoDo(boKhoa(soDo, e.id, ['viTriNhan']))}
+            title="Bỏ phần kéo tay, trả nhãn về giữa đoạn dài nhất của đường">
+            Đưa nhãn về giữa
+          </button>
+          <p style={S.note}>
+            {tiLeNhanHopLe(e.viTriNhan) !== null ? (
+              <>
+                Nhãn đang đậu ở <b>{Math.round(tiLeNhanHopLe(e.viTriNhan) * 100)}%</b> chiều dài
+                đường. Số này là TỈ LỆ dọc đường, không phải toạ độ — kéo khối đi thì nhãn
+                vẫn bám trên nét vẽ.
+              </>
+            ) : (
+              <>
+                Bản lưu đang có một vị trí nhãn <b>không hợp lệ</b> nên nhãn vẫn nằm ở giữa
+                như thường. Bấm nút trên để xoá hẳn khoá đó khỏi bản lưu.
+              </>
+            )}
+          </p>
+        </div>
+      )}
 
       <div style={S.fld}>
         <label htmlFor="qe-f-k" style={S.lbl}>Loại nhánh</label>

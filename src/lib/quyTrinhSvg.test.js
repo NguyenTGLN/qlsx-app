@@ -308,3 +308,68 @@ describe('ghim điểm nối — ảnh xuất ra vẽ y hệt trình vẽ', () =
     expect(out).not.toContain('NaN');
   });
 });
+
+/* ── NHÃN ĐÃ KÉO TAY TRONG ẢNH XUẤT RA ───────────────────────────────
+   PNG dán xưởng, ảnh nhúng .docx và bản in A3 đều đi qua soDoSangSvg. Nhãn kéo
+   tay mà chỉ đúng trên màn hình soạn thảo thì tài liệu ISO in ra là một hình
+   khác — nên đo thẳng trên chuỗi SVG, không suy từ việc "cùng gọi routeEdge". */
+describe('kéo nhãn dọc đường — ảnh xuất ra đặt nhãn đúng chỗ', () => {
+  const keoNhan = (t) => {
+    const s = structuredClone(soDo);
+    s.edges[2] = { ...s.edges[2], viTriNhan: t };   // d → e, nhãn "OK"
+    return s;
+  };
+  // Toạ độ nhãn trong SVG: thuộc tính x/y của <text> nằm ngay sau path đường nối.
+  const nhanTrongSvg = (out) => {
+    const m = /<g data-noi="e3">.*?<text x="(-?[\d.]+)" y="(-?[\d.]+)"/.exec(out);
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  };
+
+  test('KHÔNG có viTriNhan → ảnh ra đúng từng byte như trước', () => {
+    const goc = soDoSangSvg(soDo);
+    expect(nhanTrongSvg(goc)).toEqual(routeEdge(soDo, soDo.edges[2]).nhan);
+  });
+
+  test('nhãn đã kéo hiện ĐÚNG chỗ routeEdge chỉ, ở mọi tỉ lệ', () => {
+    const hong = [];
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      const s = keoNhan(t);
+      const cho = routeEdge(s, s.edges[2]).nhan;
+      const out = soDoSangSvg(s);
+      const thay = nhanTrongSvg(out);
+      if (!thay) { hong.push(`t=${t}: không thấy nhãn trong ảnh`); continue; }
+      if (Math.abs(thay[0] - cho[0]) > 0.5 || Math.abs(thay[1] - cho[1]) > 0.5) {
+        hong.push(`t=${t}: ảnh đặt nhãn ở ${thay}, routeEdge nói ${cho}`);
+      }
+      if (out.includes('NaN')) hong.push(`t=${t}: ảnh có NaN`);
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('kéo nhãn KHÔNG đụng vào nét vẽ — mọi path trong ảnh giữ nguyên', () => {
+    const paths = out => (out.match(/<path d="[^"]*"/g) || []).join('|');
+    const goc = paths(soDoSangSvg(soDo));
+    for (const t of [0, 0.3, 0.7, 1]) expect(paths(soDoSangSvg(keoNhan(t)))).toBe(goc);
+  });
+
+  test('viTriNhan RÁC trong so_do → ảnh ra đúng từng byte như khi không có khoá', () => {
+    const goc = soDoSangSvg(soDo);
+    for (const rac of ['0.5', 'xyz', 42, null, true, {}, [], NaN, -1, 2, Infinity]) {
+      const s = structuredClone(soDo);
+      s.edges = s.edges.map(e => ({ ...e, viTriNhan: rac }));
+      expect(soDoSangSvg(s), String(rac)).toBe(goc);
+    }
+  });
+
+  test('nhãn kéo tay vẫn nằm TRONG khung ảnh — không rụng khỏi bản in', () => {
+    for (const t of [0, 0.5, 1]) {
+      const s = keoNhan(t);
+      const [x, y] = nhanTrongSvg(soDoSangSvg(s));
+      // nhóm vẽ đã dịch (GUT, HEAD_H) nên toạ độ nhãn tính trong khung giấy
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThanOrEqual(2 * LANE_W);
+      expect(y).toBeLessThanOrEqual(460);
+    }
+  });
+});

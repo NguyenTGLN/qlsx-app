@@ -417,6 +417,109 @@ function duongGhim(soDo, A, B, raA, vaoB, lech) {
   return { pts, keo: coLan ? lanKeo(pts, doc, gt) : null, neo: { raA: ca, vaoB: cb } };
 }
 
+// ── KÉO NHÃN DỌC THEO ĐƯỜNG (e.viTriNhan) ────────────────────────
+// Nhãn OK/NG mặc định đậu giữa ĐOẠN DÀI NHẤT của đường. Trên lưu đồ thật, đoạn
+// dài nhất thường là một quãng ngang chạy tít sang mép trái, nên chữ "OK" đứng
+// lạc hẳn khỏi khối Quyết định đẻ ra nó — đo được trên ảnh người dùng gửi.
+//
+// Chỗ lưu là e.viTriNhan: TỈ LỆ 0…1 dọc TỔNG chiều dài đường, nằm ngay trong
+// so_do (jsonb) — KHÔNG thêm cột, KHÔNG di trú dữ liệu. Đường chưa từng kéo
+// nhãn thì không có khoá này và vẽ y như trước, TỪNG BYTE.
+//
+// Vì sao là TỈ LỆ DỌC ĐƯỜNG chứ không phải một khoảng dời {dx,dy} tự do: khối
+// dời chỗ, đường đổi hình (lách khối, đổi cạnh ghim) là chuyện xảy ra tự động
+// ở module này. Khoảng dời tự do thì lần đổi hình đầu tiên đã ném nhãn ra
+// khoảng không; tỉ lệ thì nhãn luôn còn NẰM TRÊN nét vẽ.
+//
+// Đo trên đường gấp khúc THÔ (pts), không trên chuỗi d đã bo góc: góc bo 9px
+// chỉ ăn bớt vài pixel ở mỗi đỉnh, mà tính độ dài cung Bézier thì đắt và không
+// đổi được chỗ đặt chữ quá nửa ký tự.
+
+/** Tỉ lệ đặt nhãn đã LỌC RÁC — số thật trong 0…1, hoặc null nghĩa là để tự động.
+ *  so_do là jsonb, không ràng buộc kiểu: '0.5', NaN, null, {}, -1, 2 đều lọt
+ *  xuống được. Tất cả rơi về TỰ ĐỘNG, đúng luật doLech và neoHopLe đã dùng —
+ *  ép kiểu hộ chỉ giấu cái hỏng đi.
+ *
+ *  Số NGOÀI 0…1 cũng là rác chứ KHÔNG kẹp về 0/1: giao diện không bao giờ đẻ ra
+ *  được giá trị ấy, nên gặp nó nghĩa là dữ liệu hỏng chứ không phải "người dùng
+ *  kéo hơi quá tay". Kẹp về 0 hoặc 1 là dán chữ đè lên mũi tên hoặc lên mép
+ *  khối — chỗ đọc không ra; rơi về giữa đoạn dài nhất thì ít nhất nó đứng đúng
+ *  chỗ của một lưu đồ chưa từng đụng tới tính năng này. */
+export const tiLeNhanHopLe = v => (Number.isFinite(v) && v >= 0 && v <= 1 ? v : null);
+
+/** Độ dài từng đoạn của đường gấp khúc, kèm tổng. Đoạn có toạ độ hỏng bị BỎ
+ *  QUA hẳn (đúng luật soKhoiCat): đem NaN đi cộng là cả tổng thành NaN, và một
+ *  khối rác lặng lẽ nuốt mất chỗ đặt nhãn của cả đường. */
+function docDuong(pts) {
+  const ds = [];
+  let tong = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+    if (![ax, ay, bx, by].every(Number.isFinite)) continue;
+    const l = Math.hypot(bx - ax, by - ay);
+    ds.push({ ax, ay, bx, by, l, truoc: tong });
+    tong += l;
+  }
+  return { ds, tong };
+}
+
+/** Điểm ở tỉ lệ t dọc đường gấp khúc, hoặc null nếu không đo được.
+ *  Đường thu về MỘT ĐIỂM (hai khối chồng khít — kiemTraLuuDo bắt là lỗi) thì
+ *  trả chính điểm đó chứ không chia cho 0. */
+function diemTaiTiLe(pts, t) {
+  const { ds, tong } = docDuong(pts);
+  if (!ds.length) return null;
+  if (!(tong > 0)) return [ds[0].ax, ds[0].ay];
+  let con = t * tong;
+  for (let i = 0; i < ds.length; i++) {
+    const d = ds[i];
+    if (con <= d.l || i === ds.length - 1) {
+      const u = d.l > 0 ? Math.min(1, Math.max(0, con / d.l)) : 0;
+      return [d.ax + (d.bx - d.ax) * u, d.ay + (d.by - d.ay) * u];
+    }
+    con -= d.l;
+  }
+  return null;
+}
+
+/** Điểm thả (x, y) gần nhất trên đường nối → tỉ lệ 0…1 dọc đường.
+ *  Trả null khi không đo được: đường trỏ tới khối đã xoá, toạ độ thả hỏng, hay
+ *  đường không còn đoạn nào lành. Nơi gọi phải coi null là "không đổi gì" —
+ *  ghi bừa một tỉ lệ đoán mò là dời nhãn của người dùng đi chỗ khác.
+ *
+ *  Chiếu vuông góc lên TỪNG đoạn rồi lấy đoạn GẦN NHẤT; hoà thì lấy đoạn ĐẦU
+ *  TIÊN, để cùng một chỗ thả luôn cho cùng một kết quả bất kể thứ tự duyệt.
+ *  Con trỏ thả ra ngoài đường (chuyện thường khi kéo nhanh) vẫn ra một tỉ lệ
+ *  thật — bám về chỗ gần nhất TRÊN đường, đúng nghĩa "nhãn trượt dọc đường".
+ *
+ *  Xuất ra ngoài thay vì để giao diện tự tính từ `pts`: đổi một điểm thả thành
+ *  tỉ lệ là phép chiếu + cộng dồn độ dài, tức là HÌNH HỌC — mà hình học của
+ *  phân hệ này nằm trọn ở tệp đây, không ở JSX. */
+export function tiLeTrenDuong(soDo, e, x, y) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  // Sơ đồ thiếu mảng nodes thì routeEdge NÉM (timKhoi đọc thẳng soDo.nodes).
+  // Hàm này chạy trong tay kéo của giao diện — nổ giữa cử chỉ kéo là trắng cả
+  // màn hình soạn thảo, nên chặn ở cửa vào chứ không đổi hành vi routeEdge.
+  if (!Array.isArray(soDo?.nodes)) return null;
+  const r = (e && typeof e === 'object') ? routeEdge(soDo, e) : null;
+  if (!r) return null;
+  const { ds, tong } = docDuong(r.pts);
+  if (!ds.length) return null;
+  if (!(tong > 0)) return 0;
+
+  let tot = null;
+  for (const d of ds) {
+    const u = d.l > 0
+      ? Math.min(1, Math.max(0,
+        ((x - d.ax) * (d.bx - d.ax) + (y - d.ay) * (d.by - d.ay)) / (d.l * d.l)))
+      : 0;
+    const px = d.ax + (d.bx - d.ax) * u, py = d.ay + (d.by - d.ay) * u;
+    const cach = Math.hypot(x - px, y - py);
+    if (!tot || cach < tot.cach) tot = { cach, t: (d.truoc + d.l * u) / tong };
+  }
+  return tot ? Math.min(1, Math.max(0, tot.t)) : null;
+}
+
 /** Đường nối gấp khúc vuông góc, bo góc 9px — kiểu lưu đồ ISO.
  *  Trả { d, nhan:[x,y], keo, pts }, hoặc null nếu thiếu khối đầu/cuối.
  *  `pts` là đường gấp khúc THÔ (chưa bo góc) — diemGiao soi ở đấy.
@@ -433,6 +536,9 @@ function duongGhim(soDo, A, B, raA, vaoB, lech) {
  *
  *  e.lech là số dôi TƯƠNG ĐỐI so với chỗ bẻ tự động, không phải toạ độ tuyệt
  *  đối: lưu toạ độ thì kéo khối một cái là chỗ bẻ rơi lại đằng sau.
+ *
+ *  `nhan` mặc định là trung điểm ĐOẠN DÀI NHẤT; e.viTriNhan (tỉ lệ 0…1 dọc
+ *  đường) đưa nó về đúng chỗ người dùng đã kéo — xem khối chú thích phía trên.
  *
  *  `neo` cho biết đường đang RA và VÀO ở cạnh nào của hai khối — cạnh người dùng
  *  ghim (e.raA / e.vaoB), hoặc cạnh chính đường tự động đã chọn. Giao diện tô
@@ -542,9 +648,21 @@ export function routeEdge(soDo, e, giao) {
     const len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
     if (len > bl) { bl = len; best = i; }
   }
+  let nhan = [(pts[best][0] + pts[best + 1][0]) / 2, (pts[best][1] + pts[best + 1][1]) / 2];
+
+  // …trừ khi người dùng đã KÉO nhãn: lúc đó nó đậu ở đúng tỉ lệ ấy dọc đường.
+  // Chỉ nhận khi ra được HAI SỐ THẬT — toạ độ khối hỏng (so_do là jsonb) làm
+  // phép đo dài đường thành NaN, mà nhãn NaN là chữ biến mất khỏi bản in; rơi
+  // lại về chỗ tự động thì tệ nhất cũng chỉ là nhãn đứng sai chỗ.
+  const tiLe = tiLeNhanHopLe(e?.viTriNhan);
+  if (tiLe !== null) {
+    const p = diemTaiTiLe(pts, tiLe);
+    if (p && p.every(Number.isFinite)) nhan = p;
+  }
+
   return {
     d,
-    nhan: [(pts[best][0] + pts[best + 1][0]) / 2, (pts[best][1] + pts[best + 1][1]) / 2],
+    nhan,
     keo,
     pts,
     neo: neo || { raA: neoTaiDiem(A, pts[0]), vaoB: neoTaiDiem(B, pts[pts.length - 1]) },
