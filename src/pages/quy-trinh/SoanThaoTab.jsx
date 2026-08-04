@@ -4,9 +4,9 @@ import {
   Minus, Plus, Save, Send, BadgeCheck, RotateCcw, Loader2, GitBranch,
 } from 'lucide-react';
 import {
-  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, NGUONG_HUT,
+  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT,
   laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
-  themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang,
+  themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -185,6 +185,11 @@ export default function SoanThaoTab({
   }, [soDo, keo, keoLech]);
 
   const thuTu = useMemo(() => (soDoHien ? thuTuBuoc(soDoHien) : []), [soDoHien]);
+
+  // Dải bước — mỗi bước một hàng. Nhớ theo soDoHien nên kéo khối là dải chạy
+  // theo ngay, thả tay ở hàng mới thì có hàng mới, kéo về chỗ cũ thì nhập lại.
+  // Phép gom nằm trọn ở daiBuoc; tệp này chỉ đọc y1/y2 nó trả ra.
+  const dai = useMemo(() => (soDoHien ? daiBuoc(soDoHien) : []), [soDoHien]);
 
   // kiemTraLuuDo O(n²) ở phần soát khối chồng nhau. Nhớ theo soDo (bản CAM KẾT)
   // nên kéo khối, đổi vùng chọn, gõ chữ, phóng to đều KHÔNG chạy lại.
@@ -913,6 +918,26 @@ export default function SoanThaoTab({
                 position: 'absolute', left: GUT, top: HEAD_H,
                 width: drawW(soDoHien), height: drawH(soDoHien),
               }}>
+                {/* ── DẢI BƯỚC: mỗi bước một hàng ─────────────────────
+                    Lớp ĐẦU TIÊN trong khung giấy nên nằm dưới cùng — dưới cột,
+                    dưới vạch giai đoạn, dưới đường nối và khối. Cả lớp KHÔNG ăn
+                    chuột nên khối và đường nối bên trên bấm, kéo y như cũ.
+                    Vạch dải bước là NÉT LIỀN màu MAU_DAI.vach, nhạt hơn cả vạch
+                    giai đoạn (nét đứt #d6dee9) lẫn vạch cột (#dfe6ef): giai đoạn
+                    là cấu trúc lớn, dải bước chỉ chia nhỏ bên trong nó, không
+                    được tranh chỗ với nó. Nền so le tô rất nhạt và nằm DƯỚI nền
+                    cột, nên nền cột (đậm hơn) vẫn là thứ đọc trước. */}
+                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+                  {dai.map((d, i) => (
+                    <div key={`db${i}`} style={{
+                      position: 'absolute', left: 0, right: 0,
+                      top: d.y1, height: d.y2 - d.y1,
+                      background: i % 2 ? MAU_DAI.nen : 'transparent',
+                      borderTop: i ? `1px solid ${MAU_DAI.vach}` : undefined,
+                    }} />
+                  ))}
+                </div>
+
                 {lanes.map((l, i) => (
                   <div key={`lb${i}`} style={{
                     position: 'absolute', top: 0, bottom: 0, left: laneX(i), width: LANE_W,

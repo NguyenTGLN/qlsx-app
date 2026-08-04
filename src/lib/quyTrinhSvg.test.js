@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { thoatXml, soDoSangSvg } from './quyTrinhSvg';
+import { GUT, LANE_W, MAU_DAI } from './quyTrinhSoDo';
 import { mauSoDo } from './quyTrinhMau';
 
 const soDo = {
@@ -155,5 +156,50 @@ describe('soDoSangSvg', () => {
     const s = structuredClone(soDo);
     s.nodes[1].y = '160';
     expect(soDoSangSvg(s)).toContain('160');
+  });
+
+  /* ── DẢI BƯỚC ────────────────────────────────────────────────────
+     Bản in A3 là lý do có tính năng này, nên nó phải nằm trong CHÍNH chuỗi SVG
+     đã dùng cho PNG, ảnh nhúng .docx và màn hình Xem trước — không riêng trình
+     vẽ. Bốn khối của sơ đồ mẫu ở bốn tầm khác nhau ⇒ 4 dải ⇒ 3 vạch ngăn và 2
+     dải được tô nền (so le, dải đầu để trắng). */
+  test('DẢI BƯỚC — mỗi bước một hàng, có mặt trong ảnh xuất ra', () => {
+    expect((svg.match(new RegExp(`stroke="${MAU_DAI.vach}"`, 'g')) || []).length).toBe(3);
+    expect((svg.match(new RegExp(`fill="${MAU_DAI.nen}"`, 'g')) || []).length).toBe(2);
+  });
+
+  test('dải bước vẽ DƯỚI CÙNG — trước vạch giai đoạn, trước đường nối và khối', () => {
+    const dai = svg.indexOf(MAU_DAI.vach);
+    expect(dai).toBeGreaterThan(-1);
+    expect(dai).toBeLessThan(svg.indexOf('#d6dee9'));      // vạch ngăn giai đoạn
+    expect(dai).toBeLessThan(svg.indexOf('data-noi="'));   // đường nối
+    expect(dai).toBeLessThan(svg.indexOf('data-khoi="'));  // khối
+  });
+
+  test('dải bước chỉ trải trên phần VẼ, không đè lên cột nhãn giai đoạn', () => {
+    const nen = [...svg.matchAll(new RegExp(
+      `<rect x="([\\d.]+)" y="[\\d.]+" width="([\\d.]+)" height="([\\d.]+)" fill="${MAU_DAI.nen}"/>`, 'g'))];
+    expect(nen).toHaveLength(2);
+    for (const m of nen) {
+      expect(+m[1]).toBe(GUT);                 // bắt đầu sau cột nhãn giai đoạn
+      expect(+m[2]).toBe(2 * LANE_W);          // đúng bề ngang phần vẽ
+      expect(+m[3]).toBeGreaterThan(0);        // không có dải cao 0 hay cao âm
+    }
+    for (const m of svg.matchAll(new RegExp(`<line x1="([\\d.]+)"[^/]*stroke="${MAU_DAI.vach}"`, 'g'))) {
+      expect(+m[1]).toBe(GUT);
+    }
+  });
+
+  test('hai khối hút NGANG HÀNG → chung một dải, ảnh bớt đi một vạch ngăn', () => {
+    const s = structuredClone(soDo);
+    s.nodes[2].y = 138 - 86 / 2;   // Quyết định (h 86) về đúng tâm 138 của Xuất kho
+    const out = soDoSangSvg(s);
+    expect((out.match(new RegExp(`stroke="${MAU_DAI.vach}"`, 'g')) || []).length).toBe(2);
+  });
+
+  test('sơ đồ mẫu (hai khối) vẫn ra dải, không nổ và không đẻ NaN', () => {
+    const out = soDoSangSvg(mauSoDo('SX'));
+    expect(out).not.toContain('NaN');
+    expect(out).toContain(MAU_DAI.vach);
   });
 });

@@ -9,8 +9,8 @@
 // ============================================================
 
 import {
-  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG,
-  rectOf, drawW, drawH, phaseTop, routeEdge,
+  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI,
+  rectOf, drawW, drawH, phaseTop, routeEdge, daiBuoc,
 } from './quyTrinhSoDo';
 
 /** Thoát ký tự cho cả SVG lẫn DOCX. & phải thay TRƯỚC, nếu không sinh &amp;lt;. */
@@ -131,6 +131,23 @@ export function soDoSangSvg(soDoVao, { tyLe = 1 } = {}) {
   const p = [];
 
   p.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`);
+
+  // Dải bước — mỗi bước một hàng, suy ra từ chỗ khối đang đứng (daiBuoc), y hệt
+  // trình vẽ. Đẩy vào NGAY SAU nền trắng nên nằm dưới cùng: dưới vạch giai đoạn,
+  // dưới vạch cột, dưới đường nối và khối. Vạch nét liền màu nhạt hơn hẳn vạch
+  // giai đoạn (nét đứt, đậm hơn) — giai đoạn là cấu trúc lớn, dải bước chỉ chia
+  // nhỏ bên trong nó. Bản in A3 là lý do có tính năng này, nên nó phải có mặt ở
+  // ĐÂY chứ không riêng trên màn hình.
+  const rongVe = so(drawW(soDo));
+  daiBuoc(soDo).forEach((d, i) => {
+    const y1 = so(HEAD_H + d.y1), y2 = so(HEAD_H + d.y2);
+    // Math.max(0, …): rect cao âm là lỗi theo chuẩn SVG, Word bỏ luôn cả ảnh.
+    if (i % 2) {
+      p.push(`<rect x="${GUT}" y="${y1}" width="${rongVe}" height="${Math.max(0, y2 - y1)}"`
+        + ` fill="${MAU_DAI.nen}"/>`);
+    }
+    if (i) p.push(`<line x1="${GUT}" y1="${y1}" x2="${W}" y2="${y1}" stroke="${MAU_DAI.vach}"/>`);
+  });
 
   // Tiêu đề cột
   p.push(`<rect x="0" y="0" width="${GUT}" height="${HEAD_H}" fill="#f7f9fc"/>`);
