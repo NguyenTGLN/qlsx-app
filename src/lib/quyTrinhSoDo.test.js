@@ -10,6 +10,7 @@ import { daiBuoc } from './quyTrinhSoDo';
 import { CAO_HANG, tamHang, hangCua, yTaiHang } from './quyTrinhSoDo';
 import { soKhoiCat, lanDoc, diemGiao } from './quyTrinhSoDo';
 import { CANH_NEO, DAI_MOI, diemNeo, canhHuong, neoHopLe } from './quyTrinhSoDo';
+import { kepTrongTrang } from './quyTrinhSoDo';
 import { mauSoDo } from './quyTrinhMau';
 
 const soDo = {
@@ -2010,5 +2011,115 @@ describe('đánh số bước theo TÂM khối, không theo MÉP TRÊN', () => {
     expect(() => { r = thuTuBuoc(s); }).not.toThrow();
     expect(r).toHaveLength(3);
     expect(r[0]).toBe('rac');                              // tâm 0 ⇒ trên cùng
+  });
+});
+
+describe('kepTrongTrang — khối không kéo ra khỏi trang được', () => {
+  // Ảnh xuất ra lấy viewBox đúng bằng drawW × drawH. Khối kéo ra ngoài khung đó
+  // vẫn hiện trên màn hình nhưng RỤNG khỏi bản in — trình soạn thảo không được
+  // phép tạo ra cái trạng thái ấy ngay từ đầu.
+  const base = () => ({
+    lanes: [{ name: 'A', owner: 'a', color: '#111111' }, { name: 'B', owner: 'b', color: '#222222' }],
+    phases: [{ name: 'G', h: 3 * CAO_HANG }],           // trang cao 360, rộng 424
+    nodes: [{ id: 'n1', t: 'step', lane: 0, y: yTaiHang(1, 56), dx: 0, w: 164, h: 56, tx: 'A' }],
+    edges: [],
+  });
+  const n1 = s => s.nodes.find(n => n.id === 'n1');
+  const trong = (s, n, dx, y) => {
+    const k = kepTrongTrang(s, n, dx, y);
+    const r = rectOf({ ...n, dx: k.dx, y: k.y });
+    return r.x >= 0 && r.y >= 0 && r.x + r.w <= drawW(s) && r.y + r.h <= drawH(s);
+  };
+
+  test('vị trí đã hợp lệ thì KHÔNG bị dịch đi — không tự ý sửa chỗ người dùng đặt', () => {
+    const s = base();
+    expect(kepTrongTrang(s, n1(s), 12, 200)).toEqual({ dx: 12, y: 200 });
+  });
+
+  test('kéo quá MÉP TRÁI ⇒ dx lùi lại vừa đủ để mép trái khối chạm mép trang', () => {
+    const s = base();
+    const k = kepTrongTrang(s, n1(s), -999, 200);
+    expect(rectOf({ ...n1(s), dx: k.dx }).x).toBe(0);
+    expect(trong(s, n1(s), -999, 200)).toBe(true);
+  });
+
+  test('kéo quá MÉP PHẢI ⇒ mép phải khối chạm mép phải trang', () => {
+    const s = base();
+    const k = kepTrongTrang(s, n1(s), 999, 200);
+    const r = rectOf({ ...n1(s), dx: k.dx });
+    expect(r.x + r.w).toBe(drawW(s));
+    expect(trong(s, n1(s), 999, 200)).toBe(true);
+  });
+
+  test('kéo quá MÉP TRÊN ⇒ y về 0', () => {
+    const s = base();
+    expect(kepTrongTrang(s, n1(s), 0, -500).y).toBe(0);
+  });
+
+  test('kéo quá MÉP DƯỚI ⇒ đáy khối chạm đáy trang', () => {
+    const s = base();
+    const k = kepTrongTrang(s, n1(s), 0, 9999);
+    expect(k.y + n1(s).h).toBe(drawH(s));
+  });
+
+  test('kẹp CẢ HAI TRỤC trong một lần, không phải mỗi trục một lần gọi', () => {
+    const s = base();
+    expect(trong(s, n1(s), -9999, 9999)).toBe(true);
+    expect(trong(s, n1(s), 9999, -9999)).toBe(true);
+  });
+
+  test('khối ở cột CUỐI cũng bị kẹp đúng mép phải trang', () => {
+    const s = base();
+    const n = { ...n1(s), lane: 1 };
+    const k = kepTrongTrang(s, n, 999, 100);
+    expect(rectOf({ ...n, dx: k.dx }).x + n.w).toBe(drawW(s));
+  });
+
+  test('khối Quyết định (cao 86) kẹp theo ĐÚNG chiều cao của nó', () => {
+    const s = base();
+    const n = { ...n1(s), t: 'dec', w: 150, h: 86 };
+    expect(kepTrongTrang(s, n, 0, 9999).y).toBe(drawH(s) - 86);
+  });
+
+  test('trang HẸP hơn khối ⇒ về góc trên-trái, không đẻ ra toạ độ âm', () => {
+    const s = base();
+    s.lanes = [s.lanes[0]];
+    s.phases = [{ name: 'G', h: 40 }];
+    const k = kepTrongTrang(s, { ...n1(s), w: 500, h: 300 }, 50, 50);
+    expect(k.y).toBe(0);
+    expect(rectOf({ ...n1(s), w: 500, dx: k.dx }).x).toBe(0);
+  });
+
+  test('THUẦN: không sửa sơ đồ lẫn khối truyền vào', () => {
+    const s = base();
+    const truoc = JSON.stringify(s);
+    kepTrongTrang(s, n1(s), -999, 9999);
+    expect(JSON.stringify(s)).toBe(truoc);
+  });
+
+  test.each([
+    ['sơ đồ null', null], ['thiếu lanes/phases', { nodes: [] }],
+    ['lanes rỗng', { lanes: [], phases: [] }],
+  ])('sơ đồ hỏng (%s) ⇒ không nổ, trả về số thật', (_ten, sHong) => {
+    let k;
+    expect(() => { k = kepTrongTrang(sHong, { lane: 0, w: 164, h: 56, dx: 0, y: 0 }, 30, 30); }).not.toThrow();
+    expect(Number.isFinite(k.dx)).toBe(true);
+    expect(Number.isFinite(k.y)).toBe(true);
+  });
+
+  test.each([
+    ['dx rác', 'abc', 100], ['y rác', 0, null], ['cả hai rác', undefined, NaN],
+  ])('toạ độ RÁC (%s) ⇒ vẫn trả số thật, không thả NaN vào bản vẽ', (_ten, dx, y) => {
+    const s = base();
+    const k = kepTrongTrang(s, n1(s), dx, y);
+    expect(Number.isFinite(k.dx)).toBe(true);
+    expect(Number.isFinite(k.y)).toBe(true);
+  });
+
+  test('khối rác (w/h/lane hỏng) ⇒ không nổ, không trả NaN', () => {
+    const s = base();
+    const k = kepTrongTrang(s, { id: 'x', lane: 'z', w: null, h: undefined, dx: 0, y: 0 }, 10, 10);
+    expect(Number.isFinite(k.dx)).toBe(true);
+    expect(Number.isFinite(k.y)).toBe(true);
   });
 });

@@ -794,6 +794,35 @@ export function xoaHang(soDo, i) {
   return s;
 }
 
+/** Kẹp một khối vào TRONG trang vẽ: cả hình chữ nhật phải nằm gọn trong
+ *  0…drawW × 0…drawH. Trả { dx, y } đã kẹp — KHÔNG sửa sơ đồ, không sửa khối.
+ *
+ *  Vì sao phải có: ảnh xuất ra (PNG dán xưởng, ảnh nhúng .docx, bản in A3) lấy
+ *  viewBox đúng bằng drawW × drawH. Khối kéo ra ngoài khung ấy VẪN hiện trên
+ *  màn hình soạn thảo và VẪN có một dòng trong bảng diễn giải, nhưng RỤNG khỏi
+ *  mọi bản in — người dùng thấy đủ bước rồi in ra tài liệu ISO thiếu bước.
+ *
+ *  Kẹp CẢ HAI TRỤC trong một lần gọi: kẹp mỗi trục một chỗ là chỗ còn lại sẽ bị
+ *  quên, đúng lối cũ (chỉ chặn y >= 4, còn dx thì thả nổi khi thả lại vào chính
+ *  cột đang đứng).
+ *
+ *  Trang HẸP hoặc THẤP hơn chính khối thì kẹp về góc trên-trái chứ không trả
+ *  toạ độ âm: khối lúc ấy vẫn lòi ra thật, nhưng đó là lỗi kiemTraLuuDo phải nói
+ *  ra (NGOAI_TRANG), không phải chỗ này lặng lẽ đẩy khối ra ngoài mép kia.
+ *
+ *  Rác trong so_do (jsonb) tính như 0 — thả NaN vào dx/y là khối biến mất khỏi
+ *  bản vẽ, hỏng nặng hơn hẳn lệch chỗ. */
+export function kepTrongTrang(soDo, n, dx, y) {
+  const W = Array.isArray(soDo?.lanes)  ? soThat(drawW(soDo)) : 0;
+  const H = Array.isArray(soDo?.phases) ? soThat(drawH(soDo)) : 0;
+  const w = soThat(n?.w), h = soThat(n?.h);
+  const dxVao = soThat(dx);
+  // Đi qua rectOf để không chép lại công thức nodeX ở đây — một nguồn sự thật.
+  const x = soThat(rectOf({ ...n, dx: dxVao }).x);
+  const kep = (v, hi) => Math.max(0, Math.min(v, hi));
+  return { dx: dxVao + (kep(x, W - w) - x), y: kep(soThat(y), H - h) };
+}
+
 export const NGUONG_HUT = 10;   // tâm cách nhau bao nhiêu px thì nam châm bắt
 
 /** Hút khối đang kéo về ngang hàng với khối khác, HOẶC về tâm ô của hàng gần nhất.

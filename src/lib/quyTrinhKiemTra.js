@@ -15,7 +15,7 @@
 // Module thuần: không gọi DB, không đụng API trình duyệt.
 // ============================================================
 
-import { rectOf } from './quyTrinhSoDo';
+import { rectOf, drawW, drawH } from './quyTrinhSoDo';
 
 const trong = v => !String(v ?? '').trim() || String(v).trim() === '—';
 
@@ -82,6 +82,34 @@ export function kiemTraLuuDo(soDo) {
     for (const n of nodes) {
       if (!toiDuoc.has(n.id))
         them(loi, 'KHONG_TOI_DUOC', `Khối "${n.tx}" không đi tới được từ khối Bắt đầu.`, n.id);
+    }
+  }
+
+  // ── Khối lọt ra NGOÀI TRANG ──
+  // Ảnh xuất ra (PNG dán xưởng, ảnh nhúng .docx, bản in A3) lấy viewBox đúng
+  // bằng drawW × drawH. Khối nằm ngoài khung đó VẪN hiện trên màn hình soạn
+  // thảo và VẪN có một dòng trong bảng diễn giải, nhưng RỤNG khỏi mọi bản in:
+  // người dùng thấy đủ bước rồi in ra một tài liệu ISO thiếu bước, không một
+  // dòng cảnh báo nào. Nên đây là LỖI CHẶN — chặn ban hành còn sửa được, ban
+  // hành xong mới phát hiện mất bước thì hồ sơ đã phát ra ngoài rồi.
+  //
+  // Chạm đúng mép KHÔNG tính là lọt ra: khối căn sát đáy trang là bố cục hợp
+  // lệ, và nét vẽ ở đúng biên viewBox vẫn nằm trong ảnh.
+  //
+  // Toạ độ RÁC (so_do là jsonb, không ràng buộc kiểu) bị BỎ QUA: quyTrinhSvg
+  // ép chúng về 0 trước khi vẽ, tức khối rác đậu ở góc trên-trái và có mặt đủ
+  // trong ảnh. Chặn ban hành vì một thứ bản in không hề mất là báo sai.
+  const W = Array.isArray(soDo?.lanes) ? drawW(soDo) : 0;
+  const H = Array.isArray(soDo?.phases) ? drawH(soDo) : 0;
+  if (Number.isFinite(W) && Number.isFinite(H)) {
+    for (const n of nodes) {
+      const r = rectOf(n);
+      if (![r.x, r.y, r.w, r.h].every(Number.isFinite)) continue;
+      if (r.x < 0 || r.y < 0 || r.x + r.w > W || r.y + r.h > H) {
+        them(loi, 'NGOAI_TRANG',
+          `Khối "${n.tx}" nằm ngoài khung trang — nó sẽ KHÔNG có mặt trong ảnh xuất ra `
+          + 'và bản in. Hãy kéo khối vào trong trang, hoặc bấm "Tự xếp lại".', n.id);
+      }
     }
   }
 

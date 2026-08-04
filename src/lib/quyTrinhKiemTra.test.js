@@ -1,5 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { kiemTraLuuDo, coTheBanHanh } from './quyTrinhKiemTra';
+import { CAO_HANG, LANE_W, drawH, drawW } from './quyTrinhSoDo';
+import { mauSoDo } from './quyTrinhMau';
 
 const K = (id, t, lane, y, extra = {}) => ({
   id, t, lane, y, dx: 0, w: t === 'dec' ? 150 : 164, h: t === 'dec' ? 86 : 56,
@@ -168,5 +170,96 @@ describe('kiemTraLuuDo', () => {
     s.edges = [{ id: 'e1', a: 's', b: 'e', lbl: '', k: 'n' }];
     expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'CHUA_CO_BUOC_NAO')).toBe(true);
     expect(coTheBanHanh(s)).toBe(false);
+  });
+});
+
+describe('khối lọt ra NGOÀI TRANG — NGOAI_TRANG', () => {
+  // Ảnh xuất ra (PNG dán xưởng, ảnh nhúng .docx, bản in A3) lấy viewBox đúng
+  // bằng drawW × drawH. Khối nằm ngoài khung đó VẪN hiện trên màn hình soạn
+  // thảo và VẪN có một dòng trong bảng diễn giải, nhưng RỤNG khỏi mọi bản in.
+  // Người dùng nhìn thấy đủ bước, rồi in ra một tài liệu ISO thiếu bước.
+  // Nên đây là LỖI CHẶN, không phải cảnh báo.
+
+  test('lưu đồ đàng hoàng KHÔNG bị báo nhầm — không có lỗi này', () => {
+    expect(kiemTraLuuDo(sach()).loi.some(x => x.ma === 'NGOAI_TRANG')).toBe(false);
+    expect(kiemTraLuuDo(sach()).canhBao.some(x => x.ma === 'NGOAI_TRANG')).toBe(false);
+  });
+
+  test('mẫu sơ đồ khởi tạo của MỌI nhóm đều nằm trọn trong trang', () => {
+    for (const nhom of ['SX', 'CL', 'KH', 'CS', 'BH', 'HC']) {
+      const s = mauSoDo(nhom);
+      expect(kiemTraLuuDo(s).loi.filter(x => x.ma === 'NGOAI_TRANG')).toEqual([]);
+    }
+  });
+
+  test('khối sát mép trang vẫn là TRONG trang — chạm mép không tính là lọt ra', () => {
+    const s = sach();
+    s.phases = [{ name: 'G', h: 4 * CAO_HANG }];
+    const e = s.nodes.find(n => n.id === 'e');
+    e.y = drawH(s) - e.h;                       // đáy khối trùng đúng đáy trang
+    const b1 = s.nodes.find(n => n.id === 'b1');
+    b1.dx = drawW(s) - (LANE_W / 2 + b1.w / 2); // mép phải khối trùng mép phải trang
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'NGOAI_TRANG')).toBe(false);
+  });
+
+  // ── Bốn phía ──
+  test('BÓP THẤP giai đoạn ⇒ khối dưới cùng lọt ra ngoài đáy trang → lỗi CHẶN', () => {
+    const s = sach();
+    s.phases = [{ name: 'G', h: 200 }];         // 'e' đang ở y=200, cao 56 ⇒ đáy 256
+    const l = kiemTraLuuDo(s).loi.find(x => x.ma === 'NGOAI_TRANG');
+    expect(l).toBeTruthy();
+    expect(l.khoiId).toBe('e');
+    expect(coTheBanHanh(s)).toBe(false);
+  });
+
+  test('kéo khối lên quá MÉP TRÊN trang → lỗi', () => {
+    const s = sach();
+    s.nodes.find(n => n.id === 's').y = -10;
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'NGOAI_TRANG' && x.khoiId === 's')).toBe(true);
+  });
+
+  test('dx đẩy khối vượt MÉP PHẢI trang → lỗi', () => {
+    const s = sach();
+    s.nodes.find(n => n.id === 'b1').dx = 400;
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'NGOAI_TRANG' && x.khoiId === 'b1')).toBe(true);
+  });
+
+  test('dx đẩy khối vượt MÉP TRÁI trang → lỗi', () => {
+    const s = sach();
+    s.nodes.find(n => n.id === 'b1').dx = -400;
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'NGOAI_TRANG' && x.khoiId === 'b1')).toBe(true);
+  });
+
+  test('thông điệp gọi TÊN khối và chỉ đúng nút phải bấm', () => {
+    const s = sach();
+    s.nodes.find(n => n.id === 'b1').tx = 'Soạn hàng theo phiếu';
+    s.nodes.find(n => n.id === 'b1').dx = 400;
+    const l = kiemTraLuuDo(s).loi.find(x => x.ma === 'NGOAI_TRANG');
+    expect(l.thongDiep).toContain('Soạn hàng theo phiếu');
+    expect(l.thongDiep).toContain('Tự xếp lại');
+  });
+
+  test('mỗi khối lọt ra chỉ báo MỘT dòng, không nhân đôi khi lọt cả hai trục', () => {
+    const s = sach();
+    const b1 = s.nodes.find(n => n.id === 'b1');
+    b1.dx = -400; b1.y = -400;
+    expect(kiemTraLuuDo(s).loi.filter(x => x.ma === 'NGOAI_TRANG' && x.khoiId === 'b1')).toHaveLength(1);
+  });
+
+  test('sơ đồ rỗng / thiếu mảng không làm nổ hàm', () => {
+    expect(() => kiemTraLuuDo({ lanes: [], phases: [], nodes: [], edges: [] })).not.toThrow();
+    expect(() => kiemTraLuuDo({ nodes: [], edges: [] })).not.toThrow();
+    expect(kiemTraLuuDo({ lanes: [], phases: [], nodes: [], edges: [] })
+      .loi.some(x => x.ma === 'NGOAI_TRANG')).toBe(false);
+  });
+
+  test('toạ độ RÁC (jsonb) KHÔNG bị báo lọt trang — bản xuất tính chúng như 0', () => {
+    // quyTrinhSvg.soDoSach ép rác về 0 trước khi vẽ, tức khối rác đậu ở góc
+    // trên-trái và vẫn nằm trong ảnh. Báo lỗi ở đây là chặn ban hành vì một
+    // thứ bản in không hề mất.
+    const s = sach();
+    s.nodes.push({ id: 'rac', t: 'step', lane: 0, y: null, dx: undefined, w: '164', h: NaN,
+      tx: 'rác', desc: 'x', form: 'BM', time: '1 giờ' });
+    expect(kiemTraLuuDo(s).loi.some(x => x.ma === 'NGOAI_TRANG' && x.khoiId === 'rac')).toBe(false);
   });
 });

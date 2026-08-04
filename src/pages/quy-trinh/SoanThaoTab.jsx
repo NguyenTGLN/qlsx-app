@@ -7,7 +7,7 @@ import {
   GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT, CAO_HANG,
   laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
   themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc, tronCaoGiaiDoan,
-  diemGiao, CANH_NEO, diemNeo, neoHopLe, datThuTu, boThuTu,
+  diemGiao, CANH_NEO, diemNeo, neoHopLe, datThuTu, boThuTu, kepTrongTrang,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -390,7 +390,7 @@ export default function SoanThaoTab({
       if (Math.hypot(dx, dy) < 3) return;   // rung tay khi bấm chọn không tính là kéo
       k.di = true;
     }
-    k.dx = Math.round((k.dx0 + dx) / BUOC_LUOI) * BUOC_LUOI;
+    const dxLuoi = Math.round((k.dx0 + dx) / BUOC_LUOI) * BUOC_LUOI;
     const oLuoi = Math.max(4, Math.round((k.y0 + dy) / BUOC_LUOI) * BUOC_LUOI);
     // Nam châm ngang hàng ĐÈ LÊN lưới 8px, không thay nó: lưới chỉ cho ra bội số
     // của 8, mà khối Quyết định (cao 86) muốn TRÙNG TÂM với khối Thao tác (cao 56)
@@ -399,8 +399,18 @@ export default function SoanThaoTab({
     // Ngưỡng chia cho zoom y như quãng kéo ở trên, để nam châm ở 50% và 150%
     // cắn cùng một khoảng trên MÀN HÌNH. Phép hút nằm ở hutHang, không ở đây.
     const hut = hutHang(soDo, k.id, oLuoi, NGUONG_HUT / zoom);
-    k.y = hut.y;
-    setKeo({ id: k.id, dx: k.dx, y: k.y, mocY: hut.mocY });
+    // Kẹp CẢ HAI TRỤC vào trong trang, sau nam châm — thứ gì dời khối cuối cùng
+    // thì thứ đó phải bị kẹp. Khối lọt ra ngoài khung drawW × drawH vẫn hiện ở
+    // đây nhưng RỤNG khỏi ảnh xuất và bản in; kiemTraLuuDo có bắt (NGOAI_TRANG)
+    // nhưng chặn ở lúc ban hành là bắt người dùng gỡ một mớ đã lỡ dựng. Phép kẹp
+    // nằm ở kepTrongTrang, tệp này không tính lấy một toạ độ nào.
+    const n = timKhoi(soDo, k.id);
+    const trongTrang = kepTrongTrang(soDo, n, dxLuoi, hut.y);
+    k.dx = trongTrang.dx;
+    k.y = trongTrang.y;
+    // Kẹp rồi mà y đổi thì khối KHÔNG còn ngang hàng với khối vừa hút vào —
+    // để vạch gióng lại là vẽ một đường nói dối.
+    setKeo({ id: k.id, dx: k.dx, y: k.y, mocY: k.y === hut.y ? hut.mocY : null });
   };
 
   const thaKhoi = () => {
