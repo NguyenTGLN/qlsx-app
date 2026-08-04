@@ -8,6 +8,7 @@ import { hutHang, NGUONG_HUT } from './quyTrinhSoDo';
 import { daiBuoc } from './quyTrinhSoDo';
 import { CAO_HANG, tamHang, hangCua, yTaiHang } from './quyTrinhSoDo';
 import { soKhoiCat, lanDoc, diemGiao } from './quyTrinhSoDo';
+import { CANH_NEO, DAI_MOI, diemNeo, canhHuong, neoHopLe } from './quyTrinhSoDo';
 import { mauSoDo } from './quyTrinhMau';
 
 const soDo = {
@@ -1285,5 +1286,422 @@ describe('nhịp cầu vẽ trên đường NGANG', () => {
     for (const rac of [[{ x: NaN, y: 180 }], [{ x: 318 }], [null], 'abc', 7]) {
       expect(routeEdge(s, s.edges[0], rac).d).not.toMatch(/NaN|Infinity|undefined/);
     }
+  });
+});
+
+// ── GHIM ĐIỂM NỐI VÀO CẠNH KHỐI ──────────────────────────────────
+// Bốn điểm nối ở giữa mỗi cạnh khối, ghim được đầu RA (e.raA) và đầu VÀO
+// (e.vaoB) — đúng thứ Visio có. Ghim rồi thì đường KHÔNG lách khối nữa:
+// người dùng đã tự quyết lối đi, tự ý kéo sang lối khác cho đỡ xấu là quyết
+// thay họ.
+describe('ghim điểm nối — neoHopLe / diemNeo / canhHuong', () => {
+  test('neoHopLe nhận đúng bốn cạnh, mọi thứ khác là KHÔNG GHIM', () => {
+    expect(CANH_NEO).toEqual(['tren', 'phai', 'duoi', 'trai']);
+    for (const c of CANH_NEO) expect(neoHopLe(c)).toBe(c);
+    // so_do là jsonb — 42, null, 'xyz', object đều lọt xuống được. Khoá hỏng
+    // phải rơi về đường TỰ ĐỘNG, không được làm mất đường nối trên bản in.
+    for (const rac of ['xyz', 42, null, undefined, true, {}, [], 'TREN', ' tren']) {
+      expect(neoHopLe(rac)).toBeNull();
+    }
+  });
+
+  test('diemNeo trả ĐÚNG trung điểm cạnh và pháp tuyến hướng ra ngoài', () => {
+    const r = rectOf(K('x', 0, 0));            // x 24…188, y 32…88
+    expect(diemNeo(r, 'tren')).toEqual({ p: [r.cx, r.y], n: [0, -1] });
+    expect(diemNeo(r, 'duoi')).toEqual({ p: [r.cx, r.y + r.h], n: [0, 1] });
+    expect(diemNeo(r, 'trai')).toEqual({ p: [r.x, r.cy], n: [-1, 0] });
+    expect(diemNeo(r, 'phai')).toEqual({ p: [r.x + r.w, r.cy], n: [1, 0] });
+    // bốn điểm nằm đúng trên biên, và đối xứng qua tâm
+    for (const c of CANH_NEO) {
+      const { p } = diemNeo(r, c);
+      expect(p.every(Number.isFinite)).toBe(true);
+    }
+  });
+
+  test('canhHuong trả cạnh QUAY VỀ phía điểm — theo mặt tia từ tâm xuyên qua', () => {
+    const r = rectOf(K('x', 1, 2));            // tâm (318, 300), 164×56
+    expect(canhHuong(r, [318, -500])).toBe('tren');
+    expect(canhHuong(r, [318, 900])).toBe('duoi');
+    expect(canhHuong(r, [-500, 300])).toBe('trai');
+    expect(canhHuong(r, [900, 300])).toBe('phai');
+    // khối RỘNG (164×56): lệch ngang 100, lệch dọc 60 ⇒ vẫn là mặt TRÊN,
+    // vì 100/82 < 60/28. So thô |dx| với |dy| thì ra 'phai' — sai mặt.
+    expect(canhHuong(r, [418, 240])).toBe('tren');
+    // khối rộng/cao 0 (dữ liệu hỏng) không được đẻ ra Infinity/NaN
+    expect(CANH_NEO).toContain(canhHuong({ x: 0, y: 0, w: 0, h: 0, cx: 0, cy: 0 }, [0, 0]));
+    expect(CANH_NEO).toContain(canhHuong({ x: 0, y: 0, w: NaN, h: NaN, cx: NaN, cy: NaN }, [1, 1]));
+  });
+});
+
+describe('ghim điểm nối — đường nối bám đúng cạnh đã ghim', () => {
+  // A trên-trái (cột 0, hàng 0) · B dưới-phải (cột 2, hàng 3) — bố cục thường
+  // gặp nhất và đủ rộng để cả 16 cặp cạnh đều có chỗ mà đi.
+  const doi = (them = {}) => mkS(3, [K('a', 0, 0), K('b', 2, 3)],
+    { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', ...them });
+  const rA = rectOf(doi().nodes[0]);
+  const rB = rectOf(doi().nodes[1]);
+  const huong = (p, q) => [Math.sign(q[0] - p[0]), Math.sign(q[1] - p[1])];
+  const dai = (p, q) => Math.hypot(q[0] - p[0], q[1] - p[1]);
+
+  test('16 CẶP CẠNH — đường bắt đầu và kết thúc ĐÚNG trung điểm cạnh đã ghim', () => {
+    const hong = [];
+    for (const raA of CANH_NEO) {
+      for (const vaoB of CANH_NEO) {
+        const s = doi({ raA, vaoB });
+        const r = routeEdge(s, s.edges[0]);
+        const dauA = diemNeo(rA, raA).p, dauB = diemNeo(rB, vaoB).p;
+        if (String(r.pts[0]) !== String(dauA)) hong.push(`${raA}→${vaoB}: đầu ở ${r.pts[0]}, phải là ${dauA}`);
+        if (String(r.pts.at(-1)) !== String(dauB)) hong.push(`${raA}→${vaoB}: cuối ở ${r.pts.at(-1)}, phải là ${dauB}`);
+        if (/NaN|Infinity|undefined/.test(r.d)) hong.push(`${raA}→${vaoB}: path có số hỏng — ${r.d}`);
+        if (r.neo.raA !== raA || r.neo.vaoB !== vaoB) hong.push(`${raA}→${vaoB}: neo trả ${r.neo.raA}→${r.neo.vaoB}`);
+        // mọi đoạn phải VUÔNG GÓC — diemGiao chỉ soi được đoạn thẳng đứng/nằm ngang
+        for (let i = 0; i < r.pts.length - 1; i++) {
+          const [p, q] = [r.pts[i], r.pts[i + 1]];
+          if (p[0] !== q[0] && p[1] !== q[1]) hong.push(`${raA}→${vaoB}: đoạn ${i} đi chéo`);
+        }
+      }
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('ĐOẠN MỒI — đường rời khối theo đúng pháp tuyến cạnh, dài ít nhất DAI_MOI', () => {
+    // Hai cặp KHÔNG kể: hai đầu quay LƯNG vào nhau (ra cạnh trên khối trên,
+    // vào cạnh dưới khối dưới — và bản ngang của nó). Lối đi đúng cho chúng
+    // là một chữ U bốn lần bẻ; ở đây cố ý chỉ cho phép hai lần bẻ, nên đường
+    // buộc phải quặt ngược. Ghim là người dùng tự quyết, và đây là cái giá.
+    const quayLung = ['tren→duoi', 'trai→phai'];
+    const hong = [];
+    for (const raA of CANH_NEO) {
+      for (const vaoB of CANH_NEO) {
+        if (quayLung.includes(`${raA}→${vaoB}`)) continue;
+        const s = doi({ raA, vaoB });
+        const { pts } = routeEdge(s, s.edges[0]);
+        const nA = diemNeo(rA, raA).n, nB = diemNeo(rB, vaoB).n;
+        const raHuong = huong(pts[0], pts[1]);
+        const vaoHuong = huong(pts.at(-2), pts.at(-1));
+        if (String(raHuong) !== String(nA)) hong.push(`${raA}→${vaoB}: ra hướng ${raHuong}, phải là ${nA}`);
+        if (String(vaoHuong) !== String([-nB[0], -nB[1]])) hong.push(`${raA}→${vaoB}: vào hướng ${vaoHuong}`);
+        if (dai(pts[0], pts[1]) < DAI_MOI) hong.push(`${raA}→${vaoB}: mồi ra chỉ dài ${dai(pts[0], pts[1])}`);
+        if (dai(pts.at(-2), pts.at(-1)) < DAI_MOI) hong.push(`${raA}→${vaoB}: mồi vào quá ngắn`);
+      }
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('không quá HAI chỗ bẻ giữa hai đoạn mồi — đường đọc được, không ngoằn ngoèo', () => {
+    for (const raA of CANH_NEO) {
+      for (const vaoB of CANH_NEO) {
+        const s = doi({ raA, vaoB });
+        const { pts } = routeEdge(s, s.edges[0]);
+        // pts = mồi ra + tối đa 2 chỗ bẻ + mồi vào ⇒ nhiều nhất 5 điểm
+        expect(pts.length).toBeLessThanOrEqual(5);
+      }
+    }
+  });
+
+  test('ra DƯỚI vào TRÊN cùng cột → thẳng tuột, không có chỗ bẻ để chỉnh', () => {
+    const s = mkS(3, [K('a', 1, 0), K('b', 1, 2)],
+      { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', raA: 'duoi', vaoB: 'tren' });
+    const r = routeEdge(s, s.edges[0]);
+    expect(r.keo).toBeNull();
+    expect(r.d).toBe('M318 88 L318 272');
+    // …và ĐÚNG BẰNG đường tự động của chính cặp khối ấy: ghim cặp cạnh hiển
+    // nhiên thì không được làm hình đổi đi.
+    expect(r.d).toBe(veE(mkS(3, [K('a', 1, 0), K('b', 1, 2)],
+      { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' })).d);
+  });
+
+  test('ra PHẢI vào TRÁI cùng hàng → thẳng tuột, y hệt bản tự động', () => {
+    const nodes = [K('a', 0, 0), K('b', 2, 0)];
+    const s = mkS(3, nodes, { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', raA: 'phai', vaoB: 'trai' });
+    expect(veE(s).d).toBe('M188 60 L448 60');
+    expect(veE(s).keo).toBeNull();
+  });
+
+  test('ra DƯỚI vào TRÁI → lối chữ L, đúng MỘT chỗ bẻ', () => {
+    const s = doi({ raA: 'duoi', vaoB: 'trai' });
+    const r = routeEdge(s, s.edges[0]);
+    expect(r.pts).toEqual([[106, 88], [106, 420], [448, 420]]);
+    expect(r.keo.huong).toBe('ngang');
+    expect(r.keo.y).toBe(420);
+  });
+
+  test('GHIM TẮT PHÉP LÁCH KHỐI — đường đi thẳng qua khối chắn, không tự vòng', () => {
+    // Đúng ba khối chắn của bài "lách khối": bản tự động vòng sang làn trống.
+    const nodes = [K('a', 0, 0), K('c1', 0, 1), K('c2', 0, 2), K('c3', 0, 3), K('b', 0, 4)];
+    const tuDong = mkS(3, nodes, { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    expect(soKhoiCat(tuDong, veE(tuDong).pts, ['a', 'b'])).toBe(0);      // tự động: né hết
+
+    const ghim = mkS(3, nodes, { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', raA: 'duoi', vaoB: 'tren' });
+    const r = veE(ghim);
+    expect(soKhoiCat(ghim, r.pts, ['a', 'b'])).toBe(3);                  // ghim: đi thẳng, cắt cả ba
+    expect(r.pts[0]).toEqual([106, 88]);
+  });
+});
+
+describe('ghim điểm nối — một đầu ghim, đầu kia tự động', () => {
+  const mk = (them) => mkS(3, [K('a', 0, 0), K('b', 2, 3)],
+    { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', ...them });
+
+  test('ghim đầu RA thì đầu VÀO tự chọn cạnh QUAY VỀ chỗ đầu ra đang đứng', () => {
+    // B ở dưới-phải: ra cạnh dưới khối A ⇒ vào cạnh TRÊN khối B.
+    const r = veE(mk({ raA: 'duoi' }));
+    expect(r.neo).toEqual({ raA: 'duoi', vaoB: 'tren' });
+    expect(r.pts.at(-1)).toEqual([530, 392]);          // đúng trung điểm cạnh trên B
+  });
+
+  test('ghim đầu VÀO thì đầu RA tự chọn cạnh quay về phía đó', () => {
+    const r = veE(mk({ vaoB: 'trai' }));
+    expect(r.neo.vaoB).toBe('trai');
+    expect(r.pts.at(-1)).toEqual([448, 420]);
+    expect(CANH_NEO).toContain(r.neo.raA);
+    expect(r.pts[0]).toEqual(diemNeo(rectOf(mk({}).nodes[0]), r.neo.raA).p);
+  });
+
+  test('đầu tự động giải theo CHỖ ĐẦU KIA ĐỨNG, không theo tâm khối', () => {
+    // Ghim đầu ra vào cạnh TRÊN khối A (điểm ra nằm CAO hơn cả B) ⇒ đầu vào
+    // phải quay LÊN — cạnh trên khối B. Nếu tính theo tâm khối A (nằm ngang
+    // tầm giữa) thì kết quả không đổi ở đây, nên lấy bố cục ép rõ hơn:
+    // A nằm DƯỚI B, ghim đầu ra vào cạnh TRÊN A ⇒ điểm ra ở phía trên A,
+    // vẫn thấp hơn B ⇒ vào cạnh DƯỚI B.
+    const s = mkS(1, [K('a', 0, 3), K('b', 0, 0)],
+      { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', raA: 'tren' });
+    expect(veE(s).neo).toEqual({ raA: 'tren', vaoB: 'duoi' });
+  });
+
+  test('đường TỰ ĐỘNG cũng khai báo cạnh nó đang ra/vào — để giao diện tô sáng', () => {
+    const xuong = mkS(3, [K('a', 0, 0), K('b', 2, 2)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    expect(veE(xuong).neo).toEqual({ raA: 'duoi', vaoB: 'tren' });
+    const ngang = mkS(3, [K('a', 0, 0), K('b', 2, 0)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    expect(veE(ngang).neo).toEqual({ raA: 'phai', vaoB: 'trai' });
+    const len = mkS(3, [K('a', 0, 3), K('b', 2, 0)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' });
+    expect(veE(len).neo).toEqual({ raA: 'tren', vaoB: 'trai' });
+  });
+});
+
+describe('ghim điểm nối — lech vẫn kéo tay được', () => {
+  const mk = (them) => mkS(3, [K('a', 0, 0), K('b', 2, 3)],
+    { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', ...them });
+
+  test('cặp DỌC: lech hạ lằn ngang xuống đúng bằng đó, hai đầu KHÔNG rời cạnh', () => {
+    const a = veE(mk({ raA: 'duoi', vaoB: 'tren' }));
+    const b = veE(mk({ raA: 'duoi', vaoB: 'tren', lech: 40 }));
+    expect(a.keo.huong).toBe('ngang');
+    expect(b.keo.y - a.keo.y).toBe(40);
+    expect(b.pts[0]).toEqual(a.pts[0]);
+    expect(b.pts.at(-1)).toEqual(a.pts.at(-1));
+  });
+
+  test('cặp NGANG: lech dời lằn dọc sang ngang đúng bằng đó', () => {
+    const a = veE(mk({ raA: 'phai', vaoB: 'trai' }));
+    const b = veE(mk({ raA: 'phai', vaoB: 'trai', lech: -30 }));
+    expect(a.keo.huong).toBe('doc');
+    expect(b.keo.x - a.keo.x).toBe(-30);
+    expect(b.pts[0]).toEqual(a.pts[0]);
+    expect(b.pts.at(-1)).toEqual(a.pts.at(-1));
+  });
+
+  test('cặp KHÁC TRỤC (chữ L): kéo lằn ra là mọc thêm chỗ bẻ, hai đầu vẫn nguyên', () => {
+    const a = veE(mk({ raA: 'duoi', vaoB: 'trai' }));
+    const b = veE(mk({ raA: 'duoi', vaoB: 'trai', lech: -60 }));
+    expect(a.pts).toHaveLength(3);                     // chữ L
+    expect(b.pts).toHaveLength(5);                     // kéo ra thì thành bốn đoạn
+    expect(b.keo.y - a.keo.y).toBe(-60);
+    expect(b.pts[0]).toEqual(a.pts[0]);
+    expect(b.pts.at(-1)).toEqual(a.pts.at(-1));
+  });
+
+  test('lech quá lớn bị KẸP — lằn không lùi vào trong đoạn mồi', () => {
+    const A = rectOf(mk({}).nodes[0]), B = rectOf(mk({}).nodes[1]);
+    const tren = veE(mk({ raA: 'duoi', vaoB: 'tren', lech: -9999 }));
+    expect(tren.keo.y).toBeGreaterThanOrEqual(A.y + A.h + DAI_MOI);
+    const duoi = veE(mk({ raA: 'duoi', vaoB: 'tren', lech: 9999 }));
+    expect(duoi.keo.y).toBeLessThanOrEqual(B.y - DAI_MOI);
+    for (const l of [-9999, -60, 0, 60, 9999]) {
+      for (const raA of CANH_NEO) {
+        for (const vaoB of CANH_NEO) {
+          const r = veE(mk({ raA, vaoB, lech: l }));
+          expect(r.d).not.toMatch(/NaN|Infinity|undefined/);
+          if (r.keo) expect([r.keo.x, r.keo.y, ...r.keo.tu, ...r.keo.den].every(Number.isFinite)).toBe(true);
+        }
+      }
+    }
+  });
+
+  test('núm kéo đậu trên ĐỈNH THẬT của đường, và là trung điểm tu–den', () => {
+    for (const [raA, vaoB] of [['duoi', 'tren'], ['phai', 'trai'], ['duoi', 'trai'], ['phai', 'tren']]) {
+      const r = veE(mk({ raA, vaoB }));
+      expect(r.keo).not.toBeNull();
+      expect(r.keo.x).toBe((r.keo.tu[0] + r.keo.den[0]) / 2);
+      expect(r.keo.y).toBe((r.keo.tu[1] + r.keo.den[1]) / 2);
+      const dinh = p => r.pts.some(q => q[0] === p[0] && q[1] === p[1]);
+      expect(dinh(r.keo.tu)).toBe(true);
+      expect(dinh(r.keo.den)).toBe(true);
+    }
+  });
+
+  test('lech RÁC trên đường đã ghim → coi như 0', () => {
+    const goc = veE(mk({ raA: 'duoi', vaoB: 'tren' })).d;
+    for (const rac of ['40', 'abc', NaN, null, true, {}, []]) {
+      expect(veE(mk({ raA: 'duoi', vaoB: 'tren', lech: rac })).d).toBe(goc);
+    }
+  });
+});
+
+describe('ghim điểm nối — không ghim thì KHÔNG đổi một byte nào', () => {
+  const dung = () => [
+    mkS(3, [K('a', 0, 0), K('b', 2, 0)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' }),
+    mkS(3, [K('a', 1, 0), K('b', 1, 2)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' }),
+    mkS(3, [K('a', 0, 0), K('b', 2, 2)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' }),
+    mkS(3, [K('a', 0, 3), K('b', 2, 0)], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' }),
+    mkS(3, [K('a', 0, 0), K('c1', 0, 1), K('c2', 0, 2), K('b', 0, 3)],
+      { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' }),
+  ];
+
+  test('KHOÁ GHIM RÁC bị bỏ qua hẳn — d ra đúng từng byte như khi không có khoá', () => {
+    for (const rac of ['xyz', 42, null, undefined, true, {}, [], 0, '', 'TREN']) {
+      dung().forEach((s, i) => {
+        const goc = veE(s).d;
+        const ban = { ...s, edges: [{ ...s.edges[0], raA: rac, vaoB: rac }] };
+        expect(veE(ban).d, `dựng ${i} với rác ${String(rac)}`).toBe(goc);
+      });
+    }
+  });
+
+  test('THÊM khoá ghim vào rồi BỎ đi thì về đúng đường cũ', () => {
+    for (const s of dung()) {
+      const goc = veE(s).d;
+      const ghim = { ...s, edges: [{ ...s.edges[0], raA: 'trai', vaoB: 'phai' }] };
+      expect(veE(ghim).d).not.toBe(goc);                        // có ghim thì phải khác
+      const bo = { ...s, edges: [{ id: 'e', a: 'a', b: 'b', k: 'n', lbl: '' }] };
+      expect(veE(bo).d).toBe(goc);
+    }
+  });
+
+  test('QUÉT NGẪU NHIÊN 600 sơ đồ — thêm khoá ghim RÁC không đổi một đường nào', () => {
+    // Hạt cố định (mulberry32) để test hỏng là dựng lại được đúng sơ đồ đó.
+    const rng = (hat) => () => {
+      hat = (hat + 0x6d2b79f5) | 0;
+      let t = Math.imul(hat ^ (hat >>> 15), 1 | hat);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const RAC = ['xyz', 42, null, true, '', 'TREN', {}, [], 0, -1];
+    const hong = [];
+    for (let hat = 1; hat <= 600; hat++) {
+      const r = rng(hat);
+      const soCot = 1 + Math.floor(r() * 4);
+      const nodes = [];
+      const soKhoi = 2 + Math.floor(r() * 5);
+      for (let i = 0; i < soKhoi; i++) {
+        nodes.push(K(`n${i}`, Math.floor(r() * soCot), Math.floor(r() * 6),
+          r() < 0.25 ? 'dec' : 'step'));
+      }
+      const edges = [];
+      for (let i = 0; i + 1 < soKhoi; i++) {
+        if (r() < 0.6) continue;
+        edges.push({ id: `e${i}`, a: `n${i}`, b: `n${i + 1}`, k: 'n', lbl: '' });
+      }
+      if (!edges.length) edges.push({ id: 'e0', a: 'n0', b: `n${soKhoi - 1}`, k: 'n', lbl: '' });
+      const s = mkS(soCot, nodes, ...edges);
+      const bao = {
+        ...s,
+        edges: s.edges.map((e, i) => ({ ...e, raA: RAC[i % RAC.length], vaoB: RAC[(i + 3) % RAC.length] })),
+      };
+      const g = diemGiao(s);
+      for (let i = 0; i < s.edges.length; i++) {
+        const truoc = routeEdge(s, s.edges[i], g).d;
+        const sau = routeEdge(bao, bao.edges[i], g).d;
+        if (truoc !== sau) hong.push(`hạt ${hat} đường ${i}: ${truoc} ≠ ${sau}`);
+        if (/NaN|Infinity|undefined/.test(sau)) hong.push(`hạt ${hat} đường ${i}: số hỏng`);
+      }
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('QUÉT NGẪU NHIÊN — mọi cặp ghim đều ra đường sạch, bám đúng hai đầu', () => {
+    const rng = (hat) => () => {
+      hat = (hat + 0x6d2b79f5) | 0;
+      let t = Math.imul(hat ^ (hat >>> 15), 1 | hat);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const hong = [];
+    for (let hat = 1; hat <= 300; hat++) {
+      const r = rng(hat);
+      const soCot = 1 + Math.floor(r() * 4);
+      const hangA = Math.floor(r() * 6);
+      // Hai khối CHỒNG KHÍT lên nhau là lỗi của lưu đồ (kiemTraLuuDo bắt), và
+      // lúc đó bốn chấm ghim của hai khối trùng nhau nên không còn đường nào để
+      // mà đo — cảnh đó có bài riêng ngay dưới. Ở đây ép hai khối khác hàng.
+      const A = K('a', Math.floor(r() * soCot), hangA, r() < 0.3 ? 'dec' : 'step');
+      const B = K('b', Math.floor(r() * soCot), (hangA + 1 + Math.floor(r() * 5)) % 6,
+        r() < 0.3 ? 'dec' : 'step');
+      const raA = CANH_NEO[Math.floor(r() * 4)], vaoB = CANH_NEO[Math.floor(r() * 4)];
+      const lech = [0, 24, -24, 9999, -9999][Math.floor(r() * 5)];
+      const s = mkS(soCot, [A, B], { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', raA, vaoB, lech });
+      const x = routeEdge(s, s.edges[0]);
+      const tag = `hạt ${hat} (${raA}→${vaoB}, lech ${lech})`;
+      if (/NaN|Infinity|undefined/.test(x.d)) hong.push(`${tag}: số hỏng trong path`);
+      if (String(x.pts[0]) !== String(diemNeo(rectOf(A), raA).p)) hong.push(`${tag}: đầu sai chỗ`);
+      if (String(x.pts.at(-1)) !== String(diemNeo(rectOf(B), vaoB).p)) hong.push(`${tag}: cuối sai chỗ`);
+      if (!x.nhan.every(Number.isFinite)) hong.push(`${tag}: nhãn có số hỏng`);
+      if (x.pts.length > 5) hong.push(`${tag}: ${x.pts.length} điểm — quá hai chỗ bẻ`);
+      for (let i = 0; i < x.pts.length - 1; i++) {
+        if (x.pts[i][0] !== x.pts[i + 1][0] && x.pts[i][1] !== x.pts[i + 1][1]) hong.push(`${tag}: đoạn chéo`);
+        if (x.pts[i][0] === x.pts[i + 1][0] && x.pts[i][1] === x.pts[i + 1][1]) hong.push(`${tag}: đoạn dài 0`);
+      }
+    }
+    expect(hong).toEqual([]);
+  });
+});
+
+describe('ghim điểm nối — cảnh hỏng thì hỏng cho gọn', () => {
+  test('HAI KHỐI CHỒNG KHÍT, ghim cùng một cạnh → đường thu về một điểm, KHÔNG nổ', () => {
+    // kiemTraLuuDo đã bắt cảnh này là LỖI của lưu đồ. Việc của routeEdge chỉ là
+    // đừng nổ và đừng thả NaN vào bản vẽ — mất cả ảnh vì một khối đặt đè nhau
+    // thì người dùng không còn gì để nhìn mà sửa.
+    for (const canh of CANH_NEO) {
+      const s = mkS(2, [K('a', 0, 1), { ...K('b', 0, 1), id: 'b' }],
+        { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', raA: canh, vaoB: canh });
+      const r = veE(s);
+      expect(r.d).not.toMatch(/NaN|Infinity|undefined/);
+      expect(r.pts.length).toBeGreaterThanOrEqual(2);
+      expect(r.nhan.every(Number.isFinite)).toBe(true);
+      expect(r.keo).toBeNull();
+    }
+  });
+
+  test('khối đầu hoặc cuối đã bị xoá → vẫn trả null, ghim không cứu được', () => {
+    const s = mkS(2, [K('a', 0, 0)],
+      { id: 'e', a: 'a', b: 'khong-co', k: 'n', lbl: '', raA: 'duoi', vaoB: 'tren' });
+    expect(veE(s)).toBeNull();
+  });
+
+  test('toạ độ khối kia HỎNG: đầu ĐÃ GHIM vẫn bám đúng cạnh của khối lành', () => {
+    // so_do là jsonb — y/w/h hỏng vốn đã đẩy NaN vào cả đường TỰ ĐỘNG (chặn ở
+    // cửa vào bản xuất, xem soDoSach của quyTrinhSvg). Điều ghim phải giữ được:
+    // đầu nằm ở khối lành vẫn đậu đúng chấm người dùng chọn, không nổ.
+    const hong = { id: 'b', t: 'step', lane: 1, y: 'abc', dx: 0, w: 164, h: 56, tx: 'b' };
+    const s = mkS(2, [K('a', 0, 0), hong],
+      { id: 'e', a: 'a', b: 'b', k: 'n', lbl: '', raA: 'duoi', vaoB: 'tren' });
+    expect(() => veE(s)).not.toThrow();
+    expect(veE(s).pts[0]).toEqual(diemNeo(rectOf(K('a', 0, 0)), 'duoi').p);
+    expect(veE(s).neo).toEqual({ raA: 'duoi', vaoB: 'tren' });
+  });
+});
+
+describe('ghim điểm nối — nhịp cầu vẫn bắc trên đường đã ghim', () => {
+  test('diemGiao vẫn bắt được chỗ cắt khi đường bị ghim, và đường ngang vẫn nhảy', () => {
+    // e1 ghim dưới→trên, bẻ ngang ở giữa; e2 bổ dọc cắt qua nó.
+    const s = mkS(4, [K('a1', 0, 0), K('b1', 3, 2), K('a2', 1, 0), K('b2', 1, 2)],
+      { id: 'e1', a: 'a1', b: 'b1', k: 'n', lbl: '', raA: 'duoi', vaoB: 'tren' },
+      { id: 'e2', a: 'a2', b: 'b2', k: 'n', lbl: '' });
+    const g = diemGiao(s);
+    expect(g).toEqual([{ x: 318, y: 180 }]);
+    const co = routeEdge(s, s.edges[0], g).d;
+    expect(co).toContain('A5 5 0 0 1');                 // có nhịp cầu
+    expect(co).not.toBe(routeEdge(s, s.edges[0]).d);
+    expect(routeEdge(s, s.edges[1], g).d).toBe(routeEdge(s, s.edges[1]).d);   // đường dọc không nhảy
   });
 });

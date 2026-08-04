@@ -236,6 +236,187 @@ export function diemGiao(soDo) {
   return [...gom.values()].sort((p, q) => (p.x - q.x) || (p.y - q.y));
 }
 
+// ── GHIM ĐIỂM NỐI VÀO CẠNH KHỐI (kiểu Visio) ─────────────────────
+// Mỗi khối có BỐN điểm nối, ở giữa mỗi cạnh. Người dùng ghim được đầu RA của
+// đường (e.raA) vào một cạnh khối nguồn, và đầu VÀO (e.vaoB) vào một cạnh khối
+// đích. Không ghim ⇒ đường tự chọn cạnh y như trước, TỪNG BYTE: mọi sơ đồ đã
+// lưu đều không có hai khoá này, và bản in của tài liệu ISO đã ban hành không
+// được đổi vì một tính năng mới.
+//
+// GHIM LÀ TẮT PHÉP LÁCH KHỐI của riêng đường đó. Người dùng đã tự tay chọn lối
+// ra lối vào; máy kéo đường sang làn khác cho đỡ xấu là quyết thay họ, mà cái
+// giá là đường mọc ra từ một cạnh họ không chọn. Đường xấu thì còn kéo lại
+// được, đường bỏ ghim thì không.
+
+/** Bốn cạnh khối, thứ tự theo chiều kim đồng hồ từ trên. */
+export const CANH_NEO = ['tren', 'phai', 'duoi', 'trai'];
+
+/** Cạnh ghim đã LỌC RÁC — trả cạnh hợp lệ, hoặc null nghĩa là để tự động.
+ *  so_do là jsonb, không ràng buộc kiểu: 42, null, 'xyz', {} đều lọt xuống được.
+ *  Khoá hỏng phải rơi về đường TỰ ĐỘNG chứ không được làm mất đường nối trên
+ *  bản in — mất một mũi tên trong lưu đồ ISO là mất một bước của quy trình. */
+export const neoHopLe = v => (CANH_NEO.includes(v) ? v : null);
+
+/** ĐOẠN MỒI: đường phải rời cạnh khối theo đúng pháp tuyến cạnh đó một quãng
+ *  rồi mới được bẻ. Không có mồi thì đường chạy DỌC THEO mặt khối, nhìn như thể
+ *  nó dính vào cạnh bên cạnh — đúng thứ khiến người ta tưởng ghim hỏng.
+ *  24 = khe hở giữa mép khối (rộng 164) và mép cột (rộng 212), nên mồi NGANG
+ *  đậu đúng vào vạch cột — làn trống sẵn của lưới, chỗ lanDoc vẫn dùng; và
+ *  24 < 32 = nửa khe hở đứng của một hàng (120 − 56), nên mồi DỌC chưa lấn sang
+ *  hàng bên. Cũng lớn hơn bán kính bo góc 9 nên góc bo không nuốt mất đoạn mồi. */
+export const DAI_MOI = 24;
+
+/** Điểm neo giữa cạnh `canh` của hình chữ nhật r, kèm PHÁP TUYẾN hướng ra ngoài.
+ *  Giao diện gọi hàm này để đặt chấm ghim — nhờ vậy không tự tính toạ độ nào. */
+export function diemNeo(r, canh) {
+  switch (canh) {
+    case 'tren': return { p: [r.cx, r.y], n: [0, -1] };
+    case 'duoi': return { p: [r.cx, r.y + r.h], n: [0, 1] };
+    case 'trai': return { p: [r.x, r.cy], n: [-1, 0] };
+    default:     return { p: [r.x + r.w, r.cy], n: [1, 0] };
+  }
+}
+
+/** Cạnh của khối r QUAY VỀ phía điểm p — mặt mà tia từ tâm r tới p xuyên qua.
+ *  Dùng để giải đầu CÒN TỰ ĐỘNG khi người dùng chỉ ghim một đầu: đầu tự động
+ *  phải nhìn vào chỗ đầu kia ĐANG ĐỨNG, không phải vào tâm khối kia — ghim đầu
+ *  ra vào cạnh trái mà đầu vào vẫn nhắm tâm là đường quặt ngược qua khối.
+ *
+ *  So theo TỈ LỆ với nửa bề khối chứ không so |dx| với |dy|: khối rộng 164 cao
+ *  56, lệch ngang 100 lệch dọc 60 thì tia vẫn ra ở mặt TRÊN. Nhân chéo thay vì
+ *  chia để khối rộng/cao 0 (dữ liệu hỏng) không đẻ ra Infinity. */
+export function canhHuong(r, p) {
+  const dx = soThat(p?.[0]) - soThat(r?.cx), dy = soThat(p?.[1]) - soThat(r?.cy);
+  const ngang = Math.abs(dx) * Math.max(1, Math.abs(soThat(r?.h)));
+  const doc = Math.abs(dy) * Math.max(1, Math.abs(soThat(r?.w)));
+  if (ngang > doc) return dx < 0 ? 'trai' : 'phai';
+  return dy < 0 ? 'tren' : 'duoi';
+}
+
+/** Điểm p đậu trên cạnh nào của khối r — đọc NGƯỢC ra từ đường đã vẽ, để giao
+ *  diện tô sáng đúng chấm đang có hiệu lực kể cả khi đường còn tự động.
+ *  Xét trên/dưới trước: lưu đồ chảy từ trên xuống, góc khối tính về cạnh ngang. */
+function neoTaiDiem(r, p) {
+  const [x, y] = p;
+  const trongX = x >= r.x && x <= r.x + r.w, trongY = y >= r.y && y <= r.y + r.h;
+  if (trongX && y === r.y) return 'tren';
+  if (trongX && y === r.y + r.h) return 'duoi';
+  if (trongY && x === r.x) return 'trai';
+  if (trongY && x === r.x + r.w) return 'phai';
+  return null;
+}
+
+/** Bỏ điểm trùng và gộp đoạn cùng phương. Đường còn lại không có đoạn dài 0 nào
+ *  — khâu bo góc chia cho độ dài đoạn, gặp 0 là ra góc bo vô nghĩa; và lối chữ L
+ *  chỉ hiện ra được sau khi gộp.
+ *  Quét trùng LẦN NỮA sau khi gộp: hai khối chồng khít lên nhau thì đầu và cuối
+ *  rơi vào cùng một điểm, gộp xong mới lòi ra. Không bao giờ trả dưới hai điểm —
+ *  routeEdge dựng nhãn từ pts[0] và pts[1]. */
+function gonDuong(pts) {
+  const ra = pts.map(p => [p[0], p[1]]);
+  const boTrung = () => {
+    for (let i = ra.length - 1; i > 0; i--) {
+      if (ra[i][0] === ra[i - 1][0] && ra[i][1] === ra[i - 1][1]) ra.splice(i, 1);
+    }
+  };
+  boTrung();
+  for (let i = ra.length - 2; i > 0; i--) {
+    const [x0, y0] = ra[i - 1], [x1, y1] = ra[i], [x2, y2] = ra[i + 1];
+    if ((x0 === x1 && x1 === x2) || (y0 === y1 && y1 === y2)) ra.splice(i, 1);
+  }
+  boTrung();
+  if (ra.length < 2) return [pts[0].slice(), pts[pts.length - 1].slice()];
+  return ra;
+}
+
+/** Núm kéo tay cho LẰN (doc ? x : y) = gt: đoạn ĐẦU TIÊN của đường nằm đúng trên
+ *  lằn đó. Đọc từ đường ĐÃ GỘP nên tu/den luôn là đỉnh thật của nét vẽ.
+ *  Đường chỉ còn một đoạn thì trả null: kéo cái đoạn duy nhất ấy là kéo tuột cả
+ *  hai đầu ra khỏi cạnh đã ghim. */
+function lanKeo(pts, doc, gt) {
+  if (pts.length < 3) return null;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p = pts[i], q = pts[i + 1];
+    const tren = doc ? (p[0] === gt && q[0] === gt) : (p[1] === gt && q[1] === gt);
+    if (!tren || (p[0] === q[0] && p[1] === q[1])) continue;
+    return {
+      huong: doc ? 'doc' : 'ngang',
+      x: (p[0] + q[0]) / 2, y: (p[1] + q[1]) / 2,
+      tu: [p[0], p[1]], den: [q[0], q[1]],
+    };
+  }
+  return null;
+}
+
+/** Lằn nối hai đoạn mồi CÙNG TRỤC, kèm khoảng cho phép khi kéo tay.
+ *  Mỗi đầu mồi áp một chặn: mồi hướng dương chặn dưới, hướng âm chặn trên.
+ *   · hai mồi cùng chiều → lằn ra tận đầu mồi XA NHẤT rồi thả tự do về phía đó
+ *     (kẹp ở mép trang); đẩy ngược lại là cắt qua chính khối vừa ra;
+ *   · hai mồi ngược chiều → lằn ở GIỮA hai đầu mồi. Nếu hai đầu quay LƯNG vào
+ *     nhau thì không lối hai lần bẻ nào đi được, lằn giữa chia đôi phần phải
+ *     quặt ngược — xấu đều hai bên còn hơn dồn hết vào một bên. */
+function lanGiua(a, b, na, nb, min, max) {
+  if (na > 0 && nb > 0) { const m = Math.max(a, b); return { tuDong: m, lo: m, hi: Math.max(max, m) }; }
+  if (na < 0 && nb < 0) { const m = Math.min(a, b); return { tuDong: m, lo: Math.min(min, m), hi: m }; }
+  return { tuDong: (a + b) / 2, lo: Math.min(a, b), hi: Math.max(a, b) };
+}
+
+/** Lằn cho lối CHỮ L (hai đầu khác trục): chỉ bị chặn bởi đoạn mồi khối nguồn,
+ *  vì đoạn mồi khối đích luôn là đoạn cuối, không đụng tới lằn. */
+function lanMoi(a, na, tuDong, min, max) {
+  return na > 0
+    ? { tuDong, lo: a, hi: Math.max(max, a) }
+    : { tuDong, lo: Math.min(min, a), hi: a };
+}
+
+/** Đường nối khi ĐÃ GHIM ít nhất một đầu vào một cạnh khối.
+ *  Trả { pts, keo, neo } — neo là hai cạnh THẬT SỰ dùng, kể cả cạnh vừa giải
+ *  hộ cho đầu còn tự động.
+ *
+ *  Hình dạng: mồi ra → nhiều nhất hai chỗ bẻ → mồi vào. Hai đầu cùng trục thì
+ *  đi hình chữ Z qua một lằn; khác trục thì đi chữ L, và chính chữ L là trường
+ *  hợp lằn rơi đúng vào đầu kia — nên kéo lằn ra là chữ L mọc thêm chỗ bẻ,
+ *  không nhảy sang một hình khác. */
+function duongGhim(soDo, A, B, raA, vaoB, lech) {
+  // Đầu còn tự động giải theo chỗ ĐẦU KIA ĐANG ĐỨNG, không theo tâm khối.
+  const ca = raA || canhHuong(A, diemNeo(B, vaoB).p);
+  const cb = vaoB || canhHuong(B, diemNeo(A, ca).p);
+  const { p: pA, n: nA } = diemNeo(A, ca);
+  const { p: pB, n: nB } = diemNeo(B, cb);
+  const sA = [pA[0] + nA[0] * DAI_MOI, pA[1] + nA[1] * DAI_MOI];
+  const sB = [pB[0] + nB[0] * DAI_MOI, pB[1] + nB[1] * DAI_MOI];
+  const W = soThat(Array.isArray(soDo?.lanes) ? drawW(soDo) : 0);
+  const H = soThat(Array.isArray(soDo?.phases) ? drawH(soDo) : 0);
+  const docA = nA[0] === 0, docB = nB[0] === 0;
+
+  let tho, doc, coLan, t;
+  if (docA && docB) {                    // hai đầu cùng trục DỌC → lằn NGANG
+    t = lanGiua(sA[1], sB[1], nA[1], nB[1], 0, H);
+    doc = false; coLan = pA[0] !== pB[0];
+    tho = gt => [pA, [pA[0], gt], [pB[0], gt], pB];
+  } else if (!docA && !docB) {           // hai đầu cùng trục NGANG → lằn DỌC
+    t = lanGiua(sA[0], sB[0], nA[0], nB[0], 0, W);
+    doc = true; coLan = pA[1] !== pB[1];
+    tho = gt => [pA, [gt, pA[1]], [gt, pB[1]], pB];
+  } else if (docA) {                     // ra theo DỌC, vào theo NGANG
+    // Chữ L chỉ dùng được khi nó không quặt ngược vào khối nguồn VÀ đâm vào
+    // đúng MẶT NGOÀI khối đích; không thì đẩy lằn ra sau đoạn mồi và đi vòng.
+    const L = (pB[1] - pA[1]) * nA[1] >= DAI_MOI && (pA[0] - pB[0]) * nB[0] >= DAI_MOI;
+    t = lanMoi(sA[1], nA[1], L ? pB[1] : sA[1], 0, H);
+    doc = false; coLan = pA[0] !== sB[0];
+    tho = gt => [pA, [pA[0], gt], [sB[0], gt], [sB[0], pB[1]], pB];
+  } else {                               // ra theo NGANG, vào theo DỌC
+    const L = (pB[0] - pA[0]) * nA[0] >= DAI_MOI && (pA[1] - pB[1]) * nB[1] >= DAI_MOI;
+    t = lanMoi(sA[0], nA[0], L ? pB[0] : sA[0], 0, W);
+    doc = true; coLan = pA[1] !== sB[1];
+    tho = gt => [pA, [gt, pA[1]], [gt, sB[1]], [pB[0], sB[1]], pB];
+  }
+
+  const gt = nhich(t.tuDong, lech, t.lo, t.hi);
+  const pts = gonDuong(tho(gt));
+  return { pts, keo: coLan ? lanKeo(pts, doc, gt) : null, neo: { raA: ca, vaoB: cb } };
+}
+
 /** Đường nối gấp khúc vuông góc, bo góc 9px — kiểu lưu đồ ISO.
  *  Trả { d, nhan:[x,y], keo, pts }, hoặc null nếu thiếu khối đầu/cuối.
  *  `pts` là đường gấp khúc THÔ (chưa bo góc) — diemGiao soi ở đấy.
@@ -251,16 +432,23 @@ export function diemGiao(soDo) {
  *  x,y là TRUNG ĐIỂM đoạn đó (chỗ đặt núm); tu/den là hai đầu.
  *
  *  e.lech là số dôi TƯƠNG ĐỐI so với chỗ bẻ tự động, không phải toạ độ tuyệt
- *  đối: lưu toạ độ thì kéo khối một cái là chỗ bẻ rơi lại đằng sau. */
+ *  đối: lưu toạ độ thì kéo khối một cái là chỗ bẻ rơi lại đằng sau.
+ *
+ *  `neo` cho biết đường đang RA và VÀO ở cạnh nào của hai khối — cạnh người dùng
+ *  ghim (e.raA / e.vaoB), hoặc cạnh chính đường tự động đã chọn. Giao diện tô
+ *  sáng chấm đang có hiệu lực bằng ô này, không phải tự đo lấy. */
 export function routeEdge(soDo, e, giao) {
   const A0 = timKhoi(soDo, e.a), B0 = timKhoi(soDo, e.b);
   if (!A0 || !B0) return null;
   const A = rectOf(A0), B = rectOf(B0);
   const dx = B.cx - A.cx, dy = B.cy - A.cy;
   const lech = doLech(e);
-  let pts, keo = null;
+  const raA = neoHopLe(e?.raA), vaoB = neoHopLe(e?.vaoB);
+  let pts, keo = null, neo = null;
 
-  if (Math.abs(dy) < 46) {                       // cùng tầm cao → đi ngang
+  if (raA || vaoB) {                             // ĐÃ GHIM — bám cạnh, không lách
+    ({ pts, keo, neo } = duongGhim(soDo, A, B, raA, vaoB, lech));
+  } else if (Math.abs(dy) < 46) {                // cùng tầm cao → đi ngang
     const phai = dx > 0;
     pts = [[phai ? A.x + A.w : A.x, A.cy], [phai ? B.x : B.x + B.w, B.cy]];
   } else {
@@ -359,6 +547,7 @@ export function routeEdge(soDo, e, giao) {
     nhan: [(pts[best][0] + pts[best + 1][0]) / 2, (pts[best][1] + pts[best + 1][1]) / 2],
     keo,
     pts,
+    neo: neo || { raA: neoTaiDiem(A, pts[0]), vaoB: neoTaiDiem(B, pts[pts.length - 1]) },
   };
 }
 

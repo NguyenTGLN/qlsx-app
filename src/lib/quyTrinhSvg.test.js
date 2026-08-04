@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { thoatXml, soDoSangSvg } from './quyTrinhSvg';
 import { GUT, LANE_W, MAU_DAI, CAO_HANG } from './quyTrinhSoDo';
+import { routeEdge, rectOf, diemNeo, CANH_NEO } from './quyTrinhSoDo';
 import { mauSoDo } from './quyTrinhMau';
 
 const soDo = {
@@ -251,5 +252,59 @@ describe('nhịp cầu trong ảnh xuất ra', () => {
     expect(out).not.toContain('A5 5');
     // sơ đồ mẫu cũng vậy — không đẻ ra phần tử thừa
     expect(soDoSangSvg(mauSoDo('SX'))).not.toContain('A5 5');
+  });
+});
+
+/* ── GHIM ĐIỂM NỐI TRONG ẢNH XUẤT RA ─────────────────────────────────
+   Bản in A3, ảnh PNG dán xưởng và ảnh nhúng .docx đều đi qua hàm này. Đường đã
+   ghim mà chỉ đúng trên màn hình thì tài liệu ISO in ra lại là một hình khác —
+   nên phải đo ngay ở chuỗi SVG, không suy từ việc "cùng gọi routeEdge". */
+describe('ghim điểm nối — ảnh xuất ra vẽ y hệt trình vẽ', () => {
+  const ghim = (raA, vaoB) => {
+    const s = structuredClone(soDo);
+    s.edges[1] = { ...s.edges[1], raA, vaoB };   // b1 → d
+    return s;
+  };
+
+  test('16 CẶP CẠNH — path trong SVG khớp TỪNG BYTE với routeEdge', () => {
+    const hong = [];
+    for (const raA of CANH_NEO) {
+      for (const vaoB of CANH_NEO) {
+        const s = ghim(raA, vaoB);
+        const d = routeEdge(s, s.edges[1]).d;
+        const out = soDoSangSvg(s);
+        if (!out.includes(`<path d="${d}"`)) hong.push(`${raA}→${vaoB}: không thấy path trong ảnh`);
+        if (out.includes('NaN')) hong.push(`${raA}→${vaoB}: ảnh có NaN`);
+        if ((out.match(/data-noi="/g) || []).length !== 3) hong.push(`${raA}→${vaoB}: thiếu đường nối`);
+      }
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('đường ghim rời ĐÚNG trung điểm cạnh khối — đo trên chính chuỗi M của path', () => {
+    const s = ghim('trai', 'phai');
+    const A = rectOf(s.nodes.find(n => n.id === 'b1'));
+    const B = rectOf(s.nodes.find(n => n.id === 'd'));
+    const [mx, my] = diemNeo(A, 'trai').p;
+    const [ex, ey] = diemNeo(B, 'phai').p;
+    const out = soDoSangSvg(s);
+    expect(out).toContain(`d="M${mx} ${my} `);
+    expect(out).toContain(` L${ex} ${ey}"`);
+  });
+
+  test('KHOÁ GHIM RÁC trong so_do → ảnh ra đúng từng byte như khi không có khoá', () => {
+    const goc = soDoSangSvg(soDo);
+    for (const rac of ['xyz', 42, null, true, {}, [], 'TREN']) {
+      const s = structuredClone(soDo);
+      s.edges = s.edges.map(e => ({ ...e, raA: rac, vaoB: rac }));
+      expect(soDoSangSvg(s)).toBe(goc);
+    }
+  });
+
+  test('CHUỖI GHIM ĐỘC không chèn được thẻ vào ảnh — chỉ bốn cạnh là hợp lệ', () => {
+    const s = ghim('"><script>alert(1)</script>', 'duoi');
+    const out = soDoSangSvg(s);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('NaN');
   });
 });

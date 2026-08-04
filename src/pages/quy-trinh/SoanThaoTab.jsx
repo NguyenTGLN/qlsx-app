@@ -7,7 +7,7 @@ import {
   GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT, CAO_HANG,
   laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
   themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc, tronCaoGiaiDoan,
-  diemGiao,
+  diemGiao, CANH_NEO, diemNeo, neoHopLe,
 } from '../../lib/quyTrinhSoDo';
 import { kiemTraLuuDo } from '../../lib/quyTrinhKiemTra';
 import { dongDienGiai } from '../../lib/quyTrinhDienGiai';
@@ -50,6 +50,10 @@ const LOAI_POP = ['step', 'check', 'dec', 'doc', 'end'];
 const PAL = ['#2563eb', '#0891b2', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#db2777', '#475569'];
 const BUOC_LUOI = 8;   // kéo khối bám lưới 8px cho thẳng hàng mắt thường
 
+// Tên bốn cạnh khối bằng tiếng Việt — chỉ là CHỮ, để hiện lên mách nước và bảng
+// bên phải. Hình học của bốn điểm nối nằm ở diemNeo bên quyTrinhSoDo.
+const TEN_CANH = { tren: 'cạnh trên', phai: 'cạnh phải', duoi: 'cạnh dưới', trai: 'cạnh trái' };
+
 // ── Biến đổi thuần, KHÔNG hình học: vá một trường rồi trả sơ đồ mới. ──
 // Mọi thay đổi phải đi qua doiSoDo (bất biến) thì Ctrl+Z mới đúng.
 const vaKhoi = (soDo, id, va) => ({
@@ -59,17 +63,18 @@ const vaCanh = (soDo, id, va) => ({
   ...soDo, edges: soDo.edges.map(e => (e.id === id ? { ...e, ...va } : e)),
 });
 const boCanh = (soDo, id) => ({ ...soDo, edges: soDo.edges.filter(e => e.id !== id) });
-// XOÁ HẲN khoá lech chứ không đặt về 0: đường quay lại đúng dạng của một đường
-// chưa từng bị chỉnh, và bản lưu không đọng lại khoá thừa nào.
-const boLech = (soDo, id) => ({
+// XOÁ HẲN khoá chứ không đặt về 0 hay chuỗi rỗng: đường quay lại đúng dạng của
+// một đường chưa từng bị chỉnh, và bản lưu không đọng lại khoá thừa nào.
+const boKhoa = (soDo, id, khoa) => ({
   ...soDo,
   edges: soDo.edges.map((e) => {
     if (e.id !== id) return e;
     const con = { ...e };
-    delete con.lech;
+    for (const k of khoa) delete con[k];
     return con;
   }),
 });
+const boLech = (soDo, id) => boKhoa(soDo, id, ['lech']);
 const vaCot = (soDo, i, va) => ({
   ...soDo, lanes: soDo.lanes.map((l, k) => (k === i ? { ...l, ...va } : l)),
 });
@@ -205,14 +210,28 @@ export default function SoanThaoTab({
   const khoiChon = chon?.loai === 'node' && soDo ? timKhoi(soDo, chon.id) : null;
   const canhChon = chon?.loai === 'edge' && soDo ? soDo.edges.find(e => e.id === chon.id) : null;
 
-  // Núm kéo chỉnh chỗ bẻ của đường ĐANG CHỌN. routeEdge trả sẵn `keo` — chỗ đặt
-  // núm và hai đầu đoạn kéo được — nên tệp này không tính lấy một toạ độ nào.
-  // null nghĩa là đường ấy thẳng tuột, không có chỗ bẻ nào để chỉnh.
-  const numLech = (() => {
+  // Đường ĐANG CHỌN, đã định tuyến sẵn: núm chỗ bẻ và bốn chấm ghim điểm nối đều
+  // đọc từ đây nên chỉ phải định tuyến MỘT lần. routeEdge trả sẵn `keo` (chỗ đặt
+  // núm và hai đầu đoạn kéo được) lẫn `neo` (cạnh đường đang thật sự ra/vào, kể
+  // cả khi còn tự động) — tệp này không tính lấy một toạ độ nào.
+  const noiChon = (() => {
     if (!soDoHien || chon?.loai !== 'edge') return null;
     const e = soDoHien.edges.find(x => x.id === chon.id);
-    return (e && routeEdge(soDoHien, e)?.keo) || null;
+    const r = e ? routeEdge(soDoHien, e) : null;
+    const A = r ? timKhoi(soDoHien, e.a) : null, B = r ? timKhoi(soDoHien, e.b) : null;
+    if (!r || !A || !B) return null;
+    return {
+      keo: r.keo || null,
+      // Hai đầu đường: khối để đặt chấm, cạnh ĐANG GHIM (null là để tự động) và
+      // cạnh ĐANG CÓ HIỆU LỰC (để tô sáng chấm mà đường thật sự đang dùng).
+      dau: [
+        { khoa: 'raA', ten: A.tx, r: rectOf(A), ghim: neoHopLe(e.raA), dang: r.neo.raA },
+        { khoa: 'vaoB', ten: B.tx, r: rectOf(B), ghim: neoHopLe(e.vaoB), dang: r.neo.vaoB },
+      ],
+    };
   })();
+  // null nghĩa là đường ấy thẳng tuột, không có chỗ bẻ nào để chỉnh.
+  const numLech = noiChon?.keo || null;
 
   // Mốc đường gióng ngang hàng — chỉ tồn tại trong lúc kéo, và chỉ khi nam châm
   // đang bắt vào một khối nào đó. hutHang đã trả sẵn con số này lúc kéo nên ở đây
@@ -496,6 +515,31 @@ export default function SoanThaoTab({
     ev.stopPropagation();
     lechRef.current = null;
     setKeoLech(null);
+  };
+
+  // ── Ghim điểm nối vào cạnh khối ───────────────────────────────
+  // Cử chỉ THỨ TƯ, tách khỏi ba cử chỉ kia đúng bằng CHỖ BẤM như chúng — và ở
+  // đây còn chặt hơn: bốn chấm chỉ mọc khi đang chọn một ĐƯỜNG NỐI, mà núm ＋
+  // và núm ⤳ lại chỉ mọc khi đang chọn một KHỐI (hienNum đòi chon.loai==='node'),
+  // nên hai bộ KHÔNG BAO GIỜ cùng có mặt trên màn hình. Chấm nằm trong lớp phủ,
+  // là một lớp DOM khác hẳn lớp khối, nên pointerdown ở đây không tới được khối
+  // bên dưới; keoRef/noiRef/lechRef vẫn null suốt nên dichKhoi/thaNoi/dichLech
+  // tự thoát ở dòng đầu.
+  //
+  // Bấm đúng chấm ĐANG GHIM thì gỡ ghim — cùng một chỗ bấm, hai chiều, không
+  // phải đi tìm nút "bỏ" ở đâu khác (bảng bên phải vẫn có nút bỏ cả hai đầu).
+  const ghimNeo = (ev, khoa, canh) => {
+    if (ev.button !== 0) return;
+    ev.stopPropagation();
+    ev.preventDefault();          // y như ba cử chỉ kia: đừng để trình duyệt bôi đen
+    if (!coSua || !canhChon) return;
+    const cu = neoHopLe(canhChon[khoa]);
+    doiSoDo(cu === canh
+      ? boKhoa(soDo, canhChon.id, [khoa])
+      : vaCanh(soDo, canhChon.id, { [khoa]: canh }));
+    toast(cu === canh
+      ? 'Đã bỏ ghim đầu này — đường tự chọn cạnh trở lại.'
+      : `Đã ghim vào ${TEN_CANH[canh]}. Đường đã ghim thôi tự lách khối chắn.`);
   };
 
   // ── Phím tắt ──────────────────────────────────────────────────
@@ -869,6 +913,13 @@ export default function SoanThaoTab({
             vẫn bám theo. Muốn bỏ: bấm <b>Đưa về tự động</b> ở bảng bên phải.
           </div>
 
+          <h3 style={{ ...S.h3, marginTop: 18 }}>Ghim điểm nối</h3>
+          <div style={S.hint}>
+            Bấm <b>đường nối</b> → hiện <b style={{ color: mau }}>4 chấm</b> ở giữa mỗi cạnh khối
+            đầu và khối cuối → bấm một chấm để ghim đường vào đúng cạnh đó, bấm lại chấm đang
+            ghim để bỏ. Đường <b>đã ghim thôi tự lách</b> khối chắn.
+          </div>
+
           <h3 style={{ ...S.h3, marginTop: 18 }}>Sửa cột và hàng</h3>
           <div style={S.hint}>
             Bấm <b>tên cột</b> hoặc <b>nhãn giai đoạn</b> → bảng bên phải có chỗ đổi tên
@@ -1097,7 +1148,7 @@ export default function SoanThaoTab({
                     Núm chỗ bẻ chỉ hiện khi ĐANG CHỌN một đường; đường thẳng tuột
                     thì routeEdge trả keo = null nên không có núm. Đường gióng chỉ
                     hiện khi đang kéo khối VÀ nam châm đang bắt. */}
-                {coSua && (mocGiong != null || numLech) && (
+                {coSua && (mocGiong != null || numLech || noiChon) && (
                   <svg className="qe-lechlop" data-lech={numLech ? numLech.huong : undefined}
                     width={drawW(soDoHien)} height={drawH(soDoHien)}>
 
@@ -1109,6 +1160,43 @@ export default function SoanThaoTab({
                       <line x1={0} y1={mocGiong} x2={drawW(soDoHien)} y2={mocGiong}
                         stroke={mau} strokeWidth={1.3} strokeDasharray="4 5" opacity={0.95} />
                     )}
+
+                    {/* ── BỐN CHẤM GHIM ĐIỂM NỐI (kiểu Visio) ──
+                        Ở giữa mỗi cạnh khối ĐẦU và khối CUỐI của đường đang chọn.
+                        Bấm một chấm là ghim đầu đường vào đúng cạnh ấy; bấm lại
+                        chấm đang ghim là bỏ ghim. Chấm ĐANG CÓ HIỆU LỰC tô đặc
+                        (kể cả khi đường còn tự động — routeEdge cho biết nó đang
+                        ra/vào cạnh nào), chấm ĐÃ GHIM thêm một vòng ngoài.
+                        Toạ độ lấy nguyên từ diemNeo, không tự tính điểm nào.
+                        Vẽ TRƯỚC núm chỗ bẻ để núm ấy nằm trên: núm là cử chỉ kéo,
+                        bị một cái chấm nuốt mất thì khó chịu hơn là ngược lại. */}
+                    {noiChon && noiChon.dau.flatMap(dau => CANH_NEO.map((canh) => {
+                      const [x, y] = diemNeo(dau.r, canh).p;
+                      const daGhim = dau.ghim === canh;
+                      const dangDung = dau.dang === canh;
+                      const dauTen = dau.khoa === 'raA' ? 'đầu ra' : 'đầu vào';
+                      return (
+                        <g key={`${dau.khoa}-${canh}`}>
+                          {daGhim && (
+                            <circle cx={x} cy={y} r={8.5} fill="none"
+                              stroke={mau} strokeWidth={1.4} opacity={0.5} />
+                          )}
+                          <circle cx={x} cy={y} r={dangDung ? 5 : 4.2}
+                            fill={dangDung ? mau : '#fff'} stroke={dangDung ? '#fff' : mau}
+                            strokeWidth={dangDung ? 1.6 : 1.8}
+                            style={{ pointerEvents: 'all', touchAction: 'none', cursor: 'pointer' }}
+                            onPointerDown={(ev) => ghimNeo(ev, dau.khoa, canh)}>
+                            <title>
+                              {daGhim
+                                ? `Đang ghim ${dauTen} ở ${TEN_CANH[canh]} khối “${dau.ten}”. `
+                                  + 'Bấm lần nữa để bỏ ghim, trả đường về tự động.'
+                                : `Ghim ${dauTen} vào ${TEN_CANH[canh]} khối “${dau.ten}”. `
+                                  + 'Đường đã ghim không tự lách khối chắn nữa.'}
+                            </title>
+                          </circle>
+                        </g>
+                      );
+                    }))}
 
                     {numLech && (
                       <>
@@ -1360,6 +1448,24 @@ function CanhInsp({ e, soDo, doiSoDo, coSua, onXoa }) {
           <p style={S.note}>
             Chỗ bẻ đang được kéo tay lệch <b>{String(e.lech)}px</b> so với chỗ tự động.
             Số này là khoảng LỆCH, không phải toạ độ — kéo khối đi thì chỗ bẻ vẫn bám theo.
+          </p>
+        </div>
+      )}
+
+      {/* Chỉ hiện khi ĐÃ ghim ít nhất một đầu. Điều kiện đặt trên khoá đã lọc
+          rác (neoHopLe) chứ không trên khoá thô: khoá hỏng trong so_do được coi
+          như không ghim, nên không được mời người dùng đi bỏ một thứ không có. */}
+      {coSua && (neoHopLe(e.raA) || neoHopLe(e.vaoB)) && (
+        <div style={S.fld}>
+          <button type="button" className="qe-btn" style={{ ...S.btn, ...S.btnNho }}
+            onClick={() => doiSoDo(boKhoa(soDo, e.id, ['raA', 'vaoB']))}
+            title="Bỏ điểm nối đã ghim ở cả hai đầu, để đường tự chọn cạnh như cũ">
+            Bỏ ghim, để tự động
+          </button>
+          <p style={S.note}>
+            Đang ghim đầu ra ở <b>{TEN_CANH[neoHopLe(e.raA)] || 'cạnh tự chọn'}</b> khối đầu,
+            đầu vào ở <b>{TEN_CANH[neoHopLe(e.vaoB)] || 'cạnh tự chọn'}</b> khối cuối.
+            Đường đã ghim <b>không tự lách</b> khối chắn nữa — lối đi là do bạn quyết.
           </p>
         </div>
       )}
