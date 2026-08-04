@@ -148,6 +148,24 @@ const LEGACY_CAP_MAP = [
   { key: 'zalo_kpi_export',    module: 'cskh', caps: ['io'], onlyTabs: ['zalo_kpi'] },
 ];
 
+/**
+ * Trả bản sao user với quyền cũ đã chuyển sang khoá `tab.*` (chuyển tạm thời, trong bộ nhớ).
+ * ADMIN không đụng tới; user đã có khoá `tab.*` giữ nguyên.
+ *
+ * Ở đây chứ không nằm riêng trong AuthContext, vì KHÔNG chỉ AuthContext cần nó: `chonDiemDen`
+ * cũng phải đọc đúng quyền đã chuyển đổi. Đo 04/08/2026 — `TGD` (Anh Giang) mang `view_tasks:
+ * true` mà 0 khoá `tab.*`: nhìn quyền thô thì tưởng không có quyền gì, nhìn quyền đã chuyển
+ * mới thấy họ xem được tab Công việc. Hai chỗ đọc hai kiểu là hai chỗ ra hai kết luận.
+ */
+export function withMigratedPerms(data) {
+  if (!data || data.role === 'ADMIN') return data;
+  const perms = data.permissions;
+  const hasTabKeys = perms && typeof perms === 'object' &&
+    Object.keys(perms).some(k => k.startsWith('tab.'));
+  if (hasTabKeys) return data;
+  return { ...data, permissions: migrateLegacyToTabPerms(perms || {}) };
+}
+
 export function migrateLegacyToTabPerms(perms) {
   const out = { ...(perms || {}) };
   const setCap = (module, tabId, cap) => {

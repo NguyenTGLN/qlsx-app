@@ -1,5 +1,5 @@
 import { createElement as h, useState, useEffect, useCallback, useRef, Fragment } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
     import { supabase as db, fetchAllRows } from '../../lib/supabase';
     import { dataCache } from '../../lib/dataCache';
     import WorkReport from './WorkReport';
@@ -1265,8 +1265,10 @@ import { useNavigate } from 'react-router-dom';
     // ============================================================
     function App() {
       const navigate = useNavigate();
+      const location = useLocation();
       const { user: authUser, logout: authLogout } = useAuth();
       const [me, setMe] = useState(null)
+      const [kpiNvBanDau, setKpiNvBanDau] = useState(null)
       const [tasks, setTasks] = useState([])
       const [users, setUsers] = useState([])
       const [view, setView] = useState('menu') 
@@ -1292,6 +1294,26 @@ import { useNavigate } from 'react-router-dom';
       }, [authUser])
 
       useEffect(() => { if (me && !canSeeTab(me,'tasks','dashboard') && view === 'dashboard') { setView('tasks'); setAssFilter(me.id) } }, [me, view])
+
+      // Deep-link từ Bảng tin cá nhân: /tasks?view=kpi mở thẳng bảng KPI của CHÍNH người
+      // đang đăng nhập. Theo đúng tiền lệ QualityApp.jsx: đọc param, đặt trạng thái, rồi
+      // XOÁ param khỏi URL (replace) để F5 hay bấm Quay lại không mở lại lần nữa.
+      //
+      // Người xem lấy từ `me`, KHÔNG nhận từ URL: mã nhân viên cũng là tên đăng nhập nên
+      // đừng đẩy nó ra thanh địa chỉ, và cũng không có lý do gì để trang tự khai mình là ai.
+      //
+      // Kiểm quyền NGAY ĐÂY, không dựa vào chỗ render: URL người dùng gõ được, và tab KPI
+      // là nơi xem điểm của MỌI người. Không đủ quyền thì chỉ xoá param, giữ nguyên view.
+      useEffect(() => {
+        if (!me) return
+        const p = new URLSearchParams(location.search)
+        if (p.get('view') !== 'kpi') return
+        if (canSeeTab(me, 'tasks', 'kpi')) {
+          setView('kpi')
+          setKpiNvBanDau(me.id)
+        }
+        navigate('/tasks', { replace: true })
+      }, [me, location.search, navigate])
 
       const lastCheckDayRef = useRef(new Date().toISOString().split('T')[0])
       // ── TĐ-12 ──────────────────────────────────────────────────────────────
@@ -1647,7 +1669,7 @@ import { useNavigate } from 'react-router-dom';
                  )
                : view==='dashboard'&&canSeeTab(me,'tasks','dashboard') ? h(Dashboard, {tasks, users, currentUser: me, pendingOrders, onUserClick:handleUserClick, onDetail:t=>setDetailTask(t), onAddUser: ()=>setUserModal({}), onEditUser: u=>setUserModal({user:u})})
                : view==='work_report' && canSeeTab(me,'tasks','work_report') ? h(WorkReport)
-               : view==='kpi' && canSeeTab(me,'tasks','kpi') ? h(KpiTab, { me, users, perm: getTabPerm(me, 'tasks', 'kpi') })
+               : view==='kpi' && canSeeTab(me,'tasks','kpi') ? h(KpiTab, { me, users, perm: getTabPerm(me, 'tasks', 'kpi'), nvBanDau: kpiNvBanDau })
                : view==='cham_cong' && canSeeTab(me,'tasks','cham_cong') ? h(ChamCongTab, { users, me, perm: getTabPerm(me, 'tasks', 'cham_cong') })
                : view==='cai_tien' && canSeeTab(me,'tasks','cai_tien') ? h(CaiTienTab, { me, users, perm: getTabPerm(me, 'tasks', 'cai_tien') })
                : view==='tasks' && assFilter !== 'ALL' ? h(UserTaskBoard, { user: users.find(u=>u.id===assFilter) || me, tasks, currentUser: me, onBack: canSeeTab(me,'tasks','dashboard') ? () => { setView('dashboard'); setAssFilter('ALL'); } : null, onDetail: t=>setDetailTask(t), onEdit: t=>setTaskModal({task:t}), onUpdate: handleUpdateTask, onRemind: handleRemind, onDelete: handleDeleteTask })

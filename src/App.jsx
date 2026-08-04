@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
+import DiemDenDauTien from './components/DiemDenDauTien';
 import Login from './pages/Login';
 import HomePage from './pages/HomePage';
 
@@ -16,6 +17,7 @@ const CskhApp         = lazy(() => import('./pages/cskh/CskhApp'));
 const KhoHangApp      = lazy(() => import('./pages/kho/KhoHangApp'));
 const QualityApp      = lazy(() => import('./pages/quality/QualityApp'));
 const QuyTrinhApp     = lazy(() => import('./pages/quy-trinh/QuyTrinhApp'));
+const BangTinCaNhan   = lazy(() => import('./pages/BangTinCaNhan'));
 
 // Màn hình chờ trong lúc tải gói của phân hệ
 function ModuleLoader() {
@@ -47,11 +49,16 @@ function App() {
             sửa được. Hai bảng nay đã siết về {authenticated}.
             Cần màn hình hiển thị không đăng nhập thì viết RPC SECURITY DEFINER chỉ
             trả đúng phần cần hiện, TUYỆT ĐỐI không mở lại quyền cho vai trò công khai. */}
-        <Route path="/" element={<Navigate to="/home" replace />} />
+        {/* '/' tự chọn màn hình đầu tiên theo người đăng nhập — xem DiemDenDauTien.
+            Nó KHÔNG đọc dữ liệu, chỉ đọc phiên đã lưu, nên vẫn hợp luật ở khối này. */}
+        <Route path="/" element={<DiemDenDauTien />} />
         <Route path="/login" element={<Login />} />
 
         {/* ── Protected ── */}
         <Route path="/home" element={<ProtectedRoute><HomePage /></ProtectedRoute>} />
+        {/* Bảng tin cá nhân — KHÔNG đặt requiredModule: hai khối bên trong tự gác
+            quyền của chính chúng (tab.tasks.kpi.view / tab.tasks.tasks.view). */}
+        <Route path="/ca-nhan" element={<ProtectedRoute><BangTinCaNhan /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute requiredModule="access_overview"><AdminDashboard /></ProtectedRoute>} />
         <Route path="/tasks/*" element={<ProtectedRoute requiredModule="access_tasks"><TaskApp /></ProtectedRoute>} />
         <Route path="/worker" element={<ProtectedRoute requiredModule="access_production"><WorkerDashboard /></ProtectedRoute>} />

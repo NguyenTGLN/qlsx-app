@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from './supabase';
 import { setSession, clearSession, getSessionUser } from './authToken';
-import { getTabPerm as _getTabPerm, canSeeTab as _canSeeTab, canSeeModule as _canSeeModule, migrateLegacyToTabPerms } from './permRegistry';
+import { getTabPerm as _getTabPerm, canSeeTab as _canSeeTab, canSeeModule as _canSeeModule, withMigratedPerms } from './permRegistry';
 
 // ============================================================
 // 🔐 RBAC — Hệ thống Phân quyền Toàn App
@@ -100,15 +100,8 @@ const DEFAULT_PERMS_AGENT = {
   // tab nào tới khi Admin cấp trong ma trận (khớp lựa chọn "mặc định tắt hết").
 };
 
-/** Migrate legacy perms -> tab.* keys in memory (transitional). Admin unaffected; users with tab.* keys unchanged. */
-function withMigratedPerms(data) {
-  if (!data || data.role === 'ADMIN') return data;
-  const perms = data.permissions;
-  const hasTabKeys = perms && typeof perms === 'object' &&
-    Object.keys(perms).some(k => k.startsWith('tab.'));
-  if (hasTabKeys) return data;
-  return { ...data, permissions: migrateLegacyToTabPerms(perms || {}) };
-}
+// withMigratedPerms chuyển sang lib/permRegistry.js (04/08/2026) — `chonDiemDen` cũng cần
+// nó, mà nhập từ đây thì kéo theo cả supabase client. Hành vi giữ nguyên từng chữ.
 
 /**
  * Lấy permissions cho user dựa trên role + saved permissions

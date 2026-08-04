@@ -17,6 +17,7 @@ công việc đang được giao** — thay vì lưới 9 phân hệ. Bấm nút
 | Có `tab.tasks.kpi.view` | 12/16 nhân viên. **Thiếu**: `hangkt` (Hằng), `nva` (Vân Anh), `TGD` (Anh Giang), `test` |
 | Có `tab.tasks.tasks.view` | Đúng 12 người đó — không ai có cái này mà thiếu cái kia |
 | Không có tab nào | `hangkt`, `TGD` (0 key `tab.*`); `nva` có 2 key nhưng không phải hai key trên |
+| **Quyền cũ chưa chuyển** | `TGD` mang `view_tasks: true` với 0 khoá `tab.*` ⇒ sau khi `migrateLegacyToTabPerms` chạy, họ **có** `tab.tasks.tasks.view`. Nhìn quyền thô thì kết luận sai. `hangkt` có `view_tasks: false` ⇒ đúng là không có gì |
 | Dòng KPI kỳ `2026-08` | 205 dòng cá nhân của **13 người** + 5 dòng `BO_PHAN` |
 | RLS `kpi_chi_tieu`, `kpi_nhat_ky`, `cham_cong`, `cong_viec_duoc_giao` | SELECT = `true` cho `{authenticated}` ⇒ **mọi tài khoản đã đăng nhập vốn đã đọc được KPI của mọi người ở tầng CSDL**; cap `tab.tasks.kpi.view` chỉ che ở tầng giao diện |
 | Nhật ký trừ điểm kỳ `2026-08` | **0 dòng** (cả bảng `kpi_nhat_ky` chỉ có 17 dòng, từ các kỳ trước) |
@@ -73,8 +74,21 @@ AGENT, có ≥1 khối   → /ca-nhan
 AGENT, không khối   → /home
 ```
 
-"Có ≥1 khối" = `canSeeTab(user,'tasks','kpi')` **hoặc** `canSeeTab(user,'tasks','tasks')`.
-Theo số đo, đúng 12 người vào `/ca-nhan`; 4 người còn lại vào `/home` như hôm nay.
+"Có ≥1 khối" = `canSeeTab(user,'tasks','kpi')` **hoặc** `canSeeTab(user,'tasks','tasks')`, đọc
+trên quyền **đã chuyển đổi** (`withMigratedPerms`). Theo số đo: 13 người vào `/ca-nhan`
+(12 người có khoá `tab.*`, cộng `TGD` nhờ quyền cũ `view_tasks`); `hangkt`, `nva`, `test`
+vào `/home` như hôm nay.
+
+**`Login.jsx` phải dùng CHUNG `chonDiemDen`.** Hôm nay nó gõ cứng `navigate('/home')` sau khi
+đăng nhập — để nguyên thì nhân viên vừa đăng nhập vẫn thấy lưới phân hệ trước, đúng thứ màn
+hình này sinh ra để thay. Chỉ khi mở lại app với phiên còn hạn mới vào bảng tin, tức tính năng
+chạy đúng một nửa số lần.
+
+`chonDiemDen` tự gọi `withMigratedPerms`, **không tin người gọi đã chuyển**: `login()` trả về
+bản THÔ (AuthContext chỉ chuyển bản đưa vào state). Không làm vậy thì `TGD` mở app sẵn phiên
+sẽ vào `/ca-nhan`, còn vừa đăng nhập lại rơi về `/home` — cùng một người, hai đường vào, hai
+kết quả. `withMigratedPerms` vì thế chuyển từ `AuthContext.jsx` sang `lib/permRegistry.js`
+(nhập từ AuthContext sẽ kéo theo cả supabase client vào một hàm thuần).
 
 Route mới `/ca-nhan` bọc `ProtectedRoute` **không** kèm `requiredModule`: gác quyền nằm ở
 từng khối bên trong. Đặt `requiredModule="access_tasks"` sẽ chặn nhầm người có quyền xem KPI
@@ -134,7 +148,8 @@ Header: lời chào + tên + ngày (chép cách `HomePage` làm), nút **Home**,
 - Nếu `kq.nhomThieuDongChung.length` > 0 → dải cảnh báo. Cờ này nghĩa là dữ liệu hỏng
   (thiếu dòng chấm chung) làm mất trọn trọng số, không phải kết quả chấm — giấu nó đi là
   để người dùng chịu mất điểm mà không biết vì sao.
-- Bấm một dòng → `navigate('/tasks?view=kpi&nv=<me.id>')`.
+- Bấm một dòng → `navigate('/tasks?view=kpi')`. **Không** kèm mã nhân viên vào URL: mã đó
+  cũng là tên đăng nhập, mà `TaskApp` vốn đã biết người đang đăng nhập là ai.
 
 Trạng thái rỗng, phải phân biệt hai chuyện khác nhau:
 
@@ -165,7 +180,7 @@ Không dùng lại `viec` của `taiDuLieuKpi` vì nguồn đó lọc theo **th�
 Theo luật đã chốt cho app này: **không cuộn ngang**, chữ trên nút/nhãn luôn một dòng, các
 thanh tự co vừa bề ngang điện thoại. Một cột trên điện thoại, hai cột từ 900px trở lên.
 
-## D. Deep-link `/tasks?view=kpi&nv=<id>`
+## D. Deep-link `/tasks?view=kpi`
 
 `TaskApp` điều hướng bằng state `view` nội bộ, không qua URL. Thêm đúng một `useEffect` đọc
 query param rồi tự xoá — theo tiền lệ có sẵn tại
@@ -173,14 +188,16 @@ query param rồi tự xoá — theo tiền lệ có sẵn tại
 
 ```js
 useEffect(() => {
-  const p = new URLSearchParams(location.search);
-  if (p.get('view') === 'kpi' && canSeeTab(me, 'tasks', 'kpi')) {
-    setView('kpi');
-    setKpiNvBanDau(p.get('nv') || null);
-    navigate('/tasks', { replace: true });
-  }
-}, [location.search]);
+  if (!me) return
+  const p = new URLSearchParams(location.search)
+  if (p.get('view') !== 'kpi') return
+  if (canSeeTab(me, 'tasks', 'kpi')) { setView('kpi'); setKpiNvBanDau(me.id) }
+  navigate('/tasks', { replace: true })
+}, [me, location.search, navigate])
 ```
+
+Người xem lấy từ `me`, **không nhận từ URL** — trang không tự khai mình là ai, và tên đăng
+nhập không lọt ra thanh địa chỉ.
 
 `KpiTab` nhận prop mới `nvBanDau` để mở thẳng bảng của một người. Prop **không bắt buộc** —
 không truyền thì `KpiTab` chạy y như hôm nay.
@@ -221,12 +238,16 @@ mà không cần mạng: quá hạn trước, rồi ≤3 ngày, rồi còn lại
 
 | Tệp | Việc |
 |---|---|
-| `src/lib/kpiDuLieu.js` | **mới** — hàm tải dùng chung |
-| `src/lib/kpiDuLieu.test.js` | **mới** |
+| `src/lib/kpiDuLieu.js` + test | **mới** — hàm tải dùng chung |
 | `src/lib/viecDangLam.js` + test | **mới** — hàm thuần xếp việc |
+| `src/lib/diemDen.js` + test | **mới** — hàm thuần chọn màn hình đầu tiên |
 | `src/pages/BangTinCaNhan.jsx` | **mới** — màn hình `/ca-nhan` |
-| `src/pages/BangTinCaNhan.test.jsx` | **mới** |
+| `src/pages/BangTinCaNhan.test.jsx` | **mới** — gác quyền, khung màn hình, luật bề ngang |
+| `src/pages/BangTinCaNhanKhoi.test.jsx` | **mới** — hai khối với dữ liệu thật |
 | `src/components/DiemDenDauTien.jsx` | **mới** — định tuyến `/` |
 | `src/App.jsx` | thêm route `/ca-nhan`, đổi `/` |
+| `src/pages/Login.jsx` | sau đăng nhập đi theo `chonDiemDen` thay vì `/home` cứng |
+| `src/lib/permRegistry.js` | nhận `withMigratedPerms` chuyển sang từ AuthContext |
+| `src/lib/AuthContext.jsx` | nhập `withMigratedPerms` thay vì tự định nghĩa |
 | `src/pages/tasks/KpiTab.jsx` | gọi lib mới; nhận prop `nvBanDau` |
 | `src/pages/tasks/TaskApp.jsx` | đọc query param, truyền `nvBanDau` |

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Lock, LogIn, Eye, EyeOff, Factory } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
+import { chonDiemDen } from '../lib/diemDen';
 
 const Login = () => {
   const [workerCode, setWorkerCode] = useState('');
@@ -13,10 +14,12 @@ const Login = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading, login } = useAuth();
 
-  // Nếu đã đăng nhập → chuyển về /home
+  // Đã đăng nhập rồi mà vẫn ở màn hình này → đưa về đúng màn hình đầu tiên của họ.
+  // Dùng CHUNG chonDiemDen với route '/': nếu chỗ này cứ đẩy về /home thì nhân viên
+  // vừa đăng nhập vẫn thấy lưới phân hệ trước, đúng thứ màn hình bảng tin sinh ra để thay.
   useEffect(() => {
     if (!authLoading && user) {
-      navigate('/home', { replace: true });
+      navigate(chonDiemDen(user), { replace: true });
     }
   }, [user, authLoading, navigate]);
 
@@ -25,8 +28,10 @@ const Login = () => {
     setLoading(true);
     setErrorStr('');
     try {
-      await login(workerCode, password, rememberMe);
-      navigate('/home', { replace: true });
+      // `login` trả về user đã chuẩn hoá role — dùng thẳng nó, đừng đọc `user` của
+      // context: state chưa kịp cập nhật trong cùng một lượt render.
+      const u = await login(workerCode, password, rememberMe);
+      navigate(chonDiemDen(u), { replace: true });
     } catch (err) {
       setErrorStr(err.message || 'Lỗi kết nối máy chủ!');
     } finally {

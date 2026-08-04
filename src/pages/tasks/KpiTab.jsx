@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { supabase, fetchAllRows } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
+import { taiDuLieuKpi } from '../../lib/kpiDuLieu';
 import { tinhBangKpi, giaiThich, kiemTraTrongSo } from '../../lib/kpiEngine';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
 import { xuatExcelKpi, dungDuLieuSheet } from '../../lib/kpiExcel';
@@ -27,14 +28,6 @@ const so1 = n => (Math.abs(n) < 0.05 ? '0.0' : n.toFixed(1));
 // Số gọn cho ô nhỏ: bỏ đuôi .0 vô nghĩa (3.0 → "3", 3.5 → "3.5").
 const soNgan = n => String(Math.round(n * 100) / 100);
 
-// Chia mảng thành từng lô. `.in()` của PostgREST đi qua query string, hơn 200 uuid là
-// URL ~8KB — nhiều proxy/CDN cắt ở 4-8KB và request hỏng im lặng. Chia lô rồi gộp.
-function chiaLo(arr, n) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
-  return out;
-}
-
 const mauTheoDiem = d => (d >= 90 ? '#059669' : d >= 75 ? '#d97706' : '#dc2626');
 
 const oInput = {
@@ -46,7 +39,10 @@ const oInput = {
 // Màn hình 1: danh sách nhân viên + điểm, xếp hạng
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function KpiTab({ me, users = [], perm = {} }) {
+// `nvBanDau` — mở thẳng bảng của một người thay vì danh sách. Dùng cho deep-link
+// /tasks?view=kpi từ Bảng tin cá nhân (TaskApp truyền vào chính me.id).
+// KHÔNG truyền thì tab chạy y như cũ.
+export default function KpiTab({ me, users = [], perm = {}, nvBanDau = null }) {
   const [ky, setKy] = useState(kyHienTai());
   const [rows, setRows] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -60,150 +56,30 @@ export default function KpiTab({ me, users = [], perm = {} }) {
   const [loiViec, setLoiViec] = useState('');
   const [loading, setLoading] = useState(true);
   const [loi, setLoi] = useState('');
-  const [chon, setChon] = useState(null);   // nhan_vien_id đang xem chi tiết
+  // nhan_vien_id đang xem chi tiết. Lấy `nvBanDau` làm giá trị KHỞI TẠO, không đồng bộ
+  // theo prop: bấm "Quay lại" phải trả về danh sách và ở yên đó, chứ không bị prop kéo
+  // ngược vào bảng cũ.
+  const [chon, setChon] = useState(nvBanDau);
   const [xemBangChung, setXemBangChung] = useState(false);
 
   const taiDuLieu = useCallback(async (im = false) => {
     if (!im) setLoading(true);
     setLoi('');
     try {
-      // fetchAllRows trả { data, error } chứ KHÔNG trả thẳng mảng — phải destructure.
-      //
-      // `.order('id')` là TIE-BREAK BẮT BUỘC, không phải trang trí (luật của repo, xem
-      // lib/supabase.js): fetchAllRows gom theo từng đợt 1000 dòng, mà `thu_tu` thì mỗi
-      // người đều có 1..N nên trùng dày đặc. Thứ tự các dòng bằng nhau không được bảo đảm
-      // giữa hai request → đợt sau có thể trả lại dòng đã lấy hoặc bỏ sót dòng chưa lấy.
-      const { data: ct, error: loiCt } = await fetchAllRows(() =>
-        supabase.from('kpi_chi_tieu').select('*').eq('ky', ky).order('thu_tu').order('id'));
-      if (loiCt) throw loiCt;
+      // Mọi truy vấn nằm ở lib/kpiDuLieu.js — dùng CHUNG với Bảng tin cá nhân (/ca-nhan),
+      // để hai màn hình không thể hiện hai điểm khác nhau cho cùng một người.
+      // `kemDanhMuc` mặc định true: tab này có form "Thêm chỉ tiêu" cần ô chọn của mọi kỳ.
+      const d = await taiDuLieuKpi(ky);
 
-      const ids = (ct || []).map(r => r.id);
-      const nk = [];
-      for (const lo of chiaLo(ids, 100)) {
-        // `ngay` trùng còn dày hơn `thu_tu` (cả bộ phận bị trừ điểm cùng một ngày là
-        // chuyện thường). Một dòng trừ điểm bị lặp = trừ đôi, bị sót = không trừ —
-        // cả hai đều ra sai điểm KPI, và sai âm thầm.
-        const { data, error } = await fetchAllRows(() =>
-          supabase.from('kpi_nhat_ky').select('*').in('chi_tieu_id', lo).order('ngay').order('id'));
-        if (error) throw error;
-        if (data) nk.push(...data);
-      }
-
-      // Công việc của tháng, để chấm tự động 2 chỉ tiêu HT_CONG_VIEC_DUNG_HAN + VIDEO_KY_THUAT.
-      // Lọc sẵn theo tháng ở phía server và chỉ lấy 8 cột cần dùng: cong_viec_duoc_giao là bảng
-      // lớn nhất app, kéo cả bảng về chỉ để đếm vài chục việc là phí băng thông của mọi người.
-      //
-      // Mốc tháng dựng bằng `new Date(nam, thang-1, 1)` = nửa đêm GIỜ MÁY (giờ VN), không phải
-      // giờ UTC: việc tạo 06:00 ngày 01/08 giờ VN là 23:00 ngày 31/07 giờ UTC, cắt theo UTC sẽ
-      // xếp nhầm nó sang tháng 7.
-      //
-      // Lỗi tải việc KHÔNG được làm hỏng cả màn hình KPI — bắt riêng, để danh sách rỗng và báo
-      // một dòng cảnh báo, phần còn lại của bảng vẫn dùng được.
-      const [nam, thang] = ky.split('-').map(Number);
-      let dsViec = [];
-      let loiTaiViec = '';
-      try {
-        const { data, error } = await fetchAllRows(() => supabase
-          .from('cong_viec_duoc_giao')
-          .select('id, title, status, due_date, completed_date, created_date, assignee_ids, assignee_id')
-          .gte('created_date', new Date(nam, thang - 1, 1).toISOString())
-          .lt('created_date', new Date(nam, thang, 1).toISOString())
-          .order('id'));
-        if (error) throw error;
-        dsViec = data || [];
-      } catch (err) {
-        loiTaiViec = err?.message || String(err);
-      }
-
-      // Bản ghi sản xuất của tháng, để chấm tự động chỉ tiêu HIỆU SUẤT SẢN XUẤT.
-      // `execution_date` là cột DATE nên lọc bằng chuỗi 'YYYY-MM-DD' là đủ, không cần dựng
-      // mốc giờ như bảng công việc.
-      // Cùng một lưới an toàn: hỏng chỗ này không được kéo sập cả màn hình KPI.
-      let dsSanXuat = [];
-      try {
-        const { data, error } = await fetchAllRows(() => supabase
-          .from('production_logs')
-          .select('id, worker_id, performance_rate, execution_date')
-          .gte('execution_date', `${ky}-01`)
-          .lt('execution_date', `${thang === 12 ? nam + 1 : nam}-${String(thang === 12 ? 1 : thang + 1).padStart(2, '0')}-01`)
-          .order('id'));
-        if (error) throw error;
-        dsSanXuat = data || [];
-      } catch (err) {
-        loiTaiViec = loiTaiViec || err?.message || String(err);
-      }
-
-      // Danh mục chỉ tiêu của MỌI kỳ, cho ô chọn ở form "Thêm chỉ tiêu". Phải rộng hơn kỳ
-      // đang xem: chỉ tiêu bị gỡ khỏi kỳ này (HOÀN THÀNH ĐƠN BẢO HÀNH bị đợt chuyển cấu trúc
-      // tháng 7 xoá) vẫn phải chọn lại được, không thì chỉ còn cách gõ tay từ đầu.
-      // Kỳ mới nhất trước để bản gặp đầu tiên của mỗi mã là bản mới nhất.
-      let dsDanhMuc = [];
-      try {
-        const { data, error } = await fetchAllRows(() => supabase
-          .from('kpi_chi_tieu')
-          .select('ma, ten, mo_ta, nhom, chi_tieu, trong_so, cach_cham, lien_ket_bo_phan, cap_do, nhan_vien_id, ky')
-          .order('ky', { ascending: false }).order('id'));
-        if (error) throw error;
-        dsDanhMuc = data || [];
-      } catch {
-        dsDanhMuc = [];   // hỏng thì ô chọn lùi về dùng đúng kỳ đang xem, xem prop coSan
-      }
-
-      // Chấm công của kỳ, để chấm tự động 2 chỉ tiêu chuyên cần. Lọc theo `ky` ở phía server.
-      // Cùng lưới an toàn: hỏng chỗ này không được kéo sập cả màn hình KPI.
-      let dsChamCong = [];
-      try {
-        const { data, error } = await fetchAllRows(() => supabase
-          .from('cham_cong')
-          .select('nhan_vien_id, ngay, di_muon_phut, ve_som_phut, nghi, ky')
-          .eq('ky', ky).order('id'));
-        if (error) throw error;
-        dsChamCong = data || [];
-      } catch (err) {
-        loiTaiViec = loiTaiViec || err?.message || String(err);
-      }
-
-      // Miễn trừ chuyên cần của kỳ (bảng phủ trên chấm công). Cùng lưới an toàn: hỏng chỗ
-      // này không được kéo sập cả màn hình KPI.
-      let dsNgoaiLe = [];
-      try {
-        const { data, error } = await fetchAllRows(() => supabase
-          .from('chuyen_can_ngoai_le')
-          .select('nhan_vien_id, ngay, ly_do')
-          .eq('ky', ky).order('id'));
-        if (error) throw error;
-        dsNgoaiLe = data || [];
-      } catch (err) {
-        loiTaiViec = loiTaiViec || err?.message || String(err);
-      }
-
-      // Bài cải tiến liên quan tới kỳ, để chấm tự động chỉ tiêu ĐÓNG GÓP CẢI TIẾN.
-      // Lấy bài TẠO hoặc DUYỆT từ đầu tháng trở đi (bài gửi tháng trước duyệt tháng này
-      // phải lọt vào) — luatDongGopCaiTien tự khớp đúng tháng theo mốc duyệt.
-      // Hỏng/bảng chưa tạo → null: luật trả "không chấm", KHÔNG đè 0 lên điểm cũ.
-      let dsCaiTien = null;
-      try {
-        const tuThang = new Date(nam, thang - 1, 1).toISOString();
-        const { data, error } = await fetchAllRows(() => supabase
-          .from('cai_tien')
-          .select('id, nhan_vien_id, title, status, xep_loai, created_at, reviewed_at')
-          .or(`created_at.gte.${tuThang},reviewed_at.gte.${tuThang}`)
-          .order('id'));
-        if (error) throw error;
-        dsCaiTien = data || [];
-      } catch {
-        dsCaiTien = null;
-      }
-
-      setRows(ct || []);
-      setLogs(nk);
-      setDanhMuc(dsDanhMuc);
-      setChamCong(dsChamCong);
-      setNgoaiLe(dsNgoaiLe);
-      setViec(dsViec);
-      setSanXuat(dsSanXuat);
-      setCaiTien(dsCaiTien);
-      setLoiViec(loiTaiViec);
+      setRows(d.rows);
+      setLogs(d.logs);
+      setDanhMuc(d.danhMuc);
+      setChamCong(d.chamCong);
+      setNgoaiLe(d.ngoaiLe);
+      setViec(d.viec);
+      setSanXuat(d.sanXuat);
+      setCaiTien(d.caiTien);
+      setLoiViec(d.loiViec);
     } catch (err) {
       setLoi(err?.message || String(err));
       setRows([]);
