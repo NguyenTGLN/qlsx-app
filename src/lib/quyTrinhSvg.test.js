@@ -1,0 +1,419 @@
+import { describe, test, expect } from 'vitest';
+import { thoatXml, soDoSangSvg } from './quyTrinhSvg';
+import { GUT, LANE_W, MAU_DAI, CAO_HANG } from './quyTrinhSoDo';
+import { routeEdge, rectOf, diemNeo, CANH_NEO } from './quyTrinhSoDo';
+import { themBuoc, soHangCua } from './quyTrinhSoDo';
+import { mauSoDo } from './quyTrinhMau';
+
+const soDo = {
+  lanes: [
+    { name: 'Kho', owner: 'Thủ kho', color: '#0d9488' },
+    { name: 'QC',  owner: 'NV QC',   color: '#16a34a' },
+  ],
+  phases: [{ name: 'Chuẩn bị', h: 200 }, { name: 'Kiểm soát', h: 260 }],
+  nodes: [
+    { id: 's',  t: 'start', lane: 0, y: 20,  dx: 0, w: 164, h: 48, tx: 'Bắt đầu',  desc: '', form: '—', time: '—' },
+    { id: 'b1', t: 'step',  lane: 0, y: 110, dx: 0, w: 164, h: 56, tx: 'Xuất kho', desc: 'x', form: '—', time: '—' },
+    { id: 'd',  t: 'dec',   lane: 1, y: 230, dx: 0, w: 150, h: 86, tx: 'Đạt?',     desc: 'x', form: '—', time: '—' },
+    { id: 'e',  t: 'end',   lane: 1, y: 380, dx: 0, w: 164, h: 48, tx: 'Kết thúc', desc: '', form: '—', time: '—' },
+  ],
+  edges: [
+    { id: 'e1', a: 's',  b: 'b1', lbl: '',   k: 'n'  },
+    { id: 'e2', a: 'b1', b: 'd',  lbl: '',   k: 'n'  },
+    { id: 'e3', a: 'd',  b: 'e',  lbl: 'OK', k: 'ok' },
+  ],
+};
+
+describe('thoatXml', () => {
+  test('thoát & < > " và nháy đơn', () => {
+    expect(thoatXml('a & b < c > d "e" \'f\'')).toBe('a &amp; b &lt; c &gt; d &quot;e&quot; &apos;f&apos;');
+  });
+  test('& phải thoát TRƯỚC, không sinh &amp;lt;', () => {
+    expect(thoatXml('<')).toBe('&lt;');
+    expect(thoatXml('&lt;')).toBe('&amp;lt;');
+  });
+  test('null/undefined/số → chuỗi rỗng hoặc chuỗi số, không nổ', () => {
+    expect(thoatXml(null)).toBe('');
+    expect(thoatXml(undefined)).toBe('');
+    expect(thoatXml(42)).toBe('42');
+  });
+});
+
+describe('soDoSangSvg', () => {
+  const svg = soDoSangSvg(soDo);
+
+  test('là SVG hợp lệ, có khai báo namespace và kích thước', () => {
+    expect(svg.startsWith('<svg')).toBe(true);
+    expect(svg).toContain('xmlns="http://www.w3.org/2000/svg"');
+    expect(svg.trimEnd().endsWith('</svg>')).toBe(true);
+    expect(svg).toMatch(/width="\d+"/);
+    expect(svg).toMatch(/height="\d+"/);
+  });
+
+  test('vẽ đủ 4 khối — mỗi khối một nhóm có data-khoi', () => {
+    expect((svg.match(/data-khoi="/g) || []).length).toBe(4);
+  });
+
+  test('vẽ đủ 3 đường nối', () => {
+    expect((svg.match(/data-noi="/g) || []).length).toBe(3);
+  });
+
+  test('có tên cột, và cột trái là "Bước N" đánh số tự động', () => {
+    for (const t of ['Kho', 'QC']) expect(svg).toContain(t);
+    // 200 + 260 = 460 ⇒ 4 hàng trọn (bản cũ suy từ phases). Nhãn đủ 1…4, không hơn.
+    expect(svg).toContain('>BƯỚC<');                    // đầu cột nhãn
+    for (const i of [1, 2, 3, 4]) expect(svg).toContain(`>Bước ${i}<`);
+    expect(svg).not.toContain('>Bước 5<');
+    // Tên giai đoạn cũ KHÔNG còn được vẽ — nhưng cũng không bị xoá khỏi dữ liệu.
+    expect(svg).not.toContain('Chuẩn bị');
+    expect(svg).not.toContain('Kiểm soát');
+  });
+
+  test('khối Quyết định vẽ bằng polygon hình thoi, không phải chữ nhật', () => {
+    expect(svg).toContain('<polygon');
+  });
+
+  test('nhãn nhánh OK có mặt', () => {
+    expect(svg).toContain('>OK<');
+  });
+
+  test('THOÁT ký tự — tên bước có & < > không làm vỡ XML', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].tx = 'Xuất kho & <kiểm> "tra"';
+    const out = soDoSangSvg(s);
+    // Chữ dài có thể bị cắt xuống dòng, nên kiểm TỪNG MẢNH đã thoát chứ không
+    // kiểm cả câu liền mạch — nếu không, đổi bề rộng khối là test vỡ oan.
+    expect(out).toContain('&amp;');
+    expect(out).toContain('&lt;kiểm&gt;');
+    expect(out).toContain('&quot;tra&quot;');
+    expect(out).not.toContain('<kiểm>');
+  });
+
+  test('tỉ lệ nhân đôi kích thước ảnh nhưng giữ nguyên viewBox', () => {
+    const g = soDoSangSvg(soDo, { tyLe: 2 });
+    const w1 = +/width="(\d+)"/.exec(svg)[1];
+    const w2 = +/width="(\d+)"/.exec(g)[1];
+    expect(w2).toBe(w1 * 2);
+    expect(/viewBox="([^"]+)"/.exec(g)[1]).toBe(/viewBox="([^"]+)"/.exec(svg)[1]);
+  });
+
+  test('tên dài bị cắt xuống nhiều dòng, không tràn khỏi khối', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].tx = 'Một tên bước rất dài cần phải xuống dòng nhiều lần mới vừa';
+    expect((soDoSangSvg(s).match(/<tspan/g) || []).length).toBeGreaterThan(1);
+  });
+
+  test('sơ đồ mẫu (chỉ Bắt đầu → Kết thúc) vẽ được, không nổ', () => {
+    expect(() => soDoSangSvg(mauSoDo('SX'))).not.toThrow();
+  });
+
+  test('đường nối trỏ tới khối đã xoá thì bỏ qua, không nổ', () => {
+    const s = structuredClone(soDo);
+    s.edges.push({ id: 'ex', a: 'b1', b: 'khong-co', lbl: '', k: 'n' });
+    expect(() => soDoSangSvg(s)).not.toThrow();
+    expect((soDoSangSvg(s).match(/data-noi="/g) || []).length).toBe(3);
+  });
+
+  test('từ dài không có dấu cách bị CẮT, không tràn khỏi khối', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].tx = 'X'.repeat(60);
+    const out = soDoSangSvg(s);
+    const dongChu = [...out.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map(m => m[1]);
+    expect(dongChu.every(d => d.length <= 24)).toBe(true);
+    expect(dongChu.some(d => d.length >= 20)).toBe(true);   // có cắt thật, không nuốt chữ
+  });
+
+  test('chữ quá dài bị cắt thì phải CÓ DẤU … cho biết là đã cắt', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].tx = 'Kiểm tra siết bu lông và làm sạch bề mặt sơn mối hàn và các chi tiết phụ trợ khác trước khi chuyển sang công đoạn tiếp theo của dây chuyền';
+    expect(soDoSangSvg(s)).toContain('…');
+  });
+
+  test('chữ vừa đủ thì KHÔNG bị thêm dấu …', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].tx = 'Xuất kho theo BOM';
+    expect(soDoSangSvg(s)).not.toContain('…');
+  });
+
+  test('màu khối và loại nhánh cũng được thoát khi đưa vào thuộc tính', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].color = '#fff" onload="x';
+    s.edges[0].k = 'n" x="';
+    const out = soDoSangSvg(s);
+    expect(out).not.toContain('onload="x');
+    expect(out).toContain('&quot;');
+  });
+
+  /* thoatXml chỉ lo phần CHỮ. Toạ độ trước đây nội suy thẳng vì mặc định là số —
+     mà so_do là jsonb, không ràng buộc kiểu. Chuỗi lọt vào đó thoát ra khỏi
+     thuộc tính và chèn được thẻ THẬT. Vô hại khi SVG nạp qua <img> blob (trình
+     duyệt không chạy script trong ảnh), nhưng XemTruocTab nhúng thẳng chuỗi này
+     vào trang bằng dangerouslySetInnerHTML — chỗ đó thì chạy. */
+  test('toạ độ độc hại bị ép về SỐ, không chèn được thẻ vào SVG', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].y = '0"><script>alert(1)</script><rect x="0';
+    s.nodes[1].h = '"><img src=x onerror=alert(1)>';
+    s.phases[0].h = '"><foreignObject>';
+    const out = soDoSangSvg(s);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('onerror');
+    expect(out).not.toContain('<foreignObject');
+    expect(out).not.toContain('NaN');
+  });
+
+  test('toạ độ hợp lệ dạng chuỗi số vẫn dùng được', () => {
+    const s = structuredClone(soDo);
+    s.nodes[1].y = '160';
+    expect(soDoSangSvg(s)).toContain('160');
+  });
+
+  /* ── DẢI BƯỚC ────────────────────────────────────────────────────
+     Bản in là lý do có tính năng này, nên nó phải nằm trong CHÍNH chuỗi SVG
+     đã dùng cho PNG, ảnh nhúng .docx và màn hình Xem trước — không riêng trình
+     vẽ. Bốn khối của sơ đồ mẫu ở bốn tầm khác nhau ⇒ 4 dải ⇒ 3 vạch ngăn và 2
+     dải được tô nền (so le, dải đầu để trắng). */
+  test('DẢI BƯỚC — mỗi bước một hàng, có mặt trong ảnh xuất ra', () => {
+    expect((svg.match(new RegExp(`stroke="${MAU_DAI.vach}"`, 'g')) || []).length).toBe(3);
+    expect((svg.match(new RegExp(`fill="${MAU_DAI.nen}"`, 'g')) || []).length).toBe(2);
+  });
+
+  test('dải bước vẽ DƯỚI CÙNG — trước cột nhãn, trước đường nối và khối', () => {
+    const dai = svg.indexOf(MAU_DAI.vach);
+    expect(dai).toBeGreaterThan(-1);
+    expect(dai).toBeLessThan(svg.indexOf('>Bước 1<'));     // ô nhãn bước
+    expect(dai).toBeLessThan(svg.indexOf('data-noi="'));   // đường nối
+    expect(dai).toBeLessThan(svg.indexOf('data-khoi="'));  // khối
+  });
+
+  test('dải bước chỉ trải trên phần VẼ, không đè lên cột nhãn giai đoạn', () => {
+    const nen = [...svg.matchAll(new RegExp(
+      `<rect x="([\\d.]+)" y="[\\d.]+" width="([\\d.]+)" height="([\\d.]+)" fill="${MAU_DAI.nen}"/>`, 'g'))];
+    expect(nen).toHaveLength(2);
+    for (const m of nen) {
+      expect(+m[1]).toBe(GUT);                 // bắt đầu sau cột nhãn giai đoạn
+      expect(+m[2]).toBe(2 * LANE_W);          // đúng bề ngang phần vẽ
+      expect(+m[3]).toBeGreaterThan(0);        // không có dải cao 0 hay cao âm
+    }
+    for (const m of svg.matchAll(new RegExp(`<line x1="([\\d.]+)"[^/]*stroke="${MAU_DAI.vach}"`, 'g'))) {
+      expect(+m[1]).toBe(GUT);
+    }
+  });
+
+  test('DẢI ĐỀU NHAU — mọi dải cao đúng CAO_HANG, vạch ngăn cách đều', () => {
+    const nen = [...svg.matchAll(new RegExp(
+      `<rect x="[\\d.]+" y="([\\d.]+)" width="[\\d.]+" height="([\\d.]+)" fill="${MAU_DAI.nen}"/>`, 'g'))];
+    expect(nen.length).toBeGreaterThan(0);
+    for (const m of nen) expect(+m[2]).toBe(CAO_HANG);
+    const vach = [...svg.matchAll(new RegExp(
+      `<line x1="[\\d.]+" y1="([\\d.]+)"[^/]*stroke="${MAU_DAI.vach}"`, 'g'))].map(m => +m[1]);
+    expect(vach.length).toBeGreaterThan(1);
+    for (let i = 1; i < vach.length; i++) expect(vach[i] - vach[i - 1]).toBe(CAO_HANG);
+  });
+
+  test('DỜI KHỐI ĐI ĐÂU thì dải vẫn thế — chiều cao hàng không theo chỗ khối đứng', () => {
+    const s = structuredClone(soDo);
+    s.nodes[2].y = 138 - 86 / 2;   // kéo Quyết định lên ngang hàng Xuất kho
+    const out = soDoSangSvg(s);
+    const dem = (t, re) => (t.match(re) || []).length;
+    const reVach = new RegExp(`stroke="${MAU_DAI.vach}"`, 'g');
+    const reNen  = new RegExp(`fill="${MAU_DAI.nen}"`, 'g');
+    expect(dem(out, reVach)).toBe(dem(svg, reVach));
+    expect(dem(out, reNen)).toBe(dem(svg, reNen));
+  });
+
+  test('sơ đồ mẫu (hai khối) vẫn ra dải, không nổ và không đẻ NaN', () => {
+    const out = soDoSangSvg(mauSoDo('SX'));
+    expect(out).not.toContain('NaN');
+    expect(out).toContain(MAU_DAI.vach);
+  });
+});
+
+describe('cột BƯỚC — nhãn tự đánh số theo hàng', () => {
+  const demNhan = t => (t.match(/>Bước \d+</g) || []);
+
+  test('QUY TRÌNH MỚI: đúng HAI nhãn, "Bước 1" và "Bước 2"', () => {
+    const out = soDoSangSvg(mauSoDo('SX'));
+    expect(demNhan(out)).toEqual(['>Bước 1<', '>Bước 2<']);
+    expect(out).not.toContain('>Bước 3<');
+  });
+
+  test('THÊM BƯỚC xuống dưới hàng cuối → mọc thêm một nhãn "Bước N"', () => {
+    const s = themBuoc(mauSoDo('SX'), { tuId: 'n_end', loai: 'step', cot: 1, ten: 'Bước thêm' });
+    expect(soHangCua(s)).toBe(3);
+    expect(demNhan(soDoSangSvg(s))).toEqual(['>Bước 1<', '>Bước 2<', '>Bước 3<']);
+  });
+
+  test('nhãn NẰM ĐÚNG HÀNG nó gọi tên — cùng mốc với dải bước', () => {
+    const out = soDoSangSvg(mauSoDo('SX'));
+    // Ô nhãn: <rect x="0" y=… width=GUT height=CAO_HANG …/>. Ô đầu cột ("BƯỚC")
+    // cùng màu nhưng cao HEAD_H, nên lọc theo chiều cao mới ra đúng các ô hàng.
+    const o = [...out.matchAll(new RegExp(
+      `<rect x="0" y="([\\d.]+)" width="${GUT}" height="${CAO_HANG}" fill="#f7f9fc"`, 'g'))]
+      .map(m => +m[1]);
+    expect(o).toHaveLength(2);
+    expect(o[1] - o[0]).toBe(CAO_HANG);
+  });
+
+  test('sơ đồ MỚI không có khoá phases vẫn vẽ ra ảnh đủ nét', () => {
+    const s = mauSoDo('CL');
+    expect(s.phases).toBeUndefined();
+    const out = soDoSangSvg(s);
+    expect(out).not.toContain('NaN');
+    expect(out).not.toContain('undefined');
+    expect((out.match(/data-khoi="/g) || []).length).toBe(2);
+  });
+});
+
+describe('nhịp cầu trong ảnh xuất ra', () => {
+  // Đường e1 bẻ ngang ở y=180 chạy ngang qua nhánh dọc của e2 ở x=318.
+  const K = (id, lane, hang, w = 164, h = 56) => ({
+    id, t: 'step', lane, y: hang * CAO_HANG + CAO_HANG / 2 - h / 2, dx: 0, w, h,
+    tx: id, desc: '', form: '—', time: '—',
+  });
+  const cheo = {
+    lanes: [{ name: 'A' }, { name: 'B' }, { name: 'C' }, { name: 'D' }],
+    phases: [{ name: 'G', h: 4 * CAO_HANG }],
+    nodes: [K('a1', 0, 0), K('b1', 3, 2), K('a2', 1, 0), K('b2', 1, 2)],
+    edges: [
+      { id: 'e1', a: 'a1', b: 'b1', lbl: '', k: 'n' },
+      { id: 'e2', a: 'a2', b: 'b2', lbl: '', k: 'n' },
+    ],
+  };
+
+  test('CÓ chỗ cắt → ảnh xuất ra có nhịp cầu, đúng chỗ cắt', () => {
+    const out = soDoSangSvg(cheo);
+    expect(out).toContain('A5 5 0 0 1 323 180');    // cung nhảy ở x=318, y=180
+    expect(out).not.toContain('NaN');
+  });
+
+  test('nhịp cầu bẻ đường NGANG, KHÔNG bẻ đường dọc', () => {
+    const out = soDoSangSvg(cheo);
+    expect((out.match(/A5 5 /g) || []).length).toBe(1);
+  });
+
+  test('KHÔNG có chỗ cắt → không thêm cung nào, ảnh y hệt', () => {
+    const out = soDoSangSvg(soDo);
+    expect(out).not.toContain('A5 5');
+    // sơ đồ mẫu cũng vậy — không đẻ ra phần tử thừa
+    expect(soDoSangSvg(mauSoDo('SX'))).not.toContain('A5 5');
+  });
+});
+
+/* ── GHIM ĐIỂM NỐI TRONG ẢNH XUẤT RA ─────────────────────────────────
+   Bản in, ảnh PNG dán xưởng và ảnh nhúng .docx đều đi qua hàm này. Đường đã
+   ghim mà chỉ đúng trên màn hình thì tài liệu ISO in ra lại là một hình khác —
+   nên phải đo ngay ở chuỗi SVG, không suy từ việc "cùng gọi routeEdge". */
+describe('ghim điểm nối — ảnh xuất ra vẽ y hệt trình vẽ', () => {
+  const ghim = (raA, vaoB) => {
+    const s = structuredClone(soDo);
+    s.edges[1] = { ...s.edges[1], raA, vaoB };   // b1 → d
+    return s;
+  };
+
+  test('16 CẶP CẠNH — path trong SVG khớp TỪNG BYTE với routeEdge', () => {
+    const hong = [];
+    for (const raA of CANH_NEO) {
+      for (const vaoB of CANH_NEO) {
+        const s = ghim(raA, vaoB);
+        const d = routeEdge(s, s.edges[1]).d;
+        const out = soDoSangSvg(s);
+        if (!out.includes(`<path d="${d}"`)) hong.push(`${raA}→${vaoB}: không thấy path trong ảnh`);
+        if (out.includes('NaN')) hong.push(`${raA}→${vaoB}: ảnh có NaN`);
+        if ((out.match(/data-noi="/g) || []).length !== 3) hong.push(`${raA}→${vaoB}: thiếu đường nối`);
+      }
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('đường ghim rời ĐÚNG trung điểm cạnh khối — đo trên chính chuỗi M của path', () => {
+    const s = ghim('trai', 'phai');
+    const A = rectOf(s.nodes.find(n => n.id === 'b1'));
+    const B = rectOf(s.nodes.find(n => n.id === 'd'));
+    const [mx, my] = diemNeo(A, 'trai').p;
+    const [ex, ey] = diemNeo(B, 'phai').p;
+    const out = soDoSangSvg(s);
+    expect(out).toContain(`d="M${mx} ${my} `);
+    expect(out).toContain(` L${ex} ${ey}"`);
+  });
+
+  test('KHOÁ GHIM RÁC trong so_do → ảnh ra đúng từng byte như khi không có khoá', () => {
+    const goc = soDoSangSvg(soDo);
+    for (const rac of ['xyz', 42, null, true, {}, [], 'TREN']) {
+      const s = structuredClone(soDo);
+      s.edges = s.edges.map(e => ({ ...e, raA: rac, vaoB: rac }));
+      expect(soDoSangSvg(s)).toBe(goc);
+    }
+  });
+
+  test('CHUỖI GHIM ĐỘC không chèn được thẻ vào ảnh — chỉ bốn cạnh là hợp lệ', () => {
+    const s = ghim('"><script>alert(1)</script>', 'duoi');
+    const out = soDoSangSvg(s);
+    expect(out).not.toContain('<script');
+    expect(out).not.toContain('NaN');
+  });
+});
+
+/* ── NHÃN ĐÃ KÉO TAY TRONG ẢNH XUẤT RA ───────────────────────────────
+   PNG dán xưởng, ảnh nhúng .docx và bản in đều đi qua soDoSangSvg. Nhãn kéo
+   tay mà chỉ đúng trên màn hình soạn thảo thì tài liệu ISO in ra là một hình
+   khác — nên đo thẳng trên chuỗi SVG, không suy từ việc "cùng gọi routeEdge". */
+describe('kéo nhãn dọc đường — ảnh xuất ra đặt nhãn đúng chỗ', () => {
+  const keoNhan = (t) => {
+    const s = structuredClone(soDo);
+    s.edges[2] = { ...s.edges[2], viTriNhan: t };   // d → e, nhãn "OK"
+    return s;
+  };
+  // Toạ độ nhãn trong SVG: thuộc tính x/y của <text> nằm ngay sau path đường nối.
+  const nhanTrongSvg = (out) => {
+    const m = /<g data-noi="e3">.*?<text x="(-?[\d.]+)" y="(-?[\d.]+)"/.exec(out);
+    return m ? [Number(m[1]), Number(m[2])] : null;
+  };
+
+  test('KHÔNG có viTriNhan → ảnh ra đúng từng byte như trước', () => {
+    const goc = soDoSangSvg(soDo);
+    expect(nhanTrongSvg(goc)).toEqual(routeEdge(soDo, soDo.edges[2]).nhan);
+  });
+
+  test('nhãn đã kéo hiện ĐÚNG chỗ routeEdge chỉ, ở mọi tỉ lệ', () => {
+    const hong = [];
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      const s = keoNhan(t);
+      const cho = routeEdge(s, s.edges[2]).nhan;
+      const out = soDoSangSvg(s);
+      const thay = nhanTrongSvg(out);
+      if (!thay) { hong.push(`t=${t}: không thấy nhãn trong ảnh`); continue; }
+      if (Math.abs(thay[0] - cho[0]) > 0.5 || Math.abs(thay[1] - cho[1]) > 0.5) {
+        hong.push(`t=${t}: ảnh đặt nhãn ở ${thay}, routeEdge nói ${cho}`);
+      }
+      if (out.includes('NaN')) hong.push(`t=${t}: ảnh có NaN`);
+    }
+    expect(hong).toEqual([]);
+  });
+
+  test('kéo nhãn KHÔNG đụng vào nét vẽ — mọi path trong ảnh giữ nguyên', () => {
+    const paths = out => (out.match(/<path d="[^"]*"/g) || []).join('|');
+    const goc = paths(soDoSangSvg(soDo));
+    for (const t of [0, 0.3, 0.7, 1]) expect(paths(soDoSangSvg(keoNhan(t)))).toBe(goc);
+  });
+
+  test('viTriNhan RÁC trong so_do → ảnh ra đúng từng byte như khi không có khoá', () => {
+    const goc = soDoSangSvg(soDo);
+    for (const rac of ['0.5', 'xyz', 42, null, true, {}, [], NaN, -1, 2, Infinity]) {
+      const s = structuredClone(soDo);
+      s.edges = s.edges.map(e => ({ ...e, viTriNhan: rac }));
+      expect(soDoSangSvg(s), String(rac)).toBe(goc);
+    }
+  });
+
+  test('nhãn kéo tay vẫn nằm TRONG khung ảnh — không rụng khỏi bản in', () => {
+    for (const t of [0, 0.5, 1]) {
+      const s = keoNhan(t);
+      const [x, y] = nhanTrongSvg(soDoSangSvg(s));
+      // nhóm vẽ đã dịch (GUT, HEAD_H) nên toạ độ nhãn tính trong khung giấy
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThanOrEqual(2 * LANE_W);
+      expect(y).toBeLessThanOrEqual(460);
+    }
+  });
+});
