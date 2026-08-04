@@ -7,7 +7,7 @@
 // Mọi hàm trả BẢN SAO để nơi gọi sửa thoải mái mà không hỏng mẫu gốc.
 // ============================================================
 
-import { LOAI_KHOI, CAO_HANG, yTaiHang } from './quyTrinhSoDo';
+import { LOAI_KHOI, yTaiHang } from './quyTrinhSoDo';
 
 export const NHOM = [
   { ma: 'SX', ten: 'Sản xuất',              mau: '#0891b2' },
@@ -85,25 +85,27 @@ export function mauTaiLieu(nhom) {
   });
 }
 
-/** Sơ đồ khởi tạo: cột + hàng sẵn, khối Bắt đầu → Kết thúc đã nối. Trả BẢN SAO.
+/** Sơ đồ khởi tạo: cột + HAI HÀNG, khối Bắt đầu → Kết thúc đã nối. Trả BẢN SAO.
  *
- *  ĐÃ THẲNG LƯỚI ngay từ đầu — chiều cao giai đoạn là bội số CAO_HANG, hai khối
- *  đậu đúng tâm ô. Quy trình mới vì thế không bao giờ phải bấm "Tự xếp lại" mới
- *  ngay hàng, và mọi bước thêm sau đó cũng rơi đúng lưới. */
+ *  ĐÃ THẲNG LƯỚI ngay từ đầu — hai khối đậu đúng tâm ô của hàng 0 và hàng 1.
+ *  Quy trình mới vì thế không bao giờ phải bấm "Tự xếp lại" mới ngay hàng, và
+ *  mọi bước thêm sau đó cũng rơi đúng lưới.
+ *
+ *  HAI HÀNG chứ không phải sáu: cột trái nay là "Bước 1", "Bước 2"… đánh số tự
+ *  động, nên hàng thừa là mấy nhãn bước RỖNG nằm chình ình trên tờ giấy trắng.
+ *  Thêm bước là themBuoc tự mọc thêm hàng, người dùng không phải dọn gì.
+ *
+ *  KHÔNG có khoá `phases`: sơ đồ mới không mang theo giai đoạn nào. Sơ đồ CŨ
+ *  vẫn giữ nguyên phần phases đã lưu — xem soHangCua/sao() bên quyTrinhSoDo. */
 export function mauSoDo(nhom) {
   const m = MAU[nhom] || MAU.SX;
   const lanes = m.lanes.map(([name, owner, color]) => ({ name, owner, color }));
-  const phases = [                                    // 1 + 3 + 2 = 6 hàng
-    { name: 'Tiếp nhận', h: 1 * CAO_HANG },
-    { name: 'Thực hiện', h: 3 * CAO_HANG },
-    { name: 'Hoàn tất',  h: 2 * CAO_HANG },
-  ];
   const S = LOAI_KHOI.start, E = LOAI_KHOI.end;
   return structuredClone({
-    lanes, phases,
+    lanes, soHang: 2,
     nodes: [
       { id: 'n_start', t: 'start', lane: 0, y: yTaiHang(0, S.h), dx: 0, w: S.w, h: S.h, tx: 'Bắt đầu',  desc: '', form: '—', time: '—', color: null },
-      { id: 'n_end',   t: 'end',   lane: 0, y: yTaiHang(5, E.h), dx: 0, w: E.w, h: E.h, tx: 'Kết thúc', desc: '', form: '—', time: '—', color: null },
+      { id: 'n_end',   t: 'end',   lane: 0, y: yTaiHang(1, E.h), dx: 0, w: E.w, h: E.h, tx: 'Kết thúc', desc: '', form: '—', time: '—', color: null },
     ],
     edges: [{ id: 'e_se', a: 'n_start', b: 'n_end', lbl: '', k: 'n' }],
   });

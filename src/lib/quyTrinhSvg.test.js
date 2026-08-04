@@ -2,6 +2,7 @@ import { describe, test, expect } from 'vitest';
 import { thoatXml, soDoSangSvg } from './quyTrinhSvg';
 import { GUT, LANE_W, MAU_DAI, CAO_HANG } from './quyTrinhSoDo';
 import { routeEdge, rectOf, diemNeo, CANH_NEO } from './quyTrinhSoDo';
+import { themBuoc, soHangCua } from './quyTrinhSoDo';
 import { mauSoDo } from './quyTrinhMau';
 
 const soDo = {
@@ -57,8 +58,15 @@ describe('soDoSangSvg', () => {
     expect((svg.match(/data-noi="/g) || []).length).toBe(3);
   });
 
-  test('có tên cột và tên giai đoạn', () => {
-    for (const t of ['Kho', 'QC', 'Chuẩn bị', 'Kiểm soát']) expect(svg).toContain(t);
+  test('có tên cột, và cột trái là "Bước N" đánh số tự động', () => {
+    for (const t of ['Kho', 'QC']) expect(svg).toContain(t);
+    // 200 + 260 = 460 ⇒ 4 hàng trọn (bản cũ suy từ phases). Nhãn đủ 1…4, không hơn.
+    expect(svg).toContain('>BƯỚC<');                    // đầu cột nhãn
+    for (const i of [1, 2, 3, 4]) expect(svg).toContain(`>Bước ${i}<`);
+    expect(svg).not.toContain('>Bước 5<');
+    // Tên giai đoạn cũ KHÔNG còn được vẽ — nhưng cũng không bị xoá khỏi dữ liệu.
+    expect(svg).not.toContain('Chuẩn bị');
+    expect(svg).not.toContain('Kiểm soát');
   });
 
   test('khối Quyết định vẽ bằng polygon hình thoi, không phải chữ nhật', () => {
@@ -169,10 +177,10 @@ describe('soDoSangSvg', () => {
     expect((svg.match(new RegExp(`fill="${MAU_DAI.nen}"`, 'g')) || []).length).toBe(2);
   });
 
-  test('dải bước vẽ DƯỚI CÙNG — trước vạch giai đoạn, trước đường nối và khối', () => {
+  test('dải bước vẽ DƯỚI CÙNG — trước cột nhãn, trước đường nối và khối', () => {
     const dai = svg.indexOf(MAU_DAI.vach);
     expect(dai).toBeGreaterThan(-1);
-    expect(dai).toBeLessThan(svg.indexOf('#d6dee9'));      // vạch ngăn giai đoạn
+    expect(dai).toBeLessThan(svg.indexOf('>Bước 1<'));     // ô nhãn bước
     expect(dai).toBeLessThan(svg.indexOf('data-noi="'));   // đường nối
     expect(dai).toBeLessThan(svg.indexOf('data-khoi="'));  // khối
   });
@@ -217,6 +225,42 @@ describe('soDoSangSvg', () => {
     const out = soDoSangSvg(mauSoDo('SX'));
     expect(out).not.toContain('NaN');
     expect(out).toContain(MAU_DAI.vach);
+  });
+});
+
+describe('cột BƯỚC — nhãn tự đánh số theo hàng', () => {
+  const demNhan = t => (t.match(/>Bước \d+</g) || []);
+
+  test('QUY TRÌNH MỚI: đúng HAI nhãn, "Bước 1" và "Bước 2"', () => {
+    const out = soDoSangSvg(mauSoDo('SX'));
+    expect(demNhan(out)).toEqual(['>Bước 1<', '>Bước 2<']);
+    expect(out).not.toContain('>Bước 3<');
+  });
+
+  test('THÊM BƯỚC xuống dưới hàng cuối → mọc thêm một nhãn "Bước N"', () => {
+    const s = themBuoc(mauSoDo('SX'), { tuId: 'n_end', loai: 'step', cot: 1, ten: 'Bước thêm' });
+    expect(soHangCua(s)).toBe(3);
+    expect(demNhan(soDoSangSvg(s))).toEqual(['>Bước 1<', '>Bước 2<', '>Bước 3<']);
+  });
+
+  test('nhãn NẰM ĐÚNG HÀNG nó gọi tên — cùng mốc với dải bước', () => {
+    const out = soDoSangSvg(mauSoDo('SX'));
+    // Ô nhãn: <rect x="0" y=… width=GUT height=CAO_HANG …/>. Ô đầu cột ("BƯỚC")
+    // cùng màu nhưng cao HEAD_H, nên lọc theo chiều cao mới ra đúng các ô hàng.
+    const o = [...out.matchAll(new RegExp(
+      `<rect x="0" y="([\\d.]+)" width="${GUT}" height="${CAO_HANG}" fill="#f7f9fc"`, 'g'))]
+      .map(m => +m[1]);
+    expect(o).toHaveLength(2);
+    expect(o[1] - o[0]).toBe(CAO_HANG);
+  });
+
+  test('sơ đồ MỚI không có khoá phases vẫn vẽ ra ảnh đủ nét', () => {
+    const s = mauSoDo('CL');
+    expect(s.phases).toBeUndefined();
+    const out = soDoSangSvg(s);
+    expect(out).not.toContain('NaN');
+    expect(out).not.toContain('undefined');
+    expect((out.match(/data-khoi="/g) || []).length).toBe(2);
   });
 });
 

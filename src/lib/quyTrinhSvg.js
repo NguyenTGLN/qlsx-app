@@ -10,7 +10,7 @@
 
 import {
   GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI,
-  rectOf, drawW, drawH, phaseTop, routeEdge, daiBuoc, diemGiao,
+  rectOf, drawW, drawH, routeEdge, daiBuoc, diemGiao,
 } from './quyTrinhSoDo';
 
 /** Thoát ký tự cho cả SVG lẫn DOCX. & phải thay TRƯỚC, nếu không sinh &amp;lt;. */
@@ -37,16 +37,21 @@ const so = v => (Number.isFinite(+v) ? +v : 0);
  *  mà routeEdge dựng chuỗi đó từ chính n.y/n.h của khối; chuỗi độc nằm trong
  *  khối chảy thẳng vào thuộc tính d="…" và so() ở chỗ khác không với tới:
  *      <path d="M106 20 L106 0"><script>alert(1)</script><rect x="0" …/>
- *  Cùng lý do, drawH/phaseTop cộng dồn phases[].h nên đẻ ra cả NaN.
+ *  Cùng lý do, chiều cao trang suy từ phases[].h của sơ đồ cũ nên đẻ ra cả NaN.
  *  Làm sạch ĐẦU VÀO thì mọi thứ dẫn xuất phía sau đều là số.
  *
- *  Chỉ đụng năm ô toạ độ của khối và chiều cao giai đoạn; chữ, màu, id giữ
- *  nguyên để thoatXml lo. Mảng hỏng vẫn ném lỗi y như trước, không nuốt. */
+ *  Chỉ đụng năm ô toạ độ của khối và chiều cao giai đoạn cũ; chữ, màu, id giữ
+ *  nguyên để thoatXml lo. Mảng hỏng vẫn ném lỗi y như trước, không nuốt.
+ *
+ *  `phases` chỉ được đụng tới khi CÓ và là mảng: sơ đồ soạn từ nay không mang
+ *  khoá đó nữa, mà bản cũ thì vẫn còn — hai hình dạng cùng phải vẽ được. */
 function soDoSach(soDo) {
   const la = o => (o && typeof o === 'object' && !Array.isArray(o));
   return {
     ...soDo,
-    phases: soDo.phases.map(p => (la(p) ? { ...p, h: so(p.h) } : p)),
+    ...(Array.isArray(soDo.phases)
+      ? { phases: soDo.phases.map(p => (la(p) ? { ...p, h: so(p.h) } : p)) }
+      : null),
     nodes: Array.isArray(soDo.nodes)
       ? soDo.nodes.map(n => (la(n)
         ? { ...n, y: so(n.y), w: so(n.w), h: so(n.h), dx: so(n.dx), lane: so(n.lane) }
@@ -133,13 +138,12 @@ export function soDoSangSvg(soDoVao, { tyLe = 1 } = {}) {
   p.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`);
 
   // Dải bước — HÀNG ĐỀU, mỗi dải cao đúng CAO_HANG (daiBuoc), y hệt trình vẽ.
-  // Đẩy vào NGAY SAU nền trắng nên nằm dưới cùng: dưới vạch giai đoạn,
-  // dưới vạch cột, dưới đường nối và khối. Vạch nét liền màu nhạt hơn hẳn vạch
-  // giai đoạn (nét đứt, đậm hơn) — giai đoạn là cấu trúc lớn, dải bước chỉ chia
-  // nhỏ bên trong nó. Bản in A3 là lý do có tính năng này, nên nó phải có mặt ở
-  // ĐÂY chứ không riêng trên màn hình.
+  // Đẩy vào NGAY SAU nền trắng nên nằm dưới cùng: dưới vạch cột, dưới đường nối
+  // và khối. Bản in là lý do có tính năng này, nên nó phải có mặt ở ĐÂY chứ
+  // không riêng trên màn hình.
+  const dai = daiBuoc(soDo);
   const rongVe = so(drawW(soDo));
-  daiBuoc(soDo).forEach((d, i) => {
+  dai.forEach((d, i) => {
     const y1 = so(HEAD_H + d.y1), y2 = so(HEAD_H + d.y2);
     // Math.max(0, …): rect cao âm là lỗi theo chuẩn SVG, Word bỏ luôn cả ảnh.
     if (i % 2) {
@@ -152,7 +156,7 @@ export function soDoSangSvg(soDoVao, { tyLe = 1 } = {}) {
   // Tiêu đề cột
   p.push(`<rect x="0" y="0" width="${GUT}" height="${HEAD_H}" fill="#f7f9fc"/>`);
   p.push(`<text x="${GUT / 2}" y="${HEAD_H / 2}" text-anchor="middle" dominant-baseline="middle"`
-    + ` font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="10" font-weight="800" fill="#94a3b8">GIAI ĐOẠN</text>`);
+    + ` font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="10" font-weight="800" fill="#94a3b8">BƯỚC</text>`);
   soDo.lanes.forEach((l, i) => {
     const x = GUT + i * LANE_W;
     p.push(`<rect x="${x}" y="0" width="${LANE_W}" height="${HEAD_H}" fill="#ffffff" stroke="#dfe6ef"/>`);
@@ -162,17 +166,16 @@ export function soDoSangSvg(soDoVao, { tyLe = 1 } = {}) {
       + ` font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="${mauCot}">${thoatXml(l.name)}</text>`);
   });
 
-  // Nhãn giai đoạn + vạch ngăn
-  soDo.phases.forEach((ph, i) => {
-    const y = so(HEAD_H + phaseTop(soDo, i));
-    const phH = so(ph.h);
-    p.push(`<rect x="0" y="${y}" width="${GUT}" height="${phH}" fill="#f7f9fc" stroke="#dfe6ef"/>`);
-    catDong(ph.name, GUT - 12, 11.5).forEach((d, k, arr) => {
-      const cy = so(y + phH / 2 - ((arr.length - 1) * 13) / 2 + k * 13);
-      p.push(`<text x="${GUT / 2}" y="${cy}" text-anchor="middle" dominant-baseline="middle"`
-        + ` font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="11.5" font-weight="700" fill="#475569">${thoatXml(d)}</text>`);
-    });
-    if (i) p.push(`<line x1="${GUT}" y1="${y}" x2="${W}" y2="${y}" stroke="#d6dee9" stroke-dasharray="4 4"/>`);
+  // Cột BƯỚC — một ô mỗi hàng, số đánh tự động từ 1. Cùng danh sách `dai` với
+  // các dải nền phía trên, nên nhãn không thể lệch hàng: một dải là một bước.
+  // Không còn tên giai đoạn do người dùng đặt, cũng không còn vạch ngăn giai
+  // đoạn — vạch giữa hai hàng đã do chính dải bước vẽ.
+  dai.forEach((d, i) => {
+    const y = so(HEAD_H + d.y1);
+    const cao = so(Math.max(0, d.y2 - d.y1));
+    p.push(`<rect x="0" y="${y}" width="${GUT}" height="${cao}" fill="#f7f9fc" stroke="#dfe6ef"/>`);
+    p.push(`<text x="${GUT / 2}" y="${so(y + cao / 2)}" text-anchor="middle" dominant-baseline="middle"`
+      + ` font-family="Be Vietnam Pro, Segoe UI, sans-serif" font-size="11.5" font-weight="700" fill="#475569">Bước ${i + 1}</text>`);
   });
 
   // Vạch dọc giữa các cột

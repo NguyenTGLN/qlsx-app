@@ -2,15 +2,16 @@
 // QUY TRÌNH — hình học & biến đổi sơ đồ lưu đồ swimlane.
 // Spec: docs/superpowers/specs/2026-08-03-phan-he-quy-trinh-design.md
 //
-// Cột = bộ phận, hàng = giai đoạn. Người thực hiện SUY RA từ cột,
-// không lưu trùng ở khối — đổi cột là đổi người, một nguồn sự thật.
+// Cột = bộ phận, hàng = BƯỚC (đánh số tự động "Bước 1", "Bước 2"…).
+// Người thực hiện SUY RA từ cột, không lưu trùng ở khối — đổi cột là đổi
+// người, một nguồn sự thật.
 //
 // Mọi hàm biến đổi trả về SƠ ĐỒ MỚI (bất biến) để hoàn tác chỉ là
 // đẩy/rút ngăn xếp, và để test so sánh được trước/sau.
 // Module thuần: không gọi DB, không đụng API trình duyệt.
 // ============================================================
 
-export const GUT = 112;      // bề ngang cột nhãn giai đoạn
+export const GUT = 112;      // bề ngang cột nhãn bước
 export const LANE_W = 212;   // bề ngang mỗi cột bộ phận
 export const HEAD_H = 46;    // chiều cao hàng tiêu đề cột
 
@@ -35,18 +36,8 @@ export function rectOf(n) {
 }
 
 export const drawW = soDo => soDo.lanes.length * LANE_W;
-export const drawH = soDo => soDo.phases.reduce((s, p) => s + p.h, 0);
-export const phaseTop = (soDo, i) => soDo.phases.slice(0, i).reduce((s, p) => s + p.h, 0);
+export const drawH = soDo => soHangCua(soDo) * CAO_HANG;
 export const timKhoi = (soDo, id) => soDo.nodes.find(n => n.id === id);
-
-export function phaseOf(soDo, n) {
-  let acc = 0;
-  for (let i = 0; i < soDo.phases.length; i++) {
-    acc += soDo.phases[i].h;
-    if (n.y + n.h / 2 < acc) return i;
-  }
-  return soDo.phases.length - 1;
-}
 
 // ── LƯỚI HÀNG ────────────────────────────────────────────────────
 // Chiều dọc chia thành các HÀNG CAO BẰNG NHAU. Khối rơi vào TÂM Ô — giao của
@@ -61,9 +52,6 @@ export function phaseOf(soDo, n) {
 // nhất. Lưới là LUẬT ĐẶT KHỐI, không phải trường dữ liệu mới — nhờ vậy mọi sơ đồ
 // đã lưu vẫn đọc và vẽ được y như cũ, chỉ là chưa thẳng lưới cho tới khi người
 // dùng bấm "Tự xếp lại".
-//
-// Chiều cao giai đoạn (phases[].h) phải là BỘI SỐ của CAO_HANG, nếu không mốc
-// ngăn giai đoạn xẻ ngang giữa một hàng. Mọi chỗ TẠO hoặc NỚI h đều phải giữ.
 export const CAO_HANG = 120;
 
 /** Số thật, không ép kiểu hộ: so_do là jsonb nên '10', null, NaN đều có thể lọt
@@ -79,10 +67,60 @@ export const hangCua = n => Math.round((soThat(n?.y) + soThat(n?.h) / 2 - CAO_HA
 /** y để khối cao h rơi đúng tâm hàng r. */
 export const yTaiHang = (r, h) => tamHang(r) - soThat(h) / 2;
 
-/** Làm tròn LÊN bội số CAO_HANG, tối thiểu một hàng. Dùng ở MỌI chỗ tạo hoặc
- *  nới chiều cao giai đoạn — h lẻ là mốc ngăn giai đoạn cắt ngang giữa hàng.
- *  Xuất ra ngoài để giao diện gọi được mà không phải tự tính lấy con số nào. */
-export const tronCaoGiaiDoan = v => Math.max(CAO_HANG, Math.ceil(soThat(v) / CAO_HANG) * CAO_HANG);
+// ── SỐ HÀNG (soDo.soHang) ────────────────────────────────────────
+// Chiều cao trang = SỐ HÀNG × CAO_HANG, chấm hết. Trước đây nó là tổng chiều
+// cao các "giai đoạn" người dùng tự đặt tên (soDo.phases = [{name, h}]), mỗi
+// giai đoạn cao vài hàng — hai đơn vị chồng lên nhau, và người dùng phải tự
+// nghĩ ra tên cho từng cụm. Nay cột trái chỉ còn "Bước 1", "Bước 2"… đánh số
+// tự động, một nhãn cho một hàng, nên chỉ cần ĐẾM hàng.
+//
+// soDo.phases KHÔNG bị xoá khỏi bản lưu — xem chú thích ở sao(). Nó thôi quyết
+// định bố cục, thế thôi. Xoá dữ liệu người dùng đã gõ như một hệ quả phụ của
+// việc đổi cách vẽ là chuyện không được làm.
+
+/** Sơ đồ mới bắt đầu bằng hai hàng: một cho Bắt đầu, một cho Kết thúc. */
+export const SO_HANG_TOI_THIEU = 2;
+
+/** Trần cứng cho số hàng. 500 hàng = 60 000px — đã gấp đôi giới hạn canvas của
+ *  trình duyệt (~32 767px), nên KHÔNG lưu đồ thật nào chạm tới.
+ *
+ *  Có trần vì daiBuoc dựng một mảng DÀI ĐÚNG BẰNG số hàng. so_do là jsonb,
+ *  không ràng buộc kiểu: soHang = 1e9 (vẫn là số nguyên hợp lệ với
+ *  Number.isInteger) làm Array.from cấp phát một tỉ phần tử — ĐO ĐƯỢC: tiến
+ *  trình chết vì hết bộ nhớ, không phải ném lỗi bắt được. Cùng cửa ấy còn mở
+ *  từ phases[].h của bản cũ. Trình vẽ trắng màn hình vì một dòng dữ liệu hỏng
+ *  là đúng thứ mọi chú thích trong tệp này đang tìm cách chặn.
+ *
+ *  KẸP về trần chứ không rơi hẳn về SO_HANG_TOI_THIEU: rơi về 2 là mọi khối
+ *  bỗng nằm ngoài trang, kiemTraLuuDo báo NGOAI_TRANG hàng loạt và bản in rụng
+ *  sạch bước. Kẹp thì giữ được nhiều nhất phần còn đọc được, và phần thật sự
+ *  lọt ra ngoài vẫn được NGOAI_TRANG nói ra tử tế. */
+export const SO_HANG_TOI_DA = 500;
+
+/** Số hàng của lưu đồ — NGUỒN SỰ THẬT duy nhất về chiều cao trang.
+ *
+ *  Sơ đồ ĐÃ LƯU không có khoá `soHang` (mọi bản trước thay đổi này). Chúng suy
+ *  ra từ tổng chiều cao giai đoạn cũ, làm tròn LÊN bội số CAO_HANG: sơ đồ soạn
+ *  bằng bản có lưới thì tổng ấy vốn đã là bội số nên trang cao ĐÚNG BẰNG cũ,
+ *  còn sơ đồ soạn từ trước khi có lưới (h lẻ) thì trang NỚI RA tới trọn hàng —
+ *  nới thì không khối nào rơi ra ngoài, co lại mới làm mất bước trên bản in.
+ *
+ *  Rác trong so_do (jsonb, không ràng buộc kiểu: '3', 2.5, null, NaN, {}) rơi
+ *  về đường suy ra, đúng luật doLech / neoHopLe / tiLeNhanHopLe đã dùng — ép
+ *  kiểu hộ ở đây là lặng lẽ ghi một chiều cao trang người dùng không đặt.
+ *
+ *  LUÔN trả số nguyên trong [SO_HANG_TOI_THIEU, SO_HANG_TOI_DA]. Cả hai đường
+ *  — khoá mới và giai đoạn cũ — đều đi qua cùng một phép kẹp, nên bịt một cửa
+ *  mà quên cửa kia là chuyện không xảy ra được. */
+export function soHangCua(soDo) {
+  const v = soDo?.soHang;
+  if (Number.isInteger(v) && v >= 1) return Math.min(v, SO_HANG_TOI_DA);
+  const ps = Array.isArray(soDo?.phases) ? soDo.phases : [];
+  const cao = ps.reduce((s, p) => s + soThat(p?.h), 0);
+  // cao có thể tràn thành Infinity (phases[].h = 1e308 cộng dồn) — Math.min kẹp
+  // trước, nên Math.ceil không bao giờ đẻ ra một độ dài mảng vô nghĩa.
+  return Math.min(SO_HANG_TOI_DA, Math.max(SO_HANG_TOI_THIEU, Math.ceil(cao / CAO_HANG)));
+}
 
 export const KE_HO_BE = 12;   // hở tối thiểu giữa chỗ bẻ và cạnh khối, khi kéo tay
 
@@ -386,7 +424,7 @@ function duongGhim(soDo, A, B, raA, vaoB, lech) {
   const sA = [pA[0] + nA[0] * DAI_MOI, pA[1] + nA[1] * DAI_MOI];
   const sB = [pB[0] + nB[0] * DAI_MOI, pB[1] + nB[1] * DAI_MOI];
   const W = soThat(Array.isArray(soDo?.lanes) ? drawW(soDo) : 0);
-  const H = soThat(Array.isArray(soDo?.phases) ? drawH(soDo) : 0);
+  const H = soThat(drawH(soDo));     // drawH tự lo dữ liệu hỏng, không cần chặn ngoài
   const docA = nA[0] === 0, docB = nB[0] === 0;
 
   let tho, doc, coLan, t;
@@ -672,7 +710,6 @@ export function routeEdge(soDo, e, giao) {
 const sao = (soDo) => {
   const s = {
     lanes:  soDo.lanes.map(l => ({ ...l })),
-    phases: soDo.phases.map(p => ({ ...p })),
     nodes:  soDo.nodes.map(n => ({ ...n })),
     edges:  soDo.edges.map(e => ({ ...e })),
   };
@@ -682,6 +719,14 @@ const sao = (soDo) => {
   // Chỉ chép khi là MẢNG: khoá rác trong so_do (jsonb) không đáng mang theo,
   // và thuTuBuoc vốn đã coi nó như không có.
   if (Array.isArray(soDo.thuTu)) s.thuTu = soDo.thuTu.slice();
+  // GIAI ĐOẠN CŨ: thôi quyết định bố cục, nhưng vẫn là chữ NGƯỜI DÙNG ĐÃ GÕ và
+  // vẫn nằm trong bản lưu. Chép nguyên vẹn — xoá dữ liệu của họ như hệ quả phụ
+  // của việc đổi cách vẽ là chuyện không được làm. Sơ đồ mới không có khoá này
+  // và cũng không mọc thêm.
+  if (Array.isArray(soDo.phases)) s.phases = soDo.phases.map(p => ({ ...p }));
+  // Số hàng: chỉ mang theo khi HỢP LỆ, đúng ngưỡng soHangCua nhận. Giá trị rác
+  // rơi về đường suy ra từ giai đoạn cũ, y như khi chưa từng có khoá này.
+  if (Number.isInteger(soDo.soHang) && soDo.soHang >= 1) s.soHang = soDo.soHang;
   return s;
 };
 
@@ -832,13 +877,19 @@ export function themBuoc(soDo, { tuId, nhanh = '', loai, cot, ten }) {
     k: nhanh || 'n',
   });
 
-  // Nới hàng cuối nếu lưu đồ dài ra — nới THEO HÀNG TRỌN VẸN, không nới lẻ:
-  // giai đoạn cao lẻ là mốc ngăn giai đoạn xẻ ngang giữa một hàng.
-  const can = (Math.max(...s.nodes.map(n => hangCua(n))) + 1) * CAO_HANG;
-  if (s.phases.length && can > drawH(s)) {
-    const p = s.phases[s.phases.length - 1];
-    p.h = tronCaoGiaiDoan(soThat(p.h) + (can - drawH(s)));
-  }
+  // Mọc thêm hàng nếu lưu đồ dài ra. CHỈ NỚI, không co lại: chỗ trống người dùng
+  // cố ý chừa ra ở đáy trang không được biến mất chỉ vì họ thêm một bước ở trên.
+  const can = Math.max(...s.nodes.map(n => hangCua(n))) + 1;
+  s.soHang = Math.max(soHangCua(s), can);
+  return s;
+}
+
+/** Thêm một hàng vào cuối lưu đồ. Trả sơ đồ MỚI.
+ *  Hàng mới là "Bước N+1" — không có tên để đặt, không có chiều cao để chỉnh:
+ *  mọi hàng cao đúng CAO_HANG. Nhờ vậy giao diện chỉ việc gọi, không tự tính. */
+export function themHang(soDo) {
+  const s = sao(soDo);
+  s.soHang = soHangCua(soDo) + 1;
   return s;
 }
 
@@ -953,32 +1004,36 @@ export function cotTaiX(soDo, x) {
   return Math.max(0, Math.min(n - 1, Math.floor(soThat(x) / LANE_W)));
 }
 
-/** Xoá một hàng giai đoạn. Trả sơ đồ MỚI. Ném lỗi nếu hàng còn khối. */
+/** Hàng mà khối đang đứng, đã kẹp về 0 — dùng chung cho daiBuoc và xoaHang nên
+ *  "hàng nào có khối" là MỘT câu trả lời duy nhất. Khối bị kéo lên trên mép
+ *  trang (hàng âm) tính vào hàng 0: không có hàng nào ở trên đó để nó thuộc về,
+ *  mà bỏ hẳn thì nó vô hình với cả hai nơi. */
+const hangKep = n => Math.max(0, hangCua(n));
+
+/** Xoá một hàng. Trả sơ đồ MỚI. Ném lỗi nếu hàng còn khối. */
 export function xoaHang(soDo, i) {
-  const phases = soDo?.phases || [];
-  if (!Number.isInteger(i) || i < 0 || i >= phases.length) {
-    throw new Error(`Không có hàng giai đoạn số ${Number(i) + 1} để xoá — lưu đồ đang có ${phases.length} hàng.`);
+  const so = soHangCua(soDo);
+  if (!Number.isInteger(i) || i < 0 || i >= so) {
+    throw new Error(`Không có hàng số ${Number(i) + 1} để xoá — lưu đồ đang có ${so} hàng.`);
   }
-  if (phases.length <= 1) {
-    throw new Error('Lưu đồ phải còn ít nhất một hàng giai đoạn — không xoá được hàng cuối cùng.');
+  if (so <= 1) {
+    throw new Error('Lưu đồ phải còn ít nhất một hàng — không xoá được hàng cuối cùng.');
   }
   const nodes = soDo.nodes || [];
-  const dung = nodes.filter(n => phaseOf(soDo, n) === i);
+  const dung = nodes.filter(n => hangKep(n) === i);
   if (dung.length) {
     throw new Error(
-      `Hàng “${phases[i].name}” còn ${dung.length} khối. Hãy kéo các khối này sang giai đoạn khác `
+      `Hàng “Bước ${i + 1}” còn ${dung.length} khối. Hãy kéo các khối này sang hàng khác `
       + 'rồi mới xoá hàng.');
   }
 
-  // Khối KHÔNG mang chỉ số hàng — nó nằm ở đâu là do y tuyệt đối, phaseOf đọc
-  // ngược ra từ mốc cộng dồn chiều cao. Bỏ một hàng cao h mà không kéo phần dưới
-  // lên đúng h thì mốc dịch còn khối đứng yên: cùng một khối, sang tên giai đoạn
-  // khác, không một dòng lỗi nào báo.
-  const cao = phases[i].h;
+  // Khối KHÔNG mang chỉ số hàng — nó nằm ở đâu là do y tuyệt đối. Bỏ một hàng mà
+  // không kéo phần dưới lên đúng một hàng thì trang ngắn đi còn khối đứng yên:
+  // khối cuối lọt ra ngoài đáy trang và rụng khỏi bản in.
   const s = sao(soDo);
-  s.phases.splice(i, 1);
+  s.soHang = so - 1;
   for (let k = 0; k < nodes.length; k++) {
-    if (phaseOf(soDo, nodes[k]) > i) s.nodes[k].y -= cao;
+    if (hangKep(nodes[k]) > i) s.nodes[k].y -= CAO_HANG;
   }
   return s;
 }
@@ -1002,8 +1057,8 @@ export function xoaHang(soDo, i) {
  *  Rác trong so_do (jsonb) tính như 0 — thả NaN vào dx/y là khối biến mất khỏi
  *  bản vẽ, hỏng nặng hơn hẳn lệch chỗ. */
 export function kepTrongTrang(soDo, n, dx, y) {
-  const W = Array.isArray(soDo?.lanes)  ? soThat(drawW(soDo)) : 0;
-  const H = Array.isArray(soDo?.phases) ? soThat(drawH(soDo)) : 0;
+  const W = Array.isArray(soDo?.lanes) ? soThat(drawW(soDo)) : 0;
+  const H = soThat(drawH(soDo));       // drawH tự lo dữ liệu hỏng, không cần chặn ngoài
   const w = soThat(n?.w), h = soThat(n?.h);
   const dxVao = soThat(dx);
   // Đi qua rectOf để không chép lại công thức nodeX ở đây — một nguồn sự thật.
@@ -1074,15 +1129,13 @@ export const MAU_DAI = { nen: '#e8eff8', vach: '#c2d0e0' };
  *  Trả [{ tam, y1, y2, ids }] xếp từ trên xuống — y1/y2 là mép dải để vẽ,
  *  tam là tâm ô, ids là các khối rơi vào hàng đó (trái → phải).
  *
- *  Dải KHÔNG còn suy ra từ chỗ khối đang đứng nữa: bản cũ gom khối theo tâm nên
- *  mỗi hàng cao một kiểu, đúng thứ người dùng bảo phải hết ("chiều cao các hàng
- *  bằng nhau"). Nay lưới có trước, khối rơi vào lưới — hàng nào không có khối
- *  vẫn là một hàng, ids rỗng.
+ *  MỘT DẢI = MỘT BƯỚC = một nhãn "Bước N" ở cột trái. Chỉ số trong mảng CHÍNH
+ *  là số bước trừ một, nên trình vẽ và bản xuất SVG không nơi nào phải tự đếm
+ *  hàng lấy — hai nơi đếm lệch nhau là bản in khác màn hình.
  *
  *  Phủ TRỌN chiều cao trang: số dải đủ để chứa cả drawH lẫn hàng thấp nhất còn
- *  khối (kéo khối bằng tay không nới chiều cao giai đoạn, nên khối tụt quá đáy
- *  trang là chuyện có thật). Chiều cao giai đoạn là bội số CAO_HANG thì các dải
- *  khép đúng vào drawH, không thừa không thiếu.
+ *  khối (sơ đồ lưu từ trước có thể có khối tụt quá đáy trang — kiemTraLuuDo bắt
+ *  là lỗi NGOAI_TRANG, nhưng dải vẫn phải vẽ cho người ta THẤY nó ở đâu).
  *
  *  Khối bị kéo lên TRÊN mép trang (hàng âm) tính vào hàng 0: không có hàng nào
  *  ở trên đó để nó thuộc về, mà bỏ hẳn thì khối biến mất khỏi danh sách ids.
@@ -1093,13 +1146,11 @@ export function daiBuoc(soDo) {
   const khoi = [];
   for (const n of (Array.isArray(soDo?.nodes) ? soDo.nodes : [])) {
     if (!n || typeof n !== 'object') continue;
-    khoi.push({ id: n.id, x: soThat(nodeX(n)), hang: Math.max(0, hangCua(n)) });
+    khoi.push({ id: n.id, x: soThat(nodeX(n)), hang: hangKep(n) });
   }
 
-  const cao = Array.isArray(soDo?.phases) ? soThat(drawH(soDo)) : 0;
-  let soHang = Math.max(0, Math.ceil(cao / CAO_HANG));
+  let soHang = soHangCua(soDo);
   for (const k of khoi) soHang = Math.max(soHang, k.hang + 1);
-  if (!soHang) return [];
 
   const dai = Array.from({ length: soHang }, (_, r) => ({
     tam: tamHang(r), y1: r * CAO_HANG, y2: (r + 1) * CAO_HANG, ids: [],
@@ -1111,8 +1162,7 @@ export function daiBuoc(soDo) {
 }
 
 /** Căn giữa khối theo cột và ĐƯA CẢ SƠ ĐỒ VỀ ĐÚNG LƯỚI HÀNG.
- *  Mỗi tầng khối chiếm trọn một hàng, khối rơi vào tâm ô; chiều cao giai đoạn
- *  làm tròn lên bội số CAO_HANG để mốc ngăn giai đoạn không xẻ ngang hàng nào.
+ *  Mỗi tầng khối chiếm trọn một hàng, khối rơi vào tâm ô.
  *
  *  Đây cũng là nút "chỉnh lại cho thẳng lưới" của những sơ đồ lưu từ trước khi
  *  có lưới: chúng vẫn mở, vẫn vẽ, vẫn in được, chỉ là chưa thẳng hàng cho tới
@@ -1120,36 +1170,30 @@ export function daiBuoc(soDo) {
  *
  *  CỐ Ý không đảo thứ tự: người dùng phải đoán được kết quả trước khi bấm. Thứ
  *  tự tầng và cách gom tầng giữ y như cũ — chỉ đổi chỗ ĐẶT tầng, không đổi tầng
- *  nào gồm những khối nào. */
+ *  nào gồm những khối nào.
+ *
+ *  Số hàng CHỈ NỚI, không co lại: chỗ trống người dùng cố ý chừa ra ở đáy trang
+ *  không được biến mất chỉ vì họ bấm căn thẳng hàng. */
 export function tuXepLai(soDo) {
-  if (!soDo?.phases?.length) return sao(soDo);   // không có hàng nào thì không xếp gì
   const s = sao(soDo);
   const HO = 44;
-  const nhom = s.phases.map(() => []);
-  for (const n of s.nodes) nhom[phaseOf(soDo, n)].push(n);
+  const g = s.nodes.slice().sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)));
 
-  let hang = 0;                 // hàng đầu tiên của giai đoạn đang xếp
-  nhom.forEach((g, i) => {
-    g.sort((a, b) => (a.y - b.y) || (nodeX(a) - nodeX(b)));
-    const tang = [];
-    for (const n of g) {
-      // Cùng một cột thì KHÔNG bao giờ chung tầng: một tầng nghĩa là "nằm cạnh
-      // nhau trên một hàng", hai khối cùng cột không thể cạnh nhau. Bỏ điều kiện
-      // này thì hai khối cùng cột cách nhau <44px sẽ trùng khít pixel và một
-      // bước biến mất khỏi bản in.
-      const t = tang.find(t => Math.abs(t.y - n.y) < HO
-                            && !t.items.some(m => m.lane === n.lane));
-      if (t) t.items.push(n); else tang.push({ y: n.y, items: [n] });
-    }
-    // Mỗi tầng một hàng, khối đặt theo TÂM nên khối cao thấp khác nhau vẫn thẳng.
-    tang.forEach((t, k) => {
-      for (const n of t.items) { n.dx = 0; n.y = yTaiHang(hang + k, n.h); }
-    });
-    // Giai đoạn phải đủ hàng cho các tầng của nó, và luôn là bội số CAO_HANG —
-    // chỉ NỚI, không co lại, để chỗ trống người dùng cố ý chừa ra không mất đi.
-    const soHang = Math.max(tang.length, tronCaoGiaiDoan(s.phases[i].h) / CAO_HANG);
-    s.phases[i].h = soHang * CAO_HANG;
-    hang += soHang;
+  const tang = [];
+  for (const n of g) {
+    // Cùng một cột thì KHÔNG bao giờ chung tầng: một tầng nghĩa là "nằm cạnh
+    // nhau trên một hàng", hai khối cùng cột không thể cạnh nhau. Bỏ điều kiện
+    // này thì hai khối cùng cột cách nhau <44px sẽ trùng khít pixel và một
+    // bước biến mất khỏi bản in.
+    const t = tang.find(t => Math.abs(t.y - n.y) < HO
+                          && !t.items.some(m => m.lane === n.lane));
+    if (t) t.items.push(n); else tang.push({ y: n.y, items: [n] });
+  }
+  // Mỗi tầng một hàng, khối đặt theo TÂM nên khối cao thấp khác nhau vẫn thẳng.
+  tang.forEach((t, k) => {
+    for (const n of t.items) { n.dx = 0; n.y = yTaiHang(k, n.h); }
   });
+
+  s.soHang = Math.max(tang.length, soHangCua(soDo));
   return s;
 }

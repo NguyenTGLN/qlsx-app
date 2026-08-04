@@ -28,7 +28,7 @@ import * as api from '../../lib/quyTrinhApi';
       bằng sơ đồ trên màn hình (biến `pbXuat`). Không sửa quyTrinhXuat.js vì nó
       còn dùng ở chỗ khác.
 
-   3. soDoSangSvg gọi thẳng soDo.lanes.forEach / soDo.phases.reduce.
+   3. soDoSangSvg gọi thẳng soDo.lanes.forEach.
       Dòng cũ trong DB có thể là {} (cột so_do jsonb default '{}'), nên phải kiểm
       mảng TRƯỚC khi gọi, không thì cả tab trắng màn hình.
 
@@ -111,7 +111,11 @@ function lamSachHinhHoc(sd) {
   const oSach = o => (o && typeof o === 'object' && !Array.isArray(o));
   return {
     ...sd,
-    phases: sd.phases.map(p => (oSach(p) ? { ...p, h: so(p.h) } : p)),
+    // `phases` chỉ còn ở sơ đồ lưu từ trước (nay chiều cao trang là soDo.soHang).
+    // Vẫn phải rửa vì bản cũ suy chiều cao trang từ nó — nhưng chỉ khi CÓ.
+    ...(Array.isArray(sd.phases)
+      ? { phases: sd.phases.map(p => (oSach(p) ? { ...p, h: so(p.h) } : p)) }
+      : null),
     nodes: Array.isArray(sd.nodes)
       ? sd.nodes.map(n => (oSach(n)
         ? { ...n, y: so(n.y), w: so(n.w), h: so(n.h), dx: so(n.dx), lane: so(n.lane) }
@@ -167,7 +171,10 @@ export default function XemTruocTab({ mo, soDo, pDanhMuc, mau = '#ea580c', chuaL
      người ta mở màn hình này để in. Bắt ở đây thì hỏng dữ liệu chỉ mất cái
      hình, bảy mục còn lại vẫn đọc được. */
   const ve = useMemo(() => {
-    if (!Array.isArray(sd?.lanes) || !Array.isArray(sd?.phases)) {
+    // CHỈ soi `lanes`: soDoSangSvg gọi thẳng soDo.lanes.forEach. Chiều cao trang
+    // nay là soDo.soHang, và drawH tự lo mọi hình dạng dữ liệu — đòi `phases`
+    // phải là mảng thì mọi sơ đồ soạn từ nay (không còn khoá đó) đều mất hình.
+    if (!Array.isArray(sd?.lanes)) {
       return { svg: '', dong: [], hong: false, sach: sd };
     }
     try {

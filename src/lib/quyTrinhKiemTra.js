@@ -86,7 +86,7 @@ export function kiemTraLuuDo(soDo) {
   }
 
   // ── Khối lọt ra NGOÀI TRANG ──
-  // Ảnh xuất ra (PNG dán xưởng, ảnh nhúng .docx, bản in A3) lấy viewBox đúng
+  // Ảnh xuất ra (PNG dán xưởng, ảnh nhúng .docx, bản in) lấy viewBox đúng
   // bằng drawW × drawH. Khối nằm ngoài khung đó VẪN hiện trên màn hình soạn
   // thảo và VẪN có một dòng trong bảng diễn giải, nhưng RỤNG khỏi mọi bản in:
   // người dùng thấy đủ bước rồi in ra một tài liệu ISO thiếu bước, không một
@@ -100,7 +100,7 @@ export function kiemTraLuuDo(soDo) {
   // ép chúng về 0 trước khi vẽ, tức khối rác đậu ở góc trên-trái và có mặt đủ
   // trong ảnh. Chặn ban hành vì một thứ bản in không hề mất là báo sai.
   const W = Array.isArray(soDo?.lanes) ? drawW(soDo) : 0;
-  const H = Array.isArray(soDo?.phases) ? drawH(soDo) : 0;
+  const H = drawH(soDo);       // drawH tự lo dữ liệu hỏng, không cần chặn ngoài
   if (Number.isFinite(W) && Number.isFinite(H)) {
     for (const n of nodes) {
       const r = rectOf(n);

@@ -4,9 +4,9 @@ import {
   Minus, Plus, Save, Send, BadgeCheck, RotateCcw, Loader2, GitBranch, CopyPlus,
 } from 'lucide-react';
 import {
-  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT, CAO_HANG,
-  laneX, nodeX, rectOf, drawW, drawH, phaseTop, phaseOf, timKhoi, routeEdge, thuTuBuoc,
-  themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, hutHang, daiBuoc, tronCaoGiaiDoan,
+  GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT,
+  laneX, nodeX, rectOf, drawW, drawH, timKhoi, routeEdge, thuTuBuoc,
+  themBuoc, xoaKhoi, doiCot, tuXepLai, xoaCot, xoaHang, themHang, soHangCua, hutHang, daiBuoc,
   diemGiao, CANH_NEO, diemNeo, neoHopLe, datThuTu, boThuTu, kepTrongTrang,
   tiLeTrenDuong, tiLeNhanHopLe, chuyenCot, cotTaiX,
 } from '../../lib/quyTrinhSoDo';
@@ -86,9 +86,6 @@ const boLech = (soDo, id) => boKhoa(soDo, id, ['lech']);
 const vaCot = (soDo, i, va) => ({
   ...soDo, lanes: soDo.lanes.map((l, k) => (k === i ? { ...l, ...va } : l)),
 });
-const vaHang = (soDo, i, va) => ({
-  ...soDo, phases: soDo.phases.map((p, k) => (k === i ? { ...p, ...va } : p)),
-});
 
 let dem = 0;
 const idMoi = tien => `${tien}${Date.now().toString(36)}${(dem++).toString(36)}`;
@@ -158,7 +155,7 @@ export default function SoanThaoTab({
   pSoanThao, napLai, mau = '#ea580c', chuaLuu = false, danhDauDaLuu = () => {},
   moQuyTrinh,
 }) {
-  const [chon, setChon] = useState(null);        // { loai:'node'|'edge'|'lane'|'phase', id }
+  const [chon, setChon] = useState(null);        // { loai:'node'|'edge'|'lane'|'hang', id }
   const [cheDo, setCheDo] = useState('chon');    // 'chon' | 'noi'
   const [nguonNoi, setNguonNoi] = useState(null);
   const [zoom, setZoom] = useState(1);
@@ -343,12 +340,11 @@ export default function SoanThaoTab({
 
   const xoaHangTai = (i) => {
     if (!coSua) return;
-    const ten = soDo.phases[i]?.name || `Giai đoạn ${i + 1}`;
-    if (!window.confirm(`Xoá hàng giai đoạn “${ten}”?\n\nHoàn tác được bằng Ctrl+Z.`)) return;
+    if (!window.confirm(`Xoá hàng “Bước ${i + 1}”?\n\nHoàn tác được bằng Ctrl+Z.`)) return;
     try {
       doiSoDo(xoaHang(soDo, i));
       setChon(null);
-      toast(`Đã xoá hàng “${ten}”. Các khối phía dưới dịch lên, vẫn ở đúng giai đoạn cũ.`);
+      toast(`Đã xoá một hàng. Các khối phía dưới dịch lên một hàng, số bước đánh lại từ đầu.`);
     } catch (e) {
       alert(e?.message || 'Không xoá được hàng.');
     }
@@ -366,7 +362,7 @@ export default function SoanThaoTab({
     if (truoc.join() !== sau.join()) {
       toast('Đã xếp lại. Số thứ tự bước có thay đổi — xem lại bảng diễn giải trước khi in.');
     } else {
-      toast('Đã xếp lại lưu đồ: khối căn giữa cột và giãn đều theo giai đoạn.');
+      toast('Đã xếp lại lưu đồ: khối căn giữa cột và về đúng tâm ô của lưới hàng.');
     }
   };
 
@@ -908,7 +904,6 @@ export default function SoanThaoTab({
   }
 
   const lanes = soDo.lanes || [];
-  const phases = soDo.phases || [];
   const W = GUT + drawW(soDoHien);
   const H = HEAD_H + drawH(soDoHien);
 
@@ -982,14 +977,14 @@ export default function SoanThaoTab({
           {nut({
             disabled: !coSua,
             onClick: () => {
-              // Chiều cao giai đoạn phải TRỌN HÀNG, nếu không mốc ngăn giai đoạn
-              // xẻ ngang giữa một hàng. Hai hàng là chỗ vừa đủ cho một bước và
-              // một nhánh của nó.
-              doiSoDo({ ...soDo, phases: [...phases, { name: 'Giai đoạn mới', h: 2 * CAO_HANG }] });
-              setChon({ loai: 'phase', id: phases.length });
-              toast('Đã thêm một hàng giai đoạn.');
+              // Số hàng là của lib; ở đây chỉ bấm nút. Hàng mới tự mang số bước
+              // tiếp theo, không có tên và không có chiều cao để đặt.
+              const moi = soHangCua(soDo);        // hàng vừa mọc ra là hàng cuối
+              doiSoDo(themHang(soDo));
+              setChon({ loai: 'hang', id: moi });
+              toast(`Đã thêm hàng “Bước ${moi + 1}”.`);
             },
-            children: <><Rows3 size={13} />Thêm hàng</>, title: 'Thêm một hàng giai đoạn',
+            children: <><Rows3 size={13} />Thêm hàng</>, title: 'Thêm một hàng bước ở cuối lưu đồ',
           })}
           {nut({
             disabled: !coSua, onClick: xepLai,
@@ -1185,8 +1180,8 @@ export default function SoanThaoTab({
 
           <h3 style={{ ...S.h3, marginTop: 18 }}>Sửa cột và hàng</h3>
           <div style={S.hint}>
-            Bấm <b>tên cột</b> hoặc <b>nhãn giai đoạn</b> → bảng bên phải có chỗ đổi tên
-            và nút <b>xoá</b> cột/hàng đó.
+            Bấm <b>tên cột</b> để đổi tên bộ phận; bấm <b>nhãn Bước N</b> ở cột trái để
+            xem và <b>xoá</b> hàng đó. Số bước đánh <b>tự động</b> theo hàng, không đặt tên được.
             <br /><br />
             Chỉ xoá được cột/hàng <b>đang trống</b>. Còn khối thì phải chuyển đi trước —
             đổi cột là đổi người thực hiện, máy không quyết hộ.
@@ -1218,7 +1213,7 @@ export default function SoanThaoTab({
                 if (ev.target === ev.currentTarget) { setChon(null); setNguonNoi(null); }
               }}>
 
-              <div className="qe-guthead" style={{ width: GUT }}>Giai đoạn</div>
+              <div className="qe-guthead" style={{ width: GUT }}>Bước</div>
 
               {/* Tên cột: bấm để chọn, KÉO NGANG để đổi chỗ cột. Cột đang kéo mờ
                   đi, cột đích viền nét đứt — thêm một dải phủ suốt chiều cao cột
@@ -1245,13 +1240,16 @@ export default function SoanThaoTab({
                 </div>
               ))}
 
-              {phases.map((p, i) => (
-                <div key={`ph${i}`} className="qe-phaselbl"
-                  data-sel={chon?.loai === 'phase' && chon.id === i ? '1' : undefined}
-                  style={{ top: HEAD_H + phaseTop(soDoHien, i), height: p.h, width: GUT }}
-                  onPointerDown={(ev) => { ev.stopPropagation(); setChon({ loai: 'phase', id: i }); }}
-                  title={p.name}>
-                  {p.name}
+              {/* Cột BƯỚC: một ô mỗi hàng, số đánh tự động. Mốc hàng lấy nguyên
+                  từ daiBuoc — cùng danh sách với dải nền trong khung giấy, nên
+                  nhãn không thể lệch khỏi hàng nó đang gọi tên. */}
+              {dai.map((d, i) => (
+                <div key={`hg${i}`} className="qe-hanglbl"
+                  data-sel={chon?.loai === 'hang' && chon.id === i ? '1' : undefined}
+                  style={{ top: HEAD_H + d.y1, height: d.y2 - d.y1, width: GUT }}
+                  onPointerDown={(ev) => { ev.stopPropagation(); setChon({ loai: 'hang', id: i }); }}
+                  title={`Bước ${i + 1} — ${d.ids.length} khối`}>
+                  Bước {i + 1}
                 </div>
               ))}
 
@@ -1261,13 +1259,9 @@ export default function SoanThaoTab({
               }}>
                 {/* ── DẢI BƯỚC: hàng đều, mỗi hàng cao đúng CAO_HANG ──
                     Lớp ĐẦU TIÊN trong khung giấy nên nằm dưới cùng — dưới cột,
-                    dưới vạch giai đoạn, dưới đường nối và khối. Cả lớp KHÔNG ăn
-                    chuột nên khối và đường nối bên trên bấm, kéo y như cũ.
-                    Vạch dải bước là NÉT LIỀN màu MAU_DAI.vach, nhạt hơn cả vạch
-                    giai đoạn (nét đứt #d6dee9) lẫn vạch cột (#dfe6ef): giai đoạn
-                    là cấu trúc lớn, dải bước chỉ chia nhỏ bên trong nó, không
-                    được tranh chỗ với nó. Nền so le tô rất nhạt và nằm DƯỚI nền
-                    cột, nên nền cột (đậm hơn) vẫn là thứ đọc trước. */}
+                    dưới đường nối và khối. Cả lớp KHÔNG ăn chuột nên khối và
+                    đường nối bên trên bấm, kéo y như cũ. Nền so le tô rất nhạt
+                    và nằm DƯỚI nền cột, nên nền cột (đậm hơn) vẫn đọc trước. */}
                 <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
                   {dai.map((d, i) => (
                     <div key={`db${i}`} style={{
@@ -1286,13 +1280,6 @@ export default function SoanThaoTab({
                     background: i % 2 ? 'rgba(148,163,184,.045)' : 'transparent',
                   }} />
                 ))}
-                {phases.map((p, i) => (i ? (
-                  <div key={`pl${i}`} style={{
-                    position: 'absolute', left: 0, right: 0, top: phaseTop(soDoHien, i),
-                    borderTop: '1px dashed #d6dee9',
-                  }} />
-                ) : null))}
-
                 {/* CHỖ CỘT SẼ ĐẬU khi đang kéo tên cột. Phủ suốt chiều cao cột đích
                     nên nhìn một cái là biết cả cột sẽ nằm ở đâu, chứ không phải đoán
                     theo một vạch mảnh trên hàng tiêu đề. Không ăn chuột và chỉ tồn
@@ -1580,9 +1567,9 @@ export default function SoanThaoTab({
             <CotInsp key={`lane${chon.id}`} i={chon.id} l={lanes[chon.id]} soDo={soDo}
               doiSoDo={doiSoDo} coSua={coSua} onXoa={() => xoaCotTai(chon.id)}
               onChuyen={den => chuyenCotTai(chon.id, den)} />
-          ) : chon?.loai === 'phase' && phases[chon.id] ? (
-            <HangInsp key={`ph${chon.id}`} i={chon.id} p={phases[chon.id]} soDo={soDo}
-              doiSoDo={doiSoDo} coSua={coSua} onXoa={() => xoaHangTai(chon.id)} />
+          ) : chon?.loai === 'hang' && dai[chon.id] ? (
+            <HangInsp key={`hg${chon.id}`} i={chon.id} d={dai[chon.id]} soHang={dai.length}
+              coSua={coSua} onXoa={() => xoaHangTai(chon.id)} />
           ) : (
             <Rong
               tieuDe="Chưa chọn gì trên lưu đồ."
@@ -1971,44 +1958,35 @@ function CotInsp({ i, l, soDo, doiSoDo, coSua, onXoa, onChuyen }) {
   );
 }
 
-function HangInsp({ i, p, soDo, doiSoDo, coSua, onXoa }) {
-  // Khối không mang chỉ số hàng — hỏi phaseOf mới biết nó rơi vào giai đoạn nào.
-  const dung = soDo.nodes.filter(n => phaseOf(soDo, n) === i).length;
+/** Bảng thuộc tính của một HÀNG. Hàng không còn gì để đặt tên hay chỉnh chiều
+ *  cao — nhãn là "Bước N" đánh tự động, mọi hàng cao bằng nhau — nên chỗ này
+ *  chỉ còn cho biết hàng đang chứa gì và nút xoá. */
+function HangInsp({ i, d, soHang, coSua, onXoa }) {
+  const dung = d.ids.length;
   return (
     <>
       <h3 style={S.h3}>Thuộc tính hàng</h3>
-      <p style={S.kind}>Giai đoạn {i + 1} · {dung} khối đang nằm trong hàng này</p>
+      <p style={S.kind}>Bước {i + 1} · {dung} khối đang nằm trong hàng này</p>
 
-      <ONhap id="qe-f-pname" nhan="Tên giai đoạn" giaTri={p.name} doc={!coSua}
-        key={`pn${p.name}`} onLuu={v => doiSoDo(vaHang(soDo, i, { name: v.trim() || 'Giai đoạn mới' }))} />
-
-      <ONhap id="qe-f-ph" nhan="Chiều cao hàng (px)" giaTri={String(p.h)} doc={!coSua}
-        key={`ph${p.h}`}
-        onLuu={(v) => {
-          const s = Number(v);
-          // Số rác thì bỏ qua: hàng cao 0px làm khối trong đó biến mất.
-          if (!Number.isFinite(s) || s <= 0) return;
-          // Làm tròn lên TRỌN HÀNG — mốc ngăn giai đoạn rơi vào giữa một hàng thì
-          // vạch ngăn xẻ ngang qua bước. Phép làm tròn nằm ở lib, không ở đây.
-          doiSoDo(vaHang(soDo, i, { h: tronCaoGiaiDoan(s) }));
-        }}
-        ghiChu={`Tự làm tròn lên bội số ${CAO_HANG} — mỗi hàng cao đúng ${CAO_HANG}px. `
-          + 'Tự xếp lại sẽ tự nới thêm nếu các khối cần nhiều chỗ hơn.'} />
+      <p style={S.note}>
+        Số bước đánh <b>tự động</b> theo thứ tự hàng từ trên xuống, không đặt tên
+        được. Xoá hoặc thêm hàng là các bước phía dưới tự đánh số lại.
+      </p>
 
       {coSua && (
         <>
-          <button type="button" className="qe-btn" disabled={dung > 0 || soDo.phases.length <= 1}
+          <button type="button" className="qe-btn" disabled={dung > 0 || soHang <= 1}
             style={{ ...S.btn, ...S.btnNho, color: C.do }} onClick={onXoa}
             title={dung > 0
-              ? `Hàng còn ${dung} khối — kéo chúng sang giai đoạn khác trước đã.`
-              : soDo.phases.length <= 1 ? 'Lưu đồ phải còn ít nhất một hàng.'
-                : 'Xoá hàng giai đoạn này khỏi lưu đồ'}>
+              ? `Hàng còn ${dung} khối — kéo chúng sang hàng khác trước đã.`
+              : soHang <= 1 ? 'Lưu đồ phải còn ít nhất một hàng.'
+                : 'Xoá hàng này khỏi lưu đồ'}>
             Xoá hàng này
           </button>
           <p style={S.note}>
             {dung > 0
-              ? `Còn ${dung} khối trong hàng. Hãy kéo chúng sang giai đoạn khác trước khi xoá hàng.`
-              : 'Các khối phía dưới dịch lên đúng chiều cao hàng này nên vẫn ở đúng giai đoạn cũ. '
+              ? `Còn ${dung} khối trong hàng. Hãy kéo chúng sang hàng khác trước khi xoá hàng.`
+              : 'Các khối phía dưới dịch lên đúng một hàng nên thứ tự trước sau không đổi. '
                 + 'Hoàn tác được bằng Ctrl+Z.'}
           </p>
         </>
@@ -2076,10 +2054,10 @@ const CSS = `
    hẳn nhau nên không lẫn với nhau, và cũng không lẫn với viền LIỀN của data-sel. */
 .qe-lanehead[data-keo] { opacity:.42; }
 .qe-lanehead[data-dich] { outline:2px dashed currentColor; outline-offset:-3px; }
-.qe-phaselbl { position:absolute; left:0; display:grid; place-items:center; padding:0 8px;
+.qe-hanglbl { position:absolute; left:0; display:grid; place-items:center; padding:0 8px;
   font-size:11.5px; font-weight:700; color:#475569; text-align:center; line-height:1.3; cursor:pointer;
   border-top:1px solid ${C.giayVien}; background:${C.giayBang}; }
-.qe-phaselbl[data-sel] { outline:2px solid ${C.chu2}; outline-offset:-2px; }
+.qe-hanglbl[data-sel] { outline:2px solid ${C.chu2}; outline-offset:-2px; }
 .qe-edges { position:absolute; inset:0; overflow:visible; pointer-events:none; }
 /* Núm chỉnh chỗ bẻ phải nổi TRÊN lớp khối — khối vẽ sau lớp đường nối nên nằm
    đè lên nó, và núm ＋/⤳ đã chiếm z-index 5, nên lấy 6. Cả lớp KHÔNG ăn chuột,
