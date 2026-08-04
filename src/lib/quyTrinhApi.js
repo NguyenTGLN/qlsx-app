@@ -111,6 +111,19 @@ export async function banHanh(phienBanId) {
   nem(error, 'Không ban hành được');
 }
 
+/** Soát xét một quy trình ĐÃ BAN HÀNH: chép nguyên nội dung bản đang hiệu lực
+ *  sang một phiên bản NHÁP mới rồi trả id bản mới.
+ *
+ *  Mọi luật nằm ở rpc_qt_tao_phien_ban (sql/quy_trinh.sql) — chủ sở hữu, "chỉ
+ *  một việc dở dang một lúc", đánh số lần ban hành và nhãn phiên bản. Chép luật
+ *  ấy lên đây là nuôi hai bản luật lệch nhau, mà bản ở giao diện thì ai cũng
+ *  đi vòng qua được. Bản đang hiệu lực KHÔNG bị đụng tới. */
+export async function taoPhienBanMoi(quyTrinhId) {
+  const { data, error } = await supabase.rpc('rpc_qt_tao_phien_ban', { p_quy_trinh_id: quyTrinhId });
+  nem(error, 'Không tạo được phiên bản mới');
+  return data;
+}
+
 export async function xoaQuyTrinh(id) {
   const { data, error } = await supabase.from('quy_trinh').delete().eq('id', id).select('id');
   nem(error, 'Không xoá được quy trình');

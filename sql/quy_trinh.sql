@@ -252,12 +252,87 @@ begin
    where id = v_qt;
 end $$;
 
+-- ── RPC 4: tạo phiên bản MỚI từ bản đang hiệu lực ──
+--    Trước đây chỉ có ĐÚNG MỘT chỗ chèn phiên bản (taoQuyTrinh, v1.0). Ban hành
+--    xong là ba tab soạn thảo khoá lại và bảo "muốn sửa thì tạo phiên bản mới" —
+--    một việc app không hề có. Một lỗi chính tả trong quy trình ISO đã ban hành
+--    vì thế kẹt vĩnh viễn.
+create or replace function rpc_qt_tao_phien_ban(p_quy_trinh_id uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v_cu  quy_trinh_phien_ban%rowtype;
+  v_lan int;
+  v_so  int;
+  v_dau text;
+  v_ten text;
+  v_moi uuid;
+begin
+  if not qt_lam_chu(p_quy_trinh_id) then
+    raise exception 'Chỉ người soạn hoặc Admin mới tạo được phiên bản mới của quy trình này';
+  end if;
+
+  -- MỘT việc dở dang tại một thời điểm. Không chặn thì hai người mỗi người mở
+  -- một bản nháp từ cùng một bản đã ban hành, rồi bản nào ban hành sau sẽ đè
+  -- mất công của bản kia mà không ai thấy có gì bất thường.
+  if exists (select 1 from quy_trinh_phien_ban
+              where quy_trinh_id = p_quy_trinh_id and trang_thai in ('draft', 'wait')) then
+    raise exception 'Quy trình này đang có một bản nháp hoặc bản chờ duyệt. Hãy hoàn tất hoặc xoá bản đó trước khi tạo phiên bản mới.';
+  end if;
+
+  select * into v_cu from quy_trinh_phien_ban
+   where quy_trinh_id = p_quy_trinh_id and trang_thai = 'published'
+   order by lan_ban_hanh desc limit 1;
+  if not found then
+    raise exception 'Quy trình này chưa có bản nào đang hiệu lực để soát xét';
+  end if;
+
+  select coalesce(max(lan_ban_hanh), 0) + 1 into v_lan
+    from quy_trinh_phien_ban where quy_trinh_id = p_quy_trinh_id;
+
+  -- Nhãn phiên bản suy từ nhãn CŨ: '2.1' → '3.0'. phien_ban là text không ràng
+  -- buộc định dạng, nên chỉ nhận dãy số đầu dài tối đa 6 chữ số — dài hơn thì
+  -- ::int tràn kiểu và cả lời gọi vỡ. Không đọc được thì lấy '<lần ban hành>.0'.
+  v_dau := substring(v_cu.phien_ban from '^\s*(\d{1,6})(?:\D|$)');
+  v_so  := case when v_dau is null then v_lan else v_dau::int + 1 end;
+  v_ten := v_so || '.0';
+  -- unique (quy_trinh_id, phien_ban): đụng nhãn thì nhích lên cho tới khi trống,
+  -- thay vì để lời gọi vỡ bằng một lỗi unique violation không ai đọc được.
+  while exists (select 1 from quy_trinh_phien_ban
+                 where quy_trinh_id = p_quy_trinh_id and phien_ban = v_ten) loop
+    v_so  := v_so + 1;
+    v_ten := v_so || '.0';
+  end loop;
+
+  perform set_config('qt.cho_phep', '1', true);
+
+  -- Chép NGUYÊN VĂN so_do và tai_lieu: người soát xét sửa một chỗ chính tả,
+  -- không phải dựng lại lưu đồ từ đầu. ngay_hieu_luc / published_at /
+  -- nguoi_ban_hanh cố ý để trống — chúng thuộc về lần ban hành SAU này.
+  insert into quy_trinh_phien_ban (
+    quy_trinh_id, phien_ban, lan_ban_hanh, trang_thai,
+    so_do, tai_lieu, ghi_chu_sua_doi, nguoi_tao)
+  values (
+    p_quy_trinh_id, v_ten, v_lan, 'draft',
+    v_cu.so_do, v_cu.tai_lieu,
+    'Soát xét từ phiên bản ' || v_cu.phien_ban || '.',
+    coalesce(auth.jwt()->>'nv_id', v_cu.nguoi_tao))
+  returning id into v_moi;
+
+  -- Đầu bảng bám theo trạng thái của bản MỚI NHẤT, xem chú thích ở cột trang_thai.
+  -- Bản đang hiệu lực KHÔNG bị đụng: nó vẫn là 'published' và vẫn là ban_hien_hanh
+  -- cho tới khi bản mới được ban hành — xưởng vẫn in ra đúng tài liệu đang có hiệu lực.
+  update quy_trinh set trang_thai = 'draft', updated_at = now() where id = p_quy_trinh_id;
+  return v_moi;
+end $$;
+
 revoke all on function rpc_qt_gui_duyet(uuid)      from public, anon;
 revoke all on function rpc_qt_tra_lai(uuid, text)  from public, anon;
 revoke all on function rpc_qt_ban_hanh(uuid)       from public, anon;
+revoke all on function rpc_qt_tao_phien_ban(uuid)  from public, anon;
 grant execute on function rpc_qt_gui_duyet(uuid)     to authenticated;
 grant execute on function rpc_qt_tra_lai(uuid, text) to authenticated;
 grant execute on function rpc_qt_ban_hanh(uuid)      to authenticated;
+grant execute on function rpc_qt_tao_phien_ban(uuid) to authenticated;
 
 commit;
 
@@ -287,7 +362,30 @@ commit;
 --   select p.proname, has_function_privilege('anon', p.oid, 'EXECUTE') as anon_goi_duoc
 --     from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 --    where n.nspname='public' and p.proname like 'qt_%' or p.proname like 'rpc_qt_%';
---     → cả 4 hàm phải là false.
+--     → cả 5 hàm phải là false (qt_lam_chu, qt_canh_trang_thai và 4 rpc_qt_*
+--       — qt_canh_trang_thai là hàm trigger, anon không gọi thẳng được).
+--
+--   ── Sau khi siết khoá nội dung bản CHỜ DUYỆT ──
+--   Đăng nhập bằng một tài khoản THƯỜNG (không phải Admin) là người soạn của một
+--   quy trình đang ở 'wait', rồi thử qua REST:
+--     patch /rest/v1/quy_trinh_phien_ban?id=eq.<id bản wait>  body {"so_do":{}}
+--     → kỳ vọng LỖI 'Bản đang chờ duyệt đã khoá nội dung…'. Ra 204 nghĩa là
+--       trigger chưa được chạy lại — chạy lại cả file này.
+--   Rồi để Admin bấm "Trả lại": phải chạy được (RPC bật cờ qt.cho_phep nên đi
+--   qua trigger), và ghi_chu_sua_doi phải đổi thành lý do vừa nhập.
+--
+--   ── Sau khi thêm rpc_qt_tao_phien_ban ──
+--   Trên một quy trình ĐÃ BAN HÀNH:
+--     select rpc_qt_tao_phien_ban('<quy_trinh_id>');
+--     → trả về uuid bản mới; select lại phải thấy đúng 1 dòng 'draft' có
+--       so_do/tai_lieu giống hệt bản 'published', và bản 'published' cũ KHÔNG đổi.
+--     → gọi lần thứ hai phải BÁO LỖI 'đang có một bản nháp hoặc bản chờ duyệt'.
+--     → gọi bằng tài khoản không phải người soạn và không phải Admin phải báo
+--       'Chỉ người soạn hoặc Admin…'.
+--   select trang_thai from quy_trinh where id='<quy_trinh_id>';  → 'draft'.
+--   select ban_hien_hanh from quy_trinh where id='<quy_trinh_id>';
+--     → vẫn trỏ vào bản 'published' cũ: xưởng phải in ra tài liệu đang có hiệu
+--       lực, không phải bản nháp đang soạn dở.
 -- ------------------------------------------------------------
 
 -- ============================================================
@@ -304,10 +402,11 @@ commit;
 -- begin;
 -- revoke all on quy_trinh           from authenticated;
 -- revoke all on quy_trinh_phien_ban from authenticated;
--- revoke execute on function rpc_qt_gui_duyet(uuid)     from authenticated;
--- revoke execute on function rpc_qt_tra_lai(uuid, text) from authenticated;
--- revoke execute on function rpc_qt_ban_hanh(uuid)      from authenticated;
--- revoke execute on function qt_lam_chu(uuid)           from authenticated;
+-- revoke execute on function rpc_qt_gui_duyet(uuid)      from authenticated;
+-- revoke execute on function rpc_qt_tra_lai(uuid, text)  from authenticated;
+-- revoke execute on function rpc_qt_ban_hanh(uuid)       from authenticated;
+-- revoke execute on function rpc_qt_tao_phien_ban(uuid)  from authenticated;
+-- revoke execute on function qt_lam_chu(uuid)            from authenticated;
 -- commit;
 
 -- ── B) XOÁ HẲN — MẤT DỮ LIỆU, KHÔNG LẤY LẠI ĐƯỢC ──
@@ -318,6 +417,7 @@ commit;
 -- drop trigger  if exists qt_pb_tg_trang_thai on quy_trinh_phien_ban;
 -- drop trigger  if exists qt_tg_trang_thai    on quy_trinh;
 -- drop function if exists qt_canh_trang_thai() cascade;
+-- drop function if exists rpc_qt_tao_phien_ban(uuid);
 -- drop function if exists rpc_qt_ban_hanh(uuid);
 -- drop function if exists rpc_qt_tra_lai(uuid, text);
 -- drop function if exists rpc_qt_gui_duyet(uuid);

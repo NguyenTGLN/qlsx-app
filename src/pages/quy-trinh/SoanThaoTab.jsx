@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MousePointer2, Spline, Columns3, Rows3, Wand2, Undo2, Redo2, Trash2,
-  Minus, Plus, Save, Send, BadgeCheck, RotateCcw, Loader2, GitBranch,
+  Minus, Plus, Save, Send, BadgeCheck, RotateCcw, Loader2, GitBranch, CopyPlus,
 } from 'lucide-react';
 import {
   GUT, LANE_W, HEAD_H, LOAI_KHOI, MAU_DUONG, MAU_DAI, NGUONG_HUT, CAO_HANG,
@@ -148,6 +148,7 @@ function Rong({ tieuDe, phu }) {
 export default function SoanThaoTab({
   isAdmin, mo, setMo, soDo, doiSoDo, hoanTac, lamLai, coHoanTac, coLamLai,
   pSoanThao, napLai, mau = '#ea580c', chuaLuu = false, danhDauDaLuu = () => {},
+  moQuyTrinh,
 }) {
   const [chon, setChon] = useState(null);        // { loai:'node'|'edge'|'lane'|'phase', id }
   const [cheDo, setCheDo] = useState('chon');    // 'chon' | 'noi'
@@ -665,6 +666,30 @@ export default function SoanThaoTab({
     });
   };
 
+  // Soát xét một bản ĐÃ BAN HÀNH: chép nguyên nội dung sang một bản nháp mới.
+  // Trước đây ba tab soạn thảo bảo "muốn sửa thì tạo phiên bản mới" mà app không
+  // hề có việc đó — một lỗi chính tả trong quy trình ISO đã ban hành kẹt vĩnh viễn.
+  //
+  // Hỏi lại trước khi gọi: nó ghi thật một dòng xuống DB và đưa cả quy trình về
+  // trạng thái "Bản nháp" ở màn hình danh mục.
+  const taoPhienBanMoi = () => {
+    if (!pb?.id || !mo?.quyTrinh?.id) return;
+    const ok = window.confirm(
+      `Tạo phiên bản mới từ bản v${pb.phien_ban || '—'} đang hiệu lực?\n\n`
+      + 'Toàn bộ lưu đồ và nội dung tài liệu được chép sang một BẢN NHÁP mới để sửa.\n'
+      + 'Bản đang hiệu lực GIỮ NGUYÊN cho tới khi bản mới được Admin ban hành.');
+    if (!ok) return;
+    chay('pbmoi', async () => {
+      await api.taoPhienBanMoi(mo.quyTrinh.id);
+      // Nạp lại danh mục TRƯỚC (đầu bảng vừa lùi về 'draft'), rồi mở lại chính
+      // quy trình này — banDangLam ưu tiên bản nháp nên bản vừa tạo được mở ra,
+      // kèm ngăn xếp hoàn tác và cờ "chưa lưu" dựng lại từ đầu.
+      await napLai();
+      await moQuyTrinh?.(mo.quyTrinh);
+      toast('Đã tạo phiên bản mới và mở bản nháp. Sửa xong thì bấm "Gửi duyệt".');
+    });
+  };
+
   const traLai = () => {
     // Hỏi lý do TRƯỚC rồi mới chặn là bắt người ta gõ xong một đoạn để vứt đi.
     if (chuaLuu) { alert(CANH_BAO_CHUA_LUU); return; }
@@ -705,6 +730,10 @@ export default function SoanThaoTab({
   const khoiKeoNoi = noiKeo ? timKhoi(soDoHien, noiKeo.tuId) : null;
   const neoKeoNoi = khoiKeoNoi ? rectOf(khoiKeoNoi) : null;
 
+  // Soát xét CHỈ mở ra từ bản đang HIỆU LỰC. Bản 'expired' cố ý không có nút:
+  // soát xét một bản đã bị thay thế là làm tiếp từ tài liệu cũ hơn cái đang dán
+  // ở xưởng. Máy chủ còn soát tiếp chủ sở hữu và "chỉ một việc dở dang một lúc".
+  const taoBanMoiDuoc = tt === 'published' && !!pSoanThao?.edit;
   const banHanhDuoc = isAdmin && tt === 'wait' && loi.length === 0 && !chuaLuu;
   // "Chưa lưu" đứng TRƯỚC danh sách lỗi trong thứ tự báo: lỗi đã hiện sẵn ở
   // thanh đỏ phía trên, còn "chưa lưu" thì không nhìn thấy ở đâu khác.
@@ -850,6 +879,19 @@ export default function SoanThaoTab({
           {banKhoa && (
             <div style={{ ...S.loiDong, color: C.chu2, background: C.mat2, borderColor: C.vien2, cursor: 'default' }}>
               {api.lyDoKhoaNoiDung(tt, ttNhan.ten)}
+              {/* Cách gỡ đặt NGAY CẠNH lời giải thích: dòng này là chỗ duy nhất
+                  người dùng đọc được vì sao màn hình khoá, nên nút mở khoá phải
+                  ở đây chứ không nằm lẫn trong thanh công cụ phía trên. */}
+              {taoBanMoiDuoc && (
+                <button type="button" className="qe-btn"
+                  style={{ ...S.btn, ...S.btnNho, marginLeft: 4 }}
+                  onClick={taoPhienBanMoi} disabled={!!dangChay}
+                  title="Chép lưu đồ và tài liệu của bản này sang một bản nháp mới để sửa">
+                  {dangChay === 'pbmoi'
+                    ? <Loader2 size={13} className="qe-spin" />
+                    : <CopyPlus size={13} />} Tạo phiên bản mới
+                </button>
+              )}
             </div>
           )}
           {loi.map((l, i) => (

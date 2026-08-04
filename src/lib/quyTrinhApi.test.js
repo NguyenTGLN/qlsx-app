@@ -81,3 +81,34 @@ describe('lyDoKhoaNoiDung — nói đúng cái nút người dùng phải đi t�
     }
   });
 });
+
+// ── Tạo phiên bản mới ─────────────────────────────────────────────
+// Toàn bộ luật (chủ sở hữu, chỉ một việc dở dang, chép so_do/tai_lieu, đánh số
+// lần ban hành) nằm trong rpc_qt_tao_phien_ban ở sql/quy_trinh.sql — một bản
+// luật, chạy ở máy chủ. Phía này chỉ gọi đúng tên hàm, đúng tên tham số và
+// không nuốt lỗi.
+describe('taoPhienBanMoi', () => {
+  test('gọi đúng RPC với đúng tên tham số', async () => {
+    rpcResult = { data: 'pb-moi', error: null };
+    await api.taoPhienBanMoi('qt-1');
+    expect(calls.rpc).toEqual([{ ten: 'rpc_qt_tao_phien_ban', tham: { p_quy_trinh_id: 'qt-1' } }]);
+  });
+
+  test('trả về id bản mới để màn hình mở thẳng nó ra', async () => {
+    rpcResult = { data: 'pb-moi', error: null };
+    expect(await api.taoPhienBanMoi('qt-1')).toBe('pb-moi');
+  });
+
+  test('lỗi từ máy chủ được NÉM RA kèm việc đang làm, không nuốt', async () => {
+    rpcResult = { data: null, error: { message: 'Quy trình này đang có một bản nháp' } };
+    await expect(api.taoPhienBanMoi('qt-1')).rejects.toThrow(/Không tạo được phiên bản mới/);
+    await expect(api.taoPhienBanMoi('qt-1')).rejects.toThrow(/đang có một bản nháp/);
+  });
+
+  test('KHÔNG tự đi lấp lời từ chối của máy chủ bằng một giá trị giả', async () => {
+    rpcResult = { data: null, error: { message: 'Chỉ người soạn hoặc Admin' } };
+    let da = false;
+    try { await api.taoPhienBanMoi('qt-1'); } catch { da = true; }
+    expect(da).toBe(true);
+  });
+});

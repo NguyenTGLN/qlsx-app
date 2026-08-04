@@ -124,6 +124,11 @@ export default function QuyTrinhApp() {
   const chung = { user, isAdmin, mo, setMo, soDo, doiSoDo, hoanTac, lamLai,
     coHoanTac: ls.truoc.length > 0, coLamLai: ls.sau.length > 0,
     chuaLuu, danhDauDaLuu, danhDauChuaLuu,
+    // moQuyTrinh mở LẠI được chính quy trình đang mở: nó nạp lại danh sách phiên
+    // bản, chọn bản đang làm (banDangLam ưu tiên nháp) và DỰNG LẠI ngăn xếp hoàn
+    // tác lẫn cờ "chưa lưu". Nút "Tạo phiên bản mới" cần đúng chừng ấy — lamMoiMo
+    // của SoanThaoTab chỉ thay mo, để nguyên sơ đồ của bản cũ trên khung vẽ.
+    moQuyTrinh,
     pDanhMuc, pSoanThao, napLai: nap, mau: MAU };
 
   return (
