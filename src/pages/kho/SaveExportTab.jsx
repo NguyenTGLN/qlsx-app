@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import { todayLocal } from '../../lib/dateUtils';
 import DateRangeDropdown, { applyDateFilter } from '../../components/DateRangeDropdown';
 import SearchAutoSuggest from '../../components/SearchAutoSuggest';
+import { docNhom, menhDeLoc } from '../../lib/locNhomLuuXuat';
 import { shortDate, ColumnToggleModal, PageSizeSelect } from '../../components/WarehouseSharedUI';
 
 const TABLE_COLS = ['ngay_xuat', 'san_pham', 'sl', 'ma_don_hang'];
@@ -53,18 +54,20 @@ export default function SaveExportTab({ perms = { view: true, create: true, edit
     setPage(1);
   }, [search, pageSize, dateRange]);
 
+  // Bảng và nút Xuất Excel PHẢI lọc y hệt nhau. Trước đây hai chỗ chép tay cùng một
+  // điều kiện nên rất dễ sửa một chỗ quên chỗ kia ⇒ gom về một hàm.
+  const apDungLoc = (query, chuoiNhom) => {
+    const menhDe = menhDeLoc(docNhom(chuoiNhom));
+    return menhDe ? query.or(menhDe) : query;
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
       const makeQ = () => {
         let query = db.from('luu_xuat').select('*', { count: 'estimated' });
 
-        if (search) {
-          const terms = search.split(',').map(t => t.trim()).filter(Boolean);
-          if (terms.length > 0) {
-            query = query.in('ma_san_pham', terms);
-          }
-        }
+        query = apDungLoc(query, search);
 
         query = applyDateFilter(query, dateRange, 'ngay_xuat');
 
@@ -102,11 +105,7 @@ export default function SaveExportTab({ perms = { view: true, create: true, edit
         // Lấy TẤT CẢ dòng khớp lọc (gom theo đợt 1000 — PostgREST chặn cứng 1000/request).
         // Tie-break id để các đợt không trùng/sót khi nhiều dòng cùng ngày.
         const { data: allData, error } = await fetchAllRows(() => {
-          let query = db.from('luu_xuat').select('*');
-          if (search) {
-            const terms = search.split(',').map(t => t.trim()).filter(Boolean);
-            if (terms.length > 0) query = query.in('ma_san_pham', terms);
-          }
+          let query = apDungLoc(db.from('luu_xuat').select('*'), search);
           query = applyDateFilter(query, dateRange, 'ngay_xuat');
           return query.order('ngay_xuat', { ascending: false }).order('id', { ascending: true });
         });
@@ -268,6 +267,7 @@ export default function SaveExportTab({ perms = { view: true, create: true, edit
             searchColumns={['ma_san_pham','ten_san_pham','ma_don_hang']}
             displayColumn="ma_san_pham"
             placeholder="Tìm mã SP, tên, ĐH..."
+            groupByTerm
             value={searchInput}
             onChange={v => { setSearchInput(v); setPage(1); }}
           />

@@ -138,7 +138,13 @@ export default function SearchAutoSuggest({
     // Chế độ nhóm: mở lại là để gõ ĐƠN TIẾP THEO, nên dọn ô nhập. Các nhóm đã chốt vẫn
     // nằm nguyên dạng thẻ nên không mất trạng thái lọc.
     const inputHienTai = groupByTerm ? '' : input;
-    if (groupByTerm && input) { setInput(''); setResults([]); }
+    if (groupByTerm && input) {
+      // Huỷ luôn bộ đếm giờ tìm kiếm đang chờ của lần gõ trước. Không huỷ thì nó nổ sau
+      // khi ô nhập đã bị dọn và ghi đè danh sách gợi ý bằng kết quả của từ khoá cũ.
+      if (timerRef.current) clearTimeout(timerRef.current);
+      setInput('');
+      setResults([]);
+    }
     // Preload initial results if empty
     if ((groupByTerm || results.length === 0) && !inputHienTai) {
       setSearching(true);
