@@ -108,6 +108,45 @@ describe('KhoiKpi — cảnh báo dữ liệu hỏng phải nổi lên, không �
   });
 });
 
+// Màu ở màn hình này MANG THÔNG TIN. Hai luật ngược nhau, đều phải giữ:
+//   KPI  — mỗi chỉ tiêu một màu riêng, nóng dần về phía mất nhiều nhất.
+//   Việc — màu theo mức gấp, nên hai việc cùng quá hạn PHẢI cùng màu.
+const mauVienTrai = h => [...h.matchAll(/border-left-color:\s*([^;"]+)/g)].map(m => m[1].trim());
+
+describe('màu thẻ nhỏ trong khối KPI — mỗi chỉ tiêu một màu', () => {
+  const chung = { ky: '2026-08', setKy: () => {}, onXemChiTiet: () => {} };
+  const dungMat = n => ({
+    ...kpiRong, tongKpi: 50, tongMat: 50,
+    danhSachMatDiem: Array.from({ length: n }, (_, i) => ({
+      id: String(i), ten: `CHỈ TIÊU ${i}`, diemMat: n - i,
+    })),
+  });
+
+  test('4 chỉ tiêu ⇒ 4 màu KHÁC NHAU', () => {
+    const mau = mauVienTrai(ve(<KhoiKpi {...chung} kpi={dungMat(4)} dangTai={false} />));
+    expect(mau).toHaveLength(4);
+    expect(new Set(mau).size).toBe(4);
+  });
+
+  test('chỉ tiêu mất nhiều nhất mang màu đỏ (engine đã sắp giảm dần)', () => {
+    expect(mauVienTrai(ve(<KhoiKpi {...chung} kpi={dungMat(3)} dangTai={false} />))[0])
+      .toBe('#dc2626');
+  });
+
+  test('quá 8 chỉ tiêu thì quay vòng bảng màu, không văng và không mất thẻ nào', () => {
+    const mau = mauVienTrai(ve(<KhoiKpi {...chung} kpi={dungMat(11)} dangTai={false} />));
+    expect(mau).toHaveLength(11);
+    expect(mau[8]).toBe(mau[0]);
+  });
+
+  test('chip tổng điểm đã mất chỉ hiện khi thật sự có mất', () => {
+    expect(chu(<KhoiKpi {...chung} kpi={dungMat(2)} dangTai={false} />)).toContain('đã mất');
+    // Đạt trọn điểm mà vẫn dán chip "−0.0 đã mất" là nói sai về kết quả.
+    expect(chu(<KhoiKpi {...chung} kpi={{ ...kpiRong, tongKpi: 100 }} dangTai={false} />))
+      .not.toContain('đã mất');
+  });
+});
+
 describe('KhoiViec', () => {
   const viec = (id, title, nhom, due_date) => ({ id, title, nhom, due_date });
 
@@ -168,5 +207,43 @@ describe('KhoiViec', () => {
     const t = chu(<KhoiViec ds={ds} dangTai={false} onMo={() => {}} />);
     expect(t).toContain('Không có hạn');
     expect(t).not.toMatch(/Invalid Date|NaN/);
+  });
+
+  // Ngược hẳn luật của khối KPI, và có chủ đích: ở đây màu là MỨC GẤP.
+  // Tô hai việc cùng quá hạn thành hai màu cho "đẹp" là nói dối về mức độ.
+  test('hai việc CÙNG nhóm ⇒ CÙNG màu', () => {
+    const ds = [
+      viec('a', 'A', NHOM.QUA_HAN, '2026-08-01T09:00:00+07:00'),
+      viec('b', 'B', NHOM.QUA_HAN, '2026-08-02T09:00:00+07:00'),
+    ];
+    const mau = mauVienTrai(ve(<KhoiViec ds={ds} dangTai={false} onMo={() => {}} />));
+    expect(new Set(mau).size).toBe(1);
+  });
+
+  test('ba mức gấp ⇒ ba màu khác nhau', () => {
+    const ds = [
+      viec('a', 'A', NHOM.QUA_HAN, '2026-08-01T09:00:00+07:00'),
+      viec('b', 'B', NHOM.SAP_HAN, '2026-08-06T09:00:00+07:00'),
+      viec('c', 'C', NHOM.CON_LAI, null),
+    ];
+    expect(new Set(mauVienTrai(ve(<KhoiViec ds={ds} dangTai={false} onMo={() => {}} />))).size).toBe(3);
+  });
+});
+
+describe('hai khối lớn phải phân biệt được với nhau', () => {
+  const vienKhoi = h => h.match(/border-color:\s*([^;"]+)/)?.[1]?.trim();
+
+  test('khối KPI và khối Việc mang hai màu nhận dạng khác nhau', () => {
+    const kpiH = ve(<KhoiKpi ky="2026-08" setKy={() => {}} kpi={kpiRong} dangTai={false} onXemChiTiet={() => {}} />);
+    const viecH = ve(<KhoiViec ds={[]} dangTai={false} onMo={() => {}} />);
+    expect(vienKhoi(kpiH)).toBeDefined();
+    expect(vienKhoi(viecH)).toBeDefined();
+    expect(vienKhoi(kpiH)).not.toBe(vienKhoi(viecH));
+  });
+
+  test('khối lớn cắt nội dung theo góc bo — dải màu đầu khối không tràn ra góc vuông', () => {
+    const h = ve(<KhoiViec ds={[]} dangTai={false} onMo={() => {}} />);
+    expect(h).toMatch(/overflow:\s*hidden/);
+    expect(h).toMatch(/border-radius:\s*16px/);
   });
 });

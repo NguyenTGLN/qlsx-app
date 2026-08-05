@@ -48,11 +48,36 @@ function nhanHan(iso) {
   return `${p(d.getHours())}:${p(d.getMinutes())} ${p(d.getDate())}/${p(d.getMonth() + 1)}`;
 }
 
+// ── Bảng màu ──────────────────────────────────────────────────────
+// Màu ở đây MANG THÔNG TIN, không phải trang trí: người dùng phải đoán được mức
+// độ chỉ bằng cách liếc, chưa cần đọc số.
+
+// Thẻ nhỏ trong khối Việc — màu theo mức gấp. Hai việc cùng quá hạn thì PHẢI cùng
+// màu; tô khác nhau cho "đẹp" là nói dối về mức độ.
 const MAU_NHOM = {
-  [NHOM.QUA_HAN]: { vien: '#fecaca', nen: '#fef2f2', chu: '#b91c1c', nhan: 'Quá hạn' },
-  [NHOM.SAP_HAN]: { vien: '#fed7aa', nen: '#fff7ed', chu: '#c2410c', nhan: 'Sắp đến hạn' },
-  [NHOM.CON_LAI]: { vien: '#e2e8f0', nen: '#fff', chu: '#475569', nhan: '' },
+  [NHOM.QUA_HAN]: { chinh: '#dc2626', vien: '#fecaca', nen: '#fef2f2', chu: '#b91c1c', nhan: 'Quá hạn' },
+  [NHOM.SAP_HAN]: { chinh: '#ea580c', vien: '#fed7aa', nen: '#fff7ed', chu: '#c2410c', nhan: 'Sắp đến hạn' },
+  [NHOM.CON_LAI]: { chinh: '#0284c7', vien: '#bae6fd', nen: '#f0f9ff', chu: '#0369a1', nhan: '' },
 };
+
+// Thẻ nhỏ trong khối KPI — mỗi chỉ tiêu một màu riêng. Danh sách đã được engine sắp
+// mất-nhiều-nhất-trước, nên THỨ TỰ trong mảng này chính là thang mức độ: nóng dần về
+// đầu (đỏ = mất nhiều nhất), nguội dần về cuối. Vừa phân biệt được từng thẻ, vừa
+// không mất nghĩa. Quá 8 chỉ tiêu thì quay vòng — hiếm, và lúc đó con số vẫn nói đủ.
+const MAU_MAT_DIEM = [
+  { chinh: '#dc2626', vien: '#fecaca', nen: '#fef2f2' }, // đỏ
+  { chinh: '#ea580c', vien: '#fed7aa', nen: '#fff7ed' }, // cam
+  { chinh: '#ca8a04', vien: '#fde68a', nen: '#fffbeb' }, // hổ phách
+  { chinh: '#7c3aed', vien: '#ddd6fe', nen: '#f5f3ff' }, // tím
+  { chinh: '#0891b2', vien: '#a5f3fc', nen: '#ecfeff' }, // xanh ngọc
+  { chinh: '#059669', vien: '#a7f3d0', nen: '#ecfdf5' }, // lục
+  { chinh: '#db2777', vien: '#fbcfe8', nen: '#fdf2f8' }, // hồng
+  { chinh: '#4f46e5', vien: '#c7d2fe', nen: '#eef2ff' }, // chàm
+];
+
+// Màu nhận dạng của hai KHỐI LỚN — để nhìn phát biết đang ở khối nào.
+const KHOI_KPI = { chinh: '#2563eb', vien: '#bfdbfe', nen: '#eff6ff' };
+const KHOI_VIEC = { chinh: '#7c3aed', vien: '#ddd6fe', nen: '#f5f3ff' };
 
 export default function BangTinCaNhan() {
   const navigate = useNavigate();
@@ -208,10 +233,12 @@ export default function BangTinCaNhan() {
 
           {!xemKpi && !xemViec && (
             <div style={S.the}>
-              <p style={S.rong}>
-                Tài khoản của bạn chưa được cấp quyền xem KPI hay Công việc.
-                Bấm nút Trang chủ ở góc trên để vào các phân hệ khác.
-              </p>
+              <div style={S.thanThe}>
+                <p style={S.rong}>
+                  Tài khoản của bạn chưa được cấp quyền xem KPI hay Công việc.
+                  Bấm nút Trang chủ ở góc trên để vào các phân hệ khác.
+                </p>
+              </div>
             </div>
           )}
         </div>
@@ -227,11 +254,15 @@ export function KhoiKpi({ ky, setKy, kpi, dangTai, loiNguon, onXemChiTiet }) {
   const mat = kpi?.danhSachMatDiem || [];
   const diem = kpi?.tongKpi ?? 0;
 
+  const tongMat = kpi?.tongMat ?? 0;
+
   return (
-    <section style={S.the}>
-      <div style={S.dauThe}>
+    <section style={{ ...S.the, borderColor: KHOI_KPI.vien }}>
+      <div style={{ ...S.dauThe, background: KHOI_KPI.nen, borderBottomColor: KHOI_KPI.vien }}>
         <div style={S.tenThe}>
-          <Trophy size={15} color="#2563eb" />
+          <span style={{ ...S.oIcon, background: KHOI_KPI.chinh }}>
+            <Trophy size={14} color="#fff" strokeWidth={2.4} />
+          </span>
           <h3 style={S.tieuDe}>KPI của tôi</h3>
         </div>
         <input
@@ -241,66 +272,78 @@ export function KhoiKpi({ ky, setKy, kpi, dangTai, loiNguon, onXemChiTiet }) {
         />
       </div>
 
-      {dangTai ? (
-        <p style={S.rong}><Loader2 size={14} style={{ verticalAlign: 'middle' }} /> Đang tải…</p>
-      ) : !kpi ? (
-        // Tải hỏng. TUYỆT ĐỐI không rơi xuống nhánh dưới: nó sẽ hiện "0.0 điểm" và
-        // "Chưa mất điểm nào trong tháng này" — hai câu khẳng định về dữ liệu mà ta
-        // chưa hề đọc được. Người dùng yên tâm nhầm rồi mất điểm mà không biết.
-        <p style={S.rong}>Không tải được KPI. Bấm “Làm mới” ở góc trên để thử lại.</p>
-      ) : kpi.chuaCoBang ? (
-        <p style={S.rong}>Chưa có bảng KPI cho kỳ này.</p>
-      ) : (
-        <>
-          <div style={S.oDiem}>
-            <span style={{ ...S.soDiem, color: mauTheoDiem(diem) }}>{so1(diem)}</span>
-            <span style={S.donVi}>điểm</span>
-          </div>
-
-          {/* Thiếu dòng chấm chung = HỎNG DỮ LIỆU làm mất trọn trọng số, không phải
-              kết quả chấm. Giấu nó đi là để người ta mất điểm mà không biết vì sao. */}
-          {kpi?.nhomThieuDongChung?.length > 0 && (
-            <div style={S.dangCanhBao}>
-              <AlertTriangle size={13} style={{ flexShrink: 0 }} />
-              <span>
-                Thiếu dòng chấm chung cho nhóm {kpi.nhomThieuDongChung.join(', ')} —
-                phần điểm này đang tính là 0. Báo quản lý để bổ sung.
-              </span>
+      <div style={S.thanThe}>
+        {dangTai ? (
+          <p style={S.rong}><Loader2 size={14} style={{ verticalAlign: 'middle' }} /> Đang tải…</p>
+        ) : !kpi ? (
+          // Tải hỏng. TUYỆT ĐỐI không rơi xuống nhánh dưới: nó sẽ hiện "0.0 điểm" và
+          // "Chưa mất điểm nào trong tháng này" — hai câu khẳng định về dữ liệu mà ta
+          // chưa hề đọc được. Người dùng yên tâm nhầm rồi mất điểm mà không biết.
+          <p style={S.rong}>Không tải được KPI. Bấm “Làm mới” ở góc trên để thử lại.</p>
+        ) : kpi.chuaCoBang ? (
+          <p style={S.rong}>Chưa có bảng KPI cho kỳ này.</p>
+        ) : (
+          <>
+            <div style={S.oDiem}>
+              <span style={{ ...S.soDiem, color: mauTheoDiem(diem) }}>{so1(diem)}</span>
+              <span style={S.donVi}>điểm</span>
+              {tongMat > 0.05 && (
+                <span style={S.chipMat}>−{so1(tongMat)} đã mất</span>
+              )}
             </div>
-          )}
 
-          {loiNguon && (
-            <div style={S.dangCanhBao}>
-              <AlertTriangle size={13} style={{ flexShrink: 0 }} />
-              <span>Một nguồn chấm tự động chưa tải được, điểm có thể chưa đủ: {loiNguon}</span>
-            </div>
-          )}
+            {/* Thiếu dòng chấm chung = HỎNG DỮ LIỆU làm mất trọn trọng số, không phải
+                kết quả chấm. Giấu nó đi là để người ta mất điểm mà không biết vì sao. */}
+            {kpi?.nhomThieuDongChung?.length > 0 && (
+              <div style={S.dangCanhBao}>
+                <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+                <span>
+                  Thiếu dòng chấm chung cho nhóm {kpi.nhomThieuDongChung.join(', ')} —
+                  phần điểm này đang tính là 0. Báo quản lý để bổ sung.
+                </span>
+              </div>
+            )}
 
-          <p style={S.nhanNhom}>
-            {mat.length > 0 ? `Đang mất điểm ở ${mat.length} chỉ tiêu` : 'Chỉ tiêu đang mất điểm'}
-          </p>
+            {loiNguon && (
+              <div style={S.dangCanhBao}>
+                <AlertTriangle size={13} style={{ flexShrink: 0 }} />
+                <span>Một nguồn chấm tự động chưa tải được, điểm có thể chưa đủ: {loiNguon}</span>
+              </div>
+            )}
 
-          {mat.length === 0 ? (
-            <p style={S.rong}>Chưa mất điểm nào trong tháng này.</p>
-          ) : (
-            <ul style={S.ds}>
-              {mat.map(d => (
-                <li key={d.id}>
-                  <button onClick={onXemChiTiet} className="bt-dong" style={S.dongMat}>
-                    <span style={S.tenChiTieu}>{d.ten}</span>
-                    <span style={S.soMat}>−{so1(d.diemMat)}</span>
-                    <ChevronRight size={14} style={{ flexShrink: 0, color: '#94a3b8' }} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
+            <p style={S.nhanNhom}>
+              {mat.length > 0 ? `Đang mất điểm ở ${mat.length} chỉ tiêu` : 'Chỉ tiêu đang mất điểm'}
+            </p>
+
+            {mat.length === 0 ? (
+              <p style={S.rong}>Chưa mất điểm nào trong tháng này.</p>
+            ) : (
+              <ul style={S.ds}>
+                {mat.map((d, i) => {
+                  const m = MAU_MAT_DIEM[i % MAU_MAT_DIEM.length];
+                  return (
+                    <li key={d.id}>
+                      <button
+                        onClick={onXemChiTiet} className="bt-dong"
+                        style={{ ...S.theNho, borderColor: m.vien, borderLeftColor: m.chinh, background: m.nen }}
+                      >
+                        <span style={S.tenChiTieu}>{d.ten}</span>
+                        <span style={{ ...S.soMat, color: m.chinh }}>−{so1(d.diemMat)}</span>
+                        <ChevronRight size={14} style={{ flexShrink: 0, color: m.chinh, opacity: 0.65 }} />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        )}
+      </div>
 
       <style>{`
-        .bt-dong { transition: background 0.15s ease; }
-        .bt-dong:hover { background: #f1f5f9; }
+        .bt-dong { transition: filter 0.15s ease, transform 0.15s ease; }
+        .bt-dong:hover { filter: brightness(0.97); }
+        .bt-dong:active { transform: scale(0.995); }
         @media (prefers-reduced-motion: reduce) { .bt-dong { transition: none; } }
       `}</style>
     </section>
@@ -312,48 +355,55 @@ export function KhoiViec({ ds, dangTai, onMo }) {
   const soTre = (ds || []).filter(v => v.nhom === NHOM.QUA_HAN).length;
 
   return (
-    <section style={S.the}>
-      <div style={S.dauThe}>
+    <section style={{ ...S.the, borderColor: KHOI_VIEC.vien }}>
+      <div style={{ ...S.dauThe, background: KHOI_VIEC.nen, borderBottomColor: KHOI_VIEC.vien }}>
         <div style={S.tenThe}>
-          <ListTodo size={15} color="#6366f1" />
+          <span style={{ ...S.oIcon, background: KHOI_VIEC.chinh }}>
+            <ListTodo size={14} color="#fff" strokeWidth={2.4} />
+          </span>
           <h3 style={S.tieuDe}>Việc đang làm</h3>
         </div>
         <button onClick={onMo} style={S.nutPhu}>Mở phân hệ</button>
       </div>
 
-      {dangTai ? (
-        <p style={S.rong}><Loader2 size={14} style={{ verticalAlign: 'middle' }} /> Đang tải…</p>
-      ) : ds === null ? (
-        // Cùng lý do như khối KPI: "không đọc được" ≠ "không có việc nào".
-        <p style={S.rong}>Không tải được danh sách việc. Bấm “Làm mới” ở góc trên để thử lại.</p>
-      ) : ds.length === 0 ? (
-        <p style={S.rong}>Không có việc nào đang làm.</p>
-      ) : (
-        <>
-          <p style={S.nhanNhom}>
-            {ds.length} việc{soTre > 0 ? ` · ${soTre} quá hạn` : ''}
-          </p>
-          <ul style={S.ds}>
-            {ds.map(v => {
-              const m = MAU_NHOM[v.nhom];
-              return (
-                <li key={v.id}>
-                  <button
-                    onClick={onMo} className="bt-dong"
-                    style={{ ...S.dongViec, borderColor: m.vien, background: m.nen }}
-                  >
-                    <span style={S.tenViec}>{v.title || '(không có tiêu đề)'}</span>
-                    <span style={{ ...S.han, color: m.chu }}>
-                      <CalendarClock size={12} style={{ flexShrink: 0 }} />
-                      {m.nhan ? `${m.nhan} · ` : ''}{nhanHan(v.due_date)}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </>
-      )}
+      <div style={S.thanThe}>
+        {dangTai ? (
+          <p style={S.rong}><Loader2 size={14} style={{ verticalAlign: 'middle' }} /> Đang tải…</p>
+        ) : ds === null ? (
+          // Cùng lý do như khối KPI: "không đọc được" ≠ "không có việc nào".
+          <p style={S.rong}>Không tải được danh sách việc. Bấm “Làm mới” ở góc trên để thử lại.</p>
+        ) : ds.length === 0 ? (
+          <p style={S.rong}>Không có việc nào đang làm.</p>
+        ) : (
+          <>
+            <p style={S.nhanNhom}>
+              {ds.length} việc{soTre > 0 ? ` · ${soTre} quá hạn` : ''}
+            </p>
+            <ul style={S.ds}>
+              {ds.map(v => {
+                const m = MAU_NHOM[v.nhom];
+                return (
+                  <li key={v.id}>
+                    <button
+                      onClick={onMo} className="bt-dong"
+                      style={{
+                        ...S.theNho, flexDirection: 'column', alignItems: 'stretch', gap: 3,
+                        borderColor: m.vien, borderLeftColor: m.chinh, background: m.nen,
+                      }}
+                    >
+                      <span style={S.tenViec}>{v.title || '(không có tiêu đề)'}</span>
+                      <span style={{ ...S.han, color: m.chu }}>
+                        <CalendarClock size={12} style={{ flexShrink: 0 }} />
+                        {m.nhan ? `${m.nhan} · ` : ''}{nhanHan(v.due_date)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </div>
     </section>
   );
 }
@@ -381,18 +431,29 @@ const S = {
     gap: '0.8rem', alignItems: 'start',
   },
 
+  // ── Khối lớn ──
+  // `overflow: hidden` là bắt buộc, không phải trang trí: dải màu ở đầu khối phải
+  // bị cắt theo góc bo, không thì màu tràn ra vuông góc ở hai đỉnh trên.
   the: {
-    background: '#fff', border: '1px solid #e2e8f0', borderRadius: 14,
-    padding: '0.9rem', minWidth: 0,
-    boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
+    background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16,
+    minWidth: 0, overflow: 'hidden',
+    boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 8px 24px -16px rgba(15,23,42,0.25)',
   },
   dauThe: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    gap: '0.5rem', marginBottom: '0.7rem', minWidth: 0, flexWrap: 'wrap',
+    gap: '0.5rem', minWidth: 0, flexWrap: 'wrap',
+    padding: '0.6rem 0.8rem',
+    borderBottom: '1px solid #e2e8f0',
   },
-  tenThe: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 },
+  thanThe: { padding: '0.8rem' },
+  tenThe: { display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 },
+  oIcon: {
+    width: 26, height: 26, borderRadius: 8, flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
   tieuDe: {
-    margin: 0, fontSize: '0.9rem', fontWeight: 700, color: '#0f172a',
+    margin: 0, fontSize: '0.92rem', fontWeight: 800, color: '#0f172a',
+    letterSpacing: '-0.01em',
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
   },
   oKy: {
@@ -406,35 +467,42 @@ const S = {
     cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
   },
 
-  oDiem: { display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: '0.35rem' },
+  oDiem: {
+    display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: '0.35rem',
+    flexWrap: 'wrap',   // chip xuống dòng khi máy hẹp, thay vì đẩy khung rộng ra
+  },
   soDiem: { fontSize: 'clamp(1.8rem, 7vw, 2.4rem)', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 },
   donVi: { fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 },
+  chipMat: {
+    marginLeft: 'auto', padding: '0.2rem 0.5rem', borderRadius: 999,
+    background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c',
+    fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
+  },
 
   nhanNhom: {
     margin: '0.7rem 0 0.4rem', fontSize: '0.72rem', fontWeight: 700,
     color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.03em',
   },
-  ds: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 5 },
+  ds: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 },
 
-  dongMat: {
+  // ── Thẻ nhỏ ──
+  // Dùng CHUNG cho cả hai khối để hai bên cùng một nhịp; màu do nơi gọi truyền vào.
+  // Viền trái dày 4px là chỗ mang màu — đọc được cả khi nền nhạt bị màn hình rẻ tiền
+  // hoặc chế độ tương phản cao làm bay mất.
+  theNho: {
     width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-    padding: '0.5rem 0.55rem', borderRadius: 9,
-    border: '1px solid #e2e8f0', background: '#fff',
+    padding: '0.55rem 0.6rem', borderRadius: 10,
+    border: '1px solid', borderLeftWidth: 4,
     cursor: 'pointer', textAlign: 'left', minWidth: 0,
   },
   tenChiTieu: {
-    flex: 1, minWidth: 0, fontSize: '0.8rem', fontWeight: 600, color: '#334155',
+    flex: 1, minWidth: 0, fontSize: '0.8rem', fontWeight: 700, color: '#1e293b',
     overflowWrap: 'anywhere',
   },
-  soMat: { fontSize: '0.82rem', fontWeight: 800, color: '#dc2626', flexShrink: 0 },
+  soMat: { fontSize: '0.88rem', fontWeight: 800, flexShrink: 0 },
 
-  dongViec: {
-    width: '100%', display: 'flex', flexDirection: 'column', gap: 3,
-    padding: '0.5rem 0.55rem', borderRadius: 9, border: '1px solid',
-    cursor: 'pointer', textAlign: 'left', minWidth: 0,
-  },
   tenViec: {
-    fontSize: '0.82rem', fontWeight: 600, color: '#0f172a',
+    fontSize: '0.82rem', fontWeight: 700, color: '#0f172a',
     overflowWrap: 'anywhere',
   },
   han: {
