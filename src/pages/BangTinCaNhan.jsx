@@ -29,7 +29,25 @@ const kyHienTai = () => {
 };
 
 const so1 = n => (Math.abs(n) < 0.05 ? '0.0' : n.toFixed(1));
+// Số gọn cho nhãn "3/5": bỏ đuôi .0 vô nghĩa (3.0 → "3", 2.5 → "2.5").
+const soGon = n => String(Math.round(n * 100) / 100);
 const mauTheoDiem = d => (d >= 90 ? '#059669' : d >= 75 ? '#d97706' : '#dc2626');
+
+// Thang điểm của MỘT chỉ tiêu, quy về trọng số: "đạt 3 / trọn 5".
+//
+// `diemQuyDoi` là con số engine thật sự cộng vào tổng KPI — dùng thẳng nó, đừng tự
+// tính lại từ tỉ lệ. Chỉ khi thiếu mới suy từ (trọng số − điểm mất).
+//
+// Không có trọng số (hoặc bằng 0) thì KHÔNG vẽ thanh: dòng thưởng ngoài trọng số và
+// dòng lỗi nhập không có thang nào để vẽ, bịa ra một cái thang là bịa luôn kết quả.
+function thangChiTieu(d) {
+  const tron = Number(d?.trong_so);
+  if (!Number.isFinite(tron) || tron <= 0) return null;
+  const mat = Number(d?.diemMat) || 0;
+  const qd = Number(d?.diemQuyDoi);
+  const dat = Math.min(Math.max(Number.isFinite(qd) ? qd : tron - mat, 0), tron);
+  return { tron, dat, phanTram: (dat / tron) * 100 };
+}
 
 function loiChao() {
   const h = new Date().getHours();
@@ -286,10 +304,25 @@ export function KhoiKpi({ ky, setKy, kpi, dangTai, loiNguon, onXemChiTiet }) {
           <>
             <div style={S.oDiem}>
               <span style={{ ...S.soDiem, color: mauTheoDiem(diem) }}>{so1(diem)}</span>
-              <span style={S.donVi}>điểm</span>
+              <span style={S.donVi}>/ 100 điểm</span>
               {tongMat > 0.05 && (
                 <span style={S.chipMat}>−{so1(tongMat)} đã mất</span>
               )}
+            </div>
+
+            {/* Thanh tổng. Bề rộng KẸP ở 100%: điểm thưởng ngoài trọng số đẩy tổng
+                vượt 100 được, mà thanh tràn khỏi khung thì phá cả bố cục — con số
+                bên trên vẫn nói đúng sự thật. */}
+            <div
+              style={S.thanhTong} role="progressbar"
+              aria-valuenow={Math.round(diem * 10) / 10} aria-valuemin={0} aria-valuemax={100}
+              aria-label={`Tổng KPI ${so1(diem)} trên 100 điểm`}
+            >
+              <div style={{
+                ...S.thanhTongDat,
+                width: `${Math.min(100, Math.max(0, diem))}%`,
+                background: mauTheoDiem(diem),
+              }} />
             </div>
 
             {/* Thiếu dòng chấm chung = HỎNG DỮ LIỆU làm mất trọn trọng số, không phải
@@ -321,15 +354,38 @@ export function KhoiKpi({ ky, setKy, kpi, dangTai, loiNguon, onXemChiTiet }) {
               <ul style={S.ds}>
                 {mat.map((d, i) => {
                   const m = MAU_MAT_DIEM[i % MAU_MAT_DIEM.length];
+                  const t = thangChiTieu(d);
                   return (
                     <li key={d.id}>
                       <button
                         onClick={onXemChiTiet} className="bt-dong"
-                        style={{ ...S.theNho, borderColor: m.vien, borderLeftColor: m.chinh, background: m.nen }}
+                        style={{
+                          ...S.theNho, flexDirection: 'column', alignItems: 'stretch', gap: 6,
+                          borderColor: m.vien, borderLeftColor: m.chinh, background: m.nen,
+                        }}
                       >
-                        <span style={S.tenChiTieu}>{d.ten}</span>
-                        <span style={{ ...S.soMat, color: m.chinh }}>−{so1(d.diemMat)}</span>
-                        <ChevronRight size={14} style={{ flexShrink: 0, color: m.chinh, opacity: 0.65 }} />
+                        <span style={S.hangTren}>
+                          <span style={S.tenChiTieu}>{d.ten}</span>
+                          <span style={{ ...S.soMat, color: m.chinh }}>−{so1(d.diemMat)}</span>
+                          <ChevronRight size={14} style={{ flexShrink: 0, color: m.chinh, opacity: 0.65 }} />
+                        </span>
+
+                        {/* Không có trọng số thì không có thang — bỏ hẳn thanh, giữ con số. */}
+                        {t && (
+                          <span style={S.hangThanh}>
+                            <span
+                              style={{ ...S.thanh, background: m.vien }} role="progressbar"
+                              aria-valuenow={Math.round(t.dat * 100) / 100}
+                              aria-valuemin={0} aria-valuemax={t.tron}
+                              aria-label={`${d.ten}: đạt ${soGon(t.dat)} trên ${soGon(t.tron)} điểm`}
+                            >
+                              <span style={{ ...S.thanhDat, width: `${t.phanTram}%`, background: m.chinh }} />
+                            </span>
+                            <span style={{ ...S.nhanThang, color: m.chinh }}>
+                              {soGon(t.dat)}/{soGon(t.tron)}
+                            </span>
+                          </span>
+                        )}
                       </button>
                     </li>
                   );
@@ -477,6 +533,28 @@ const S = {
     marginLeft: 'auto', padding: '0.2rem 0.5rem', borderRadius: 999,
     background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c',
     fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
+  },
+
+  // ── Thanh tiến độ ──
+  // `overflow: hidden` trên rãnh để phần đạt được cắt theo góc bo. `display: block`
+  // trên các <span> vì thanh nằm TRONG <button> — thẻ button chỉ được chứa nội dung
+  // phrasing, <div> ở đó là HTML không hợp lệ.
+  thanhTong: {
+    display: 'block', width: '100%', height: 10, borderRadius: 999,
+    background: '#e2e8f0', overflow: 'hidden', marginBottom: '0.15rem',
+  },
+  thanhTongDat: { display: 'block', height: '100%', borderRadius: 999 },
+
+  hangTren: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 },
+  hangThanh: { display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 },
+  thanh: {
+    display: 'block', flex: 1, minWidth: 0, height: 6, borderRadius: 999,
+    overflow: 'hidden',
+  },
+  thanhDat: { display: 'block', height: '100%', borderRadius: 999 },
+  nhanThang: {
+    fontSize: '0.72rem', fontWeight: 800, whiteSpace: 'nowrap', flexShrink: 0,
+    fontVariantNumeric: 'tabular-nums',
   },
 
   nhanNhom: {

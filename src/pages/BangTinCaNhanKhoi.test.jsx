@@ -108,6 +108,88 @@ describe('KhoiKpi — cảnh báo dữ liệu hỏng phải nổi lên, không �
   });
 });
 
+// ─────────────────────────────────────────────────────────────────
+// Thanh tiến độ. Bề rộng thanh là một KHẲNG ĐỊNH VỀ SỐ LIỆU: vẽ sai tỉ lệ thì
+// người dùng đọc sai mức độ trước cả khi kịp nhìn con số.
+describe('thanh tổng KPI — full = 100', () => {
+  const chung = { ky: '2026-08', setKy: () => {}, onXemChiTiet: () => {} };
+  const beRong = h => [...h.matchAll(/width:\s*([\d.]+)%/g)].map(m => m[1]);
+
+  test('94 điểm ⇒ thanh 94%, và ghi rõ "/ 100 điểm"', () => {
+    const h = ve(<KhoiKpi {...chung} kpi={{ ...kpiRong, tongKpi: 94, tongMat: 6 }} dangTai={false} />);
+    expect(beRong(h)).toContain('94');
+    expect(chu(<KhoiKpi {...chung} kpi={{ ...kpiRong, tongKpi: 94 }} dangTai={false} />)).toContain('/ 100 điểm');
+  });
+
+  test('0 điểm ⇒ thanh 0%, không âm', () => {
+    expect(beRong(ve(<KhoiKpi {...chung} kpi={kpiRong} dangTai={false} />))).toContain('0');
+  });
+
+  // Dòng thưởng ngoài trọng số đẩy tổng vượt 100 được. Thanh phải kẹp ở 100% —
+  // tràn khỏi khung là phá bố cục — nhưng CON SỐ vẫn phải nói đúng sự thật.
+  test('107 điểm (có thưởng) ⇒ thanh kẹp 100% nhưng vẫn hiện 107.0', () => {
+    const h = ve(<KhoiKpi {...chung} kpi={{ ...kpiRong, tongKpi: 107 }} dangTai={false} />);
+    expect(beRong(h)).toContain('100');
+    expect(beRong(h).some(w => Number(w) > 100)).toBe(false);
+    expect(chu(<KhoiKpi {...chung} kpi={{ ...kpiRong, tongKpi: 107 }} dangTai={false} />)).toContain('107.0');
+  });
+
+  test('có nhãn cho trình đọc màn hình', () => {
+    const h = ve(<KhoiKpi {...chung} kpi={{ ...kpiRong, tongKpi: 94 }} dangTai={false} />);
+    expect(h).toContain('role="progressbar"');
+    expect(h).toContain('aria-valuemax="100"');
+  });
+});
+
+describe('thanh từng chỉ tiêu — đạt / trọn trọng số', () => {
+  const chung = { ky: '2026-08', setKy: () => {}, onXemChiTiet: () => {} };
+  const ct = (thuoc) => ({
+    ...kpiRong, tongKpi: 94, tongMat: 6,
+    danhSachMatDiem: [{ id: '1', ten: 'BÁO CÁO KẾT QUẢ CÔNG VIỆC', ...thuoc }],
+  });
+
+  // Đúng ví dụ chủ app nêu: trọn 5, bị trừ 2 ⇒ 3/5, thanh 60%.
+  test('trọn 5, mất 2 ⇒ nhãn "3/5" và thanh 60%', () => {
+    const kpi = ct({ diemMat: 2, trong_so: 5, diemQuyDoi: 3 });
+    expect(chu(<KhoiKpi {...chung} kpi={kpi} dangTai={false} />)).toContain('3/5');
+    expect(ve(<KhoiKpi {...chung} kpi={kpi} dangTai={false} />)).toContain('width:60%');
+  });
+
+  test('số lẻ vẫn gọn: trọn 6, đạt 2.5 ⇒ "2.5/6"', () => {
+    expect(chu(<KhoiKpi {...chung} kpi={ct({ diemMat: 3.5, trong_so: 6, diemQuyDoi: 2.5 })} dangTai={false} />))
+      .toContain('2.5/6');
+  });
+
+  test('mất trọn trọng số ⇒ "0/5", thanh 0%', () => {
+    const kpi = ct({ diemMat: 5, trong_so: 5, diemQuyDoi: 0 });
+    expect(chu(<KhoiKpi {...chung} kpi={kpi} dangTai={false} />)).toContain('0/5');
+    expect(ve(<KhoiKpi {...chung} kpi={kpi} dangTai={false} />)).toContain('width:0%');
+  });
+
+  // diemQuyDoi la con so engine that su cong vao tong KPI — phai dung no,
+  // khong duoc tu tinh lai roi lech voi bang KPI.
+  test('lấy diemQuyDoi của engine, không tự suy lại', () => {
+    // diemQuyDoi = 4 (khong phai 5-2=3) → nhan phai la 4/5.
+    expect(chu(<KhoiKpi {...chung} kpi={ct({ diemMat: 2, trong_so: 5, diemQuyDoi: 4 })} dangTai={false} />))
+      .toContain('4/5');
+  });
+
+  test('thiếu diemQuyDoi ⇒ suy từ trọng số − điểm mất', () => {
+    expect(chu(<KhoiKpi {...chung} kpi={ct({ diemMat: 2, trong_so: 5 })} dangTai={false} />))
+      .toContain('3/5');
+  });
+
+  test.each([
+    ['thiếu trong_so', { diemMat: 2 }],
+    ['trong_so = 0 (lỗi nhập)', { diemMat: 2, trong_so: 0 }],
+    ['trong_so không phải số', { diemMat: 2, trong_so: 'x' }],
+  ])('%s ⇒ KHÔNG vẽ thanh, nhưng vẫn hiện điểm mất', (_ten, thuoc) => {
+    const t = chu(<KhoiKpi {...chung} kpi={ct(thuoc)} dangTai={false} />);
+    expect(t).toContain('−2.0');
+    expect(t).not.toMatch(/\d+\/\d+/);
+  });
+});
+
 // Màu ở màn hình này MANG THÔNG TIN. Hai luật ngược nhau, đều phải giữ:
 //   KPI  — mỗi chỉ tiêu một màu riêng, nóng dần về phía mất nhiều nhất.
 //   Việc — màu theo mức gấp, nên hai việc cùng quá hạn PHẢI cùng màu.
