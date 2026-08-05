@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, X, ChevronDown } from 'lucide-react';
 import { supabase as db } from '../lib/supabase';
+import { docNhom, ghiNhom, daTick, doiTick, chotCaDon, xoaNhom, nhanTomTat } from '../lib/locNhomLuuXuat';
 
 /**
  * SearchAutoSuggest – Multi-select search with autocomplete suggestions.
@@ -15,6 +16,11 @@ import { supabase as db } from '../lib/supabase';
  *  - onChange        : (newValue: string) => void
  *  - localData      : array (optional) — if provided, search locally instead of querying DB
  *  - localSearchKeys: string[] (optional) — keys to search within localData objects
+ *  - groupByTerm    : bool (optional, MẶC ĐỊNH TẮT) — chế độ "nhóm": mỗi tick được ghi
+ *      kèm ĐÚNG từ khoá đã sinh ra nó, nên tìm mã đơn hàng rồi tick mã SP sẽ chỉ ra
+ *      dòng của đơn ấy. Khi tắt, mọi nhánh chạy y hệt mã cũ — component này đang được
+ *      10 tab dùng chung, chỉ tab Lưu xuất bật cờ này.
+ *      Ở chế độ nhóm, `value` là chuỗi JSON các nhóm {tu, ma[]} (xem lib/locNhomLuuXuat).
  */
 export default function SearchAutoSuggest({
   tableName,
@@ -25,6 +31,7 @@ export default function SearchAutoSuggest({
   onChange,
   localData,
   localSearchKeys,
+  groupByTerm = false,
 }) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -34,7 +41,16 @@ export default function SearchAutoSuggest({
   const wrapRef = useRef(null);
   const panelRef = useRef(null);  // overlay modal (render qua portal, NẰM NGOÀI wrapRef)
 
-  const selectedSet = new Set(value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
+  // Chế độ nhóm: `value` là chuỗi JSON các nhóm {tu, ma[]}; ô tick hiện trạng thái của
+  // nhóm khớp ĐÚNG từ khoá đang gõ. Chế độ thường: `value` là chuỗi mã ngăn bởi dấu phẩy.
+  const nhom = groupByTerm ? docNhom(value) : [];
+  const selectedSet = groupByTerm
+    ? daTick(nhom, input)
+    : new Set(value ? value.split(',').map(v => v.trim()).filter(Boolean) : []);
+  const coLoc = groupByTerm ? nhom.length > 0 : selectedSet.size > 0;
+  const nhanNut = groupByTerm
+    ? nhanTomTat(nhom)
+    : (selectedSet.size === 1 ? [...selectedSet][0] : `${selectedSet.size} đã chọn`);
   const mainCol = displayColumn || searchColumns[0];
 
   // Click outside → close. Overlay được portal ra body nên phải loại trừ cả panelRef,
@@ -104,16 +120,27 @@ export default function SearchAutoSuggest({
 
   const handleInput = (v) => { setInput(v); doSearch(v); };
   const toggle = (v) => {
+    if (groupByTerm) { onChange(ghiNhom(doiTick(nhom, input, v))); return; }
     const n = new Set(selectedSet);
     n.has(v) ? n.delete(v) : n.add(v);
     onChange([...n].join(','));
   };
   const clear = () => { onChange(''); setInput(''); setResults([]); };
 
+  // Bấm Xong: chốt từ khoá đang gõ thành nhóm "cả đơn" nếu người dùng chưa tick gì.
+  const xong = () => {
+    if (groupByTerm) onChange(ghiNhom(chotCaDon(nhom, input)));
+    setOpen(false);
+  };
+
   const handleOpen = async () => {
     setOpen(true);
+    // Chế độ nhóm: mở lại là để gõ ĐƠN TIẾP THEO, nên dọn ô nhập. Các nhóm đã chốt vẫn
+    // nằm nguyên dạng thẻ nên không mất trạng thái lọc.
+    const inputHienTai = groupByTerm ? '' : input;
+    if (groupByTerm && input) { setInput(''); setResults([]); }
     // Preload initial results if empty
-    if (results.length === 0 && !input) {
+    if ((groupByTerm || results.length === 0) && !inputHienTai) {
       setSearching(true);
       try {
         if (localData && localSearchKeys) {
@@ -155,17 +182,15 @@ export default function SearchAutoSuggest({
         <span style={{
           flex: 1,
           fontWeight: 600,
-          color: selectedSet.size > 0 ? '#0f172a' : '#94a3b8',
+          color: coLoc ? '#0f172a' : '#94a3b8',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           maxWidth: 180,
         }}>
-          {selectedSet.size > 0
-            ? (selectedSet.size === 1 ? [...selectedSet][0] : `${selectedSet.size} đã chọn`)
-            : placeholder}
+          {coLoc ? nhanNut : placeholder}
         </span>
-        {selectedSet.size > 0 && (
+        {coLoc && (
           <span
             onClick={(e) => { e.stopPropagation(); clear(); }}
             style={{ color: '#ef4444', fontWeight: 800, cursor: 'pointer', fontSize: '0.7rem', lineHeight: 1 }}
@@ -214,7 +239,7 @@ export default function SearchAutoSuggest({
             {/* Header */}
             <div style={{ padding: '1rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#0f172a' }}>Tìm kiếm & Lọc</span>
-              {selectedSet.size > 0 && (
+              {coLoc && (
                 <button onClick={clear} style={{ border: 'none', background: '#fef2f2', color: '#ef4444', borderRadius: 6, padding: '3px 10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}>
                   Xóa tất cả
                 </button>
@@ -241,8 +266,35 @@ export default function SearchAutoSuggest({
               />
             </div>
 
-            {/* Selected chips */}
-            {selectedSet.size > 0 && (
+            {/* Selected chips.
+                Chế độ nhóm: mỗi thẻ là một từ khoá + các mã đã tick TRONG từ khoá đó.
+                Ghi rõ "cả đơn" khi không tick mã nào — không để trạng thái lọc nào ẩn. */}
+            {groupByTerm ? (nhom.length > 0 && (
+              <div style={{ padding: '6px 12px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#94a3b8' }}>Đang lọc:</span>
+                {nhom.map(n => (
+                  <div key={n.tu} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '5px 8px', background: '#f8fafc' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ flex: 1, fontSize: '0.74rem', fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={n.tu}>
+                        {n.tu || 'Mọi đơn hàng'}
+                      </span>
+                      {n.ma.length === 0 && <span style={{ fontSize: '0.66rem', fontWeight: 700, color: '#0891b2', whiteSpace: 'nowrap' }}>cả đơn</span>}
+                      <span onClick={() => onChange(ghiNhom(xoaNhom(nhom, n.tu)))} style={{ cursor: 'pointer', color: '#ef4444', fontWeight: 900, lineHeight: 1 }} title="Bỏ nhóm này">×</span>
+                    </div>
+                    {n.ma.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                        {n.ma.map(m => (
+                          <span key={m} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#eff6ff', color: '#1d4ed8', borderRadius: 99, padding: '2px 8px', fontSize: '0.72rem', fontWeight: 700 }}>
+                            {m}
+                            <span onClick={() => onChange(ghiNhom(doiTick(nhom, n.tu, m)))} style={{ cursor: 'pointer', color: '#93c5fd', fontWeight: 900, marginLeft: 2 }}>×</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )) : (selectedSet.size > 0 && (
               <div style={{ padding: '6px 12px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {[...selectedSet].map(v => (
                   <span
@@ -258,7 +310,7 @@ export default function SearchAutoSuggest({
                   </span>
                 ))}
               </div>
-            )}
+            ))}
 
             {/* Results list */}
             <div style={{ overflow: 'auto', flex: 1, padding: '4px 0' }}>
@@ -288,7 +340,7 @@ export default function SearchAutoSuggest({
 
             {/* Footer */}
             <div style={{ borderTop: '1px solid #e2e8f0', padding: '0.75rem 1rem', textAlign: 'right', background: '#f8fafc' }}>
-              <button onClick={() => setOpen(false)} style={{ border: 'none', background: '#2563eb', color: '#fff', borderRadius: 8, padding: '0.5rem 1.5rem', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}>Xong</button>
+              <button onClick={xong} style={{ border: 'none', background: '#2563eb', color: '#fff', borderRadius: 8, padding: '0.5rem 1.5rem', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}>Xong</button>
             </div>
           </div>
         </div>
