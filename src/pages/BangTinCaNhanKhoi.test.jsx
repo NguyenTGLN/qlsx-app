@@ -44,23 +44,36 @@ describe('KhoiKpi — trạng thái phải nói đúng chuyện đang xảy ra',
 
 describe('KhoiKpi — danh sách chỉ tiêu mất điểm', () => {
   const chung = { ky: '2026-08', setKy: () => {}, onXemChiTiet: () => {} };
+  // Hình dạng THẬT của một dòng: engine trả kèm trọng số và điểm quy đổi.
   const kpi = {
     ...kpiRong,
     tongKpi: 78.5,
     danhSachMatDiem: [
-      { id: '1', ten: 'CHUYÊN CẦN CÁ NHÂN', diemMat: 12 },
-      { id: '2', ten: 'HOÀN THÀNH CÔNG VIỆC ĐÚNG HẠN', diemMat: 6.5 },
-      { id: '3', ten: 'QUAY VIDEO KỸ THUẬT', diemMat: 3 },
+      { id: '1', ten: 'CHUYÊN CẦN CÁ NHÂN', diemMat: 12, trong_so: 12, diemQuyDoi: 0 },
+      { id: '2', ten: 'HOÀN THÀNH CÔNG VIỆC ĐÚNG HẠN', diemMat: 6.5, trong_so: 15, diemQuyDoi: 8.5 },
+      { id: '3', ten: 'QUAY VIDEO KỸ THUẬT', diemMat: 3, trong_so: 5, diemQuyDoi: 2 },
     ],
   };
 
-  test('liệt kê đủ tên chỉ tiêu và số điểm mất, có dấu trừ', () => {
+  test('liệt kê đủ tên chỉ tiêu, mỗi dòng kèm thang đạt/trọn', () => {
     const t = chu(<KhoiKpi {...chung} kpi={kpi} dangTai={false} />);
     expect(t).toContain('CHUYÊN CẦN CÁ NHÂN');
     expect(t).toContain('HOÀN THÀNH CÔNG VIỆC ĐÚNG HẠN');
     expect(t).toContain('QUAY VIDEO KỸ THUẬT');
-    expect(t).toContain('−12.0');
-    expect(t).toContain('−6.5');
+    expect(t).toContain('0/12');
+    expect(t).toContain('8.5/15');
+    expect(t).toContain('2/5');
+  });
+
+  // Chủ app bỏ số trừ ngày 05/08: thanh + nhãn "đạt/trọn" đã nói đủ, để thêm
+  // "−6.5" bên cạnh chỉ là lặp lại (trọn − đạt) và làm dòng rối hơn.
+  test('KHÔNG hiện số điểm trừ khi đã vẽ được thanh', () => {
+    expect(chu(<KhoiKpi {...chung} kpi={kpi} dangTai={false} />)).not.toContain('−');
+  });
+
+  test('cũng không còn chip tổng điểm đã mất cạnh tổng KPI', () => {
+    expect(chu(<KhoiKpi {...chung} kpi={{ ...kpi, tongMat: 21.5 }} dangTai={false} />))
+      .not.toContain('đã mất');
   });
 
   test('giữ nguyên thứ tự engine đã sắp — mất nhiều nhất lên đầu', () => {
@@ -183,7 +196,9 @@ describe('thanh từng chỉ tiêu — đạt / trọn trọng số', () => {
     ['thiếu trong_so', { diemMat: 2 }],
     ['trong_so = 0 (lỗi nhập)', { diemMat: 2, trong_so: 0 }],
     ['trong_so không phải số', { diemMat: 2, trong_so: 'x' }],
-  ])('%s ⇒ KHÔNG vẽ thanh, nhưng vẫn hiện điểm mất', (_ten, thuoc) => {
+    // Không vẽ được thanh thì số điểm trừ QUAY LẠI — bỏ cả hai là dòng chỉ còn
+    // mỗi cái tên, không nói được gì.
+  ])('%s ⇒ KHÔNG vẽ thanh, số điểm trừ quay lại thay chỗ', (_ten, thuoc) => {
     const t = chu(<KhoiKpi {...chung} kpi={ct(thuoc)} dangTai={false} />);
     expect(t).toContain('−2.0');
     expect(t).not.toMatch(/\d+\/\d+/);
@@ -221,12 +236,6 @@ describe('màu thẻ nhỏ trong khối KPI — mỗi chỉ tiêu một màu', (
     expect(mau[8]).toBe(mau[0]);
   });
 
-  test('chip tổng điểm đã mất chỉ hiện khi thật sự có mất', () => {
-    expect(chu(<KhoiKpi {...chung} kpi={dungMat(2)} dangTai={false} />)).toContain('đã mất');
-    // Đạt trọn điểm mà vẫn dán chip "−0.0 đã mất" là nói sai về kết quả.
-    expect(chu(<KhoiKpi {...chung} kpi={{ ...kpiRong, tongKpi: 100 }} dangTai={false} />))
-      .not.toContain('đã mất');
-  });
 });
 
 describe('KhoiViec', () => {

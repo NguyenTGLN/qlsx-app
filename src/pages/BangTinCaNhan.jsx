@@ -272,8 +272,6 @@ export function KhoiKpi({ ky, setKy, kpi, dangTai, loiNguon, onXemChiTiet }) {
   const mat = kpi?.danhSachMatDiem || [];
   const diem = kpi?.tongKpi ?? 0;
 
-  const tongMat = kpi?.tongMat ?? 0;
-
   return (
     <section style={{ ...S.the, borderColor: KHOI_KPI.vien }}>
       <div style={{ ...S.dauThe, background: KHOI_KPI.nen, borderBottomColor: KHOI_KPI.vien }}>
@@ -305,9 +303,6 @@ export function KhoiKpi({ ky, setKy, kpi, dangTai, loiNguon, onXemChiTiet }) {
             <div style={S.oDiem}>
               <span style={{ ...S.soDiem, color: mauTheoDiem(diem) }}>{so1(diem)}</span>
               <span style={S.donVi}>/ 100 điểm</span>
-              {tongMat > 0.05 && (
-                <span style={S.chipMat}>−{so1(tongMat)} đã mất</span>
-              )}
             </div>
 
             {/* Thanh tổng. Bề rộng KẸP ở 100%: điểm thưởng ngoài trọng số đẩy tổng
@@ -366,11 +361,14 @@ export function KhoiKpi({ ky, setKy, kpi, dangTai, loiNguon, onXemChiTiet }) {
                       >
                         <span style={S.hangTren}>
                           <span style={S.tenChiTieu}>{d.ten}</span>
-                          <span style={{ ...S.soMat, color: m.chinh }}>−{so1(d.diemMat)}</span>
+                          {/* Số điểm trừ chỉ hiện khi KHÔNG vẽ được thanh. Có thanh rồi thì
+                              nó thừa (trọn − đạt), mà thừa ở màn hình đọc-lướt là nhiễu.
+                              Không có thang thì phải giữ lại, không thì dòng này chẳng nói
+                              được gì ngoài cái tên. */}
+                          {!t && <span style={{ ...S.soMat, color: m.chinh }}>−{so1(d.diemMat)}</span>}
                           <ChevronRight size={14} style={{ flexShrink: 0, color: m.chinh, opacity: 0.65 }} />
                         </span>
 
-                        {/* Không có trọng số thì không có thang — bỏ hẳn thanh, giữ con số. */}
                         {t && (
                           <span style={S.hangThanh}>
                             <span
@@ -525,15 +523,10 @@ const S = {
 
   oDiem: {
     display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: '0.35rem',
-    flexWrap: 'wrap',   // chip xuống dòng khi máy hẹp, thay vì đẩy khung rộng ra
+    flexWrap: 'wrap',   // xuống dòng khi máy hẹp, thay vì đẩy khung rộng ra
   },
   soDiem: { fontSize: 'clamp(1.8rem, 7vw, 2.4rem)', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 },
   donVi: { fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600 },
-  chipMat: {
-    marginLeft: 'auto', padding: '0.2rem 0.5rem', borderRadius: 999,
-    background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c',
-    fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
-  },
 
   // ── Thanh tiến độ ──
   // `overflow: hidden` trên rãnh để phần đạt được cắt theo góc bo. `display: block`
