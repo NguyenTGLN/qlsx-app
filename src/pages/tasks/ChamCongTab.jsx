@@ -46,9 +46,16 @@ function tieuDeO(row) {
   if (row.ve_som_phut > 0) phan.push(`về sớm ${row.ve_som_phut} phút`);
   if (row.tang_ca_phut > 0) phan.push(`tăng ca ${row.tang_ca_phut} phút`);
   let dong = phan.length ? phan.join(', ') : 'đi làm bình thường';
+  // ⚠ Cột `nghi_van` mang HAI nghĩa tuỳ nguồn, đừng gộp:
+  //   MAY  — cờ dữ liệu đáng ngờ do bộ nạp Excel gắn, bản thân giá trị không đọc được nên
+  //          phải giải thích thay bằng câu cố định.
+  //   ZALO — nguyên văn tin khai nghỉ của nhân viên. Hiện THẲNG câu đó: người bị ghi nghỉ
+  //          phải thấy được chính xác câu nào gây ra, không phải đoán.
   if (row.nghi_van) {
-    dong += ' — dữ liệu nghi vấn: máy chấm công ghi giờ ra sớm hơn lượt quét buổi chiều, ' +
-      'phần về sớm đã bị bỏ khi tính KPI';
+    dong += row.nguon === 'ZALO'
+      ? ` — ${row.nghi_van}`
+      : ' — dữ liệu nghi vấn: máy chấm công ghi giờ ra sớm hơn lượt quét buổi chiều, '
+        + 'phần về sớm đã bị bỏ khi tính KPI';
   }
   if (row.nguon === 'ZALO') {
     dong += ' — nguồn: tin nhắn nhóm Zalo, chưa có số máy chấm công';
@@ -895,14 +902,18 @@ function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, veSomTra, canEdi
                   )}
                 </td>
                 <td style={tdChiTiet.body}>{r.nghi ? 'Có' : '—'}</td>
-                <td style={{ ...tdChiTiet.body, color: r.nghi_van ? '#b91c1c' : '#94a3b8' }}>
+                <td style={{ ...tdChiTiet.body, color: r.nghi_van ? '#b91c1c' : '#94a3b8', whiteSpace: 'normal', minWidth: 200 }}>
                   {mienCua(r.ngay) && (
                     <div style={{ color: '#2563eb', fontWeight: 600 }}>
                       Đặc biệt — {mienCua(r.ngay).ly_do}
                     </div>
                   )}
+                  {/* `nghi_van` mang hai nghĩa tuỳ nguồn — xem chú thích ở tieuDeO(). Dòng
+                      Zalo hiện NGUYÊN VĂN tin khai nghỉ, dòng máy hiện câu giải thích. */}
                   {r.nghi_van
-                    ? 'Máy chấm công ghi giờ ra sớm hơn lượt quét buổi chiều — phần về sớm đã bị bỏ khi tính KPI.'
+                    ? (r.nguon === 'ZALO'
+                        ? r.nghi_van
+                        : 'Máy chấm công ghi giờ ra sớm hơn lượt quét buổi chiều — phần về sớm đã bị bỏ khi tính KPI.')
                     : ''}
                 </td>
                 {canEdit && (

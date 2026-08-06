@@ -132,6 +132,38 @@ language sql immutable as $$
   from chuan
 $$;
 
+-- ── 2b. NHẬN TIN KHAI NGHỈ (chủ app bổ sung 06/08/2026) ─────────────────────
+-- So CÓ DẤU, theo TỪ. Khác zalo_khop_ten ở chỗ KHÔNG bỏ dấu — bắt buộc phải thế để phân
+-- biệt 'nghỉ' (nghỉ làm) với 'nghĩ' (suy nghĩ).
+--
+-- Đo 06/08 trên 25.643 tin nhắn THẬT của công ty: 'nghỉ' 90 tin · 'nghĩ' 25 tin ·
+-- 'nghi' (thiếu dấu) 233 tin. Bỏ dấu rồi so là gộp cả 25 tin "suy nghĩ" thành nghỉ làm —
+-- 25 lần trừ oan 3 điểm chuyên cần.
+create or replace function zalo_co_tu(p_content text, p_tu text) returns boolean
+language sql immutable as $$
+  select position(
+    ' ' || lower(normalize(coalesce(p_tu, ''), nfc)) || ' '
+    in ' ' || btrim(regexp_replace(lower(normalize(coalesce(p_content, ''), nfc)),
+                                   '[^[:alnum:]]+', ' ', 'g')) || ' ') > 0
+$$;
+
+-- null = không phải tin khai nghỉ. Ngược lại trả đúng BA giá trị mà cột cham_cong.nghi_text
+-- đang dùng, để luật KPI (trongSoNgayNghi trong kpiTuDong.js) quy ra 0,5 hay 1 ngày mà
+-- không phải sửa dòng nào.
+--
+-- Bắt cả 'nghỉ' lẫn 'nghi' (gõ thiếu dấu), KHÔNG bắt 'nghĩ'. Chữ 'sáng'/'chiều' thì so
+-- KHÔNG dấu vì hai chữ đó không đụng chữ nào khác.
+create or replace function zalo_loai_nghi(p_content text) returns text
+language sql immutable as $$
+  select case
+    when not (zalo_co_tu(p_content, 'nghỉ') or zalo_co_tu(p_content, 'nghi')) then null
+    when zalo_khop_ten(p_content, 'sáng') and not zalo_khop_ten(p_content, 'chiều') then 'Nghỉ sáng'
+    when zalo_khop_ten(p_content, 'chiều') and not zalo_khop_ten(p_content, 'sáng') then 'Nghỉ chiều'
+    -- Nhắc CẢ HAI buổi, hoặc không nhắc buổi nào ('nghỉ', 'nghỉ hôm nay') → trọn ngày.
+    else 'Nghỉ'
+  end
+$$;
+
 commit;
 
 -- ── 3. CỘT NGUỒN TRÊN cham_cong ─────────────────────────────────────────────
@@ -292,14 +324,9 @@ commit;
 begin;
 
 create or replace function dung_cham_cong_zalo(p_tu date, p_den date)
-returns jsonb
-language plpgsql
-set search_path = public, pg_temp
+returns jsonb language plpgsql set search_path = public, pg_temp
 as $$
-declare
-  v_hom_nay date;
-  v_gio_vn  time;
-  v_ghi int;
+declare v_hom_nay date; v_gio_vn time; v_ghi int;
 begin
   if p_tu is null or p_den is null or p_den < p_tu then
     return jsonb_build_object('loi', 'Khoảng ngày không hợp lệ');
@@ -307,134 +334,129 @@ begin
   if p_den - p_tu > 366 then
     return jsonb_build_object('loi', 'Khoảng ngày quá dài, tối đa 366 ngày');
   end if;
-
   v_hom_nay := (now() at time zone 'Asia/Ho_Chi_Minh')::date;
   v_gio_vn  := (now() at time zone 'Asia/Ho_Chi_Minh')::time;
 
   with ngay_xet as (
-    -- T2..T7. Chủ nhật không xét gì cả.
-    select d::date as ngay
-    from generate_series(p_tu, p_den, interval '1 day') d
+    select d::date as ngay from generate_series(p_tu, p_den, interval '1 day') d
     where extract(dow from d) between 1 and 6
   ),
   nguoi as (
-    -- 13 người kho = có ten_cham_cong.
-    --
-    -- ⚠ Nối theo `uid_zalo_cham_cong`, KHÔNG phải `uid_from`. Mã Zalo của cùng một người
-    --   KHÁC NHAU tuỳ tài khoản nào đang nghe — đo 06/08 trên nhóm thật: tài khoản
-    --   'Hà Xuyên' thấy Nguyên là 354919541537207776, tài khoản 'Nguyen' (tài khoản chạy
-    --   workflow chấm công) thấy là 715086275848796206. Cột `uid_from` là mã theo tài khoản
-    --   cũ và còn luồng khác dùng, nên chấm công phải có cột riêng.
-    --
-    -- Lọc thêm mã khác rỗng có chủ đích, và hướng lỗi của nó là hướng AN TOÀN: người chưa
-    -- nối mã bị loại khỏi CTE này nên KHÔNG sinh dòng nào cả — không chấm công, cũng không
-    -- bị ghi nghỉ oan. Hệ quả duy nhất là KPI chuyên cần của họ để trống, mà trống thì nhìn
-    -- ra ngay, khác hẳn một con số sai trông như thật.
-    select id as nhan_vien_id, name as ten, uid_zalo_cham_cong as uid
-    from nhan_vien
+    select id as nhan_vien_id, name as ten, uid_zalo_cham_cong as uid from nhan_vien
     where ten_cham_cong is not null and coalesce(uid_zalo_cham_cong, '') <> ''
   ),
+  tho as (
+    select uid_from, ngay, content,
+           (to_timestamp(ts / 1000.0) at time zone 'Asia/Ho_Chi_Minh')::time as gio
+    from zalo_cham_cong where ngay between p_tu and p_den
+  ),
+  -- Tin KHAI NGHỈ. KHÔNG giới hạn khung giờ: "nghỉ hôm nay" nhắn lúc nào cũng là khai nghỉ.
+  --
+  -- Chỉ nhận khi tin nhắc tên CHÍNH người gửi, hoặc không nhắc tên ai cả ("em xin nghỉ hôm
+  -- nay"). Tin nhắc tên NGƯỜI KHÁC bị bỏ qua hoàn toàn — chủ app chốt 06/08 sau khi thấy tin
+  -- thật "Bích tăng ca 17h30 đến 19h30" gửi từ máy Hà: nếu bắt chữ "nghỉ" mà không xét tên
+  -- thì "Bích nghỉ hôm nay" sẽ ghi nghỉ cho HÀ — người đang đi làm và báo hộ đồng nghiệp.
+  tin_nghi as (
+    select n.nhan_vien_id, z.ngay, zalo_loai_nghi(z.content) as loai, z.gio, z.content
+    from tho z join nguoi n on n.uid = z.uid_from
+    where zalo_loai_nghi(z.content) is not null
+      and (zalo_khop_ten(z.content, n.ten)
+           or not exists (select 1 from nguoi o
+                          where o.nhan_vien_id <> n.nhan_vien_id
+                            and zalo_khop_ten(z.content, o.ten)))
+  ),
+  khai as (
+    select nhan_vien_id, ngay,
+           bool_or(loai = 'Nghỉ')       as khai_ngay,
+           bool_or(loai = 'Nghỉ sáng')  as khai_s,
+           bool_or(loai = 'Nghỉ chiều') as khai_c,
+           (array_agg(content order by gio))[1] as tin_dau
+    from tin_nghi group by 1, 2
+  ),
+  -- Tin CHẤM CÔNG. Loại hẳn tin khai nghỉ: "Hà nghỉ chiều" có chứa chữ "Hà" nhưng là khai
+  -- nghỉ chứ không phải chấm công — để nguyên thì nó thành giờ vào lúc 11h.
   tin as (
     select n.nhan_vien_id, z.ngay,
            case when z.gio >= time '04:00' and z.gio < time '12:00' then 'S'
-                when z.gio >= time '12:00' and z.gio < time '17:00' then 'C'
-                else null end as buoi,      -- từ 17:00 là tăng ca, không dùng để chấm
+                when z.gio >= time '12:00' and z.gio < time '17:00' then 'C' else null end as buoi,
            z.gio
-    from (
-      select uid_from, ngay, content,
-             (to_timestamp(ts / 1000.0) at time zone 'Asia/Ho_Chi_Minh')::time as gio
-      from zalo_cham_cong
-      where ngay between p_tu and p_den
-    ) z
-    join nguoi n on n.uid = z.uid_from
-    where zalo_khop_ten(z.content, n.ten)
+    from tho z join nguoi n on n.uid = z.uid_from
+    where zalo_khop_ten(z.content, n.ten) and zalo_loai_nghi(z.content) is null
   ),
   dau_buoi as (
-    -- Nhắn hai lần trong cùng buổi thì lấy lần đầu.
-    select nhan_vien_id, ngay, buoi, min(gio) as gio
-    from tin where buoi is not null
-    group by 1, 2, 3
+    select nhan_vien_id, ngay, buoi, min(gio) as gio from tin where buoi is not null group by 1,2,3
   ),
   co_ai as (
-    -- VAN AN TOÀN, theo TỪNG BUỔI chứ không theo ngày. n8n chết lúc 12h trưa thì cả 13
-    -- người đủ tin sáng nhưng trắng tin chiều — van theo ngày sẽ gạch 'Nghỉ chiều' cho
-    -- đủ 13 người, mất 0,5 ngày mỗi người, không ai biết vì sao.
-    -- Van này che cùng lúc: ngày lễ, n8n chết, Zalo rớt phiên đăng nhập.
-    select ngay,
-           bool_or(buoi = 'S') as co_sang,
-           bool_or(buoi = 'C') as co_chieu
+    -- VAN AN TOÀN theo TỪNG BUỔI. n8n chết lúc trưa thì cả nhóm đủ tin sáng nhưng trắng tin
+    -- chiều — van theo ngày sẽ gạch 'Nghỉ chiều' cho cả 13 người. Che cùng lúc: ngày lễ,
+    -- n8n chết, Zalo rớt phiên. KHÔNG áp cho tin khai nghỉ: khai nghỉ là bằng chứng trực tiếp.
+    select ngay, bool_or(buoi = 'S') as co_sang, bool_or(buoi = 'C') as co_chieu
     from dau_buoi group by ngay
   ),
   tinh as (
-    select
-      nx.ngay, ng.nhan_vien_id, s.gio as gio_sang, c.gio as gio_chieu,
+    select nx.ngay, ng.nhan_vien_id, s.gio as gio_sang, c.gio as gio_chieu,
       (nx.ngay < v_hom_nay or (nx.ngay = v_hom_nay and v_gio_vn >= time '17:00')) as da_dong_so,
       coalesce(ca.co_sang, false) as xet_sang,
-      coalesce(ca.co_chieu, false)
-        -- Chiều thứ 7 lần thứ 2 và lần thứ 4 của tháng được nghỉ.
-        -- ceil(ngày/7): 1-7 → lần 1, 8-14 → lần 2, 15-21 → lần 3, 22-28 → lần 4.
-        and not (extract(dow from nx.ngay) = 6
-                 and ceil(extract(day from nx.ngay) / 7.0) in (2, 4)) as xet_chieu
-    from ngay_xet nx
-    cross join nguoi ng
+      coalesce(ca.co_chieu, false) as co_chieu,
+      -- Lịch tách RIÊNG khỏi van an toàn: khai nghỉ chiều vào chiều T7 tuần 2/4 thì không ghi,
+      -- vì hôm đó vốn không có buổi chiều để mà nghỉ.
+      not (extract(dow from nx.ngay) = 6
+           and ceil(extract(day from nx.ngay) / 7.0) in (2, 4)) as lich_co_chieu,
+      coalesce(k.khai_ngay, false) as khai_ngay,
+      coalesce(k.khai_s, false)    as khai_s,
+      coalesce(k.khai_c, false)    as khai_c,
+      k.tin_dau
+    from ngay_xet nx cross join nguoi ng
     left join dau_buoi s on s.nhan_vien_id = ng.nhan_vien_id and s.ngay = nx.ngay and s.buoi = 'S'
     left join dau_buoi c on c.nhan_vien_id = ng.nhan_vien_id and c.ngay = nx.ngay and c.buoi = 'C'
     left join co_ai   ca on ca.ngay = nx.ngay
+    left join khai    k  on k.nhan_vien_id = ng.nhan_vien_id and k.ngay = nx.ngay
   ),
   co_cua as (
     select t.*,
-           (t.da_dong_so and t.xet_sang  and t.gio_sang  is null) as thieu_sang,
-           (t.da_dong_so and t.xet_chieu and t.gio_chieu is null) as thieu_chieu
+      (t.khai_ngay or t.khai_s) as nghi_s,
+      ((t.khai_ngay or t.khai_c) and t.lich_co_chieu) as nghi_c
     from tinh t
   ),
+  cu as (
+    select c.*,
+      -- Khai nghỉ THẮNG: bỏ luôn giờ vào của buổi đó, không thì dòng tự mâu thuẫn
+      -- ("Nghỉ sáng" mà vẫn có giờ vào buổi sáng).
+      case when c.nghi_s then null else c.gio_sang end as gs,
+      case when c.nghi_c then null else c.gio_chieu end as gc,
+      (c.nghi_s or (c.da_dong_so and c.xet_sang and c.gio_sang is null))                      as thieu_sang,
+      (c.nghi_c or (c.da_dong_so and c.co_chieu and c.lich_co_chieu and c.gio_chieu is null)) as thieu_chieu
+    from co_cua c
+  ),
   ket as (
-    select
-      cc.ngay, cc.nhan_vien_id, cc.gio_sang, cc.gio_chieu,
-      (cc.thieu_sang or cc.thieu_chieu) as nghi,
-      case when cc.thieu_sang and cc.thieu_chieu then 'Nghỉ'
-           when cc.thieu_sang  then 'Nghỉ sáng'
-           when cc.thieu_chieu then 'Nghỉ chiều'
-           else null end as nghi_text,
-      -- `floor` chứ không để `::int` tự làm tròn. Ép kiểu int làm tròn NỬA LÊN, nên tin lúc
-      -- 08:00:30 ra "muộn 1 phút" trong khi cột giờ vào hiển thị đúng "08:00" — người bị trừ
-      -- nhìn vào thấy mâu thuẫn và không cãi được. floor cho hai con số luôn kể cùng một
-      -- chuyện, và làm tròn xuống là nghiêng về phía nhân viên, đúng hướng nên nghiêng khi
-      -- sai số chỉ là mấy chục giây.
-      (coalesce(floor(greatest(0, extract(epoch from (cc.gio_sang  - time '08:00')) / 60)), 0)
-       + coalesce(floor(greatest(0, extract(epoch from (cc.gio_chieu - time '13:30')) / 60)), 0))::int
+    select cu.ngay, cu.nhan_vien_id, cu.gs as gio_sang, cu.gc as gio_chieu,
+      (cu.thieu_sang or cu.thieu_chieu) as nghi,
+      case when cu.thieu_sang and cu.thieu_chieu then 'Nghỉ'
+           when cu.thieu_sang then 'Nghỉ sáng'
+           when cu.thieu_chieu then 'Nghỉ chiều' else null end as nghi_text,
+      -- Nguyên văn tin gây ra nghỉ, để người bị trừ điểm thấy được câu nào chứ không phải đoán.
+      case when cu.tin_dau is not null then 'Nghỉ theo tin Zalo: "' || cu.tin_dau || '"' end as nghi_van,
+      (coalesce(floor(greatest(0, extract(epoch from (cu.gs - time '08:00')) / 60)), 0)
+       + coalesce(floor(greatest(0, extract(epoch from (cu.gc - time '13:30')) / 60)), 0))::int
         as di_muon_phut
-    from co_cua cc
-    -- Chỉ ghi dòng có căn cứ: hoặc người đó có tin, hoặc buổi đó đang được xét (để ghi nghỉ).
-    where cc.gio_sang is not null or cc.gio_chieu is not null
-       or cc.thieu_sang or cc.thieu_chieu
+    from cu
+    where cu.gs is not null or cu.gc is not null or cu.thieu_sang or cu.thieu_chieu
   )
-  insert into cham_cong (
-    ky, nhan_vien_id, ngay, thu, gio_in_sang, gio_in_chieu, gio_out,
-    tang_ca_phut, di_muon_phut, ve_som_phut, nghi, nghi_text, nguon)
-  select
-    to_char(k.ngay, 'YYYY-MM'), k.nhan_vien_id, k.ngay,
-    case extract(dow from k.ngay) when 0 then 'CN'
-         else 'T' || (extract(dow from k.ngay) + 1)::int end,
-    to_char(k.gio_sang, 'HH24:MI'), to_char(k.gio_chieu, 'HH24:MI'), null,
-    null,                                   -- tăng ca: một tin lúc bắt đầu không nói được
-                                            -- tăng ca bao nhiêu phút. Không bịa số.
-    k.di_muon_phut,
-    coalesce(v.so_phut, 0),                 -- về sớm chấm tay THẮNG, không bị dựng lại về 0
-    k.nghi, k.nghi_text, 'ZALO'
-  from ket k
-  left join ve_som_tay v on v.nhan_vien_id = k.nhan_vien_id and v.ngay = k.ngay
+  insert into cham_cong (ky, nhan_vien_id, ngay, thu, gio_in_sang, gio_in_chieu, gio_out,
+                         tang_ca_phut, di_muon_phut, ve_som_phut, nghi, nghi_text, nghi_van, nguon)
+  select to_char(k.ngay, 'YYYY-MM'), k.nhan_vien_id, k.ngay,
+    case extract(dow from k.ngay) when 0 then 'CN' else 'T' || (extract(dow from k.ngay)+1)::int end,
+    to_char(k.gio_sang, 'HH24:MI'), to_char(k.gio_chieu, 'HH24:MI'), null, null,
+    k.di_muon_phut, coalesce(v.so_phut, 0), k.nghi, k.nghi_text, k.nghi_van, 'ZALO'
+  from ket k left join ve_som_tay v on v.nhan_vien_id = k.nhan_vien_id and v.ngay = k.ngay
   on conflict (nhan_vien_id, ngay) do update set
-    ky           = excluded.ky,
-    thu          = excluded.thu,
-    gio_in_sang  = excluded.gio_in_sang,
-    gio_in_chieu = excluded.gio_in_chieu,
-    di_muon_phut = excluded.di_muon_phut,
-    ve_som_phut  = excluded.ve_som_phut,
-    nghi         = excluded.nghi,
-    nghi_text    = excluded.nghi_text
-  -- ⚠ CHỐT CHẶN QUAN TRỌNG NHẤT CỦA CẢ TÍNH NĂNG. Ngày nào Excel đã nạp thì dòng đó
-  --   nguon = 'MAY', điều kiện sai, Zalo KHÔNG CHẠM VÀO ĐƯỢC. Bỏ mệnh đề này là số
-  --   "ai nhớ nhắn" đè lên số "ai quẹt vân tay".
+    ky = excluded.ky, thu = excluded.thu,
+    gio_in_sang = excluded.gio_in_sang, gio_in_chieu = excluded.gio_in_chieu,
+    di_muon_phut = excluded.di_muon_phut, ve_som_phut = excluded.ve_som_phut,
+    nghi = excluded.nghi, nghi_text = excluded.nghi_text, nghi_van = excluded.nghi_van
+  -- ⚠ CHỐT CHẶN QUAN TRỌNG NHẤT. Ngày nào Excel đã nạp thì dòng đó nguon = 'MAY', điều kiện
+  --   sai, Zalo KHÔNG CHẠM VÀO ĐƯỢC. Bỏ mệnh đề này là số "ai nhớ nhắn" đè lên số "ai quẹt
+  --   vân tay".
   where cham_cong.nguon = 'ZALO';
 
   get diagnostics v_ghi = row_count;
