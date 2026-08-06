@@ -1,0 +1,381 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "eventTypes": [
+          "group_event",
+          "message_user",
+          "message_group"
+        ],
+        "threadIdFiltering": true,
+        "ignoreThreads": "3055913649002864484,4510861659803630229,5519914612193643414,8226146083728934437,192358220232996007,6398222639628881607",
+        "keywordFiltering": true,
+        "ignoreKeywords": "Pass: 9999,Pass: 6666,BÀI THI SÁT HẠCH KHOÁ ĐỐI TÁC MỚI,Chương trình KM đặc biệt",
+        "selfListen": true
+      },
+      "type": "n8n-nodes-ultimate.zaloTrigger",
+      "typeVersion": 1,
+      "position": [
+        -260,
+        20
+      ],
+      "id": "6c9c648f-add4-48c4-be7a-958548196273",
+      "name": "Zalo Trigger",
+      "credentials": {
+        "zaloApi": {
+          "id": "GDZuJTWHMrw59ATM",
+          "name": "086671xx _ Hà Xuyên - T.. _ 06:11 06/06"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a1f0c7d2-5b64-4e88-9a31-6c0d2f7b4e10",
+              "leftValue": "={{ ['3288273518723273312','4526062079113325581','8095429580080493978'].includes(String($json.threadId)) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -40,
+        20
+      ],
+      "id": "c3e5a917-24b8-4f60-8d7a-91b5e0c6a233",
+      "name": "Là nhóm chấm công?"
+    },
+    {
+      "parameters": {
+        "tableId": "zalo_cham_cong",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "thread_id",
+              "fieldValue": "={{ $json.threadId }}"
+            },
+            {
+              "fieldId": "uid_from",
+              "fieldValue": "={{ $json.data.uidFrom }}"
+            },
+            {
+              "fieldId": "sender_name",
+              "fieldValue": "={{ $json.data.dName }}"
+            },
+            {
+              "fieldId": "content",
+              "fieldValue": "={{ $json.filter.content }}"
+            },
+            {
+              "fieldId": "ts",
+              "fieldValue": "={{ $json.data.ts }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        200,
+        -200
+      ],
+      "id": "d4b6f028-3197-4a71-9e42-a2c6f1d7b344",
+      "name": "Ghi tin chấm công",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kAOz6fNsa8UHk4Ws",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8d94396b-fea2-4dc4-9145-1a2c39890a48",
+              "leftValue": "={{ $json._eventType != 'message_group' && ['354919541537207776', '2993571219338313607', '1650978188571730661', '9002555586731314915', '8313230541287993426'].includes($json.data.uidFrom) }}",
+              "rightValue": "message_group",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        200,
+        140
+      ],
+      "id": "f46d2ea7-b8d6-49fa-8895-2207396f8c51",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e906fd9e-9ab1-427d-b870-72f4048ad6db",
+              "leftValue": "={{ $json.data.uidFrom }}",
+              "rightValue": "4789366080551004341",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "7359ad73-6554-4ef6-8a2c-8848686bf919",
+              "leftValue": "={{ $json.data.uidFrom }}",
+              "rightValue": "715086275848796206",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "47df6f2c-f1cb-4bc8-8ad4-16a5044c2843",
+              "leftValue": "={{ $json.data.uidFrom }}",
+              "rightValue": "8209801293158810413",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            },
+            {
+              "id": "8c332be3-d39d-45ab-b0ed-98eee43b0d23",
+              "leftValue": "={{ $json.data.uidFrom }}",
+              "rightValue": "698042764074105709",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        460,
+        140
+      ],
+      "id": "0bc5ecf1-ae86-4866-8e0d-d572dfb23c01",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "tableId": "zalo_messages",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "thread_id",
+              "fieldValue": "={{ $json.threadId }}"
+            },
+            {
+              "fieldId": "uid_from",
+              "fieldValue": "={{ $json.data.uidFrom }}"
+            },
+            {
+              "fieldId": "sender_name",
+              "fieldValue": "={{ $json.data.dName }}"
+            },
+            {
+              "fieldId": "msg_type",
+              "fieldValue": "={{ $json.filter.msgType }}"
+            },
+            {
+              "fieldId": "content",
+              "fieldValue": "={{ $json.filter.content }}"
+            },
+            {
+              "fieldId": "ts",
+              "fieldValue": "={{ $json.data.ts }}"
+            },
+            {
+              "fieldId": "raw_data",
+              "fieldValue": "={{ $json }}"
+            },
+            {
+              "fieldId": "is_staff",
+              "fieldValue": "true"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        720,
+        60
+      ],
+      "id": "276657d8-9931-4b73-b3be-f4a43b38a7c5",
+      "name": "Create a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kAOz6fNsa8UHk4Ws",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "zalo_messages",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "thread_id",
+              "fieldValue": "={{ $json.threadId }}"
+            },
+            {
+              "fieldId": "uid_from",
+              "fieldValue": "={{ $json.data.uidFrom }}"
+            },
+            {
+              "fieldId": "sender_name",
+              "fieldValue": "={{ $json.data.dName }}"
+            },
+            {
+              "fieldId": "msg_type",
+              "fieldValue": "={{ $json.filter.msgType }}"
+            },
+            {
+              "fieldId": "content",
+              "fieldValue": "={{ $json.filter.content }}"
+            },
+            {
+              "fieldId": "ts",
+              "fieldValue": "={{ $json.data.ts }}"
+            },
+            {
+              "fieldId": "raw_data",
+              "fieldValue": "={{ $json }}"
+            },
+            {
+              "fieldId": "is_staff",
+              "fieldValue": "false"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        720,
+        236
+      ],
+      "id": "ff25d84b-9e64-45ac-b2a0-ce004c7b3ce7",
+      "name": "Create a row1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kAOz6fNsa8UHk4Ws",
+          "name": "Supabase account 2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Zalo Trigger": {
+      "main": [
+        [
+          {
+            "node": "Là nhóm chấm công?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Là nhóm chấm công?": {
+      "main": [
+        [
+          {
+            "node": "Ghi tin chấm công",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Create a row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create a row1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3ea5c6d0c36cbc08e2627e89f82a9a6d5c7d746c0e34b66b395bab5a90858f61"
+  }
+}
