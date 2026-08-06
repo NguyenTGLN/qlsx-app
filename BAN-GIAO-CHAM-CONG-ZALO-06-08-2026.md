@@ -45,7 +45,7 @@ của tháng** không xét; tin được coi là chấm công khi **nội dung c
 Kéo-thả thư mục `dist` lên Netlify. SQL đã chạy rồi nên deploy xong là tab Chấm công có sẵn các
 phần mới (lúc này chưa có dữ liệu Zalo nên chưa hiện gì).
 
-### Bước 2 — tìm mã nhóm chấm công
+### Bước 2 — n8n: bỏ chặn + nhánh ghi tin thô (CHƯA gọi RPC)
 
 Trong ô `ignoreThreads` của node **Zalo Trigger** có **ba mã không khớp nhóm nào** trong
 `zalo_groups`, một trong ba là nhóm chấm công:
@@ -56,31 +56,19 @@ Trong ô `ignoreThreads` của node **Zalo Trigger** có **ba mã không khớp 
 8095429580080493978
 ```
 
-Bác biết sẵn mã nào thì dùng luôn. Không biết thì: bỏ **cả ba** khỏi `ignoreThreads`, để chạy một
-buổi sáng, rồi chạy câu này trên Supabase:
-
-```sql
-select thread_id, count(*) n, count(distinct uid_from) so_nguoi
-from zalo_messages
-where thread_id in ('3288273518723273312','4526062079113325581','8095429580080493978')
-group by thread_id order by n desc;
-```
-
-Nhóm chấm công là nhóm nhiều người gửi nhất vào buổi sáng với nội dung ngắn. Xác định xong, **trả
-hai mã kia về `ignoreThreads`** và dọn tin lỡ thu của cả ba:
-
-```sql
-delete from zalo_conversations where thread_id in ('mã1','mã2','mã3');
-delete from zalo_messages      where thread_id in ('mã1','mã2','mã3');
-```
-
-### Bước 3 — n8n: bỏ chặn + nhánh ghi tin thô (CHƯA gọi RPC)
-
-1. Xoá mã nhóm chấm công khỏi `ignoreThreads`. Giữ nguyên các mã còn lại.
+1. Xoá **cả ba** mã khỏi `ignoreThreads` (mã đầu xoá cả hai lần). Giữ nguyên các mã còn lại.
 2. Thêm node **If** tên "Là nhóm chấm công?" **ngay sau Zalo Trigger, trước `If1`**:
-   - Điều kiện (Boolean → is true): `{{ $json.threadId === 'MÃ_NHÓM' }}`
+   - Điều kiện (Boolean → is true) — **bắt cả ba mã** vì chưa biết mã nào đúng:
+     ```
+     {{ ['3288273518723273312','4526062079113325581','8095429580080493978'].includes($json.threadId) }}
+     ```
    - **Nhánh FALSE → nối vào `If1`** (nhánh cũ, không đổi gì bên trong)
    - Nhánh TRUE → node Supabase ở bước 3
+
+   > Bắt cả ba chứ không đoán một: nhánh true **không đi qua `If1`** nên không mã nào lọt vào
+   > `zalo_messages` / `zalo_conversations`. Cả ba rơi vào bảng riêng `zalo_cham_cong` — vô hại,
+   > và sáng hôm sau nhìn dữ liệu là biết mã nào. Cách này khỏi phải dọn KPI Zalo.
+
 3. Thêm node **Supabase** "Ghi tin chấm công":
    - Credential: `Supabase account 2` · Operation: **Create** · Table: `zalo_cham_cong`
    - Fields:
@@ -98,10 +86,23 @@ delete from zalo_messages      where thread_id in ('mã1','mã2','mã3');
 ⚠ **Nối nhầm nhánh FALSE là toàn bộ KPI Zalo ngừng thu.** Sau khi bật, kiểm ngay:
 
 ```sql
-select count(*) from zalo_cham_cong;                                  -- phải > 0 sau buổi sáng
-select count(*) from zalo_messages      where thread_id = 'MÃ_NHÓM';  -- phải = 0
-select count(*) from zalo_conversations where thread_id = 'MÃ_NHÓM';  -- phải = 0
+select count(*) from zalo_cham_cong;   -- phải > 0 sau buổi sáng
+select count(*) from zalo_messages      where thread_id in ('3288273518723273312','4526062079113325581','8095429580080493978');
+select count(*) from zalo_conversations where thread_id in ('3288273518723273312','4526062079113325581','8095429580080493978');
 ```
+Hai câu sau **phải = 0** — tin nhóm chấm công không được lọt vào KPI Zalo.
+
+### Bước 3 — sáng hôm sau: chốt đúng một mã
+
+```sql
+select thread_id, count(*) so_tin, count(distinct uid_from) so_nguoi
+from zalo_cham_cong group by thread_id order by so_tin desc;
+```
+
+Nhóm chấm công là dòng có **nhiều người gửi nhất**. Rồi ba việc:
+- Sửa điều kiện node If thành đúng một mã: `{{ $json.threadId === 'MÃ_ĐÚNG' }}`
+- Trả hai mã kia về `ignoreThreads`
+- `delete from zalo_cham_cong where thread_id in ('mã2','mã3');`
 
 ### Bước 4 — nối mã Zalo cho 8 người còn thiếu
 
