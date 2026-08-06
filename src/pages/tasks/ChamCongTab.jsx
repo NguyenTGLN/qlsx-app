@@ -4,6 +4,7 @@ import {
   gomThongKe, tongTatCa, docNhomTuKpi, MA_CHI_TIEU_NHOM, dsNguoiPhanNhom,
 } from '../../lib/chamCongThongKe';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
+import { dsChuaNoiMa, demVeSomLech } from '../../lib/chamCongZalo';
 import NapChamCong from './NapChamCong';
 import { ChevronLeft, AlertTriangle, Loader2, ChevronRight, Users, Upload } from 'lucide-react';
 
@@ -49,6 +50,9 @@ function tieuDeO(row) {
     dong += ' — dữ liệu nghi vấn: máy chấm công ghi giờ ra sớm hơn lượt quét buổi chiều, ' +
       'phần về sớm đã bị bỏ khi tính KPI';
   }
+  if (row.nguon === 'ZALO') {
+    dong += ' — nguồn: tin nhắn nhóm Zalo, chưa có số máy chấm công';
+  }
   return `${macDinh} — ${dong}`;
 }
 
@@ -72,6 +76,16 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   const [bung, setBung] = useState(() => new Set()); // khoá nhóm đang bung trong khối thống kê
   const [manPhanNhom, setManPhanNhom] = useState(false);
   const [moNap, setMoNap] = useState(false); // true = đang mở modal "Nạp từ Excel" (NapChamCong.jsx)
+  // Ba nguồn của phần chấm công Zalo. Tải MỀM (xem taiDuLieu) — chưa chạy
+  // sql/cham_cong_zalo.sql thì tab vẫn phải mở được y như cũ.
+  const [zaloRows, setZaloRows] = useState([]);
+  const [nvUid, setNvUid] = useState([]);      // [{id, name, uid_from, ten_cham_cong}]
+  const [veSomTay, setVeSomTay] = useState([]);
+  const [dangNoi, setDangNoi] = useState('');  // uid đang lưu, để khoá ô chọn
+  const [moDungLai, setMoDungLai] = useState(false);
+  const [dlTu, setDlTu] = useState('');
+  const [dlDen, setDlDen] = useState('');
+  const [dlKq, setDlKq] = useState('');
 
   const taiDuLieu = useCallback(async () => {
     setLoading(true);
@@ -106,6 +120,23 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
         setKpiRows(kp || []);
       } catch {
         setKpiRows([]);
+      }
+      // Ba nguồn của phần chấm công Zalo. Tải RIÊNG và MỀM, cùng lý do như miễn trừ:
+      // hỏng chỗ này KHÔNG được xoá bảng chấm công đang hiển thị.
+      try {
+        const tu = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+        const [z, nv, vs] = await Promise.all([
+          supabase.from('zalo_cham_cong').select('uid_from, sender_name, content, ts')
+            .gte('ngay', tu).order('ts', { ascending: false }).limit(2000),
+          supabase.from('nhan_vien').select('id, name, uid_from, ten_cham_cong'),
+          supabase.from('ve_som_tay').select('*').eq('ky', ky).order('id'),
+        ]);
+        if (z.error || nv.error || vs.error) throw (z.error || nv.error || vs.error);
+        setZaloRows(z.data || []);
+        setNvUid(nv.data || []);
+        setVeSomTay(vs.data || []);
+      } catch {
+        setZaloRows([]); setNvUid([]); setVeSomTay([]);
       }
     } catch (err) {
       setLoi(err?.message || String(err));
@@ -153,6 +184,24 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     return m;
   }, [ngoaiLe]);
 
+  const chuaNoiMa = useMemo(
+    () => dsChuaNoiMa({ zaloRows, nhanVien: nvUid }), [zaloRows, nvUid]);
+
+  // 13 người kho = có ten_cham_cong. Ai trong số đó chưa có uid_from thì hàm dựng BỎ QUA
+  // họ — không chấm công, cũng không ghi nghỉ oan — nên KPI chuyên cần của họ để TRỐNG
+  // cả tháng. Phải hiện thành cảnh báo chứ không để lẫn vào danh sách dài.
+  const thieuUid = useMemo(
+    () => (nvUid || []).filter(n => n.ten_cham_cong && !String(n.uid_from || '').trim()),
+    [nvUid]);
+
+  const veSomLech = useMemo(() => demVeSomLech({ rows, veSomTay }), [rows, veSomTay]);
+
+  const veSomTra = useMemo(() => {
+    const m = new Map();
+    for (const v of veSomTay) m.set(`${v.nhan_vien_id}|${v.ngay}`, v);
+    return m;
+  }, [veSomTay]);
+
   // Bật (lyDo là chuỗi) hoặc tắt (lyDo = null) miễn trừ cho một (người, ngày).
   // RLS ở DB chỉ cho ADMIN ghi — nút chỉ hiện khi canEdit, còn đây là hàng rào mềm.
   const doiNgoaiLe = useCallback(async (nvId, ngay, lyDo) => {
@@ -173,6 +222,86 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
       setLoi(err?.message || String(err));
     }
   }, [me, taiDuLieu]);
+
+  // Nối một mã Zalo với một nhân viên. Ghi thẳng vào nhan_vien.uid_from.
+  //
+  // ⚠ Chọn nhầm là chấm công của người này chảy sang người khác MỖI NGÀY. Khác màn hình
+  // nối tên Excel một điểm có lợi: ở đây sửa lại được ngay, chọn lại người khác là xong.
+  const noiMaZalo = useCallback(async (uid, nvId) => {
+    if (!uid || !nvId) return;
+    setLoi(''); setDangNoi(uid);
+    try {
+      const { error } = await supabase.from('nhan_vien').update({ uid_from: uid }).eq('id', nvId);
+      if (error) throw error;
+      await taiDuLieu();
+    } catch (err) {
+      setLoi(err?.message || String(err));
+    } finally {
+      setDangNoi('');
+    }
+  }, [taiDuLieu]);
+
+  // Chấm (soPhut > 0) hoặc bỏ chấm (soPhut = null) về sớm cho một (người, ngày).
+  //
+  // Ghi vào ve_som_tay — NGUỒN SỰ THẬT — rồi phản chiếu sang cham_cong để KPI thấy ngay.
+  // Hai lệnh rời, nhưng không có rủi ro mất dữ liệu: lệnh đầu là dữ liệu gốc, lệnh sau chỉ
+  // là bản phản chiếu, dựng lại được bất cứ lúc nào bằng nút "Áp lại".
+  const chamVeSom = useCallback(async (nvId, ngay, soPhut, lyDo) => {
+    setLoi('');
+    try {
+      if (soPhut == null) {
+        const { error } = await supabase.from('ve_som_tay')
+          .delete().eq('nhan_vien_id', nvId).eq('ngay', ngay);
+        if (error) throw error;
+        const { error: e2 } = await supabase.from('cham_cong')
+          .update({ ve_som_phut: 0 }).eq('nhan_vien_id', nvId).eq('ngay', ngay);
+        if (e2) throw e2;
+      } else {
+        const { error } = await supabase.from('ve_som_tay').upsert(
+          { ky: ngay.slice(0, 7), nhan_vien_id: nvId, ngay, so_phut: soPhut,
+            ly_do: lyDo, nguoi_ghi: me?.name || me?.id || null },
+          { onConflict: 'nhan_vien_id,ngay' });
+        if (error) throw error;
+        const { error: e2 } = await supabase.from('cham_cong')
+          .update({ ve_som_phut: soPhut }).eq('nhan_vien_id', nvId).eq('ngay', ngay);
+        if (e2) throw e2;
+      }
+      await taiDuLieu();
+    } catch (err) {
+      setLoi(err?.message || String(err));
+    }
+  }, [me, taiDuLieu]);
+
+  // Dựng lại bản phản chiếu về sớm sau khi nạp Excel xoá mất. Chạy lại an toàn.
+  const apLaiVeSom = useCallback(async () => {
+    setLoi('');
+    try {
+      const { data, error } = await supabase.rpc('ap_lai_ve_som_tay', { p_ky: ky });
+      if (error) throw error;
+      if (data?.loi) throw new Error(data.loi);
+      await taiDuLieu();
+    } catch (err) {
+      setLoi(err?.message || String(err));
+    }
+  }, [ky, taiDuLieu]);
+
+  // Dựng lại dòng chấm công từ tin thô Zalo cho một khoảng ngày.
+  //
+  // Dùng khi: nạp Excel giữa tháng xoá mất dòng Zalo của những ngày sau đó, hoặc n8n chết
+  // một hôm. Khoảng ngày KHÔNG có tin thô thì hàm không sinh dòng nào — đã đo trên CSDL,
+  // nên bấm nhầm cho tháng cũ cũng không biến cả tháng thành nghỉ.
+  const dungLaiTuZalo = useCallback(async () => {
+    setLoi(''); setDlKq('');
+    try {
+      const { data, error } = await supabase.rpc('dung_cham_cong_zalo', { p_tu: dlTu, p_den: dlDen });
+      if (error) throw error;
+      if (data?.loi) throw new Error(data.loi);
+      setDlKq(`Đã ghi ${data?.so_dong_ghi ?? 0} dòng.`);
+      await taiDuLieu();
+    } catch (err) {
+      setLoi(err?.message || String(err));
+    }
+  }, [dlTu, dlDen, taiDuLieu]);
 
   // Đổi nhóm chuyên cần của MỘT người trong kỳ đang xem.
   //
@@ -302,6 +431,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
         ten={nv.ten} ky={ky} nvId={chon}
         rows={rows.filter(r => r.nhan_vien_id === chon)}
         ngoaiLeTra={ngoaiLeTra} canEdit={canEdit} onDoiNgoaiLe={doiNgoaiLe}
+        veSomTra={veSomTra} onChamVeSom={chamVeSom}
         onBack={() => setChon(null)}
       />
     );
@@ -309,6 +439,63 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
 
   return (
     <div style={{ width: '100%' }}>
+      {canEdit && (thieuUid.length > 0 || chuaNoiMa.length > 0) && (
+        <div style={{
+          background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12,
+          padding: '0.75rem 1rem', marginBottom: 12, fontSize: '0.78rem',
+        }}>
+          <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 6 }}>
+            Nối mã Zalo cho người chấm công
+          </div>
+          {thieuUid.length > 0 && (
+            <div style={{ color: '#b45309', marginBottom: 8 }}>
+              ⚠ {thieuUid.length} người chưa có mã Zalo — chấm công Zalo bỏ qua họ, KPI chuyên
+              cần để trống: <b>{thieuUid.map(n => n.name).join(', ')}</b>
+            </div>
+          )}
+          {chuaNoiMa.map(x => (
+            <div key={x.uid_from} style={{
+              display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+              padding: '4px 0', borderTop: '1px solid #fde68a',
+            }}>
+              <span style={{ color: '#78350f' }}>
+                <b>{x.sender_name || '(không tên)'}</b> · nhắn {x.soTin} tin · gần nhất: “{x.content}”
+              </span>
+              <select
+                defaultValue="" disabled={dangNoi === x.uid_from}
+                onChange={e => { if (e.target.value) noiMaZalo(x.uid_from, e.target.value); }}
+                style={{ ...oInput, width: 'auto', minWidth: 160 }}
+              >
+                <option value="">— đây là ai? —</option>
+                {thieuUid.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canEdit && (veSomLech.soLech > 0 || veSomLech.soThieuDong > 0) && (
+        <div style={{
+          background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12,
+          padding: '0.75rem 1rem', marginBottom: 12, fontSize: '0.78rem',
+        }}>
+          <div style={{ fontWeight: 700, color: '#b91c1c', marginBottom: 4 }}>
+            Về sớm chấm tay chưa được áp vào bảng chấm công
+          </div>
+          <div style={{ color: '#7f1d1d', marginBottom: 8 }}>
+            {veSomLech.soLech > 0 && <>{veSomLech.soLech} dòng lệch số. </>}
+            {veSomLech.soThieuDong > 0 && (
+              <>{veSomLech.soThieuDong} dòng không có ngày công tương ứng — nút dưới KHÔNG
+              sửa được, phải dựng lại từ Zalo hoặc nạp lại Excel. </>
+            )}
+            Nạp Excel xoá trọn kỳ nên bản phản chiếu về 0; dữ liệu gốc vẫn còn nguyên.
+          </div>
+          {veSomLech.soLech > 0 && (
+            <button onClick={apLaiVeSom} style={nutLuu}>Áp lại về sớm chấm tay</button>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <input
           type="month" value={ky} onChange={e => setKy(e.target.value || kyHienTai())}
@@ -320,6 +507,11 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
         {canEdit && (
           <button onClick={() => setMoNap(true)} style={nutNapExcel}>
             <Upload size={13} /> Nạp từ Excel
+          </button>
+        )}
+        {canEdit && (
+          <button onClick={() => setMoDungLai(true)} style={nutDacBiet}>
+            Dựng lại từ Zalo
           </button>
         )}
         {canEdit && kpiRows.length > 0 && (
@@ -466,6 +658,34 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
           onDong={() => setMoNap(false)}
         />
       )}
+
+      {moDungLai && (
+        <div onClick={() => setMoDungLai(false)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', zIndex: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#fff', borderRadius: 14, padding: '1rem', maxWidth: 420, width: '100%',
+          }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: 4 }}>
+              Dựng lại chấm công từ tin nhắn Zalo
+            </div>
+            <div style={{ fontSize: '0.74rem', color: '#64748b', marginBottom: 10 }}>
+              Tính lại từ tin thô cho khoảng ngày dưới đây. Ngày nào đã có số máy chấm công
+              (nguồn “Máy”) thì KHÔNG bị đụng tới.
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input type="date" value={dlTu} onChange={e => setDlTu(e.target.value)} style={oInput} />
+              <input type="date" value={dlDen} onChange={e => setDlDen(e.target.value)} style={oInput} />
+            </div>
+            {dlKq && <div style={{ fontSize: '0.76rem', color: '#15803d', marginTop: 8 }}>{dlKq}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <button onClick={() => setMoDungLai(false)} style={nutHuy}>Đóng</button>
+              <button onClick={dungLaiTuZalo} disabled={!dlTu || !dlDen} style={nutLuu}>Dựng lại</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -506,13 +726,31 @@ function OChamCong({ row, mien }) {
 // Bảng chi tiết từng ngày của một người
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, canEdit, onDoiNgoaiLe, onBack }) {
+function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, veSomTra, canEdit, onDoiNgoaiLe, onChamVeSom, onBack }) {
   const dong = useMemo(
     () => [...rows].sort((a, b) => (a.ngay < b.ngay ? -1 : a.ngay > b.ngay ? 1 : 0)),
     [rows]);
   const [modalNgay, setModalNgay] = useState(null);   // ngày đang nhập lý do
   const [lyDoInput, setLyDoInput] = useState('');
   const mienCua = ngay => ngoaiLeTra?.get(`${nvId}|${ngay}`);
+  const [vsNgay, setVsNgay] = useState(null);
+  const [vsPhut, setVsPhut] = useState('');
+  const [vsLyDo, setVsLyDo] = useState('');
+  const veSomCua = ngay => veSomTra?.get(`${nvId}|${ngay}`);
+
+  const moVeSom = (ngay) => {
+    const cu = veSomCua(ngay);
+    setVsPhut(cu ? String(cu.so_phut) : '');
+    setVsLyDo(cu?.ly_do || '');
+    setVsNgay(ngay);
+  };
+  const luuVeSom = () => {
+    const p = Number(vsPhut);
+    const l = vsLyDo.trim();
+    if (!Number.isFinite(p) || p <= 0 || !l) return;
+    onChamVeSom(nvId, vsNgay, Math.round(p), l);
+    setVsNgay(null);
+  };
 
   const moModal = (ngay, lyDoCu) => { setLyDoInput(lyDoCu || ''); setModalNgay(ngay); };
   const luuModal = () => {
@@ -539,6 +777,7 @@ function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, canEdit, onDoiNg
             <tr>
               <th style={thChiTiet.left}>Ngày</th>
               <th style={thChiTiet.left}>Thứ</th>
+              <th style={thChiTiet.left}>Nguồn</th>
               <th style={thChiTiet.left}>In sáng</th>
               <th style={thChiTiet.left}>In chiều</th>
               <th style={thChiTiet.left}>Giờ ra</th>
@@ -555,6 +794,16 @@ function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, canEdit, onDoiNg
               <tr key={r.id} style={{ background: r.nghi_van ? '#fef2f2' : '#fff' }}>
                 <td style={tdChiTiet.body}>{ngayGon(r.ngay)}</td>
                 <td style={tdChiTiet.body}>{r.thu}</td>
+                <td style={tdChiTiet.body}>
+                  {r.nguon === 'ZALO' ? (
+                    <span title="Suy từ tin nhắn nhóm Zalo — chưa có số máy chấm công. Cuối tháng nạp Excel sẽ đè lên."
+                          style={{ color: '#0369a1', background: '#e0f2fe', padding: '1px 6px', borderRadius: 6, fontWeight: 600 }}>
+                      Zalo
+                    </span>
+                  ) : (
+                    <span style={{ color: '#64748b' }}>Máy</span>
+                  )}
+                </td>
                 <td style={tdChiTiet.body}>{gioGon(r.gio_in_sang)}</td>
                 <td style={tdChiTiet.body}>{gioGon(r.gio_in_chieu)}</td>
                 <td style={tdChiTiet.body}>{gioGon(r.gio_out)}</td>
@@ -566,6 +815,24 @@ function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, canEdit, onDoiNg
                 </td>
                 <td style={{ ...tdChiTiet.body, textAlign: 'right', color: r.ve_som_phut > 0 ? '#b91c1c' : undefined, fontWeight: r.ve_som_phut > 0 ? 700 : 400 }}>
                   {r.ve_som_phut > 0 ? `${r.ve_som_phut} phút` : '—'}
+                  {veSomCua(r.ngay) && (
+                    <div title={`Chấm tay bởi ${veSomCua(r.ngay).nguoi_ghi || '—'}: ${veSomCua(r.ngay).ly_do}`}
+                         style={{ fontSize: '0.66rem', color: '#2563eb', fontWeight: 600 }}>
+                      chấm tay
+                    </div>
+                  )}
+                  {canEdit && (
+                    <div>
+                      <button onClick={() => moVeSom(r.ngay)} style={nutDacBiet}>
+                        {veSomCua(r.ngay) ? 'Sửa' : 'Chấm'}
+                      </button>
+                      {veSomCua(r.ngay) && (
+                        <button onClick={() => onChamVeSom(nvId, r.ngay, null, null)} style={nutBoDacBiet}>
+                          Bỏ
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </td>
                 <td style={tdChiTiet.body}>{r.nghi ? 'Có' : '—'}</td>
                 <td style={{ ...tdChiTiet.body, color: r.nghi_van ? '#b91c1c' : '#94a3b8' }}>
@@ -619,6 +886,40 @@ function BangChiTietMotNguoi({ ten, ky, nvId, rows, ngoaiLeTra, canEdit, onDoiNg
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
               <button onClick={() => setModalNgay(null)} style={nutHuy}>Huỷ</button>
               <button onClick={luuModal} disabled={!lyDoInput.trim()} style={nutLuu}>Lưu</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {vsNgay && (
+        <div onClick={() => setVsNgay(null)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', zIndex: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#fff', borderRadius: 14, padding: '1rem', maxWidth: 420, width: '100%',
+          }}>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, marginBottom: 4 }}>
+              Chấm về sớm — {ngayGon(vsNgay)}
+            </div>
+            <div style={{ fontSize: '0.74rem', color: '#64748b', marginBottom: 10 }}>
+              Máy chấm công đã ngừng xuất cột “Về sớm”, nên đây là nguồn duy nhất. Số phút này
+              TRỪ điểm chuyên cần bộ phận. Bắt buộc nhập lý do.
+            </div>
+            <input
+              type="number" min="1" value={vsPhut} onChange={e => setVsPhut(e.target.value)}
+              placeholder="Số phút về sớm" style={oInput} autoFocus
+            />
+            <textarea
+              value={vsLyDo} onChange={e => setVsLyDo(e.target.value)} rows={3}
+              placeholder="VD: xin về sớm đón con, có việc gia đình…"
+              style={{ ...oInput, resize: 'vertical', marginTop: 8 }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <button onClick={() => setVsNgay(null)} style={nutHuy}>Huỷ</button>
+              <button onClick={luuVeSom}
+                      disabled={!vsLyDo.trim() || !(Number(vsPhut) > 0)}
+                      style={nutLuu}>Lưu</button>
             </div>
           </div>
         </div>
