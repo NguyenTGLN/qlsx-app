@@ -249,24 +249,49 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   const chamVeSom = useCallback(async (nvId, ngay, soPhut, lyDo) => {
     setLoi('');
     try {
+      // ⚠ `.select()` ở CẢ BA lệnh là bắt buộc, không phải để lấy dữ liệu về.
+      //
+      // RLS ba bảng này chỉ cho `nv_role = 'ADMIN'` ghi, còn nút chỉ ẩn theo `perm.edit`.
+      // Người có quyền sửa tab mà không phải ADMIN sẽ gặp đúng cái bẫy `loiGhiKpi` sinh ra
+      // để chống: DELETE/UPDATE bị RLS lọc sạch dòng thì PostgREST trả 204 kèm
+      // `error === null` — "thành công" giả. Không có `.select()` để đếm dòng thật, giao
+      // diện sẽ báo đã xoá, tải lại, và số cũ hiện nguyên mà không một dòng lỗi nào.
+      let canhBao = '';
       if (soPhut == null) {
-        const { error } = await supabase.from('ve_som_tay')
-          .delete().eq('nhan_vien_id', nvId).eq('ngay', ngay);
+        const { data: daXoa, error } = await supabase.from('ve_som_tay')
+          .delete().eq('nhan_vien_id', nvId).eq('ngay', ngay).select();
         if (error) throw error;
-        const { error: e2 } = await supabase.from('cham_cong')
-          .update({ ve_som_phut: 0 }).eq('nhan_vien_id', nvId).eq('ngay', ngay);
-        if (e2) throw e2;
+        if (!daXoa?.length) {
+          throw new Error('Không xoá được về sớm chấm tay — tài khoản này không có quyền ghi '
+            + '(cần quyền quản trị). Chưa có gì thay đổi.');
+        }
       } else {
-        const { error } = await supabase.from('ve_som_tay').upsert(
+        const { data: daGhi, error } = await supabase.from('ve_som_tay').upsert(
           { ky: ngay.slice(0, 7), nhan_vien_id: nvId, ngay, so_phut: soPhut,
             ly_do: lyDo, nguoi_ghi: me?.name || me?.id || null },
-          { onConflict: 'nhan_vien_id,ngay' });
+          { onConflict: 'nhan_vien_id,ngay' }).select();
         if (error) throw error;
-        const { error: e2 } = await supabase.from('cham_cong')
-          .update({ ve_som_phut: soPhut }).eq('nhan_vien_id', nvId).eq('ngay', ngay);
-        if (e2) throw e2;
+        if (!daGhi?.length) {
+          throw new Error('Không lưu được về sớm chấm tay — tài khoản này không có quyền ghi '
+            + '(cần quyền quản trị). Chưa có gì thay đổi.');
+        }
       }
+
+      // Bản phản chiếu sang cham_cong để KPI thấy ngay. Không với tới được thì KHÔNG coi là
+      // hỏng — dữ liệu gốc ở ve_som_tay đã an toàn — nhưng phải nói ra, vì điểm chuyên cần
+      // chưa đổi và người dùng không có cách nào tự biết.
+      const { data: daSua, error: eSua } = await supabase.from('cham_cong')
+        .update({ ve_som_phut: soPhut ?? 0 }).eq('nhan_vien_id', nvId).eq('ngay', ngay).select();
+      if (eSua) throw eSua;
+      if (!daSua?.length) {
+        canhBao = 'Đã lưu về sớm chấm tay, NHƯNG ngày đó chưa có dòng chấm công nên điểm '
+          + 'chuyên cần chưa đổi. Dựng lại từ Zalo hoặc nạp Excel, rồi bấm "Áp lại về sớm '
+          + 'chấm tay".';
+      }
+
       await taiDuLieu();
+      // Đặt SAU taiDuLieu vì hàm đó mở đầu bằng setLoi('') — đặt trước là mất cảnh báo.
+      if (canhBao) setLoi(canhBao);
     } catch (err) {
       setLoi(err?.message || String(err));
     }
@@ -439,7 +464,12 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
 
   return (
     <div style={{ width: '100%' }}>
-      {canEdit && (thieuUid.length > 0 || chuaNoiMa.length > 0) && (
+      {/* Chỉ hiện khi CÒN người kho thiếu mã. Nối đủ 13 rồi thì mọi người gửi còn lại trong
+          nhóm là người NGOÀI nhóm 13 (nhóm Zalo có 27 thành viên) — không có ai để nối nữa,
+          và hiện một dãy ô chọn rỗng chỉ làm người dùng bấm vào ngõ cụt. Danh sách chọn cố ý
+          chỉ gồm người CHƯA có mã: người đã nối rồi mà hiện lại thì một cú bấm nhầm là hai
+          người mang chung một mã Zalo, và hàm dựng sẽ tính tin của một người cho cả hai. */}
+      {canEdit && thieuUid.length > 0 && (
         <div style={{
           background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12,
           padding: '0.75rem 1rem', marginBottom: 12, fontSize: '0.78rem',
@@ -447,10 +477,15 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
           <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 6 }}>
             Nối mã Zalo cho người chấm công
           </div>
-          {thieuUid.length > 0 && (
-            <div style={{ color: '#b45309', marginBottom: 8 }}>
-              ⚠ {thieuUid.length} người chưa có mã Zalo — chấm công Zalo bỏ qua họ, KPI chuyên
-              cần để trống: <b>{thieuUid.map(n => n.name).join(', ')}</b>
+          <div style={{ color: '#b45309', marginBottom: 8 }}>
+            ⚠ {thieuUid.length} người chưa có mã Zalo — chấm công Zalo bỏ qua họ, KPI chuyên
+            cần để trống: <b>{thieuUid.map(n => n.name).join(', ')}</b>
+          </div>
+          {chuaNoiMa.length === 0 && (
+            <div style={{ color: '#78350f', borderTop: '1px solid #fde68a', paddingTop: 6 }}>
+              Chưa thu được tin nào từ người lạ trong 30 ngày qua. Nếu nhóm chấm công đã chảy
+              vào hệ thống thì những người trên chưa nhắn lần nào; nếu chưa, kiểm lại nhánh
+              n8n trước đã.
             </div>
           )}
           {chuaNoiMa.map(x => (
