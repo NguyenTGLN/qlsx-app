@@ -133,3 +133,78 @@ language sql immutable as $$
 $$;
 
 commit;
+
+-- ── 3. CỘT NGUỒN TRÊN cham_cong ─────────────────────────────────────────────
+-- Không phải để trang trí: đây là điều kiện khiến Zalo KHÔNG BAO GIỜ đè được dòng
+-- của máy vân tay (xem mệnh đề `where cham_cong.nguon = 'ZALO'` trong hàm dựng).
+-- Thiếu cột này thì nguồn yếu hơn (ai nhớ nhắn) đè lên nguồn mạnh hơn (ai quẹt vân tay).
+--
+-- KHÔNG phải sửa nap_cham_cong: hàm đó liệt kê cột rõ ràng (rpc_nap_cham_cong.sql:63-66)
+-- nên cột mới lấy giá trị mặc định 'MAY'. Đã kiểm.
+begin;
+
+alter table cham_cong add column if not exists nguon text not null default 'MAY';
+
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'cham_cong_nguon_hop_le') then
+    alter table cham_cong add constraint cham_cong_nguon_hop_le check (nguon in ('MAY','ZALO'));
+  end if;
+end $$;
+
+create index if not exists cham_cong_nguon_idx on cham_cong (ky, nguon);
+
+commit;
+
+-- ── 4. VỀ SỚM CHẤM TAY ──────────────────────────────────────────────────────
+-- Máy chấm công ĐÃ NGỪNG xuất cột "Về sớm" — đo 06/08: 0/388 dòng có giá trị > 0.
+-- Nên chấm tay là nguồn DUY NHẤT của về sớm, và nó phải sống ở bảng riêng: hàm
+-- nap_cham_cong xoá trọn kỳ rồi chèn lại từ Excel (rpc_nap_cham_cong.sql:60), ghi
+-- thẳng vào cham_cong là mỗi tháng mất trắng.
+--
+-- Chủ app chốt 06/08: KHÔNG sửa nap_cham_cong. Bù lại bằng hàm ap_lai_ve_som_tay
+-- (phần 6) + băng cảnh báo lệch trong giao diện.
+--
+-- ⚠ BẢNG NÀY LÀ BẢNG CASCADE THỨ NĂM trỏ vào nhan_vien. Luồng đổi mã nhân viên ở
+--   src/pages/tasks/TaskApp.jsx:1525-1549 phải được sửa để chuyển cả bảng này, không
+--   thì đổi mã một người là xoá sạch về sớm chấm tay của họ.
+begin;
+
+create table if not exists ve_som_tay (
+  id           bigserial primary key,
+  ky           text not null,
+  nhan_vien_id text not null references nhan_vien(id) on delete cascade,
+  ngay         date not null,
+  so_phut      int  not null check (so_phut > 0),
+  -- BẮT BUỘC: cột này trừ điểm chuyên cần, mà chuyên cần gắn thẳng với lương thưởng.
+  -- Một con số không kèm lý do là thứ không cãi lại được khi có người thắc mắc.
+  ly_do        text not null,
+  nguoi_ghi    text,
+  created_at   timestamptz default now(),
+  constraint ve_som_tay_mot_nguoi_mot_ngay unique (nhan_vien_id, ngay)
+);
+
+create index if not exists ve_som_tay_ky_idx on ve_som_tay (ky);
+
+alter table public.ve_som_tay enable row level security;
+
+drop policy if exists auth_all on public.ve_som_tay;
+drop policy if exists vst_sel on public.ve_som_tay;
+drop policy if exists vst_ins on public.ve_som_tay;
+drop policy if exists vst_upd on public.ve_som_tay;
+drop policy if exists vst_del on public.ve_som_tay;
+
+create policy vst_sel on public.ve_som_tay
+  for select to authenticated using (true);
+create policy vst_ins on public.ve_som_tay
+  for insert to authenticated
+  with check (coalesce(auth.jwt()->>'nv_role','') = 'ADMIN');
+create policy vst_upd on public.ve_som_tay
+  for update to authenticated
+  using (coalesce(auth.jwt()->>'nv_role','') = 'ADMIN')
+  with check (coalesce(auth.jwt()->>'nv_role','') = 'ADMIN');
+create policy vst_del on public.ve_som_tay
+  for delete to authenticated
+  using (coalesce(auth.jwt()->>'nv_role','') = 'ADMIN');
+
+commit;
