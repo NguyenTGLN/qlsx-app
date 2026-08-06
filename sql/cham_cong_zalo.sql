@@ -252,8 +252,12 @@ begin
     where extract(dow from d) between 1 and 6
   ),
   nguoi as (
-    -- 13 người kho = có ten_cham_cong. Bắt buộc có uid_from, không thì không nhận
-    -- được tin của họ và ghi nghỉ oan mỗi ngày.
+    -- 13 người kho = có ten_cham_cong. Lọc thêm `uid_from` khác rỗng có chủ đích, và
+    -- hướng lỗi của nó là hướng AN TOÀN: người chưa nối mã Zalo bị loại khỏi CTE này
+    -- nên KHÔNG sinh dòng nào cả — không chấm công, cũng không bị ghi nghỉ oan. Hệ quả
+    -- duy nhất là KPI chuyên cần của họ để trống trong tháng, và trống thì nhìn ra ngay,
+    -- khác hẳn một con số sai trông như thật. Đo 06/08: 13 người có ten_cham_cong nhưng
+    -- mới 5 người có uid_from, nên hàm đang chỉ phủ 5.
     select id as nhan_vien_id, name as ten, uid_from
     from nhan_vien
     where ten_cham_cong is not null and coalesce(uid_from, '') <> ''
@@ -319,8 +323,13 @@ begin
            when cc.thieu_sang  then 'Nghỉ sáng'
            when cc.thieu_chieu then 'Nghỉ chiều'
            else null end as nghi_text,
-      (coalesce(greatest(0, extract(epoch from (cc.gio_sang  - time '08:00')) / 60), 0)
-       + coalesce(greatest(0, extract(epoch from (cc.gio_chieu - time '13:30')) / 60), 0))::int
+      -- `floor` chứ không để `::int` tự làm tròn. Ép kiểu int làm tròn NỬA LÊN, nên tin lúc
+      -- 08:00:30 ra "muộn 1 phút" trong khi cột giờ vào hiển thị đúng "08:00" — người bị trừ
+      -- nhìn vào thấy mâu thuẫn và không cãi được. floor cho hai con số luôn kể cùng một
+      -- chuyện, và làm tròn xuống là nghiêng về phía nhân viên, đúng hướng nên nghiêng khi
+      -- sai số chỉ là mấy chục giây.
+      (coalesce(floor(greatest(0, extract(epoch from (cc.gio_sang  - time '08:00')) / 60)), 0)
+       + coalesce(floor(greatest(0, extract(epoch from (cc.gio_chieu - time '13:30')) / 60)), 0))::int
         as di_muon_phut
     from co_cua cc
     -- Chỉ ghi dòng có căn cứ: hoặc người đó có tin, hoặc buổi đó đang được xét (để ghi nghỉ).
@@ -376,3 +385,59 @@ commit;
 --
 -- Kiểm lại sau khi hoàn tác:
 --   select count(*) from cham_cong where nguon = 'ZALO';
+
+-- ── 6. ÁP LẠI VỀ SỚM CHẤM TAY ───────────────────────────────────────────────
+-- Dùng sau khi nạp Excel: nap_cham_cong xoá trọn kỳ (rpc_nap_cham_cong.sql:60) nên bản
+-- phản chiếu về sớm trong cham_cong về 0. DỮ LIỆU GỐC KHÔNG MẤT — nó nằm ở ve_som_tay
+-- mà hàm nạp không đụng tới. Hàm này chỉ dựng lại bản phản chiếu.
+--
+-- Chạy lại bao nhiêu lần cũng ra cùng kết quả, nên rớt mạng thì bấm lại, không có trạng
+-- thái dở dang. Đây chính là lý do chủ app chọn được phương án "không sửa nap_cham_cong"
+-- mà vẫn không mất dữ liệu.
+--
+-- Trả về HAI con số, không gộp làm một:
+--   so_ap        — số dòng vừa sửa được. Bấm nút là về 0.
+--   so_thieu_dong — số dòng về sớm KHÔNG có ngày công tương ứng trong cham_cong. UPDATE
+--                   không tạo được dòng nên nút này không với tới; phải dựng lại từ Zalo
+--                   hoặc nạp Excel. Gộp chung là người dùng bấm mãi mà con số không về 0.
+--
+-- ⚠ KHÔNG `security definer` — cùng lý do như hàm dựng ở phần 5.
+begin;
+
+create or replace function ap_lai_ve_som_tay(p_ky text)
+returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare v_ap int; v_thieu int;
+begin
+  if p_ky is null or p_ky !~ '^[0-9]{4}-[0-9]{2}$' then
+    return jsonb_build_object('loi', 'Kỳ không hợp lệ, phải dạng YYYY-MM');
+  end if;
+
+  update cham_cong c
+     set ve_som_phut = v.so_phut
+    from ve_som_tay v
+   where v.nhan_vien_id = c.nhan_vien_id
+     and v.ngay = c.ngay
+     and v.ky = p_ky
+     and c.ve_som_phut is distinct from v.so_phut;
+  get diagnostics v_ap = row_count;
+
+  select count(*) into v_thieu
+  from ve_som_tay v
+  where v.ky = p_ky
+    and not exists (select 1 from cham_cong c
+                    where c.nhan_vien_id = v.nhan_vien_id and c.ngay = v.ngay);
+
+  return jsonb_build_object('so_ap', v_ap, 'so_thieu_dong', v_thieu);
+end $$;
+
+revoke execute on function ap_lai_ve_som_tay(text) from public;
+revoke execute on function ap_lai_ve_som_tay(text) from anon;
+grant  execute on function ap_lai_ve_som_tay(text) to authenticated;
+
+commit;
+
+-- ── HOÀN TÁC PHẦN 6 ─────────────────────────────────────────────────────────
+--   drop function if exists ap_lai_ve_som_tay(text);
