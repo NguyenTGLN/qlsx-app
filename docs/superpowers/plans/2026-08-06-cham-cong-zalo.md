@@ -210,10 +210,21 @@ Kỳ vọng: lỗi `42883 function zalo_khop_ten(unknown, unknown) does not exis
 -- lệch độ dài thì nó lặng lẽ XOÁ ký tự thừa chứ không báo lỗi.
 begin;
 
+-- `normalize(…, nfc)` KHÔNG phải thừa. Cùng một chữ 'ọ' có hai cách mã hoá Unicode:
+-- dựng sẵn (NFC, một ký tự) và tổ hợp (NFD, chữ 'o' + dấu rời). Bảng translate dưới đây
+-- chỉ liệt kê dạng NFC, nên chuỗi NFD đi qua mà KHÔNG bị bỏ dấu — 'Ngọc' vẫn ra 'ngọc',
+-- không khớp tên 'ngoc', và người đó bị sót ⇒ ghi NGHỈ oan, mất 3 điểm chuyên cần.
+--
+-- Đã đo 06/08 trên chính CSDL này:
+--   zalo_bo_dau(normalize('Ngọc', nfd))                  → 'ngọc'   ← hỏng
+--   zalo_bo_dau(normalize(normalize('Ngọc',nfd), nfc))   → 'ngoc'   ← đúng
+--   normalize('Ngọc', nfc) = 'Ngọc'                      → true     ← NFC không đổi gì
+-- Chưa biết Zalo/n8n đẩy lên dạng nào, và đó chính là lý do phải chuẩn hoá: rẻ, không
+-- đổi gì với dữ liệu vốn đúng, và chặn hẳn một kiểu sai chỉ lộ ra ở vài cái tên.
 create or replace function zalo_bo_dau(p text) returns text
 language sql immutable as $$
   select translate(
-    lower(coalesce(p, '')),
+    lower(normalize(coalesce(p, ''), nfc)),
     'àáạảãâầấậẩẫăằắặẳẵ' || 'èéẹẻẽêềếệểễ' || 'ìíịỉĩ'
       || 'òóọỏõôồốộổỗơờớợởỡ' || 'ùúụủũưừứựửữ' || 'ỳýỵỷỹ' || 'đ',
     repeat('a',17) || repeat('e',11) || repeat('i',5)
@@ -266,12 +277,30 @@ select * from (values
   ('giao cho khach hang',       'Hà',     false),  -- 'ha' là chuỗi con của 'khach'/'hang'
   ('nhanh len',                 'Hà',     false),
   ('',                          'Hà',     false),
-  ('Hà',                        '',       false)
+  ('Hà',                        '',       false),
+  -- Năm ca Unicode NFD. Không có `normalize(…, nfc)` trong zalo_bo_dau thì bốn ca đầu
+  -- FAIL: translate chỉ biết dạng dựng sẵn, chuỗi tổ hợp đi qua mà không bị bỏ dấu.
+  (normalize('Ngọc', nfd),                'Ngọc',                   true),
+  (normalize('Ngọc đã có mặt', nfd),      'Ngọc',                   true),
+  ('Ngọc đã có mặt',                      normalize('Ngọc', nfd),   true),
+  (normalize('Xuyên', nfd),               normalize('Xuyên', nfd),  true),
+  (normalize('giao cho khach hang', nfd), 'Hà',                     false)
 ) as t(noi_dung, ten, ky_vong)
 where zalo_khop_ten(noi_dung, ten) is distinct from ky_vong;
 ```
 
 Kỳ vọng: **0 dòng**. Mỗi dòng trả về là một trường hợp sai — dừng lại sửa, đừng đi tiếp.
+
+- [ ] **Step 4b: Kiểm 13 tên thật không trùng nhau sau khi bỏ dấu**
+
+```sql
+select zalo_bo_dau(name) as ten_khong_dau, count(*) as so_nguoi, string_agg(name, ', ') as ai
+from nhan_vien where ten_cham_cong is not null
+group by 1 having count(*) > 1;
+```
+
+Kỳ vọng: **0 dòng**. Có dòng nào nghĩa là hai người cùng một tên sau khi bỏ dấu — hàm dựng
+sẽ gán tin của người này cho người kia. Đo 06/08: 0 dòng.
 
 - [ ] **Step 5: Kiểm bảng bỏ dấu không nuốt ký tự**
 

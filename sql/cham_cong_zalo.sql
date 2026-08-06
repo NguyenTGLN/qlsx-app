@@ -92,10 +92,21 @@ commit;
 -- lệch độ dài thì nó lặng lẽ XOÁ ký tự thừa chứ không báo lỗi.
 begin;
 
+-- `normalize(…, nfc)` KHÔNG phải thừa. Cùng một chữ 'ọ' có hai cách mã hoá Unicode:
+-- dựng sẵn (NFC, một ký tự) và tổ hợp (NFD, chữ 'o' + dấu rời). Bảng translate dưới đây
+-- chỉ liệt kê dạng NFC, nên chuỗi NFD đi qua mà KHÔNG bị bỏ dấu — 'Ngọc' vẫn ra 'ngọc',
+-- không khớp tên 'ngoc', và người đó bị sót ⇒ ghi NGHỈ oan, mất 3 điểm chuyên cần.
+--
+-- Đã đo 06/08 trên chính CSDL này:
+--   zalo_bo_dau(normalize('Ngọc', nfd))                  → 'ngọc'   ← hỏng
+--   zalo_bo_dau(normalize(normalize('Ngọc',nfd), nfc))   → 'ngoc'   ← đúng
+--   normalize('Ngọc', nfc) = 'Ngọc'                      → true     ← NFC không đổi gì
+-- Chưa biết Zalo/n8n đẩy lên dạng nào, và đó chính là lý do phải chuẩn hoá: rẻ, không
+-- đổi gì với dữ liệu vốn đúng, và chặn hẳn một kiểu sai chỉ lộ ra ở vài cái tên.
 create or replace function zalo_bo_dau(p text) returns text
 language sql immutable as $$
   select translate(
-    lower(coalesce(p, '')),
+    lower(normalize(coalesce(p, ''), nfc)),
     'àáạảãâầấậẩẫăằắặẳẵ' || 'èéẹẻẽêềếệểễ' || 'ìíịỉĩ'
       || 'òóọỏõôồốộổỗơờớợởỡ' || 'ùúụủũưừứựửữ' || 'ỳýỵỷỹ' || 'đ',
     repeat('a',17) || repeat('e',11) || repeat('i',5)
