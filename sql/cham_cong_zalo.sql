@@ -80,3 +80,45 @@ create policy zcc_del on public.zalo_cham_cong
   using (coalesce(auth.jwt()->>'nv_role','') = 'ADMIN');
 
 commit;
+
+-- ── 2. SO TÊN ───────────────────────────────────────────────────────────────
+-- Extension `unaccent` KHÔNG có trong project này (đã kiểm 06/08: chỉ có pg_net,
+-- pg_stat_statements, pg_trgm, pgcrypto, plpgsql, supabase_vault, uuid-ossp).
+-- Nên bỏ dấu bằng translate với bảng ký tự tự viết. Cũng tốt hơn unaccent một điểm:
+-- xử lý được chữ 'đ'.
+--
+-- Số ký tự mỗi nhóm đã ĐO trên chính CSDL này ngày 06/08: 17 / 11 / 5 / 17 / 11 / 5.
+-- Dùng repeat() thay vì gõ tay chuỗi đích để hai vế không thể lệch độ dài — translate
+-- lệch độ dài thì nó lặng lẽ XOÁ ký tự thừa chứ không báo lỗi.
+begin;
+
+create or replace function zalo_bo_dau(p text) returns text
+language sql immutable as $$
+  select translate(
+    lower(coalesce(p, '')),
+    'àáạảãâầấậẩẫăằắặẳẵ' || 'èéẹẻẽêềếệểễ' || 'ìíịỉĩ'
+      || 'òóọỏõôồốộổỗơờớợởỡ' || 'ùúụủũưừứựửữ' || 'ỳýỵỷỹ' || 'đ',
+    repeat('a',17) || repeat('e',11) || repeat('i',5)
+      || repeat('o',17) || repeat('u',11) || repeat('y',5) || 'd')
+$$;
+
+-- Tin có được coi là chấm công của NGƯỜI NÀY không.
+--
+-- So theo TỪ chứ không theo chuỗi con: tên 'Hà' bỏ dấu thành 'ha', nằm trong 'thang',
+-- 'khach', 'nhanh'. So chuỗi con là bắt nhầm hàng loạt.
+--
+-- Người gọi PHẢI truyền tên của CHÍNH người gửi, không quét cả 13 tên. Bằng chứng:
+-- tin của Thiện "Như đã xin phép GDKT nguyên,,em có việc, cho em xin nghỉ 2 ngày ạ"
+-- chứa 'nguyên' — tên một người khác trong 13. Quét cả danh sách là ghi nhầm Thiện
+-- thành có mặt đúng vào ngày họ xin nghỉ.
+create or replace function zalo_khop_ten(p_content text, p_ten text) returns boolean
+language sql immutable as $$
+  with chuan as (
+    select btrim(regexp_replace(zalo_bo_dau(p_content), '[^a-z0-9]+', ' ', 'g')) as noi_dung,
+           btrim(regexp_replace(zalo_bo_dau(p_ten),     '[^a-z0-9]+', ' ', 'g')) as ten
+  )
+  select ten <> '' and position(' ' || ten || ' ' in ' ' || noi_dung || ' ') > 0
+  from chuan
+$$;
+
+commit;
