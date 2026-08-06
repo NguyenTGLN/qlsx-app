@@ -1525,7 +1525,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
             // BẮT BUỘC trước khi xoá mã cũ. NĂM bảng dưới đây đều có FK `on delete cascade`
             // trỏ vào nhan_vien — không phải một bảng như chú thích cũ ghi nhầm. Xoá dòng mã
             // cũ mà chưa chuyển thì cascade nuốt sạch dữ liệu của MỌI KỲ: không cảnh báo,
-            // không phục hồi được. Đủ bốn dòng update mới an toàn, thiếu một dòng là mất im
+            // không phục hồi được. Đủ NĂM dòng update mới an toàn, thiếu một dòng là mất im
             // lặng đúng bảng đó:
             //   kpi_chi_tieu        (sql/create_kpi_module.sql)        — mất luôn kpi_nhat_ky
             //                       theo cascade tầng hai (bằng chứng chấm điểm); KPI gắn
@@ -1542,6 +1542,13 @@ import { useNavigate, useLocation } from 'react-router-dom';
             // Hai bảng cascade/khoá ngoại còn lại đã được lo ở trên, KHÔNG cần update ở đây:
             // nhan_vien_secret (rpc sao_chep_secret) và cong_viec_duoc_giao / tien_do
             // (rpc doi_ma_nv_trong_viec + hai lệnh update updated_by).
+            //
+            // Đếm thật trên CSDL ngày 06/08 (pg_constraint, confdeltype='c'): SÁU bảng cascade
+            // trỏ vào nhan_vien — năm bảng ở trên cộng nhan_vien_secret. Bảng thứ sáu không
+            // cần dòng update vì rpc sao_chep_secret ở trên đã CHÉP nó sang mã mới trước khi
+            // dòng cũ bị xoá. Thêm bảng cascade mới thì phải đếm lại bằng câu này:
+            //   select conrelid::regclass, confdeltype from pg_constraint
+            //   where confrelid = 'nhan_vien'::regclass and contype = 'f';
             const {error:kpiErr} = await db.from('kpi_chi_tieu').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
             if (kpiErr) throw new Error('Lỗi chuyển KPI sang mã mới: ' + kpiErr.message);
             const {error:ccErr} = await db.from('cham_cong').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);

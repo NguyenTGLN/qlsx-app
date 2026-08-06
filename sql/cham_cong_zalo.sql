@@ -209,6 +209,14 @@ create policy vst_del on public.ve_som_tay
 
 commit;
 
+-- ── HOÀN TÁC PHẦN 3 + 4 ─────────────────────────────────────────────────────
+-- ⚠ Xoá ve_som_tay là mất HẲN mọi số về sớm chấm tay: máy chấm công đã ngừng xuất
+--   cột đó nên không nguồn nào dựng lại được. Sao ra chỗ khác trước khi chạy.
+--   drop table if exists ve_som_tay;
+--   alter table cham_cong drop constraint if exists cham_cong_nguon_hop_le;
+--   drop index if exists cham_cong_nguon_idx;
+--   alter table cham_cong drop column if exists nguon;
+
 -- ── 5. HÀM DỰNG DÒNG CHẤM CÔNG TỪ TIN THÔ ───────────────────────────────────
 --
 -- ⚠ TUYỆT ĐỐI KHÔNG THÊM `security definer`. Để mặc định (invoker) thì hàm vẫn chịu
