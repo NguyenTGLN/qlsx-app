@@ -50,6 +50,34 @@ describe('dsChuaNoiMa', () => {
     expect(dsChuaNoiMa()).toEqual([]);
     expect(dsChuaNoiMa({})).toEqual([]);
   });
+
+  // Phát hiện khi tự soát (chưa có trong bản giao ban đầu): `content` luôn ghi đè
+  // theo tin MỚI NHẤT kể cả khi rỗng, nhưng `sender_name` chỉ ghi đè khi tin mới có
+  // tên — tin mới rỗng tên thì giữ tên cũ. Hai field cùng "thuộc về tin mới nhất"
+  // nhưng lệch quy tắc nhau. Ghi test để chốt hành vi hiện tại, không phải khẳng định
+  // đây là điều nên có — cần chủ app xác nhận có đúng ý muốn không.
+  it('tin mới nhất rỗng sender_name thì giữ tên cũ, nhưng content vẫn bị ghi đè rỗng', () => {
+    const kq = dsChuaNoiMa({
+      zaloRows: [
+        { uid_from: 'U1', sender_name: 'Tên Cũ', content: 'chào', ts: 100 },
+        { uid_from: 'U1', sender_name: '', content: '', ts: 200 },
+      ],
+      nhanVien: [],
+    });
+    expect(kq[0].sender_name).toBe('Tên Cũ');
+    expect(kq[0].content).toBe('');
+  });
+
+  // Phát hiện khi tự soát: default tham số (`zaloRows = []`) chỉ áp dụng khi field
+  // là `undefined`. Nếu caller lỡ truyền một object không phải mảng (ví dụ nhầm cả
+  // response `{data,error}` của Supabase thay vì chỉ mảng `data`), `zaloRows || []`
+  // vẫn giữ nguyên object đó (vì object rỗng cũng truthy) rồi `for...of` NỔ
+  // TypeError. Ghi test để chốt giới hạn này — hàm KHÔNG tự bảo vệ khỏi sai kiểu dữ
+  // liệu ngoài undefined/null, phần gọi hàm (tab Chấm công ở task sau) phải tự đảm
+  // bảo truyền đúng mảng.
+  it('zaloRows không phải mảng (object) làm hàm nổ — chưa có phòng vệ kiểu dữ liệu', () => {
+    expect(() => dsChuaNoiMa({ zaloRows: {} })).toThrow();
+  });
 });
 
 describe('demVeSomLech', () => {
@@ -79,5 +107,11 @@ describe('demVeSomLech', () => {
 
   it('không nổ khi thiếu tham số', () => {
     expect(demVeSomLech()).toEqual({ soLech: 0, soThieuDong: 0 });
+  });
+
+  // Cùng giới hạn như dsChuaNoiMa: chỉ đỡ được undefined/null, không đỡ được object
+  // không phải mảng.
+  it('rows không phải mảng (object) làm hàm nổ — chưa có phòng vệ kiểu dữ liệu', () => {
+    expect(() => demVeSomLech({ rows: {} })).toThrow();
   });
 });
