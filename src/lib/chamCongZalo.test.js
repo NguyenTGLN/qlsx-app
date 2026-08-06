@@ -3,15 +3,15 @@ import { dsChuaNoiMa, demVeSomLech } from './chamCongZalo';
 
 describe('dsChuaNoiMa', () => {
   const nhanVien = [
-    { id: 'hhx', name: 'Xuyên', uid_from: '337594525259740835' },
-    { id: 'lvb', name: 'Bích', uid_from: null },
-    { id: 'nvh', name: 'Hĩu', uid_from: '' },
+    { id: 'hhx', name: 'Xuyên', uid_zalo_cham_cong: '7700874541300459549' },
+    { id: 'lvb', name: 'Bích', uid_zalo_cham_cong: null },
+    { id: 'nvh', name: 'Hĩu', uid_zalo_cham_cong: '' },
   ];
 
   it('bỏ người đã nối mã, giữ người chưa nối', () => {
     const kq = dsChuaNoiMa({
       zaloRows: [
-        { uid_from: '337594525259740835', sender_name: 'Hà Xuyên', content: 'Xuyên', ts: 100 },
+        { uid_from: '7700874541300459549', sender_name: 'Hà Xuyên', content: 'Xuyên', ts: 100 },
         { uid_from: 'UID-LA', sender_name: 'ERM Trại Gà', content: 'Hà', ts: 200 },
       ],
       nhanVien,

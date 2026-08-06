@@ -1499,13 +1499,20 @@ import { useNavigate, useLocation } from 'react-router-dom';
           if (idChanged) {
             const {data:oldRow, error:fetchErr} = await db.from('nhan_vien').select('*').eq('id', originalId).single();
             if (fetchErr) throw new Error('Không tìm thấy NV: ' + fetchErr.message);
-            // `ten_cham_cong` PHẢI bị tách khỏi bản sao, không phải dọn dẹp cho gọn: chỉ mục
-            // duy nhất `nhan_vien_ten_cham_cong_uniq` (sql/them_ten_cham_cong.sql) cấm hai
-            // dòng cùng họ tên chấm công. Ở thời điểm insert này dòng mã CŨ vẫn còn trong
-            // bảng, nên bê nguyên cột đó sang dòng mới là đụng chỉ mục → insert hỏng ngay
-            // câu đầu tiên và cả luồng đổi mã chết với lỗi trùng khoá của Postgres. Giá trị
-            // được đặt lại SAU khi xoá dòng cũ (xem cuối khối), lúc đó nó chỉ còn một chủ.
-            const { password:_omit, ten_cham_cong:_omitTenChamCong, ...oldNoPw } = oldRow; // không mang cột password (sẽ bị bỏ)
+            // HAI cột PHẢI bị tách khỏi bản sao, không phải dọn dẹp cho gọn — cả hai đều có
+            // chỉ mục DUY NHẤT:
+            //   ten_cham_cong      → nhan_vien_ten_cham_cong_uniq      (sql/them_ten_cham_cong.sql)
+            //   uid_zalo_cham_cong → nhan_vien_uid_zalo_cham_cong_uniq (sql/cham_cong_zalo.sql)
+            // Ở thời điểm insert này dòng mã CŨ vẫn còn trong bảng, nên bê nguyên hai cột đó
+            // sang dòng mới là đụng chỉ mục → insert hỏng ngay câu đầu tiên và cả luồng đổi mã
+            // chết với lỗi trùng khoá của Postgres. Giá trị được đặt lại SAU khi xoá dòng cũ
+            // (xem cuối khối), lúc đó chúng chỉ còn một chủ.
+            //
+            // ⚠ Thêm bất kỳ cột nào có chỉ mục duy nhất vào nhan_vien thì PHẢI thêm vào đây.
+            //   Đếm lại bằng:
+            //   select indexname from pg_indexes where tablename='nhan_vien' and indexdef ilike '%unique%';
+            const { password:_omit, ten_cham_cong:_omitTenChamCong,
+                    uid_zalo_cham_cong:_omitUidZalo, ...oldNoPw } = oldRow; // không mang cột password (sẽ bị bỏ)
             const newUser = {...oldNoPw, ...data, id: form.id};
             const {error:insErr} = await db.from('nhan_vien').insert(newUser);
             if (insErr) throw new Error('Lỗi tạo ID: ' + insErr.message);
@@ -1569,6 +1576,13 @@ import { useNavigate, useLocation } from 'react-router-dom';
             if (oldRow.ten_cham_cong != null) {
               const {error:tccErr} = await db.from('nhan_vien').update({ten_cham_cong: oldRow.ten_cham_cong}).eq('id', form.id);
               if (tccErr) throw new Error('Lỗi chuyển họ tên chấm công sang mã mới: ' + tccErr.message);
+            }
+            // Trả `uid_zalo_cham_cong` lại, cùng lý do và cùng thời điểm như trên. Bỏ bước này
+            // là người đó mất mã Zalo: hàm dựng không nhận ra họ nữa nên KHÔNG chấm công ngày
+            // nào cho họ — không sai số, nhưng KPI chuyên cần của họ trống trơn và im lặng.
+            if (oldRow.uid_zalo_cham_cong != null) {
+              const {error:uzErr} = await db.from('nhan_vien').update({uid_zalo_cham_cong: oldRow.uid_zalo_cham_cong}).eq('id', form.id);
+              if (uzErr) throw new Error('Lỗi chuyển mã Zalo chấm công sang mã mới: ' + uzErr.message);
             }
             const newUsers = users.map(u => u.id === originalId ? {...u, ...data, id: form.id} : u);
             setUsers(newUsers);

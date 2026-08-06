@@ -13,7 +13,7 @@
 // danh sách này không phải tiện ích cho vui, nó là màn hình sửa chỗ đó.
 export function dsChuaNoiMa({ zaloRows = [], nhanVien = [] } = {}) {
   const daNoi = new Set(
-    (nhanVien || []).map(n => String(n?.uid_from ?? '').trim()).filter(Boolean));
+    (nhanVien || []).map(n => String(n?.uid_zalo_cham_cong ?? '').trim()).filter(Boolean));
 
   const theoUid = new Map();
   for (const r of zaloRows || []) {

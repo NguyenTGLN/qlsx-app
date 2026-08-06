@@ -47,8 +47,10 @@ begin
     where extract(dow from d) between 1 and 6
   ),
   nguoi as (
-    select id as nhan_vien_id, name as ten, uid_from from nhan_vien
-    where ten_cham_cong is not null and coalesce(uid_from, '') <> ''
+    -- Nối theo uid_zalo_cham_cong (mã theo tài khoản Zalo đang chạy wf chấm công),
+    -- KHÔNG phải uid_from. Xem lý do đầy đủ ở sql/cham_cong_zalo.sql phần 5.
+    select id as nhan_vien_id, name as ten, uid_zalo_cham_cong as uid from nhan_vien
+    where ten_cham_cong is not null and coalesce(uid_zalo_cham_cong, '') <> ''
   ),
   tin as (
     select n.nhan_vien_id, z.ngay,
@@ -59,7 +61,7 @@ begin
     from (select uid_from, ngay, content,
                  (to_timestamp(ts / 1000.0) at time zone 'Asia/Ho_Chi_Minh')::time as gio
           from zalo_cham_cong where ngay between p_tu and p_den) z
-    join nguoi n on n.uid_from = z.uid_from
+    join nguoi n on n.uid = z.uid_from
     where zalo_khop_ten(z.content, n.ten)
   ),
   dau_buoi as (
@@ -154,8 +156,10 @@ begin
     where extract(dow from d) between 1 and 6
   ),
   nguoi as (
-    select id as nhan_vien_id, name as ten, uid_from from nhan_vien
-    where ten_cham_cong is not null and coalesce(uid_from, '') <> ''
+    -- Nối theo uid_zalo_cham_cong (mã theo tài khoản Zalo đang chạy wf chấm công),
+    -- KHÔNG phải uid_from. Xem lý do đầy đủ ở sql/cham_cong_zalo.sql phần 5.
+    select id as nhan_vien_id, name as ten, uid_zalo_cham_cong as uid from nhan_vien
+    where ten_cham_cong is not null and coalesce(uid_zalo_cham_cong, '') <> ''
   ),
   tin as (
     select n.nhan_vien_id, z.ngay,
@@ -165,7 +169,7 @@ begin
     from (select uid_from, ngay, content,
                  (to_timestamp(ts / 1000.0) at time zone 'Asia/Ho_Chi_Minh')::time as gio
           from zalo_cham_cong where ngay between p_tu and p_den) z
-    join nguoi n on n.uid_from = z.uid_from
+    join nguoi n on n.uid = z.uid_from
     where zalo_khop_ten(z.content, n.ten)
   ),
   dau_buoi as (

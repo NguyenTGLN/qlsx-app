@@ -79,7 +79,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   // Ba nguồn của phần chấm công Zalo. Tải MỀM (xem taiDuLieu) — chưa chạy
   // sql/cham_cong_zalo.sql thì tab vẫn phải mở được y như cũ.
   const [zaloRows, setZaloRows] = useState([]);
-  const [nvUid, setNvUid] = useState([]);      // [{id, name, uid_from, ten_cham_cong}]
+  const [nvUid, setNvUid] = useState([]);      // [{id, name, uid_zalo_cham_cong, ten_cham_cong}]
   const [veSomTay, setVeSomTay] = useState([]);
   const [dangNoi, setDangNoi] = useState('');  // uid đang lưu, để khoá ô chọn
   const [moDungLai, setMoDungLai] = useState(false);
@@ -128,7 +128,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
         const [z, nv, vs] = await Promise.all([
           supabase.from('zalo_cham_cong').select('uid_from, sender_name, content, ts')
             .gte('ngay', tu).order('ts', { ascending: false }).limit(2000),
-          supabase.from('nhan_vien').select('id, name, uid_from, ten_cham_cong'),
+          supabase.from('nhan_vien').select('id, name, uid_zalo_cham_cong, ten_cham_cong'),
           supabase.from('ve_som_tay').select('*').eq('ky', ky).order('id'),
         ]);
         if (z.error || nv.error || vs.error) throw (z.error || nv.error || vs.error);
@@ -187,11 +187,11 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   const chuaNoiMa = useMemo(
     () => dsChuaNoiMa({ zaloRows, nhanVien: nvUid }), [zaloRows, nvUid]);
 
-  // 13 người kho = có ten_cham_cong. Ai trong số đó chưa có uid_from thì hàm dựng BỎ QUA
+  // 13 người kho = có ten_cham_cong. Ai trong số đó chưa có uid_zalo_cham_cong thì hàm dựng BỎ QUA
   // họ — không chấm công, cũng không ghi nghỉ oan — nên KPI chuyên cần của họ để TRỐNG
   // cả tháng. Phải hiện thành cảnh báo chứ không để lẫn vào danh sách dài.
   const thieuUid = useMemo(
-    () => (nvUid || []).filter(n => n.ten_cham_cong && !String(n.uid_from || '').trim()),
+    () => (nvUid || []).filter(n => n.ten_cham_cong && !String(n.uid_zalo_cham_cong || '').trim()),
     [nvUid]);
 
   // Ô chọn liệt kê CẢ 13 người, kể cả người đã có mã — không chỉ người còn thiếu.
@@ -238,7 +238,12 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     }
   }, [me, taiDuLieu]);
 
-  // Nối một mã Zalo với một nhân viên. Ghi thẳng vào nhan_vien.uid_from.
+  // Nối một mã Zalo với một nhân viên. Ghi vào nhan_vien.uid_zalo_cham_cong.
+  //
+  // ⚠ KHÔNG phải cột `uid_from`. Mã Zalo của cùng một người KHÁC NHAU tuỳ tài khoản nào
+  // đang nghe — đo 06/08: tài khoản 'Hà Xuyên' thấy Nguyên là 354919541537207776, tài khoản
+  // 'Nguyen' thấy là 715086275848796206. Cột `uid_from` là mã theo tài khoản cũ và có luồng
+  // khác dùng, nên chấm công phải có cột riêng.
   //
   // ⚠ Chọn nhầm là chấm công của người này chảy sang người khác MỖI NGÀY. Khác màn hình
   // nối tên Excel một điểm có lợi: ở đây sửa lại được ngay, chọn lại người khác là xong.
@@ -246,7 +251,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     if (!uid || !nvId) return;
     setLoi(''); setDangNoi(uid);
     try {
-      const { error } = await supabase.from('nhan_vien').update({ uid_from: uid }).eq('id', nvId);
+      const { error } = await supabase.from('nhan_vien').update({ uid_zalo_cham_cong: uid }).eq('id', nvId);
       if (error) throw error;
       await taiDuLieu();
     } catch (err) {
@@ -520,7 +525,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
                 <option value="">— đây là ai? —</option>
                 {dsChonNguoi.map(n => (
                   <option key={n.id} value={n.id}>
-                    {n.name}{String(n.uid_from || '').trim() ? ' (đang có mã khác — sẽ THAY)' : ''}
+                    {n.name}{String(n.uid_zalo_cham_cong || '').trim() ? ' (đang có mã khác — sẽ THAY)' : ''}
                   </option>
                 ))}
               </select>

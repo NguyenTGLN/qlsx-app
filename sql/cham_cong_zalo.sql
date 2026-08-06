@@ -217,6 +217,64 @@ commit;
 --   drop index if exists cham_cong_nguon_idx;
 --   alter table cham_cong drop column if exists nguon;
 
+-- ── 4b. CỘT MÃ ZALO DÙNG CHO CHẤM CÔNG ──────────────────────────────────────
+-- ⚠ VÌ SAO KHÔNG DÙNG LẠI CỘT `nhan_vien.uid_from` SẴN CÓ:
+--   Mã Zalo của CÙNG một người KHÁC NHAU tuỳ tài khoản nào đang nghe. Đo 06/08/2026 trên
+--   chính nhóm "Euromade - Chấm Công" (28 thành viên):
+--     tài khoản 'Hà Xuyên' thấy Nguyên là 354919541537207776
+--     tài khoản 'Nguyen'   thấy Nguyên là 715086275848796206
+--   Cột `uid_from` mang mã theo tài khoản CŨ và còn luồng khác dùng, nên chủ app chốt:
+--   giữ nguyên cột đó, chấm công dùng cột riêng này.
+--
+--   Hệ quả phải nhớ: ĐỔI TÀI KHOẢN ZALO chạy workflow chấm công là phải lấy lại toàn bộ
+--   13 mã. Lấy bằng API nhóm (memberIds + profiles), hoặc để tin chảy vào rồi nối lại
+--   bằng ô "Nối mã Zalo" trong tab Chấm công.
+begin;
+
+alter table nhan_vien add column if not exists uid_zalo_cham_cong text;
+
+-- Chỉ mục DUY NHẤT không phải trang trí: hai nhân viên mang cùng một mã Zalo thì mọi tin
+-- của người đó được tính cho CẢ HAI và không ai nhìn ra. Cùng khuôn với ten_cham_cong.
+--
+-- ⚠ Chỉ mục này BẮT BUỘC kéo theo sửa luồng đổi mã nhân viên (TaskApp.jsx ~1502): dòng mã
+--   mới được insert KHI dòng mã cũ CÒN trong bảng, nên phải tách cột này khỏi bản sao rồi
+--   đặt lại sau khi xoá dòng cũ — y hệt cách ten_cham_cong đang làm. Quên là cả luồng đổi
+--   mã chết ngay câu insert đầu tiên với lỗi trùng khoá.
+create unique index if not exists nhan_vien_uid_zalo_cham_cong_uniq
+  on nhan_vien (uid_zalo_cham_cong) where uid_zalo_cham_cong is not null;
+
+-- 13 người kho, ghép từ danh sách thành viên nhóm lấy ngày 06/08/2026.
+-- Cột cuối là căn cứ ghép — ba dòng ⚠ là SUY RA, chưa có tin thật xác nhận.
+update nhan_vien nv set uid_zalo_cham_cong = m.uid
+from (values
+  ('nxt',  '5216613630694207655'),  -- 'Nguyễn Xuân Thiện' — trùng khít họ tên chấm công
+  ('vta',  '8620061781178272354'),  -- 'Vương Tuấn Anh'    — trùng khít họ tên chấm công
+  ('admin','715086275848796206'),   -- 'Nguyen'      — tin thử 19:30 06/08 gửi từ mã này
+  ('ndp',  '8209801293158810413'),  -- 'Kỹ Thuật Thế Giới Lọc Nước' — ảnh nhóm: nhắn "phong"
+  ('nbn',  '6165910552867199315'),  -- 'Ba Ngoc'     — ảnh nhóm: nhắn "Ngoc"
+  ('nttd', '2822985467255068655'),  -- 'Thùy Dương'
+  ('lvb',  '5220132592047039667'),  -- 'Bich Levan'
+  ('hhx',  '7700874541300459549'),  -- 'Hà Xuyên'
+  ('nv8',  '9105739124680441244'),  -- 'Nguyễn Duyên'
+  ('dvx',  '2490010794619253068'),  -- 'Xuân'
+  ('ptt',  '3521619927191941661'),  -- 'Quỳnh Thơ'   ⚠ suy ra
+  ('ntth', '4100632916116917546'),  -- 'Hà Nguyễn'   ⚠ suy ra
+  ('nvh',  '7361981328537178345')   -- 'N V H'       ⚠ suy ra từ chữ viết tắt
+) as m(id, uid) where nv.id = m.id;
+
+commit;
+
+-- Ghép nhầm KHÔNG âm thầm gán sang người khác: hàm dựng còn đòi nội dung tin phải chứa
+-- TÊN GỌI của chính người đó, mà 13 tên gọi đều khác nhau. Ghép sai thì tin không khớp gì
+-- cả → không sinh dòng → thấy ngay là thiếu.
+
+-- KIỂM TRA
+--   select count(*) from nhan_vien where ten_cham_cong is not null and uid_zalo_cham_cong is null;
+--   -- kỳ vọng 0
+-- HOÀN TÁC PHẦN 4b
+--   drop index if exists nhan_vien_uid_zalo_cham_cong_uniq;
+--   alter table nhan_vien drop column if exists uid_zalo_cham_cong;
+
 -- ── 5. HÀM DỰNG DÒNG CHẤM CÔNG TỪ TIN THÔ ───────────────────────────────────
 --
 -- ⚠ TUYỆT ĐỐI KHÔNG THÊM `security definer`. Để mặc định (invoker) thì hàm vẫn chịu
@@ -260,15 +318,21 @@ begin
     where extract(dow from d) between 1 and 6
   ),
   nguoi as (
-    -- 13 người kho = có ten_cham_cong. Lọc thêm `uid_from` khác rỗng có chủ đích, và
-    -- hướng lỗi của nó là hướng AN TOÀN: người chưa nối mã Zalo bị loại khỏi CTE này
-    -- nên KHÔNG sinh dòng nào cả — không chấm công, cũng không bị ghi nghỉ oan. Hệ quả
-    -- duy nhất là KPI chuyên cần của họ để trống trong tháng, và trống thì nhìn ra ngay,
-    -- khác hẳn một con số sai trông như thật. Đo 06/08: 13 người có ten_cham_cong nhưng
-    -- mới 5 người có uid_from, nên hàm đang chỉ phủ 5.
-    select id as nhan_vien_id, name as ten, uid_from
+    -- 13 người kho = có ten_cham_cong.
+    --
+    -- ⚠ Nối theo `uid_zalo_cham_cong`, KHÔNG phải `uid_from`. Mã Zalo của cùng một người
+    --   KHÁC NHAU tuỳ tài khoản nào đang nghe — đo 06/08 trên nhóm thật: tài khoản
+    --   'Hà Xuyên' thấy Nguyên là 354919541537207776, tài khoản 'Nguyen' (tài khoản chạy
+    --   workflow chấm công) thấy là 715086275848796206. Cột `uid_from` là mã theo tài khoản
+    --   cũ và còn luồng khác dùng, nên chấm công phải có cột riêng.
+    --
+    -- Lọc thêm mã khác rỗng có chủ đích, và hướng lỗi của nó là hướng AN TOÀN: người chưa
+    -- nối mã bị loại khỏi CTE này nên KHÔNG sinh dòng nào cả — không chấm công, cũng không
+    -- bị ghi nghỉ oan. Hệ quả duy nhất là KPI chuyên cần của họ để trống, mà trống thì nhìn
+    -- ra ngay, khác hẳn một con số sai trông như thật.
+    select id as nhan_vien_id, name as ten, uid_zalo_cham_cong as uid
     from nhan_vien
-    where ten_cham_cong is not null and coalesce(uid_from, '') <> ''
+    where ten_cham_cong is not null and coalesce(uid_zalo_cham_cong, '') <> ''
   ),
   tin as (
     select n.nhan_vien_id, z.ngay,
@@ -282,7 +346,7 @@ begin
       from zalo_cham_cong
       where ngay between p_tu and p_den
     ) z
-    join nguoi n on n.uid_from = z.uid_from
+    join nguoi n on n.uid = z.uid_from
     where zalo_khop_ten(z.content, n.ten)
   ),
   dau_buoi as (
