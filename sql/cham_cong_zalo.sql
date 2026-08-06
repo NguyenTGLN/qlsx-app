@@ -208,3 +208,171 @@ create policy vst_del on public.ve_som_tay
   using (coalesce(auth.jwt()->>'nv_role','') = 'ADMIN');
 
 commit;
+
+-- ── 5. HÀM DỰNG DÒNG CHẤM CÔNG TỪ TIN THÔ ───────────────────────────────────
+--
+-- ⚠ TUYỆT ĐỐI KHÔNG THÊM `security definer`. Để mặc định (invoker) thì hàm vẫn chịu
+--   RLS. Là definer thì người ngoài cầm khoá công khai — thứ nằm sẵn trong mã nguồn,
+--   Ctrl+U là thấy — ghi đè được cả bảng chấm công của 13 người.
+--
+-- ⚠ CHỐT HAY CHƯA LÀ DO HÀM TỰ QUYẾT THEO ĐỒNG HỒ, KHÔNG PHẢI THAM SỐ NGƯỜI GỌI.
+--   Bản nháp đầu để `p_chot boolean`. Sai kiểu im lặng: sau khi lượt 17:15 chốt xong,
+--   một tin tăng ca lúc 18:00 khiến n8n gọi lại với p_chot = false, hàm tính lại từ
+--   đầu và XOÁ SẠCH cờ nghỉ vừa chốt — cả 13 người bỗng thành đi làm đủ.
+--
+-- ⚠ HÀM CHỈ XÉT NGƯỜI CÓ uid_from. Đo 06/08: 13 người có ten_cham_cong nhưng chỉ 5
+--   người có uid_from → hàm hiện chỉ phủ 5 người. 8 người còn lại KHÔNG được ghi dòng
+--   nào (không chấm, cũng không bị ghi nghỉ oan). Điền uid_from là mở rộng phạm vi.
+begin;
+
+create or replace function dung_cham_cong_zalo(p_tu date, p_den date)
+returns jsonb
+language plpgsql
+set search_path = public, pg_temp
+as $$
+declare
+  v_hom_nay date;
+  v_gio_vn  time;
+  v_ghi int;
+begin
+  if p_tu is null or p_den is null or p_den < p_tu then
+    return jsonb_build_object('loi', 'Khoảng ngày không hợp lệ');
+  end if;
+  if p_den - p_tu > 366 then
+    return jsonb_build_object('loi', 'Khoảng ngày quá dài, tối đa 366 ngày');
+  end if;
+
+  v_hom_nay := (now() at time zone 'Asia/Ho_Chi_Minh')::date;
+  v_gio_vn  := (now() at time zone 'Asia/Ho_Chi_Minh')::time;
+
+  with ngay_xet as (
+    -- T2..T7. Chủ nhật không xét gì cả.
+    select d::date as ngay
+    from generate_series(p_tu, p_den, interval '1 day') d
+    where extract(dow from d) between 1 and 6
+  ),
+  nguoi as (
+    -- 13 người kho = có ten_cham_cong. Bắt buộc có uid_from, không thì không nhận
+    -- được tin của họ và ghi nghỉ oan mỗi ngày.
+    select id as nhan_vien_id, name as ten, uid_from
+    from nhan_vien
+    where ten_cham_cong is not null and coalesce(uid_from, '') <> ''
+  ),
+  tin as (
+    select n.nhan_vien_id, z.ngay,
+           case when z.gio >= time '04:00' and z.gio < time '12:00' then 'S'
+                when z.gio >= time '12:00' and z.gio < time '17:00' then 'C'
+                else null end as buoi,      -- từ 17:00 là tăng ca, không dùng để chấm
+           z.gio
+    from (
+      select uid_from, ngay, content,
+             (to_timestamp(ts / 1000.0) at time zone 'Asia/Ho_Chi_Minh')::time as gio
+      from zalo_cham_cong
+      where ngay between p_tu and p_den
+    ) z
+    join nguoi n on n.uid_from = z.uid_from
+    where zalo_khop_ten(z.content, n.ten)
+  ),
+  dau_buoi as (
+    -- Nhắn hai lần trong cùng buổi thì lấy lần đầu.
+    select nhan_vien_id, ngay, buoi, min(gio) as gio
+    from tin where buoi is not null
+    group by 1, 2, 3
+  ),
+  co_ai as (
+    -- VAN AN TOÀN, theo TỪNG BUỔI chứ không theo ngày. n8n chết lúc 12h trưa thì cả 13
+    -- người đủ tin sáng nhưng trắng tin chiều — van theo ngày sẽ gạch 'Nghỉ chiều' cho
+    -- đủ 13 người, mất 0,5 ngày mỗi người, không ai biết vì sao.
+    -- Van này che cùng lúc: ngày lễ, n8n chết, Zalo rớt phiên đăng nhập.
+    select ngay,
+           bool_or(buoi = 'S') as co_sang,
+           bool_or(buoi = 'C') as co_chieu
+    from dau_buoi group by ngay
+  ),
+  tinh as (
+    select
+      nx.ngay, ng.nhan_vien_id, s.gio as gio_sang, c.gio as gio_chieu,
+      (nx.ngay < v_hom_nay or (nx.ngay = v_hom_nay and v_gio_vn >= time '17:00')) as da_dong_so,
+      coalesce(ca.co_sang, false) as xet_sang,
+      coalesce(ca.co_chieu, false)
+        -- Chiều thứ 7 lần thứ 2 và lần thứ 4 của tháng được nghỉ.
+        -- ceil(ngày/7): 1-7 → lần 1, 8-14 → lần 2, 15-21 → lần 3, 22-28 → lần 4.
+        and not (extract(dow from nx.ngay) = 6
+                 and ceil(extract(day from nx.ngay) / 7.0) in (2, 4)) as xet_chieu
+    from ngay_xet nx
+    cross join nguoi ng
+    left join dau_buoi s on s.nhan_vien_id = ng.nhan_vien_id and s.ngay = nx.ngay and s.buoi = 'S'
+    left join dau_buoi c on c.nhan_vien_id = ng.nhan_vien_id and c.ngay = nx.ngay and c.buoi = 'C'
+    left join co_ai   ca on ca.ngay = nx.ngay
+  ),
+  co_cua as (
+    select t.*,
+           (t.da_dong_so and t.xet_sang  and t.gio_sang  is null) as thieu_sang,
+           (t.da_dong_so and t.xet_chieu and t.gio_chieu is null) as thieu_chieu
+    from tinh t
+  ),
+  ket as (
+    select
+      cc.ngay, cc.nhan_vien_id, cc.gio_sang, cc.gio_chieu,
+      (cc.thieu_sang or cc.thieu_chieu) as nghi,
+      case when cc.thieu_sang and cc.thieu_chieu then 'Nghỉ'
+           when cc.thieu_sang  then 'Nghỉ sáng'
+           when cc.thieu_chieu then 'Nghỉ chiều'
+           else null end as nghi_text,
+      (coalesce(greatest(0, extract(epoch from (cc.gio_sang  - time '08:00')) / 60), 0)
+       + coalesce(greatest(0, extract(epoch from (cc.gio_chieu - time '13:30')) / 60), 0))::int
+        as di_muon_phut
+    from co_cua cc
+    -- Chỉ ghi dòng có căn cứ: hoặc người đó có tin, hoặc buổi đó đang được xét (để ghi nghỉ).
+    where cc.gio_sang is not null or cc.gio_chieu is not null
+       or cc.thieu_sang or cc.thieu_chieu
+  )
+  insert into cham_cong (
+    ky, nhan_vien_id, ngay, thu, gio_in_sang, gio_in_chieu, gio_out,
+    tang_ca_phut, di_muon_phut, ve_som_phut, nghi, nghi_text, nguon)
+  select
+    to_char(k.ngay, 'YYYY-MM'), k.nhan_vien_id, k.ngay,
+    case extract(dow from k.ngay) when 0 then 'CN'
+         else 'T' || (extract(dow from k.ngay) + 1)::int end,
+    to_char(k.gio_sang, 'HH24:MI'), to_char(k.gio_chieu, 'HH24:MI'), null,
+    null,                                   -- tăng ca: một tin lúc bắt đầu không nói được
+                                            -- tăng ca bao nhiêu phút. Không bịa số.
+    k.di_muon_phut,
+    coalesce(v.so_phut, 0),                 -- về sớm chấm tay THẮNG, không bị dựng lại về 0
+    k.nghi, k.nghi_text, 'ZALO'
+  from ket k
+  left join ve_som_tay v on v.nhan_vien_id = k.nhan_vien_id and v.ngay = k.ngay
+  on conflict (nhan_vien_id, ngay) do update set
+    ky           = excluded.ky,
+    thu          = excluded.thu,
+    gio_in_sang  = excluded.gio_in_sang,
+    gio_in_chieu = excluded.gio_in_chieu,
+    di_muon_phut = excluded.di_muon_phut,
+    ve_som_phut  = excluded.ve_som_phut,
+    nghi         = excluded.nghi,
+    nghi_text    = excluded.nghi_text
+  -- ⚠ CHỐT CHẶN QUAN TRỌNG NHẤT CỦA CẢ TÍNH NĂNG. Ngày nào Excel đã nạp thì dòng đó
+  --   nguon = 'MAY', điều kiện sai, Zalo KHÔNG CHẠM VÀO ĐƯỢC. Bỏ mệnh đề này là số
+  --   "ai nhớ nhắn" đè lên số "ai quẹt vân tay".
+  where cham_cong.nguon = 'ZALO';
+
+  get diagnostics v_ghi = row_count;
+  return jsonb_build_object('so_dong_ghi', v_ghi, 'tu', p_tu, 'den', p_den);
+end $$;
+
+revoke execute on function dung_cham_cong_zalo(date, date) from public;
+revoke execute on function dung_cham_cong_zalo(date, date) from anon;
+grant  execute on function dung_cham_cong_zalo(date, date) to authenticated;
+
+commit;
+
+-- ── HOÀN TÁC PHẦN 5 — dán chạy được ngay ────────────────────────────────────
+-- Gỡ hàm KHÔNG xoá dòng chấm công nào. Muốn gỡ luôn số Zalo đã dựng thì chạy thêm
+-- lệnh delete bên dưới — nó chỉ đụng dòng nguon = 'ZALO', dòng máy vân tay không hề gì.
+--
+--   drop function if exists dung_cham_cong_zalo(date, date);
+--   -- tuỳ chọn, chỉ khi muốn xoá hẳn số Zalo đã dựng của MỘT kỳ:
+--   -- delete from cham_cong where nguon = 'ZALO' and ky = '2026-08';
+--
+-- Kiểm lại sau khi hoàn tác:
+--   select count(*) from cham_cong where nguon = 'ZALO';
