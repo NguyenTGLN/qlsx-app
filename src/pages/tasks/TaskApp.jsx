@@ -1522,7 +1522,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
             if (renErr) throw new Error('Lỗi chuyển việc sang mã mới: ' + renErr.message);
             await db.from('cong_viec_duoc_giao').update({updated_by: form.id}).eq('updated_by', originalId);
             await db.from('tien_do').update({updated_by_id: form.id}).eq('updated_by_id', originalId);
-            // BẮT BUỘC trước khi xoá mã cũ. BỐN bảng dưới đây đều có FK `on delete cascade`
+            // BẮT BUỘC trước khi xoá mã cũ. NĂM bảng dưới đây đều có FK `on delete cascade`
             // trỏ vào nhan_vien — không phải một bảng như chú thích cũ ghi nhầm. Xoá dòng mã
             // cũ mà chưa chuyển thì cascade nuốt sạch dữ liệu của MỌI KỲ: không cảnh báo,
             // không phục hồi được. Đủ bốn dòng update mới an toàn, thiếu một dòng là mất im
@@ -1536,6 +1536,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
             //                       miễn trừ, người đó bị trừ điểm chuyên cần oan.
             //   cai_tien           (sql/create_cai_tien.sql)           — mất mọi sáng kiến đã
             //                       gửi cùng số tiền thưởng đã tính.
+            //   ve_som_tay         (sql/cham_cong_zalo.sql)             — mất toàn bộ về sớm
+            //                       chấm tay; máy chấm công ĐÃ NGỪNG xuất cột này (đo 06/08:
+            //                       0/388 dòng có giá trị) nên KHÔNG nguồn nào dựng lại được.
             // Hai bảng cascade/khoá ngoại còn lại đã được lo ở trên, KHÔNG cần update ở đây:
             // nhan_vien_secret (rpc sao_chep_secret) và cong_viec_duoc_giao / tien_do
             // (rpc doi_ma_nv_trong_viec + hai lệnh update updated_by).
@@ -1547,6 +1550,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
             if (nlErr) throw new Error('Lỗi chuyển ngày chuyên cần ngoại lệ sang mã mới: ' + nlErr.message);
             const {error:ctErr} = await db.from('cai_tien').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
             if (ctErr) throw new Error('Lỗi chuyển cải tiến sang mã mới: ' + ctErr.message);
+            const {error:vsErr} = await db.from('ve_som_tay').update({nhan_vien_id: form.id}).eq('nhan_vien_id', originalId);
+            if (vsErr) throw new Error('Lỗi chuyển về sớm chấm tay sang mã mới: ' + vsErr.message);
             const {error:delErr} = await db.from('nhan_vien').delete().eq('id', originalId);
             if (delErr) throw new Error('Lỗi xóa ID cũ: ' + delErr.message);
             // Trả `ten_cham_cong` lại cho dòng mã mới, NGAY SAU khi dòng mã cũ đã biến mất —
