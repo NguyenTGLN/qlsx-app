@@ -194,6 +194,21 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
     () => (nvUid || []).filter(n => n.ten_cham_cong && !String(n.uid_from || '').trim()),
     [nvUid]);
 
+  // Ô chọn liệt kê CẢ 13 người, kể cả người đã có mã — không chỉ người còn thiếu.
+  //
+  // Vì sao cần: một người có thể dùng hai tài khoản Zalo. Đo 06/08 — Nguyên đang mang mã
+  // 354919541537207776 trong hồ sơ, nhưng chấm công lại nhắn từ 715086275848796206. Nếu ô
+  // chọn chỉ hiện người CHƯA có mã thì đúng ca này không sửa được, mà nó lại là ca chắc
+  // chắn xảy ra.
+  //
+  // Không sinh ra được hai người chung một mã: `dsChuaNoiMa` đã loại mọi mã đã nối, nên một
+  // mã chỉ xuất hiện một lần và nối xong là biến mất khỏi danh sách. Chọn người đã có mã chỉ
+  // THAY mã của họ, không tạo thêm dòng nào.
+  const dsChonNguoi = useMemo(
+    () => (nvUid || []).filter(n => n.ten_cham_cong)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi')),
+    [nvUid]);
+
   const veSomLech = useMemo(() => demVeSomLech({ rows, veSomTay }), [rows, veSomTay]);
 
   const veSomTra = useMemo(() => {
@@ -464,12 +479,11 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
 
   return (
     <div style={{ width: '100%' }}>
-      {/* Chỉ hiện khi CÒN người kho thiếu mã. Nối đủ 13 rồi thì mọi người gửi còn lại trong
-          nhóm là người NGOÀI nhóm 13 (nhóm Zalo có 27 thành viên) — không có ai để nối nữa,
-          và hiện một dãy ô chọn rỗng chỉ làm người dùng bấm vào ngõ cụt. Danh sách chọn cố ý
-          chỉ gồm người CHƯA có mã: người đã nối rồi mà hiện lại thì một cú bấm nhầm là hai
-          người mang chung một mã Zalo, và hàm dựng sẽ tính tin của một người cho cả hai. */}
-      {canEdit && thieuUid.length > 0 && (
+      {/* Hiện khi CÒN người thiếu mã, HOẶC còn người gửi lạ chưa nối được.
+          Vế thứ hai không thừa: người đã có mã vẫn có thể dùng tài khoản Zalo khác để chấm
+          công (đo 06/08 — Nguyên mang mã 354919541537207776 nhưng nhắn từ 715086275848796206),
+          và lúc đó tin của họ rơi vào diện "người lạ" tuy 13 người đã đủ mã. */}
+      {canEdit && (thieuUid.length > 0 || chuaNoiMa.length > 0) && (
         <div style={{
           background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12,
           padding: '0.75rem 1rem', marginBottom: 12, fontSize: '0.78rem',
@@ -477,10 +491,12 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
           <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 6 }}>
             Nối mã Zalo cho người chấm công
           </div>
-          <div style={{ color: '#b45309', marginBottom: 8 }}>
-            ⚠ {thieuUid.length} người chưa có mã Zalo — chấm công Zalo bỏ qua họ, KPI chuyên
-            cần để trống: <b>{thieuUid.map(n => n.name).join(', ')}</b>
-          </div>
+          {thieuUid.length > 0 && (
+            <div style={{ color: '#b45309', marginBottom: 8 }}>
+              ⚠ {thieuUid.length} người chưa có mã Zalo — chấm công Zalo bỏ qua họ, KPI chuyên
+              cần để trống: <b>{thieuUid.map(n => n.name).join(', ')}</b>
+            </div>
+          )}
           {chuaNoiMa.length === 0 && (
             <div style={{ color: '#78350f', borderTop: '1px solid #fde68a', paddingTop: 6 }}>
               Chưa thu được tin nào từ người lạ trong 30 ngày qua. Nếu nhóm chấm công đã chảy
@@ -502,7 +518,11 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
                 style={{ ...oInput, width: 'auto', minWidth: 160 }}
               >
                 <option value="">— đây là ai? —</option>
-                {thieuUid.map(n => <option key={n.id} value={n.id}>{n.name}</option>)}
+                {dsChonNguoi.map(n => (
+                  <option key={n.id} value={n.id}>
+                    {n.name}{String(n.uid_from || '').trim() ? ' (đang có mã khác — sẽ THAY)' : ''}
+                  </option>
+                ))}
               </select>
             </div>
           ))}

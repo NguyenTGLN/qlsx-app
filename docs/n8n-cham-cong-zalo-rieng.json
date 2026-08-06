@@ -1,0 +1,246 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "eventTypes": [
+          "message_group"
+        ],
+        "threadIdFiltering": true,
+        "listenOnlyThreads": "3288273518723273312",
+        "keywordFiltering": true,
+        "ignoreKeywords": "Pass: 9999,Pass: 6666,BÀI THI SÁT HẠCH KHOÁ ĐỐI TÁC MỚI,Chương trình KM đặc biệt",
+        "selfListen": true
+      },
+      "type": "n8n-nodes-ultimate.zaloTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c8668f1e-7f07-4597-8efa-c801178f3b95",
+      "name": "Zalo Trigger1",
+      "credentials": {
+        "zaloApi": {
+          "id": "GC0QBXGhhmD9HFaU",
+          "name": "086577xx _ Nguyen _ 12:29 06/08"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a1f0c7d2-5b64-4e88-9a31-6c0d2f7b4e10",
+              "leftValue": "={{ String($json.threadId) === '3288273518723273312' && $json.filter?.msgType === 'webchat' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        220,
+        0
+      ],
+      "id": "0aae3c51-2e3e-4ab7-9466-78bd9d0bc571",
+      "name": "Là tin chấm công?"
+    },
+    {
+      "parameters": {
+        "tableId": "zalo_cham_cong",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "thread_id",
+              "fieldValue": "={{ $json.threadId }}"
+            },
+            {
+              "fieldId": "uid_from",
+              "fieldValue": "={{ $json.data.uidFrom }}"
+            },
+            {
+              "fieldId": "sender_name",
+              "fieldValue": "={{ $json.data.dName }}"
+            },
+            {
+              "fieldId": "content",
+              "fieldValue": "={{ $json.filter.content }}"
+            },
+            {
+              "fieldId": "ts",
+              "fieldValue": "={{ Number($json.data.ts) }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        460,
+        -60
+      ],
+      "id": "65ea2eeb-2c24-4e0d-8125-c1dbed8a9037",
+      "name": "Ghi tin chấm công",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kAOz6fNsa8UHk4Ws",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ngwkzicrnspeggunsblr.supabase.co/rest/v1/rpc/dung_cham_cong_zalo",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "DAN_KHOA_sb_secret_VAO_DAY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer DAN_KHOA_sb_secret_VAO_DAY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_tu: $now.setZone('Asia/Ho_Chi_Minh').toFormat('yyyy-MM-dd'), p_den: $now.setZone('Asia/Ho_Chi_Minh').toFormat('yyyy-MM-dd') }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        -60
+      ],
+      "id": "7f2a9c14-b3d6-4e57-8a90-1d5c6e2b8f31",
+      "name": "Dựng chấm công"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 17,
+              "triggerAtMinute": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        220
+      ],
+      "id": "9d4e1b07-6a2f-4c83-b115-8e7f3a0d5c62",
+      "name": "Chốt ngày 17:15"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ngwkzicrnspeggunsblr.supabase.co/rest/v1/rpc/dung_cham_cong_zalo",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "DAN_KHOA_sb_secret_VAO_DAY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer DAN_KHOA_sb_secret_VAO_DAY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_tu: $now.setZone('Asia/Ho_Chi_Minh').toFormat('yyyy-MM-dd'), p_den: $now.setZone('Asia/Ho_Chi_Minh').toFormat('yyyy-MM-dd') }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        220
+      ],
+      "id": "2b8c5f39-0e17-4a62-9d34-6c1a7e5b03d8",
+      "name": "Dựng chấm công (chốt ngày)"
+    }
+  ],
+  "connections": {
+    "Zalo Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Là tin chấm công?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Là tin chấm công?": {
+      "main": [
+        [
+          {
+            "node": "Ghi tin chấm công",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Ghi tin chấm công": {
+      "main": [
+        [
+          {
+            "node": "Dựng chấm công",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chốt ngày 17:15": {
+      "main": [
+        [
+          {
+            "node": "Dựng chấm công (chốt ngày)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3ea5c6d0c36cbc08e2627e89f82a9a6d5c7d746c0e34b66b395bab5a90858f61"
+  }
+}
