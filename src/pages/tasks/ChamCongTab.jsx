@@ -4,6 +4,7 @@ import {
   gomThongKe, tongTatCa, docNhomTuKpi, MA_CHI_TIEU_NHOM, dsNguoiPhanNhom,
 } from '../../lib/chamCongThongKe';
 import { loiGhiKpi } from '../../lib/kpiWriteGuard';
+import { trongSoNgayNghi } from '../../lib/kpiTuDong';
 import { dsChuaNoiMa, demVeSomLech } from '../../lib/chamCongZalo';
 import NapChamCong from './NapChamCong';
 import { ChevronLeft, AlertTriangle, Loader2, ChevronRight, Users, Upload } from 'lucide-react';
@@ -41,7 +42,9 @@ function gioGon(v) {
 function tieuDeO(row) {
   const macDinh = `${ngayGon(row.ngay)} (${row.thu})`;
   const phan = [];
-  if (row.nghi) phan.push('nghỉ');
+  // Dùng nghi_text để rê chuột đọc được "nghỉ chiều" chứ không phải mỗi chữ "nghỉ" — ô chỉ
+  // đủ chỗ cho 'NC', phần giải thích nằm ở đây.
+  if (row.nghi) phan.push((row.nghi_text || 'Nghỉ').toLowerCase());
   if (row.di_muon_phut > 0) phan.push(`muộn ${row.di_muon_phut} phút`);
   if (row.ve_som_phut > 0) phan.push(`về sớm ${row.ve_som_phut} phút`);
   if (row.tang_ca_phut > 0) phan.push(`tăng ca ${row.tang_ca_phut} phút`);
@@ -381,7 +384,13 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
       const cur = m.get(r.nhan_vien_id) || { muon: 0, somSom: 0, nghi: 0 };
       cur.muon += r.di_muon_phut || 0;
       cur.somSom += r.ve_som_phut || 0;
-      if (r.nghi) cur.nghi += 1;
+      // Cộng TRỌNG SỐ chứ không đếm dòng — nghỉ nửa buổi là 0,5 ngày. Dùng CHUNG hàm với
+      // kpiTuDong.js và bảng thống kê nhóm.
+      //
+      // Trước 07/08 chỗ này là `+= 1`, nên cùng một ngày nghỉ nửa buổi mà bảng dưới ghi "1"
+      // còn bảng nhóm ngay phía trên ghi "0,5" — hai con số chỏi nhau trên cùng màn hình, và
+      // con số bị trừ điểm là con số 0,5. Chủ app bắt được 07/08 ở dòng Phong ngày 01/08.
+      if (r.nghi) cur.nghi += trongSoNgayNghi(r.nghi_text);
       m.set(r.nhan_vien_id, cur);
     }
     return m;
@@ -700,7 +709,7 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
                       {tong.somSom}
                     </td>
                     <td style={{ ...tdBase, fontWeight: 700, color: tong.nghi > 0 ? '#b45309' : '#94a3b8' }}>
-                      {tong.nghi}
+                      {soGon(tong.nghi)}
                     </td>
                   </tr>
                 );
@@ -764,10 +773,17 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
   );
 }
 
+// Nhãn ngắn cho ô ngày công. Chủ app chốt 07/08: phải phân biệt được nghỉ NỬA buổi với nghỉ
+// TRỌN ngày ngay trên ô, vì hai thứ đó trừ điểm khác nhau (0,5 so với 1 ngày) mà trước đây
+// cùng hiện một chữ 'N'.
+const NHAN_NGHI = { 'Nghỉ sáng': 'NS', 'Nghỉ chiều': 'NC' };
+
 // Một ô ngày công trong bảng tổng quan.
 //  - không có dòng (người này không có bản ghi ngày đó) → gạch ngang mờ.
-//  - nghi = true → 'N' nền vàng nhạt.
-//  - di_muon_phut > 0 → số phút, nền hồng nhạt, chữ đỏ.
+//  - nghi = true → 'N' (trọn ngày) / 'NS' (nghỉ sáng) / 'NC' (nghỉ chiều), nền vàng nhạt.
+//    Nghỉ nửa buổi mà buổi CÒN LẠI đi muộn thì ghi thêm số phút: 'NC - 4'. Không gộp hai
+//    thứ này là mất hẳn phần đi muộn khỏi màn hình, dù nó vẫn bị trừ điểm.
+//  - di_muon_phut > 0 (không nghỉ) → số phút, nền hồng nhạt, chữ đỏ.
 //  - còn lại → dấu '·' xám nhạt.
 //  - nghi_van khác null → thêm viền dưới đỏ, bất kể rơi vào trường hợp nào ở trên.
 function OChamCong({ row, mien }) {
@@ -784,7 +800,14 @@ function OChamCong({ row, mien }) {
   };
   const title = tieuDeO(row) + (mien ? ` — ĐẶC BIỆT (không trừ KPI): ${mien.ly_do}` : '');
   if (row.nghi) {
-    return <td style={{ ...style, background: '#fef9c3', fontWeight: 700 }} title={title}>N</td>;
+    // Nghỉ trọn ngày thì không có giờ vào buổi nào nên di_muon luôn 0 — nhánh này chỉ thật
+    // sự dùng tới với nghỉ nửa buổi.
+    const them = row.di_muon_phut > 0 ? ` - ${row.di_muon_phut}` : '';
+    return (
+      <td style={{ ...style, background: '#fef9c3', fontWeight: 700, whiteSpace: 'nowrap' }} title={title}>
+        {NHAN_NGHI[row.nghi_text] || 'N'}{them}
+      </td>
+    );
   }
   if (row.di_muon_phut > 0) {
     return (
