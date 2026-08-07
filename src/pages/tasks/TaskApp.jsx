@@ -155,17 +155,31 @@ import { useNavigate, useLocation } from 'react-router-dom';
       return { ...t, assignees, assignee: assignees[0] || null }
     }
 
-    async function genTaskId() {
-      const { data } = await db.from('cong_viec_duoc_giao').select('id').like('id','CV-%').order('id',{ascending:false}).limit(20)
-      let max = 0; for (const r of (data||[])) { const m=r.id.match(/^CV-(\d+)$/); if(m&&+m[1]>max) max=+m[1] }
-      return `CV-${String(max+1).padStart(3, '0')}`
+    // Sinh mã kế tiếp dạng `<TIỀN_TỐ>-<số>`.
+    //
+    // ⚠ PHẢI lấy HẾT mã rồi so bằng SỐ. Bản cũ dùng `.order('id',desc).limit(20)`, tức sắp
+    //   xếp theo THỨ TỰ CHỮ — mà 'CV-999' > 'CV-1000' vì ký tự thứ tư '9' > '1'. Khi số mã
+    //   vượt 999, mã lớn nhất tụt khỏi mấy dòng đầu, hàm tưởng max vẫn là 999 rồi sinh lại
+    //   'CV-1000' đã tồn tại → lỗi trùng khoá, và lỗi đó LẶP MÃI: app không tạo được việc
+    //   mới nào nữa.
+    //
+    //   Đã xảy ra thật 07/08/2026: 943 mã CV, mã lớn nhất CV-1000, nhưng 20 dòng đầu theo
+    //   thứ tự chữ chỉ ra CV-999…CV-980. Chỗ `tien_do` (TD-) mắc y hệt, mới tới TD-240 nên
+    //   chưa vỡ — sửa luôn để khỏi lặp lại kịch bản này ở mốc TD-1000.
+    //
+    //   Đừng "sửa" bằng cách nâng padStart lên 4: nó chỉ dời mốc vỡ sang 9999.
+    async function genMaKeTiep(bang, tienTo) {
+      const re = new RegExp(`^${tienTo}-(\\d+)$`)
+      const { data, error } = await fetchAllRows(() =>
+        db.from(bang).select('id').like('id', `${tienTo}-%`).order('id'))
+      if (error) throw error
+      let max = 0
+      for (const r of (data || [])) { const m = re.exec(r.id); if (m && +m[1] > max) max = +m[1] }
+      return `${tienTo}-${String(max + 1).padStart(3, '0')}`
     }
 
-    async function genUpdateId() {
-      const { data } = await db.from('tien_do').select('id').like('id','TD-%').order('id',{ascending:false}).limit(10)
-      let max = 0; for (const r of (data||[])) { const m=r.id.match(/^TD-(\d+)$/); if(m&&+m[1]>max) max=+m[1] }
-      return `TD-${String(max+1).padStart(3, '0')}`
-    }
+    const genTaskId   = () => genMaKeTiep('cong_viec_duoc_giao', 'CV')
+    const genUpdateId = () => genMaKeTiep('tien_do', 'TD')
 
     async function loadAll() {
       const [tRes, uRes, pRes, poRes] = await Promise.all([
@@ -217,8 +231,17 @@ import { useNavigate, useLocation } from 'react-router-dom';
       }
       // Lấy lại bản DB: trigger sync_task_assignees mới là nơi đặt assignee_id (người đại diện),
       // trả `row` của JS sẽ thiếu cột đó → thẻ việc vừa tạo mất người cho tới lần reload sau.
-      const { data, error } = await db.from('cong_viec_duoc_giao').insert(row).select().single()
-      if (error) throw error; return data
+      //
+      // Thử lại khi trùng mã: genMaKeTiep đọc rồi mới ghi, nên hai người bấm "Việc mới" gần
+      // như cùng lúc sẽ nhận CÙNG một mã và người sau bị lỗi trùng khoá. Sinh lại mã rồi thử
+      // tiếp là xong — không có thứ gì bị ghi dở dang vì lệnh chèn hỏng nguyên vẹn.
+      // Đây KHÔNG phải cách chữa cho lỗi CV-1000 (xem genMaKeTiep) mà là lớp chắn thứ hai.
+      for (let lan = 0; lan < 3; lan++) {
+        const { data, error } = await db.from('cong_viec_duoc_giao').insert(row).select().single()
+        if (!error) return data
+        if (error.code !== '23505' || lan === 2) throw error
+        row.id = await genMaKeTiep('cong_viec_duoc_giao', 'CV')
+      }
     }
 
     async function apiUpdateTask(id, data) {
