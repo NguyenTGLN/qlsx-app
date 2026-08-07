@@ -491,11 +491,20 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
 
   return (
     <div style={{ width: '100%' }}>
-      {/* Hiện khi CÒN người thiếu mã, HOẶC còn người gửi lạ chưa nối được.
-          Vế thứ hai không thừa: người đã có mã vẫn có thể dùng tài khoản Zalo khác để chấm
-          công (đo 06/08 — Nguyên mang mã 354919541537207776 nhưng nhắn từ 715086275848796206),
-          và lúc đó tin của họ rơi vào diện "người lạ" tuy 13 người đã đủ mã. */}
-      {canEdit && (thieuUid.length > 0 || chuaNoiMa.length > 0) && (
+      {/* CHỈ hiện khi còn người kho THIẾU mã. Nối đủ rồi thì ẩn hẳn, kể cả khi vẫn còn người
+          lạ nhắn trong nhóm.
+          Nhóm Zalo có 28 thành viên nhưng chỉ 13 là người kho, nên khi đã nối đủ thì 15 người
+          còn lại CHẮC CHẮN không phải ai trong số đó — hiện họ ra chỉ là nhiễu, mà lại nhiễu
+          nguy hiểm: ô chọn liệt kê cả 13 tên nên một cú bấm nhầm là thay mã đúng của người
+          thật bằng mã người ngoài, rồi chấm công của người đó im lặng chạy sai mỗi ngày.
+          Chủ app yêu cầu bỏ 06/08 sau khi thấy 12 người lạ hiện lên.
+
+          Đánh đổi: người ĐÃ có mã mà đổi sang tài khoản Zalo khác thì không sửa được qua màn
+          hình này (thấy được bằng việc họ mất chấm công). Gỡ bằng một câu SQL:
+            update nhan_vien set uid_zalo_cham_cong = '<mã mới>' where id = '<mã nv>';
+          Lấy mã mới ở: select distinct uid_from, sender_name from zalo_cham_cong
+                        where ngay >= current_date - 7; */}
+      {canEdit && thieuUid.length > 0 && (
         <div style={{
           background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12,
           padding: '0.75rem 1rem', marginBottom: 12, fontSize: '0.78rem',
@@ -503,12 +512,10 @@ export default function ChamCongTab({ users = [], me, perm = {} }) {
           <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 6 }}>
             Nối mã Zalo cho người chấm công
           </div>
-          {thieuUid.length > 0 && (
-            <div style={{ color: '#b45309', marginBottom: 8 }}>
-              ⚠ {thieuUid.length} người chưa có mã Zalo — chấm công Zalo bỏ qua họ, KPI chuyên
-              cần để trống: <b>{thieuUid.map(n => n.name).join(', ')}</b>
-            </div>
-          )}
+          <div style={{ color: '#b45309', marginBottom: 8 }}>
+            ⚠ {thieuUid.length} người chưa có mã Zalo — chấm công Zalo bỏ qua họ, KPI chuyên
+            cần để trống: <b>{thieuUid.map(n => n.name).join(', ')}</b>
+          </div>
           {chuaNoiMa.length === 0 && (
             <div style={{ color: '#78350f', borderTop: '1px solid #fde68a', paddingTop: 6 }}>
               Chưa thu được tin nào từ người lạ trong 30 ngày qua. Nếu nhóm chấm công đã chảy
